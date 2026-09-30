@@ -9,7 +9,6 @@ import {
   projectTemplates,
   projects,
   ticketComments,
-  tickets,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
@@ -18,6 +17,7 @@ import { CacheService } from "../../../../common/cache/cache.service";
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { BuildRestoreResult } from "../dto/build-core-response.schemas";
+import { restoreTicketRows } from "../tickets/apply-ticket-change";
 
 @Injectable()
 export class ProjectsRestoreService {
@@ -72,17 +72,11 @@ export class ProjectsRestoreService {
         .set({ deletedAt: null })
         .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId)));
 
-      const restoredTickets = await tx
-        .update(tickets)
-        .set({ deletedAt: null })
-        .where(
-          and(
-            eq(tickets.orgId, orgId),
-            eq(tickets.projectId, projectId),
-            eq(tickets.deletedAt, deletedAt),
-          ),
-        )
-        .returning({ id: tickets.id });
+      const restoredTickets = await restoreTicketRows(tx, {
+        orgId,
+        projectId,
+        deletedAt,
+      });
 
       let restoredComments = 0;
       if (restoredTickets.length > 0) {

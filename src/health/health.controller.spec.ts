@@ -1,6 +1,7 @@
 import { ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { CacheService, REDIS } from "../common/cache/cache.service";
+import { APP_CONFIG } from "../config/config.module";
 import { DB_POOL_CONFIG, DRIZZLE, DRIZZLE_REPLICA } from "../db/drizzle.constants";
 import { poolTelemetry } from "../db/pool-telemetry";
 import { resolvePoolConfig } from "../db/pool.config";
@@ -20,6 +21,7 @@ describe("HealthController", () => {
     execute: () => Promise<unknown>,
     droppedInvalidations = 0,
     probeExecute: () => Promise<unknown> = execute,
+    railwayCommitSha?: string,
   ): Promise<HealthController> {
     const module = await Test.createTestingModule({
       controllers: [HealthController],
@@ -29,6 +31,10 @@ describe("HealthController", () => {
         { provide: DB_POOL_CONFIG, useValue: POOL_CONFIG },
         { provide: REDIS, useValue: null },
         { provide: CacheService, useValue: { droppedInvalidationCount: droppedInvalidations } },
+        {
+          provide: APP_CONFIG,
+          useValue: { RAILWAY_GIT_COMMIT_SHA: railwayCommitSha },
+        },
       ],
     }).compile();
     return module.get(HealthController);
@@ -55,6 +61,29 @@ describe("HealthController", () => {
 
       expect(controller.health()).toEqual({ status: "ok" });
       expect(execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("deployment identity", () => {
+    it("reports the Railway commit without touching a dependency", async () => {
+      const execute = jest.fn().mockRejectedValue(new Error("database unavailable"));
+      const controller = await createController(
+        execute,
+        0,
+        execute,
+        "0123456789abcdef0123456789abcdef01234567",
+      );
+
+      expect(controller.version()).toEqual({
+        commitSha: "0123456789abcdef0123456789abcdef01234567",
+      });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("makes missing deployment metadata observable", async () => {
+      const controller = await createController(jest.fn().mockResolvedValue(undefined));
+
+      expect(controller.version()).toEqual({ commitSha: null });
     });
   });
 

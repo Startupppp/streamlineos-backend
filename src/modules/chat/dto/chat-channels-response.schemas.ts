@@ -111,8 +111,9 @@ const channelFileItemSchema = z.object({
   id: z.number().int(),
   messageId: z.number().int(),
   fileName: z.string(),
+  fileUrl: z.string(),
   fileKey: z.string(),
-  fileSize: z.number().int().nullable(),
+  fileSize: z.number().int(),
   mimeType: z.string(),
   createdAt: wireDate(),
 });

@@ -1,4 +1,5 @@
-import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
+import { rgb, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
+import { renderBoundedPdf } from "../../../../common/documents/pdf-render-kernel";
 
 export interface PayslipPdfData {
   orgName: string;
@@ -98,8 +99,14 @@ function drawLine(page: PDFPage, x1: number, y1: number, x2: number, y2: number)
 }
 
 export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> {
-  const doc = await PDFDocument.create();
-  const page = doc.addPage([595, 842]);
+  return renderBoundedPdf(async ({ document: doc, addPage, checkpoint }) => {
+  checkpoint(
+    Object.values(data).reduce(
+      (total, value) => total + (typeof value === "string" ? value.length : 1),
+      0,
+    ),
+  );
+  const page = addPage([595, 842]);
 
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
@@ -293,6 +300,5 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> 
   drawRect(page, 0, 0, pageW, 28, LIGHT_GRAY);
   drawText(page, footerText, pageW / 2 - fw / 2, 10, regular, 7.5, GRAY);
 
-  const bytes = await doc.save();
-  return Buffer.from(bytes);
+  });
 }

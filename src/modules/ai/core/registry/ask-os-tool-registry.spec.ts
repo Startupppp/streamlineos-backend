@@ -3,7 +3,9 @@ import {
   assertUniqueKeys,
   availableDefinitions,
   isToolAvailable,
+  parseToolInput,
   renderOutcome,
+  safeToolFailureReason,
   toJsonSafe,
 } from "./ask-os-tool-registry";
 import {
@@ -203,6 +205,43 @@ describe("tool results are JSON-safe before they become ModelMessage parts", () 
       failed: true,
       reason: "The tool result could not be serialized.",
     });
+  });
+});
+
+describe("model tool input is exact rather than silently reinterpreted", () => {
+  const input = z.object({ query: z.string(), limit: z.number().int().optional() });
+
+  it("keeps declared fields and schema coercions", () => {
+    expect(parseToolInput(input, { query: "roadmap", limit: 3 })).toEqual({
+      query: "roadmap",
+      limit: 3,
+    });
+  });
+
+  it("rejects an undeclared top-level field instead of letting z.object strip it", () => {
+    expect(() =>
+      parseToolInput(input, { query: "roadmap", revealSecrets: true }),
+    ).toThrow("undeclared field(s): revealSecrets");
+  });
+
+  it("rejects nested undeclared fields too, so a nested action cannot be widened", () => {
+    const nested = z.object({ filter: z.object({ status: z.string() }) });
+
+    expect(() =>
+      parseToolInput(nested, {
+        filter: { status: "OPEN", organizationId: "another-tenant" },
+      }),
+    ).toThrow("undeclared field(s): filter.organizationId");
+  });
+});
+
+describe("unexpected tool errors do not become model-visible infrastructure details", () => {
+  it("returns a stable generic message for an exception containing credentials", () => {
+    expect(
+      safeToolFailureReason(
+        new Error("postgres://admin:secret@db.internal/tenant?sslmode=require"),
+      ),
+    ).toBe("The tool could not complete.");
   });
 });
 

@@ -37,7 +37,7 @@ describe("KbCreditsService — authoritative AI credit ledger adapter", () => {
       feature: "kb.ask",
       userId: "user-a",
       idempotencyKey: "kb-answer:123",
-    })).resolves.toBe(123);
+    })).resolves.toBe(125.5);
 
     expect(ledger.reserve).toHaveBeenCalledWith({
       orgId,

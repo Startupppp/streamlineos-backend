@@ -152,6 +152,7 @@ export const createTicketSchema = z.object({
   originalEstimate: z.number().min(0, "Original estimate cannot be negative").optional(),
   parentTicketId: z.number().optional(),
   status: z.string().optional(),
+  dueDate: z.iso.date().optional(),
   isRecurring: z.boolean().optional(),
   recurrenceRule: recurrenceRuleSchema.nullable().optional(),
 }).strict();

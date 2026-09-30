@@ -14,6 +14,10 @@ import {
   type PlatformPaymentProvider,
 } from "./platform-payment-provider";
 import { verifyStripeWebhook } from "./stripe-signature";
+import {
+  PlatformProviderHttpError,
+  callPlatformProvider,
+} from "./platform-provider-outbound";
 
 /**
  * The second provider, which is the whole point of ticket 01's interface.
@@ -86,31 +90,39 @@ export class StripeService implements PlatformPaymentProvider {
     }
     body.set("metadata[receipt]", params.receipt);
 
-    const response = await fetch("https://api.stripe.com/v1/payment_intents", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.secretKey}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Idempotency-Key": params.receipt,
+    const result = await callPlatformProvider(
+      {
+        provider: this.providerKey,
+        operation: "create-order",
+        safety: { kind: "write", idempotencyKey: params.receipt },
+        timeoutMs: PLATFORM_PAYMENT_TIMEOUT_MS,
       },
-      body,
-      signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
-    });
+      async () => {
+        const response = await fetch("https://api.stripe.com/v1/payment_intents", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.secretKey}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Idempotency-Key": params.receipt,
+          },
+          body,
+          signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
+        });
 
-    if (!response.ok) {
-      const raw: unknown = await response.json().catch(() => ({}));
-      const parsed = stripeErrorSchema.safeParse(raw);
-      const message = parsed.success
-        ? (parsed.data.error?.message ?? "Unknown error")
-        : "Unknown error";
-      throw new HttpException(
-        `Stripe payment intent creation failed: ${message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
+        if (!response.ok) {
+          const raw: unknown = await response.json().catch(() => ({}));
+          const parsed = stripeErrorSchema.safeParse(raw);
+          const internalMessage = parsed.success
+            ? (parsed.data.error?.message ?? "Unknown provider error")
+            : "Unknown provider error";
+          throw new PlatformProviderHttpError(response.status, internalMessage);
+        }
 
-    const data: unknown = await response.json();
-    const intent = stripePaymentIntentSchema.parse(data);
+        const data: unknown = await response.json();
+        return stripePaymentIntentSchema.parse(data);
+      },
+    );
+    const intent = result.value;
 
     return {
       id: intent.id,
@@ -150,23 +162,27 @@ export class StripeService implements PlatformPaymentProvider {
       );
     }
 
-    const response = await fetch(
-      `https://api.stripe.com/v1/payment_intents/${encodeURIComponent(orderId)}`,
+    const result = await callPlatformProvider(
       {
-        headers: { Authorization: `Bearer ${this.secretKey}` },
-        signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
+        provider: this.providerKey,
+        operation: "fetch-order",
+        safety: { kind: "read" },
+        timeoutMs: PLATFORM_PAYMENT_TIMEOUT_MS,
+      },
+      async () => {
+        const response = await fetch(
+          `https://api.stripe.com/v1/payment_intents/${encodeURIComponent(orderId)}`,
+          {
+            headers: { Authorization: `Bearer ${this.secretKey}` },
+            signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
+          },
+        );
+        if (!response.ok) throw new PlatformProviderHttpError(response.status);
+        const data: unknown = await response.json();
+        return stripeFetchedIntentSchema.parse(data);
       },
     );
-
-    if (!response.ok) {
-      throw new HttpException(
-        `Stripe payment intent lookup failed for ${orderId}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-
-    const data: unknown = await response.json();
-    const intent = stripeFetchedIntentSchema.parse(data);
+    const intent = result.value;
 
     return {
       id: intent.id,

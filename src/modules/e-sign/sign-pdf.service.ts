@@ -1,6 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont } from "pdf-lib";
+import { StandardFonts, rgb, degrees, type PDFDocument, type PDFFont } from "pdf-lib";
+import {
+  loadBoundedPdfSession,
+  renderBoundedPdf,
+  type PdfRenderLimits,
+} from "../../common/documents/pdf-render-kernel";
 import { hexToRgbFraction } from "./sign-pdf-utils";
 
 export interface StampField {
@@ -58,25 +63,26 @@ export class SignPdfService {
     return createHash("sha256").update(buffer).digest("hex");
   }
 
-  async getPageCount(buffer: Buffer): Promise<number> {
-    const doc = await PDFDocument.load(buffer, { ignoreEncryption: true });
-    return doc.getPageCount();
+  async getPageCount(buffer: Buffer, limits?: Partial<PdfRenderLimits>): Promise<number> {
+    const session = await loadBoundedPdfSession(buffer, limits);
+    return session.document.getPageCount();
   }
 
-  async getPageDimensions(buffer: Buffer, pageNumber: number): Promise<{ width: number; height: number }> {
-    const doc = await PDFDocument.load(buffer, { ignoreEncryption: true });
-    const page = doc.getPage(pageNumber - 1);
+  async getPageDimensions(buffer: Buffer, pageNumber: number, limits?: Partial<PdfRenderLimits>): Promise<{ width: number; height: number }> {
+    const session = await loadBoundedPdfSession(buffer, limits);
+    const page = session.document.getPage(pageNumber - 1);
     return page.getSize();
   }
 
-  async mergeDocuments(buffers: Buffer[]): Promise<Buffer> {
-    const merged = await PDFDocument.create();
+  async mergeDocuments(buffers: Buffer[], limits?: Partial<PdfRenderLimits>): Promise<Buffer> {
+    return renderBoundedPdf(async ({ document: merged, load, checkpoint }) => {
     for (const buf of buffers) {
-      const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+      const src = await load(buf);
       const copied = await merged.copyPages(src, src.getPageIndices());
       copied.forEach((p) => merged.addPage(p));
+      checkpoint(copied.length);
     }
-    return Buffer.from(await merged.save());
+    }, limits);
   }
 
   /**
@@ -85,13 +91,16 @@ export class SignPdfService {
    * drawn as static page content rather than interactive AcroForm fields, the result is already
    * flattened — there is nothing left for a signer or viewer to edit afterward.
    */
-  async stampFields(pdfBytes: Buffer, fields: StampField[]): Promise<Buffer> {
-    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  async stampFields(pdfBytes: Buffer, fields: StampField[], limits?: Partial<PdfRenderLimits>): Promise<Buffer> {
+    const session = await loadBoundedPdfSession(pdfBytes, limits);
+    const pdfDoc = session.document;
+    session.checkpoint(fields.length);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const signatureFont = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
     const pages = pdfDoc.getPages();
 
     for (const field of fields) {
+      session.checkpoint();
       const page = pages[field.pageNumber - 1];
       if (!page) continue;
       const { height: pageHeight } = page.getSize();
@@ -120,7 +129,7 @@ export class SignPdfService {
       }
     }
 
-    return Buffer.from(await pdfDoc.save());
+    return session.finish();
   }
 
   private drawFittedText(
@@ -145,9 +154,10 @@ export class SignPdfService {
     });
   }
 
-  async applyWatermark(pdfBytes: Buffer, spec: WatermarkSpec): Promise<Buffer> {
+  async applyWatermark(pdfBytes: Buffer, spec: WatermarkSpec, limits?: Partial<PdfRenderLimits>): Promise<Buffer> {
     if (!spec.text && !spec.imageBytes) return pdfBytes;
-    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const session = await loadBoundedPdfSession(pdfBytes, limits);
+    const pdfDoc = session.document;
     const pages = pdfDoc.getPages();
     const targetIndexes = resolvePageIndexes(spec.pages, pages.length);
     const color = hexToRgbFraction(spec.color);
@@ -159,6 +169,7 @@ export class SignPdfService {
     if (spec.imageBytes) image = await pdfDoc.embedPng(spec.imageBytes);
 
     for (const idx of targetIndexes) {
+      session.checkpoint();
       const page = pages[idx];
       const { width, height } = page.getSize();
 
@@ -194,22 +205,23 @@ export class SignPdfService {
       }
     }
 
-    return Buffer.from(await pdfDoc.save());
+    return session.finish();
   }
 
-  async generateCertificatePdf(data: CertificateData): Promise<Buffer> {
-    const pdfDoc = await PDFDocument.create();
+  async generateCertificatePdf(data: CertificateData, limits?: Partial<PdfRenderLimits>): Promise<Buffer> {
+    return renderBoundedPdf(async ({ document: pdfDoc, addPage, checkpoint }) => {
+    checkpoint(data.documents.length + data.recipients.length + data.events.length);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    let page = pdfDoc.addPage([612, 792]);
+    let page = addPage([612, 792]);
     let cursorY = 742;
     const marginX = 56;
     const lineHeight = 16;
 
     const ensureSpace = (needed: number) => {
       if (cursorY - needed < 56) {
-        page = pdfDoc.addPage([612, 792]);
+        page = addPage([612, 792]);
         cursorY = 742;
       }
     };
@@ -256,18 +268,21 @@ export class SignPdfService {
 
     drawLine("Documents", { bold: true, size: 13, gap: 20 });
     for (const doc of data.documents) {
+      checkpoint();
       drawLine(`${doc.fileName} — ${doc.pageCount ?? "?"} page(s) — SHA-256: ${doc.sha256Hash}`);
     }
     cursorY -= 8;
 
     drawLine("Recipients", { bold: true, size: 13, gap: 20 });
     for (const r of data.recipients) {
+      checkpoint();
       drawLine(`${r.name}${r.email ? ` <${r.email}>` : ""} — ${r.role} — auth: ${r.authMethod} — completed: ${r.completedAt ?? "n/a"}`);
     }
     cursorY -= 8;
 
     drawLine("Event Timeline", { bold: true, size: 13, gap: 20 });
     for (const event of data.events) {
+      checkpoint();
       const actor = event.actorName ? ` by ${event.actorName}` : "";
       const ip = event.ipAddress ? ` from ${event.ipAddress}` : "";
       drawLine(`${event.createdAt} — ${event.eventType}${actor}${ip}`, { size: 9 });
@@ -293,6 +308,6 @@ export class SignPdfService {
       { size: 8, gap: 11 },
     );
 
-    return Buffer.from(await pdfDoc.save());
+    }, limits);
   }
 }

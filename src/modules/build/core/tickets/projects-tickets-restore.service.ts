@@ -19,6 +19,7 @@ import {
   assertTicketReadAccess,
   type TicketReadAccess,
 } from "./build-ticket-read-access";
+import { restoreTicketRows } from "./apply-ticket-change";
 
 @Injectable()
 export class ProjectsTicketsRestoreService {
@@ -85,10 +86,12 @@ export class ProjectsTicketsRestoreService {
       );
 
     const restoredChildren = await this.db.transaction(async (tx) => {
-      await tx
-        .update(tickets)
-        .set({ deletedAt: null })
-        .where(and(eq(tickets.orgId, orgId), eq(tickets.id, ticketId)));
+      await restoreTicketRows(tx, {
+        orgId,
+        projectId,
+        deletedAt,
+        ticketIds: [ticketId],
+      });
 
       const restoredComments = await tx
         .update(ticketComments)

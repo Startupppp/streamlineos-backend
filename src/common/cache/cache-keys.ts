@@ -304,6 +304,16 @@ export const DASHBOARD_PENDING_APPROVALS_NAMESPACE = namespace(
   "dashboard-home:pending-approvals",
 );
 
+/**
+ * Home's leave-balance section is keyed per employee. A leave approval or
+ * revert-to-pending writes to `leaveBalances`, so the cached balance must be
+ * retired immediately — otherwise the employee sees a stale number until the
+ * 30-second TTL expires.
+ */
+export const DASHBOARD_LEAVE_BALANCE_NAMESPACE = namespace(
+  "dashboard-home:leave-balance",
+);
+
 export const CACHE_TTL = {
   SHORT: 30,
   MEDIUM: 300,

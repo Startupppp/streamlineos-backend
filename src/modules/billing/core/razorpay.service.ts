@@ -14,6 +14,10 @@ import {
   type CreatePlatformOrderParams,
   type PlatformPaymentProvider,
 } from "./platform-payment-provider";
+import {
+  PlatformProviderHttpError,
+  callPlatformProvider,
+} from "./platform-provider-outbound";
 
 @Injectable()
 export class RazorpayService implements PlatformPaymentProvider {
@@ -43,68 +47,93 @@ export class RazorpayService implements PlatformPaymentProvider {
   }
 
   async createOrder(params: CreatePlatformOrderParams): Promise<RazorpayOrder> {
-    const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString("base64");
-    const response = await fetch("https://api.razorpay.com/v1/orders", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${auth}`,
-      },
-      body: JSON.stringify({
-        amount: params.amount,
-        currency: params.currency,
-        receipt: params.receipt,
-        notes: params.notes,
-      }),
-      signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      const raw: unknown = await response.json().catch(() => ({}));
-      const parsed = razorpayOrderErrorSchema.safeParse(raw);
-      const description = parsed.success
-        ? parsed.data.error?.description ?? "Unknown error"
-        : "Unknown error";
+    if (!this.keyId || !this.keySecret) {
       throw new HttpException(
-        `Razorpay order creation failed: ${description}`,
-        HttpStatus.BAD_GATEWAY,
+        "Razorpay is not configured on this deployment.",
+        HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
-
-    const data: unknown = await response.json();
-    return razorpayOrderSchema.parse(data);
-  }
-
-  /**
-   * Reads an order back, so activation can learn what was charged.
-   *
-   * A failure here is deliberately fatal to the caller: the alternative is
-   * trusting the browser for the plan and the period, which is precisely the
-   * hole this closes. Better a customer retries a verify than gets a tier they
-   * did not pay for.
-   */
-  async fetchOrder(orderId: string): Promise<RazorpayFetchedOrder> {
-    const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString("base64");
-    const response = await fetch(
-      `https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}`,
+    const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString(
+      "base64",
+    );
+    const result = await callPlatformProvider(
       {
-        headers: { Authorization: `Basic ${auth}` },
-        signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
+        provider: this.providerKey,
+        operation: "create-order",
+        safety: { kind: "write" },
+        timeoutMs: PLATFORM_PAYMENT_TIMEOUT_MS,
+      },
+      async () => {
+        const response = await fetch("https://api.razorpay.com/v1/orders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Basic ${auth}`,
+          },
+          body: JSON.stringify({
+            amount: params.amount,
+            currency: params.currency,
+            receipt: params.receipt,
+            notes: params.notes,
+          }),
+          signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
+        });
+
+        if (!response.ok) {
+          const raw: unknown = await response.json().catch(() => ({}));
+          const parsed = razorpayOrderErrorSchema.safeParse(raw);
+          const internalMessage = parsed.success
+            ? (parsed.data.error?.description ?? "Unknown provider error")
+            : "Unknown provider error";
+          throw new PlatformProviderHttpError(response.status, internalMessage);
+        }
+
+        const data: unknown = await response.json();
+        return razorpayOrderSchema.parse(data);
       },
     );
-
-    if (!response.ok) {
-      throw new HttpException(
-        `Razorpay order lookup failed for ${orderId}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-
-    const data: unknown = await response.json();
-    return razorpayFetchedOrderSchema.parse(data);
+    return result.value;
   }
 
-  verifyPaymentSignature(orderId: string, paymentId: string, signature: string): boolean {
+  async fetchOrder(orderId: string): Promise<RazorpayFetchedOrder> {
+    if (!this.keyId || !this.keySecret) {
+      throw new HttpException(
+        "Razorpay is not configured on this deployment.",
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    const auth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString(
+      "base64",
+    );
+    const result = await callPlatformProvider(
+      {
+        provider: this.providerKey,
+        operation: "fetch-order",
+        safety: { kind: "read" },
+        timeoutMs: PLATFORM_PAYMENT_TIMEOUT_MS,
+      },
+      async () => {
+        const response = await fetch(
+          `https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}`,
+          {
+            headers: { Authorization: `Basic ${auth}` },
+            signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
+          },
+        );
+
+        if (!response.ok) throw new PlatformProviderHttpError(response.status);
+        const data: unknown = await response.json();
+        return razorpayFetchedOrderSchema.parse(data);
+      },
+    );
+    return result.value;
+  }
+
+  verifyPaymentSignature(
+    orderId: string,
+    paymentId: string,
+    signature: string,
+  ): boolean {
     const secret = this.keySecret;
     if (!secret) return false;
     const expected = createHmac("sha256", secret)
@@ -117,7 +146,9 @@ export class RazorpayService implements PlatformPaymentProvider {
     const secret = this.webhookSecret;
     if (!secret) return false;
     try {
-      const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+      const expected = createHmac("sha256", secret)
+        .update(rawBody)
+        .digest("hex");
       return this.constantTimeEquals(expected, signature);
     } catch {
       return false;

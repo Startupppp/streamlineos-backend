@@ -23,9 +23,10 @@ const PAYMENT_INTENT = {
   status: "requires_payment_method",
 };
 
-function withFetch(response: { ok: boolean; body: unknown }) {
+function withFetch(response: { ok: boolean; body: unknown; status?: number }) {
   const fetchMock = jest.fn().mockResolvedValue({
     ok: response.ok,
+    status: response.status ?? (response.ok ? 200 : 400),
     json: async () => response.body,
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -111,20 +112,46 @@ describe("StripeService", () => {
     expect(init.body.get("metadata[receipt]")).toBe("r1");
   });
 
-  it("surfaces Stripe's own message when it refuses", async () => {
+  it("does not surface Stripe's response message when it refuses", async () => {
+    const providerMessage = "Amount must be at least 50 cents sk_live_do_not_expose";
     withFetch({
       ok: false,
-      body: { error: { message: "Amount must be at least 50 cents", code: "amount_too_small" } },
+      body: { error: { message: providerMessage, code: "amount_too_small" } },
     });
 
-    await expect(
+    const error = await (
       new StripeService(CONFIGURED).createOrder({
         amount: 1,
         currency: "EUR",
         receipt: "r1",
         notes: {},
+      })
+    ).catch((caught: unknown) => caught);
+
+    expect((error as Error).message).toMatch(/temporarily unavailable/i);
+    expect((error as Error).message).not.toContain(providerMessage);
+  });
+
+  it("retries a retryable create because Stripe receives a stable idempotency key", async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => PAYMENT_INTENT });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      new StripeService(CONFIGURED).createOrder({
+        amount: 1900,
+        currency: "EUR",
+        receipt: "stable-receipt",
+        notes: {},
       }),
-    ).rejects.toThrow("Amount must be at least 50 cents");
+    ).resolves.toMatchObject({ id: PAYMENT_INTENT.id });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit & { headers: Record<string, string> }).headers["Idempotency-Key"])
+        .toBe("stable-receipt");
+    }
   });
 
   it("refuses to attempt a charge at all when unconfigured", async () => {

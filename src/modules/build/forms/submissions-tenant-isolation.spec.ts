@@ -6,6 +6,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import { SubmissionsService } from "./submissions.service";
+import { BuildTicketCreationService } from "../core/tickets";
 
 function makeActor(orgId: string): CurrentUserContext {
   return {
@@ -41,6 +42,10 @@ async function makeService(db: object, access: object) {
       { provide: DRIZZLE, useValue: db },
       { provide: AccessService, useValue: access },
       { provide: AuditService, useValue: { log: jest.fn() } },
+      {
+        provide: BuildTicketCreationService,
+        useValue: { createInTransaction: jest.fn(), publish: jest.fn() },
+      },
     ],
   }).compile();
   return { module, service: module.get(SubmissionsService) };

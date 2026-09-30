@@ -4,6 +4,10 @@ export const healthCheckSchema = z.object({
   status: z.literal("ok"),
 });
 
+export const versionSchema = z.object({
+  commitSha: z.string().min(1).nullable(),
+});
+
 const dependencyStateSchema = z.enum(["up", "degraded", "down", "skipped"]);
 
 const dependencyReportSchema = z.object({

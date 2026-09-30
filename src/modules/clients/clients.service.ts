@@ -27,14 +27,17 @@ export class ClientsService {
   ) {}
 
   async createClient(orgId: string, name: string, actor: ClientOnboardingActor): Promise<{ id: number; name: string | null }> {
-    const row = await createMirroredClient(
-      this.db,
-      orgId,
-      { orgId, name, status: "active" },
-      { linkedBy: "user:direct-create" },
-    );
-    await this.onboarding.startForClient(orgId, row.id, actor);
-    return { id: row.id, name: row.name };
+    return this.db.transaction(async (tx) => {
+      const executor = tx as unknown as Db;
+      const row = await createMirroredClient(
+        executor,
+        orgId,
+        { orgId, name, status: "active" },
+        { linkedBy: "user:direct-create" },
+      );
+      await this.onboarding.startForClient(orgId, row.id, actor, executor);
+      return { id: row.id, name: row.name };
+    });
   }
 
   listClients(read: ScopedRead): Promise<{ id: number; name: string | null }[]> {

@@ -471,12 +471,26 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
       ]),
       transaction,
     } as unknown as Db;
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const ticketCreation = {
+      createInTransaction: jest.fn().mockResolvedValue({
+        command: {},
+        tickets: [createdTicket],
+      }),
+      publish: jest.fn(),
+    };
+    const svc = new TestRunsService(
+      db,
+      makeAccessWithoutBuildManage(),
+      audit,
+      ticketCreation as never,
+    );
 
     await expect(
       svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 5, 3, { description: "broken" }),
     ).resolves.toMatchObject({ id: 88, type: "BUG" });
     expect(transaction).toHaveBeenCalledTimes(1);
-    expect(txInsert).toHaveBeenCalledTimes(2);
+    expect(ticketCreation.createInTransaction).toHaveBeenCalledTimes(1);
+    expect(ticketCreation.publish).toHaveBeenCalledTimes(1);
+    expect(txInsert).toHaveBeenCalledTimes(1);
   });
 });

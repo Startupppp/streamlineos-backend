@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
 import {
@@ -36,12 +37,14 @@ import {
   CHANNEL_MEMBER_MEMBERSHIP_WITH,
   flattenChannelMember,
 } from "./chat-channel-member-shape";
+import { ChatMessagesService } from "./chat-messages.service";
 
 @Injectable()
 export class ChatChannelMembersImplementation {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entities: EntityReferenceService,
+    @Optional() private readonly chatMessages?: ChatMessagesService,
   ) {}
 
   async assertChannelMembership(channelId: number, actor: EntityActor): Promise<void> {
@@ -211,6 +214,14 @@ export class ChatChannelMembersImplementation {
       })
       .onConflictDoNothing();
 
+    await this.chatMessages?.sendSystemMessage(
+      channelId,
+      actor.userId,
+      actor.orgId,
+      "joined the channel",
+      { type: "join" },
+    );
+
     return { ok: true };
   }
 
@@ -241,6 +252,14 @@ export class ChatChannelMembersImplementation {
       { orgId },
     );
 
+    await this.chatMessages?.sendSystemMessage(
+      channelId,
+      userId,
+      orgId,
+      "left the channel",
+      { type: "leave" },
+    );
+
     return { ok: true };
   }
 
@@ -254,6 +273,7 @@ export class ChatChannelMembersImplementation {
         id: chatAttachments.id,
         messageId: chatAttachments.messageId,
         fileName: chatAttachments.fileName,
+        fileUrl: chatAttachments.fileUrl,
         fileKey: chatAttachments.fileKey,
         fileSize: chatAttachments.fileSize,
         mimeType: chatAttachments.mimeType,

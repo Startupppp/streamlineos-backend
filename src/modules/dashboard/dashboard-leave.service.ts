@@ -15,6 +15,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import {
   CACHE_TTL,
+  DASHBOARD_LEAVE_BALANCE_NAMESPACE,
   DASHBOARD_PENDING_APPROVALS_NAMESPACE,
 } from "../../common/cache/cache-keys";
 import { getTodayString } from "../../common/date";
@@ -101,8 +102,9 @@ export class DashboardLeaveService {
       ownDashboardScope(u),
       String(currentYear),
     );
-    return this.cache.cachedForOrg(
+    return this.cache.cachedVersionedForOrg(
       orgId,
+      DASHBOARD_LEAVE_BALANCE_NAMESPACE,
       key,
       () =>
         this.db

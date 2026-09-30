@@ -33,6 +33,7 @@ export const databaseEnvShape = {
     ),
     /** Release identifier stamped onto every error report and span. */
     APP_RELEASE: z.preprocess(emptyToUndefined, z.string().optional()),
+    RAILWAY_GIT_COMMIT_SHA: z.preprocess(emptyToUndefined, z.string().trim().optional()),
     /** Comma-separated user ids holding the vendor's platform-only capabilities (global blog administration). Unset means nobody. */
     PLATFORM_ADMIN_USER_IDS: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Comma-separated regions this deployment serves; each secondary needs its own REGION_<KEY>_APP_DATABASE_URL. */

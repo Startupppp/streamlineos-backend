@@ -55,13 +55,18 @@ export class ClientOnboardingService {
       .limit(100);
   }
 
-  async startForClient(orgId: string, clientId: number, actor: ClientOnboardingActor): Promise<void> {
-    const [template] = await this.db.select({ id: clientOnboardingTemplates.id })
+  async startForClient(
+    orgId: string,
+    clientId: number,
+    actor: ClientOnboardingActor,
+    executor: Db = this.db,
+  ): Promise<void> {
+    const [template] = await executor.select({ id: clientOnboardingTemplates.id })
       .from(clientOnboardingTemplates)
       .where(and(eq(clientOnboardingTemplates.orgId, orgId), eq(clientOnboardingTemplates.isDefault, true)))
       .limit(1);
     const definitions = template
-      ? await this.db.select({
+      ? await executor.select({
         title: clientOnboardingTemplateItems.title,
         description: clientOnboardingTemplateItems.description,
         sortOrder: clientOnboardingTemplateItems.sortOrder,
@@ -70,7 +75,7 @@ export class ClientOnboardingService {
         .orderBy(asc(clientOnboardingTemplateItems.sortOrder), asc(clientOnboardingTemplateItems.id))
       : BUILT_IN_CHECKLIST;
     const steps = definitions.length > 0 ? definitions : BUILT_IN_CHECKLIST;
-    await this.db.insert(clientOnboardingItems).values(steps.map((step) => ({
+    await executor.insert(clientOnboardingItems).values(steps.map((step) => ({
       orgId,
       clientId,
       templateId: template?.id ?? null,

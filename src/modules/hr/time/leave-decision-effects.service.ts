@@ -3,6 +3,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CacheService } from "../../../common/cache/cache.service";
 import {
   CACHE_KEYS,
+  DASHBOARD_LEAVE_BALANCE_NAMESPACE,
   DASHBOARD_PENDING_APPROVALS_NAMESPACE,
 } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
@@ -98,6 +99,7 @@ export class LeaveDecisionEffectsService {
     await Promise.all([
       this.cache.invalidateNamespace(CACHE_KEYS.leaveAnalyticsNamespace(orgId)),
       this.cache.invalidateNamespaceForOrg(orgId, DASHBOARD_PENDING_APPROVALS_NAMESPACE),
+      this.cache.invalidateNamespaceForOrg(orgId, DASHBOARD_LEAVE_BALANCE_NAMESPACE),
     ]);
   }
 

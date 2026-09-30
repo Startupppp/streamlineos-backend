@@ -18,6 +18,8 @@ import {
   type QueryTelemetrySnapshot,
 } from "../db/query-telemetry";
 import type { ResolvedPoolConfig } from "../db/pool.config";
+import { APP_CONFIG } from "../config/config.module";
+import type { AppConfig } from "../config/env.validation";
 import { Public } from "../common/auth/public.decorator";
 import { ResponseSchema } from "../common/openapi/zod-operation-contracts";
 import { CacheService, REDIS } from "../common/cache/cache.service";
@@ -31,6 +33,7 @@ import { shutdownState } from "./shutdown-state";
 import { aggregateWorkflowBacklog } from "./workflow-backlog";
 import {
   healthCheckSchema,
+  versionSchema,
   readinessSnapshotSchema,
   workflowHealthSchema,
   databasePoolHealthSchema,
@@ -84,6 +87,7 @@ export class HealthController implements BeforeApplicationShutdown {
     @Inject(DB_POOL_CONFIG) private readonly poolConfig: ResolvedPoolConfig,
     @Inject(REDIS) redis: Redis | null,
     private readonly cache: CacheService,
+    @Inject(APP_CONFIG) private readonly appConfig: AppConfig,
   ) {
     this.readiness = new ReadinessService(
       [
@@ -145,6 +149,12 @@ export class HealthController implements BeforeApplicationShutdown {
   @ResponseSchema(healthCheckSchema)
   health(): { status: "ok" } {
     return { status: "ok" };
+  }
+
+  @Get("version")
+  @ResponseSchema(versionSchema)
+  version(): { commitSha: string | null } {
+    return { commitSha: this.appConfig.RAILWAY_GIT_COMMIT_SHA ?? null };
   }
 
   @Get("ready")

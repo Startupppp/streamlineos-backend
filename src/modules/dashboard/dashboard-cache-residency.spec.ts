@@ -1,6 +1,9 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { DASHBOARD_PENDING_APPROVALS_NAMESPACE } from "../../common/cache/cache-keys";
+import {
+  DASHBOARD_LEAVE_BALANCE_NAMESPACE,
+  DASHBOARD_PENDING_APPROVALS_NAMESPACE,
+} from "../../common/cache/cache-keys";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AccessService } from "../access/access.service";
@@ -113,7 +116,7 @@ describe("every Home cache entry is written through the org's own Redis cell", (
 });
 
 describe("DashboardLeaveService cache placement", () => {
-  it("routes the personal leave balance through the org cell, not the global one", async () => {
+  it("routes the personal leave balance through the org cell's versioned namespace, so an approval retires it instead of leaving a stale number for the TTL", async () => {
     const { calls, globalCached, cache } = recordingCache();
     const service = new DashboardLeaveService(
       {} as unknown as Db,
@@ -125,9 +128,9 @@ describe("DashboardLeaveService cache placement", () => {
 
     expect(globalCached).not.toHaveBeenCalled();
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.method).toBe("cachedForOrg");
+    expect(calls[0]?.method).toBe("cachedVersionedForOrg");
     expect(calls[0]?.orgId).toBe(ORG);
-    expect(calls[0]?.key).toContain("dashboard-home:");
+    expect(calls[0]?.key).toContain(DASHBOARD_LEAVE_BALANCE_NAMESPACE);
     expect(calls[0]?.key).toContain("leave-balance");
     expect(calls[0]?.key).toContain("u1");
   });

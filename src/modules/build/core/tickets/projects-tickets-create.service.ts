@@ -158,6 +158,7 @@ export class ProjectsTicketsCreateService {
           originalEstimate: body.originalEstimate?.toString(),
           parentTicketId: body.parentTicketId,
           status: body.status ?? "TODO",
+          dueDate: body.dueDate,
           isRecurring,
           recurrenceRule: isRecurring ? body.recurrenceRule : undefined,
           recurrenceNextRunAt,

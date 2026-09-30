@@ -95,5 +95,23 @@ describe("DocumentBuilder", () => {
       expect(everything).toContain("SKU-0");
       expect(everything).toContain("SKU-119");
     });
+
+    it("stops before a stateful builder exceeds its page limit", async () => {
+      const builder = await DocumentBuilder.create("StreamlineOS", { maxPages: 1 });
+      builder.header("Acme", "Pick List", "PL-1");
+
+      expect(() => builder.table(COLUMNS, rows(120))).toThrow(
+        expect.objectContaining({ code: "PDF_PAGE_LIMIT_EXCEEDED" }),
+      );
+    });
+
+    it("rejects a stateful builder output over its byte limit", async () => {
+      const builder = await DocumentBuilder.create("StreamlineOS", { maxBytes: 10 });
+      builder.header("Acme", "Pick List", "PL-1");
+
+      await expect(builder.finish()).rejects.toMatchObject({
+        code: "PDF_SIZE_LIMIT_EXCEEDED",
+      });
+    });
   });
 });

@@ -20,7 +20,8 @@
  * `invoice-pdf-canvas.ts`, the header blocks in `invoice-pdf-blocks.ts`, and
  * the line table and totals in `invoice-pdf-table.ts`.
  */
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { StandardFonts } from "pdf-lib";
+import { renderBoundedPdf } from "../../../../common/documents/pdf-render-kernel";
 import { drawMetaBlock, drawPartyBlock } from "./invoice-pdf-blocks";
 import {
   CONTENT_W,
@@ -54,7 +55,15 @@ export type {
 /* ------------------------------------------------------------------ entry */
 
 export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> {
-  const doc = await PDFDocument.create();
+  return renderBoundedPdf(async ({ document: doc, checkpoint }) => {
+  checkpoint(
+    data.lines.reduce(
+      (total, line) => total + line.description.length + line.taxComponents.length + 1,
+      0,
+    ) +
+      data.taxSummary.length +
+      (data.memo?.length ?? 0),
+  );
   const fonts: Fonts = {
     text: await doc.embedFont(StandardFonts.Helvetica),
     bold: await doc.embedFont(StandardFonts.HelveticaBold),
@@ -152,5 +161,5 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
     );
   });
 
-  return Buffer.from(await doc.save());
+  });
 }

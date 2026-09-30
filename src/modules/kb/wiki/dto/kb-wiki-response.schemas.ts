@@ -105,13 +105,17 @@ export const bulkDecideResultSchema = z.object({
   results: z.array(bulkDecideResultItemSchema),
 });
 
+const kbPageContentSchema = z
+  .union([z.array(z.record(z.string(), z.unknown())), z.record(z.string(), z.unknown())])
+  .nullable();
+
 export const kbPageTemplateSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   name: z.string(),
   icon: z.string().nullable(),
   description: z.string().nullable(),
-  content: z.record(z.string(), z.unknown()).nullable(),
+  content: kbPageContentSchema,
   createdById: z.string().nullable(),
   createdByName: z.string().nullable(),
   useCount: z.number().int(),
@@ -122,8 +126,6 @@ export const kbPageTemplateSchema = z.object({
 
 export const kbPageTemplateListPageSchema =
   cursorPageSchema(kbPageTemplateSchema);
-
-const kbPageContentSchema = z.record(z.string(), z.unknown()).nullable();
 
 export const kbPageSchema = z.object({
   id: z.number().int(),

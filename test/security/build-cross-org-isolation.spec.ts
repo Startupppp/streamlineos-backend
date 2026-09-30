@@ -195,6 +195,7 @@ describe("BSN-04-042 — cross-organization isolation: managed-products direct a
       updatedAt: new Date(),
       deletedAt: null,
       description: null,
+      ownerMembershipId: null,
     };
     const { db } = makeLoadDb(productRow);
     await expect(
@@ -245,7 +246,10 @@ describe("BSN-04-042 — cross-organization isolation: Quick Create", () => {
 
   it("createProject service inserts with the orgId received from the controller (source proof)", () => {
     const src = readFileSync(
-      join(BACKEND_ROOT, "src/modules/build/core/projects-provision.service.ts"),
+      join(
+        BACKEND_ROOT,
+        "src/modules/build/core/project-crud/projects-provision.service.ts",
+      ),
       "utf8",
     );
     const insertBlock = src.slice(src.indexOf(".insert(projects)"), src.indexOf(".returning("));
