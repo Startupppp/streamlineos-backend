@@ -72,19 +72,24 @@ function hasDuplicateModuleKeys(items: ReadonlyArray<{ moduleKey: string }>): bo
   return false;
 }
 
+const moduleAccessSchema = z.array(moduleAccessItemSchema).max(10).optional().refine(
+  (items) => !items || !hasDuplicateModuleKeys(items),
+  { message: "moduleAccess must not contain duplicate moduleKey entries" },
+);
+
 export const inviteUserSchema = z.object({
   email: inviteEmailSchema,
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
-  moduleAccess: z.array(moduleAccessItemSchema).max(10).optional().refine(
-    (items) => !items || !hasDuplicateModuleKeys(items),
-    { message: "moduleAccess must not contain duplicate moduleKey entries" },
-  ),
+  moduleAccess: moduleAccessSchema,
 }).strict();
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const bulkInviteSchema = z.object({
   emails: z.array(canonicalEmailSchema).min(1).max(500),
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
+  // The same module standings a single invite carries, applied to every row
+  // (BUG-HRMS-003: a bulk-invited HR admin otherwise joined as a bare Member).
+  moduleAccess: moduleAccessSchema,
 }).strict();
 export type BulkInviteInput = z.infer<typeof bulkInviteSchema>;
 
