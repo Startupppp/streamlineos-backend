@@ -147,6 +147,21 @@ export const bulkOnboardPreviewSchema = z.object({
     error: z.number().int(),
     skipped: z.number().int(),
   }),
+  /**
+   * BUG-HRMS-002: an onboarded employee is admitted as an organization member,
+   * so every row spends a seat. The preview used to report "15 ready" with one
+   * seat free and let the confirm step answer 402. Seat capacity is now part of
+   * the preview, and rows that will not fit carry `SEAT_LIMIT`.
+   *
+   * `limit`/`available` are null on an unlimited plan.
+   */
+  seats: z.object({
+    limit: z.number().int().nullable(),
+    used: z.number().int(),
+    available: z.number().int().nullable(),
+    required: z.number().int(),
+    blocked: z.number().int(),
+  }),
 });
 
 export const bulkOnboardCommitResultSchema = z.object({

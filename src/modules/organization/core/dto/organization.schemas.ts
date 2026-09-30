@@ -2,6 +2,19 @@ import { ORG_MEMBER_ROLE_VALUES } from "../../../../common/rbac/org-roles";
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
+/**
+ * The IANA zone list the runtime already carries. A hand-kept allowlist would
+ * drift; `Intl` refuses an unknown zone by throwing, which is the check.
+ */
+function isKnownTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const createOrganizationSchema = z.object({
   name: z.string().min(1).max(100),
   slug: z
@@ -16,6 +29,16 @@ export const createOrganizationSchema = z.object({
     .trim()
     .optional()
     .transform((v) => v ?? null),
+  /**
+   * BUG-HRMS-009. The create form asked for a name and an optional billing email
+   * and nothing else, so every organization started as `Asia/Kolkata` + null
+   * country by column default — invisible until a payroll cut-off, a leave date
+   * or a statutory field needed the real ones. Both are optional here: the
+   * defaults stay right for the India-first case, and the form can now say so
+   * out loud instead of assuming it.
+   */
+  country: z.string().trim().length(2).toUpperCase().optional(),
+  timezone: z.string().trim().min(1).max(64).refine(isKnownTimeZone, "Unknown time zone").optional(),
 }).strict();
 
 export const listMembersSchema = z.object({

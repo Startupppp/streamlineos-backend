@@ -235,6 +235,25 @@ export class PlanLimitsService {
     return limit;
   }
 
+  /**
+   * What is left of a limit, without refusing anything.
+   *
+   * `assertWithinLimit` is the guard a write runs; this is the same two numbers
+   * a PREVIEW needs, so a preview can say "9 of 15 rows fit" instead of
+   * promising 15 and handing the 402 to the confirm step (BUG-HRMS-002).
+   * `available` is null only for an unlimited key.
+   */
+  async headroomFor(
+    orgId: string,
+    key: LimitKey,
+    executor?: DbOrTx,
+  ): Promise<{ limit: number | null; used: number; available: number | null }> {
+    const limit = await this.limitFor(orgId, key);
+    if (limit === null) return { limit: null, used: await this.fetchCount(orgId, key, executor), available: null };
+    const used = await this.fetchCount(orgId, key, executor);
+    return { limit, used, available: Math.max(0, limit - used) };
+  }
+
   async assertWithinLimit(
     orgId: string,
     key: LimitKey,

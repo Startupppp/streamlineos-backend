@@ -202,6 +202,8 @@ export class OrgProfileService {
       name: input.name,
       slug: input.slug,
       billingEmail,
+      country: input.country ?? null,
+      timezone: input.timezone ?? null,
     });
   }
 

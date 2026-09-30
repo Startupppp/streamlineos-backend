@@ -172,6 +172,8 @@ export async function writeBulkOnboarding(
       designation: employee.designation,
       phone: employee.source.phone ?? null,
       departmentId: employee.departmentId,
+      locationId: employee.locationId,
+      workerType: employee.source.workerType,
       lifecycleStatus: "ONBOARDING" as const,
     })),
     tx,

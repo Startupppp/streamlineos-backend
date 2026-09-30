@@ -79,6 +79,10 @@ function bulkOnboardingCollaborators() {
     { invalidateAfterMutation: jest.fn() } as never,
     cache as never,
     { canManageOrganizationMembership: jest.fn().mockResolvedValue(true) } as never,
+    {
+      headroomFor: jest.fn().mockResolvedValue({ limit: null, used: 0, available: null }),
+      assertWithinLimit: jest.fn().mockResolvedValue(undefined),
+    } as never,
     admissionService() as never,
     { sendWelcomeEmail: jest.fn() } as never,
     { runAutomationsForEvent: jest.fn() } as never,

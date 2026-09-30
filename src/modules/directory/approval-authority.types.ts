@@ -121,6 +121,15 @@ export interface ApprovalRoute {
   slaHours: number;
   dueAt: string;
   escalation: ApprovalEscalation | null;
+  /**
+   * True when the only person who can decide this request is the person who
+   * raised it, because they are the organisation's sole structural admin and no
+   * rung and no queue member remains. `resolve` already routes a sole founder
+   * back to themselves rather than dead-ending them; this states it, so a
+   * decision path can honour the same rule instead of refusing the route its own
+   * router chose (BUG-HRMS-017).
+   */
+  ownerSelfApproval: boolean;
   explanation: string;
 }
 

@@ -86,7 +86,12 @@ function collaborators() {
     audit: { logCritical: jest.fn() },
     hierarchyCache: { invalidateAfterMutation: jest.fn() },
     access: { canManageOrganizationMembership: jest.fn().mockResolvedValue(true) },
-    planLimits: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) },
+    planLimits: {
+      assertWithinLimit: jest.fn().mockResolvedValue(undefined),
+      // Unlimited seats: these counts are about statement shape, not seat policy.
+      // The seat ceiling has its own test in bulk-onboarding-plan.spec.ts.
+      headroomFor: jest.fn().mockResolvedValue({ limit: null, used: 0, available: null }),
+    },
     email: { sendWelcomeEmail: jest.fn() },
     automation: { runAutomationsForEvent: jest.fn() },
     webhooks: { dispatch: jest.fn() },
@@ -98,7 +103,7 @@ interface Harness {
   preview: () => Promise<{ counts: { ready: number; warning: number; error: number; skipped: number } }>;
   statements: () => number;
   countOf: (op: CountingOp) => number;
-  planLimits: { assertWithinLimit: jest.Mock };
+  planLimits: { assertWithinLimit: jest.Mock; headroomFor: jest.Mock };
 }
 
 /**
@@ -153,6 +158,7 @@ function harness(count: number): Harness {
     deps.hierarchyCache as never,
     deps.cache as never,
     deps.access as never,
+    deps.planLimits as never,
     new MembershipAdmissionService(deps.planLimits as never, new SeatLedgerService(db)),
     deps.email as never,
     deps.automation as never,
@@ -268,6 +274,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       deps.hierarchyCache as never,
       deps.cache as never,
       deps.access as never,
+      deps.planLimits as never,
       new MembershipAdmissionService(deps.planLimits as never, new SeatLedgerService(db)),
       deps.email as never,
       deps.automation as never,

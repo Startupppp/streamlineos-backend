@@ -395,4 +395,23 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
 
     expect(mockDb.universalTx.insert).not.toHaveBeenCalled();
   });
+
+  /**
+   * BUG-HRMS-010. The requirement applies to EVERY accept, including an invitee
+   * who already holds a StreamlineOS account: `accept` is a public route with no
+   * session, so a signed-in caller is indistinguishable from anyone else holding
+   * the link, and the code is the only proof of the mailbox. A client that offers
+   * an existing-account invitee a one-click "Accept & join" without first
+   * requesting a code cannot succeed — which is what the frontend was doing.
+   */
+  it("refuses an accept that carries no verification code, existing account included", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+
+    await expect(svc.accept({ token: RAW_TOKEN })).rejects.toThrow(
+      "An email verification code is required to accept this invitation",
+    );
+    expect(mockPlanLimits.assertWithinLimit).not.toHaveBeenCalled();
+  });
 });
