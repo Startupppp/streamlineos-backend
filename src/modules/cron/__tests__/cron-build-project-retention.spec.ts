@@ -20,6 +20,9 @@ import {
 } from "../../../db/schema";
 import { projectAttachments } from "../../../db/schema/build/project-attachments";
 import { organizationLegalHolds } from "../../../db/schema/common/organization-purge";
+import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
+import { StorageService } from "../../storage/storage.service";
+import { StoragePendingPurgeService } from "../../storage/storage-pending-purge.service";
 import {
   CronBuildProjectRetentionService,
   closedTicketPurgePredicate,
@@ -36,22 +39,25 @@ function sqlText(condition: SQL | null | undefined): string {
 
 interface TxLog {
   selects: Array<{ table: unknown; where: SQL | null }>;
+  inserts: Array<{ table: unknown; values: unknown }>;
   deletes: Array<{ table: unknown; where: SQL | null }>;
+  operations: string[];
 }
 
 interface TxOptions {
   orgHold?: boolean;
   settings?: Array<Record<string, unknown>>;
   ticketBatches?: Array<Array<{ id: number }>>;
-  attachmentBatches?: Array<Array<{ id: number }>>;
+  attachmentBatches?: Array<Array<{ id: number; storageKey: string }>>;
   ticketCount?: number;
   attachmentCount?: number;
 }
 
 function makeTx(opts: TxOptions): TxLog {
-  const log: TxLog = { selects: [], deletes: [] };
+  const log: TxLog = { selects: [], inserts: [], deletes: [], operations: [] };
   let ticketBatchIdx = 0;
   let attachmentBatchIdx = 0;
+  let pendingPurgeIdx = 0;
   let settingsServed = false;
 
   function rowsFor(table: unknown, where: SQL | null): unknown[] {
@@ -71,10 +77,20 @@ function makeTx(opts: TxOptions): TxLog {
         return [{ pending: opts.attachmentCount ?? 0 }];
       return opts.attachmentBatches[attachmentBatchIdx++] ?? [];
     }
+    if (table === storagePendingPurge)
+      return [{ id: `pending-purge-${++pendingPurgeIdx}` }];
     return [];
   }
 
   const tx = {
+    insert: (table: unknown) => ({
+      values: (values: unknown) => {
+        log.inserts.push({ table, values });
+        log.operations.push("insert");
+        const settled = Promise.resolve([]);
+        return { onConflictDoUpdate: () => settled };
+      },
+    }),
     select: (_cols: unknown) => ({
       from: (table: unknown) => ({
         where: (where: SQL) => {
@@ -89,6 +105,7 @@ function makeTx(opts: TxOptions): TxLog {
     delete: (table: unknown) => ({
       where: (where: SQL) => {
         log.deletes.push({ table, where });
+        log.operations.push("delete");
         return Promise.resolve([]);
       },
     }),
@@ -116,16 +133,25 @@ function settingsRow(
 async function buildSvc(): Promise<{
   svc: CronBuildProjectRetentionService;
   audit: { logCriticalOutsideTransaction: jest.Mock };
+  storage: { deleteFileIfPresent: jest.Mock };
+  pendingPurge: { markConfirmed: jest.Mock; markFailed: jest.Mock };
 }> {
   const audit = { logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined) };
+  const storage = { deleteFileIfPresent: jest.fn().mockResolvedValue(true) };
+  const pendingPurge = {
+    markConfirmed: jest.fn().mockResolvedValue(undefined),
+    markFailed: jest.fn().mockResolvedValue(undefined),
+  };
   const mod = await Test.createTestingModule({
     providers: [
       CronBuildProjectRetentionService,
       { provide: DRIZZLE, useValue: {} },
       { provide: AuditService, useValue: audit },
+      { provide: StorageService, useValue: storage },
+      { provide: StoragePendingPurgeService, useValue: pendingPurge },
     ],
   }).compile();
-  return { svc: mod.get(CronBuildProjectRetentionService), audit };
+  return { svc: mod.get(CronBuildProjectRetentionService), audit, storage, pendingPurge };
 }
 
 describe("build project retention — a project under legal hold is never purged", () => {
@@ -272,6 +298,63 @@ describe("build project retention — dry run is the default and destroys nothin
     );
     expect(source).toContain("logCriticalOutsideTransaction");
     expect(source).not.toMatch(/this\.audit\.logCritical\(/);
+  });
+});
+
+describe("build project retention — attachment objects use the pending-purge write-ahead ledger", () => {
+  it("records the default-bucket key before deleting metadata, then confirms after object deletion", async () => {
+    const log = makeTx({
+      settings: [settingsRow({ closedTicketRetentionDays: null })],
+      attachmentBatches: [[{ id: 21, storageKey: "org-1/build/7/files/report.pdf" }]],
+    });
+    const { svc, storage, pendingPurge } = await buildSvc();
+
+    const result = await svc.sweep({ confirm: true });
+
+    expect(result.attachmentsDeleted).toBe(1);
+    expect(log.inserts).toHaveLength(1);
+    expect(log.inserts[0]?.table).toBe(storagePendingPurge);
+    expect(log.inserts[0]?.values).toEqual([
+      {
+        orgId: "org-1",
+        storageKey: "org-1/build/7/files/report.pdf",
+        purpose: "build:project-attachment:retention",
+        bucket: "default",
+        status: "pending",
+      },
+    ]);
+    expect(log.deletes).toHaveLength(1);
+    expect(log.operations).toEqual(["insert", "delete"]);
+    expect(storage.deleteFileIfPresent).toHaveBeenCalledWith(
+      "org-1",
+      "org-1/build/7/files/report.pdf",
+      "default",
+    );
+    expect(pendingPurge.markConfirmed).toHaveBeenCalledWith(
+      "org-1",
+      "pending-purge-1",
+    );
+    expect(pendingPurge.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed object delete retryable after the metadata row is removed", async () => {
+    const log = makeTx({
+      settings: [settingsRow({ closedTicketRetentionDays: null })],
+      attachmentBatches: [[{ id: 22, storageKey: "org-1/build/7/files/fail.pdf" }]],
+    });
+    const { svc, storage, pendingPurge } = await buildSvc();
+    storage.deleteFileIfPresent.mockRejectedValue(new Error("R2 unavailable"));
+
+    await expect(svc.sweep({ confirm: true })).resolves.toMatchObject({ attachmentsDeleted: 1 });
+
+    expect(log.inserts).toHaveLength(1);
+    expect(log.deletes).toHaveLength(1);
+    expect(pendingPurge.markFailed).toHaveBeenCalledWith(
+      "org-1",
+      "pending-purge-1",
+      "Error: R2 unavailable",
+    );
+    expect(pendingPurge.markConfirmed).not.toHaveBeenCalled();
   });
 });
 

@@ -9,6 +9,9 @@ import type { TenantTx } from "../../common/tenant";
 import { projectRetentionSettings, projectStatuses, tickets } from "../../db/schema";
 import { projectAttachments } from "../../db/schema/build/project-attachments";
 import { organizationLegalHolds } from "../../db/schema/common/organization-purge";
+import { storagePendingPurge } from "../../db/schema/common/storage-pending-purge";
+import { StorageService } from "../storage/storage.service";
+import { StoragePendingPurgeService } from "../storage/storage-pending-purge.service";
 
 export const BUILD_PROJECT_RETENTION_SWEEP = "build-project-retention";
 export const BUILD_PROJECT_RETENTION_AUDIT_ACTION = "build.retention.purge";
@@ -19,6 +22,7 @@ const DELETE_BATCH_SIZE = 200;
 const SETTINGS_PAGE_SIZE = 200;
 
 export const BUILD_PROJECT_RETENTION_RUN_BUDGET = 5_000;
+const BUILD_ATTACHMENT_PURGE_PURPOSE = "build:project-attachment:retention";
 
 export type BuildRetentionEntity = "closed_tickets" | "project_attachments";
 
@@ -128,6 +132,8 @@ export class CronBuildProjectRetentionService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
+    private readonly pendingPurge: StoragePendingPurgeService,
   ) {}
 
   async sweep(
@@ -158,17 +164,20 @@ export class CronBuildProjectRetentionService {
         result.attachmentsWouldDelete >=
       BUILD_PROJECT_RETENTION_RUN_BUDGET;
     let lastVisitedOrgId: string | null = null;
+    const attachmentPurgeIds = new Map<string, Map<string, string>>();
 
     const outcome = await forEachOrg(
       this.db,
       BUILD_PROJECT_RETENTION_SWEEP,
       async (tx, orgId) => {
         lastVisitedOrgId = orgId;
-        await this.sweepOrg(tx, orgId, now, dryRun, result);
+        await this.sweepOrg(tx, orgId, now, dryRun, result, attachmentPurgeIds);
       },
       "write",
       { startAfterOrgId: this.resumeAfterOrgId, stopWhen: budgetSpent },
     );
+
+    await this.deleteAttachmentObjects(attachmentPurgeIds);
 
     result.organizations = outcome.organizations;
     result.organizationsFailed = outcome.failed;
@@ -197,6 +206,7 @@ export class CronBuildProjectRetentionService {
     now: Date,
     dryRun: boolean,
     result: BuildProjectRetentionPurgeResult,
+    attachmentPurgeIds: Map<string, Map<string, string>>,
   ): Promise<void> {
     if (await this.organizationHeld(tx, orgId)) {
       result.organizationsHeld += 1;
@@ -243,6 +253,7 @@ export class CronBuildProjectRetentionService {
           decision.projectId,
           decision.attachmentCutoff,
           dryRun,
+          attachmentPurgeIds,
         );
         result.attachmentsDeleted += counts.deleted;
         result.attachmentsWouldDelete += counts.wouldDelete;
@@ -345,6 +356,7 @@ export class CronBuildProjectRetentionService {
     projectId: number,
     cutoff: Date,
     dryRun: boolean,
+    attachmentPurgeIds: Map<string, Map<string, string>>,
   ): Promise<{ deleted: number; wouldDelete: number }> {
     const predicate = projectAttachmentPurgePredicate(orgId, projectId, cutoff);
 
@@ -360,7 +372,7 @@ export class CronBuildProjectRetentionService {
     let deleted = 0;
     for (;;) {
       const batch = await tx
-        .select({ id: projectAttachments.id })
+        .select({ id: projectAttachments.id, storageKey: projectAttachments.storageKey })
         .from(projectAttachments)
         .where(predicate)
         .orderBy(asc(projectAttachments.id))
@@ -368,6 +380,44 @@ export class CronBuildProjectRetentionService {
       if (batch.length === 0) break;
 
       const ids = batch.map((r) => r.id);
+      const keys = [...new Set(batch.map((r) => r.storageKey))];
+      await tx
+        .insert(storagePendingPurge)
+        .values(
+          keys.map((storageKey) => ({
+            orgId,
+            storageKey,
+            purpose: BUILD_ATTACHMENT_PURGE_PURPOSE,
+            bucket: "default" as const,
+            status: "pending",
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+          set: {
+            purpose: BUILD_ATTACHMENT_PURGE_PURPOSE,
+            bucket: "default",
+            status: "pending",
+            lastAttemptedAt: null,
+            failedReason: null,
+          },
+        });
+      const purgeIds = attachmentPurgeIds.get(orgId) ?? new Map<string, string>();
+      for (const storageKey of keys) {
+        const [purge] = await tx
+          .select({ id: storagePendingPurge.id })
+          .from(storagePendingPurge)
+          .where(
+            and(
+              eq(storagePendingPurge.orgId, orgId),
+              eq(storagePendingPurge.storageKey, storageKey),
+            ),
+          )
+          .limit(1);
+        if (!purge) throw new Error(`Pending purge row not found for ${storageKey}`);
+        purgeIds.set(storageKey, purge.id);
+      }
+      attachmentPurgeIds.set(orgId, purgeIds);
       await this.recordPurge(orgId, projectId, "project_attachments", cutoff, ids);
       await tx
         .delete(projectAttachments)
@@ -379,6 +429,34 @@ export class CronBuildProjectRetentionService {
       if (batch.length < DELETE_BATCH_SIZE) break;
     }
     return { deleted, wouldDelete: 0 };
+  }
+
+  private async deleteAttachmentObjects(
+    attachmentPurgeIds: Map<string, Map<string, string>>,
+  ): Promise<void> {
+    for (const [orgId, keyToPurgeId] of attachmentPurgeIds) {
+      for (const [storageKey, purgeId] of keyToPurgeId) {
+        try {
+          await this.storage.deleteFileIfPresent(orgId, storageKey, "default");
+        } catch (error) {
+          await this.pendingPurge
+            .markFailed(orgId, purgeId, String(error).slice(0, 1_000))
+            .catch(() => undefined);
+          this.logger.error(
+            `[${BUILD_PROJECT_RETENTION_SWEEP}] attachment object delete failed; pending purge retained`,
+            { orgId, storageKey, error: String(error) },
+          );
+          continue;
+        }
+
+        await this.pendingPurge.markConfirmed(orgId, purgeId).catch((error) => {
+          this.logger.error(
+            `[${BUILD_PROJECT_RETENTION_SWEEP}] attachment purge confirmation failed; pending purge retained`,
+            { orgId, storageKey, error: String(error) },
+          );
+        });
+      }
+    }
   }
 
   private async recordPurge(
