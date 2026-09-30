@@ -59,7 +59,7 @@ describe("ProjectsWriteService.updateProject — member removal reassignment", (
     const tx = makeTx(captured);
     const db = {
       transaction: jest.fn(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
-      query: { projects: { findFirst: jest.fn() }, organizationMembers: { findFirst: jest.fn() } },
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) }, organizationMembers: { findFirst: jest.fn() } },
     } as unknown as Db;
 
     const service = new ProjectsWriteService(

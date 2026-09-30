@@ -173,3 +173,38 @@ export async function assertProjectAccess(
   const { hasAccess } = await resolveProjectAccess(db, access, u, projectId, options);
   if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
 }
+
+export async function assertCanManageProject(
+  db: Db,
+  access: Pick<AccessService, "resolveUserPermissions">,
+  u: CurrentUserContext,
+  projectId: number,
+): Promise<void> {
+  const project = await db.query.projects.findFirst({
+    where: and(
+      eq(projects.id, projectId),
+      eq(projects.orgId, u.orgId),
+      isNull(projects.deletedAt),
+    ),
+    columns: { managerMembershipId: true },
+  });
+  if (!project) throw new NotFoundException("Project not found");
+  if (u.isOrgOwner) return;
+  const perms = await access.resolveUserPermissions(u.orgId, u.userId);
+  if (perms.has("build:manage")) return;
+  const callerMid = actingMembershipId(u.principal);
+  if (callerMid !== null && project.managerMembershipId === callerMid) return;
+  const [membership] = await db
+    .select({ role: projectMembers.role })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.orgId, u.orgId),
+        eq(projectMembers.projectId, projectId),
+        eq(projectMembers.membershipId, callerMid ?? -1),
+      ),
+    )
+    .limit(1);
+  if (membership?.role === "ADMIN") return;
+  throw new ForbiddenException("You do not have permission to manage this project");
+}
