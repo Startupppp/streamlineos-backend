@@ -4,7 +4,7 @@ import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import type { Db } from "../../../../db/drizzle.types";
 import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 import { assertTransitionAllowed, fetchTransitionsAndStatuses } from "./projects-tickets-workflow-utils";
-import type { readMutationTickets } from "../lib/build-ticket-mutation-policy";
+import type { readMutationTickets } from "../project-crud/project-access";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 
 type MutationRows = Awaited<ReturnType<typeof readMutationTickets>>;

@@ -6,7 +6,7 @@ import { AccessService } from "../../../access/access.service";
 import { humanSessionPrincipal, systemJobPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { assertProjectInOrg, resolveProjectAccess } from "./project-access";
-import { assertProjectAggregateAccess } from "./build-project-aggregate-access";
+import { assertProjectAggregateAccess } from "./project-access";
 
 jest.mock("./project-access", () => ({ resolveProjectAccess: jest.fn(), assertProjectInOrg: jest.fn() }));
 const projectAccess = jest.mocked(resolveProjectAccess);

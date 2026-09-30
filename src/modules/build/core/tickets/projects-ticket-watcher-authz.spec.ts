@@ -4,9 +4,9 @@ import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

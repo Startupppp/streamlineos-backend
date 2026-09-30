@@ -4,7 +4,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { AccessService } from "../../../access/access.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
@@ -14,7 +14,7 @@ import { ProjectsTicketRelationsService } from "./projects-ticket-relations.serv
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

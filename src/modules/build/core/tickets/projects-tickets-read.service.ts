@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   and,
   asc,
@@ -141,7 +141,7 @@ export class ProjectsTicketsReadService {
     const { hasAccess } = await cache.get(u.orgId, u.userId, projectId, () =>
       resolveProjectAccess(this.db, this.access, u, projectId),
     );
-    if (!hasAccess) throw new NotFoundException("Not found");
+    if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
 
     const read = await resolveTicketsScope(this.access, u);
 
@@ -386,7 +386,7 @@ export class ProjectsTicketsReadService {
     const { hasAccess } = await cache.get(u.orgId, u.userId, projectId, () =>
       resolveProjectAccess(this.db, this.access, u, projectId),
     );
-    if (!hasAccess) throw new NotFoundException("Not found");
+    if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
 
     const read = await resolveTicketsScope(this.access, u);
     if (read.denied) return {};

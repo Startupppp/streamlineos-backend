@@ -1,8 +1,15 @@
 export {
   assertProjectAccess,
+  assertProjectAggregateAccess,
   assertProjectInOrg,
+  assertTicketInProject,
+  assertTicketReadAccess,
+  authorizeTicketMutation,
+  lockProjectTicketMutation,
+  readMutationTickets,
   resolveProjectAccess,
   resolveProjectAssignableMemberships,
+  type TicketReadAccess,
 } from "./project-crud/project-access";
 export {
   buildCycleListHref,

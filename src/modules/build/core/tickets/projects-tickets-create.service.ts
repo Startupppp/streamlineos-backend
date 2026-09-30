@@ -31,7 +31,7 @@ import { computeNextRunAt } from "../lib/projects-recurrence.util";
 import { buildTicketHref, buildTicketKey } from "../lib/build-app-paths";
 import { normalizeTicketType } from "./tickets-helpers";
 import { AccessService } from "../../../access/access.service";
-import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
+import { assertProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
 import { withSavepoint } from "../../../data-quality/savepoint";
 import { BuildTicketCreationService } from "./build-ticket-creation.service";
 
@@ -54,8 +54,7 @@ export class ProjectsTicketsCreateService {
     projectId: number,
     body: CreateTicketInput,
   ) {
-    const { hasAccess } = await resolveProjectAccess(this.db, this.access, u, projectId);
-    if (!hasAccess) throw new NotFoundException("Not found");
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     if (body.status !== undefined)
       await this.query.validateTicketStatus(projectId, u.orgId, body.status);

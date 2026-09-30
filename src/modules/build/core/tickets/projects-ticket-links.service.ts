@@ -17,7 +17,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
-import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess, type TicketReadAccess } from "../project-crud/project-access";
 import type {
   AddRelatedLinkInput,
   UpdateRelatedLinkInput,

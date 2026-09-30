@@ -45,7 +45,7 @@ export class ProjectsTicketsTransferService {
       resolveProjectAccess(this.db, this.access, u, projectId),
       resolveTicketsScope(this.access, u),
     ]);
-    if (!hasAccess) throw new NotFoundException("Not found");
+    if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
     if (read.denied) return { rows: [], truncated: false };
 
     const ticketIdFilter =
@@ -106,7 +106,7 @@ export class ProjectsTicketsTransferService {
 
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
     const { hasAccess } = await resolveProjectAccess(this.db, this.access, u, projectId);
-    if (!hasAccess) throw new NotFoundException("Not found");
+    if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
     if (
       body.rows.some((row) => row.assigneeEmail !== undefined) &&
       !(await this.access.holds(u, "build:tickets:assign"))

@@ -3,9 +3,9 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsTicketsDeleteService } from "../tickets/projects-tickets-delete.service";
-import { assertTicketReadAccess } from "../tickets/build-ticket-read-access";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 
-jest.mock("../tickets/build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 
