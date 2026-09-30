@@ -108,4 +108,23 @@ describe("hr send-email hardening", () => {
     ).rejects.toThrow();
     expect(audit.log).not.toHaveBeenCalled();
   });
+
+  it("fills a candidate's name into the HTML body as text, not markup", async () => {
+    const audit = { log: jest.fn() };
+    const { controller, emailService } = makeController(audit);
+
+    await controller.send(
+      {
+        to: "candidate@example.com",
+        subject: "Hi {{name}}",
+        body: "<p>Dear {{name}},</p>",
+        variables: { name: '<a href="https://evil">Verify your offer</a>' },
+      },
+      user,
+    );
+
+    const sent = emailService.sendEmail.mock.calls[0]?.[0] as { html: string };
+    expect(sent.html).toBe("<p>Dear &lt;a href=&quot;https://evil&quot;&gt;Verify your offer&lt;/a&gt;,</p>");
+  });
 });
+
