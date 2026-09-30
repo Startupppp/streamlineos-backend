@@ -4,6 +4,8 @@ import { LoansService } from "./loans.service";
 import { resolveReimbursementsScope } from "./reimbursements-scope";
 import { REQUIRE_PERMISSION } from "../../access/require-permission.decorator";
 import { HrPayrollReimbursementsController } from "./reimbursements.controller";
+import { LoansController } from "./loans.controller";
+import type { ReimbursementsService } from "./reimbursements.service";
 import { isScopable } from "../../rbac/permissions";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -98,3 +100,34 @@ describe("the reimbursements list scope comes from the key that gates the route"
     expect(read.rawScope("spec reads the resolved scope")).toBe("own");
   });
 });
+
+// SEC-HRMS-011. Both routes treated hr:expenses:approve at ANY scope as org-wide authority, so a
+// manager whose grant is scoped to their team could approve any employee's loan or reimbursement.
+describe("a team-scoped expense approver is not an org-wide loan or reimbursement admin", () => {
+  const teamApprover = {
+    orgId: ORG,
+    userId: "user-manager",
+    isOrgOwner: false,
+    principal: humanSessionPrincipal(7, false),
+  } as CurrentUserContext;
+  const access = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Map([["hr:expenses:approve", "team"]])),
+  } as unknown as AccessService;
+
+  it("refuses the loan decision", async () => {
+    const loans = { updateLoan: jest.fn() } as unknown as LoansService;
+    await expect(
+      new LoansController(loans, access).update(LOAN_ID, { status: "APPROVED" }, teamApprover),
+    ).rejects.toThrow("Only admins can process loan status changes.");
+    expect(loans.updateLoan).not.toHaveBeenCalled();
+  });
+
+  it("refuses the reimbursement decision", async () => {
+    const reimbursements = { updateStatus: jest.fn() } as unknown as ReimbursementsService;
+    await expect(
+      new HrPayrollReimbursementsController(reimbursements, access).update(5, { status: "APPROVED" }, teamApprover),
+    ).rejects.toThrow("Only admins can process reimbursements.");
+    expect(reimbursements.updateStatus).not.toHaveBeenCalled();
+  });
+});
+

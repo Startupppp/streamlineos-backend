@@ -50,8 +50,10 @@ export class LoansController {
 
   private async isLoanAdmin(u: CurrentUserContext): Promise<boolean> {
     if (u.isOrgOwner) return true;
+    // Org-wide only. A team-scoped approver decides their reports' loans through the manager
+    // inbox, which checks the reporting line; here nothing does, so "any scope" meant every loan.
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    return perms.has("hr:expenses:approve");
+    return perms.get("hr:expenses:approve") === "all";
   }
 
   @Get()
