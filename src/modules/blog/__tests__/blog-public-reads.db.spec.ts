@@ -16,7 +16,6 @@ import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-// eslint-disable-next-line no-restricted-imports -- namespace needed for the Db type; no CRM identity table is referenced here
 import * as schema from "../../../db/schema";
 import { blogAuthors, blogCategories, blogPosts, blogRedirects } from "../../../db/schema";
 import { BlogService } from "../blog.service";

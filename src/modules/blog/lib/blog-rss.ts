@@ -5,7 +5,8 @@ const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&
 export function escapeXml(value: string): string {
   // Characters XML 1.0 forbids outright are dropped rather than escaped.
   return value
-    .replace(/[^\u0009\u000A\u000D -퟿-�\u{10000}-\u{10FFFF}]/gu, "")
+    // eslint-disable-next-line no-control-regex -- the allowlist names the three legal control characters
+    .replace(/[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu, "")
     .replace(/[&<>"']/g, (c) => XML_ESCAPES[c] ?? c);
 }
 
