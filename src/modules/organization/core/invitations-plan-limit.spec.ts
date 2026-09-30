@@ -20,14 +20,6 @@ import { invitations as invitationsTable } from "../../../db/schema";
 const ORG_ID = "org-abc";
 const ACTOR_ID = "user-xyz";
 const RAW_TOKEN = "c".repeat(64);
-/**
- * Accept has required an email verification code since the invitation link
- * stopped being accepted as proof of who holds it. Every accept in this file
- * carries one, because a call without it is refused before it reaches the plan
- * limit these tests are about — which is why they all errored silently once the
- * requirement landed.
- */
-const OTP_CODE = "123456";
 const BASE_INVITATION = {
   id: "inv-limit-1",
   email: "invitee@example.com",
@@ -45,11 +37,15 @@ const EXISTING_USER = {
   deletedAt: null,
 };
 
+const NEW_USER_OTP = "plan-limit-otp";
+const NEW_USER_OTP_HASH = hashToken(NEW_USER_OTP);
+
 type MockQuery = {
   users: { findFirst: jest.Mock };
   organizationMembers: { findFirst: jest.Mock };
   organizations: { findFirst: jest.Mock };
   invitations: { findFirst: jest.Mock };
+  invitationEmailOtps: { findFirst: jest.Mock };
 };
 
 /** `db` and the transaction handle must share one query object: the service reads
@@ -68,14 +64,7 @@ function buildQuery(): MockQuery {
       }),
     },
     invitations: { findFirst: jest.fn().mockResolvedValue(BASE_INVITATION) },
-    invitationEmailOtps: {
-      findFirst: jest.fn().mockResolvedValue({
-        id: 1,
-        invitationId: BASE_INVITATION.id,
-        codeHash: hashToken(OTP_CODE),
-        attempts: 0,
-      }),
-    },
+    invitationEmailOtps: { findFirst: jest.fn().mockResolvedValue(null) },
   };
 }
 
@@ -128,14 +117,10 @@ function buildMockDb() {
       }),
     }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
-    // `verifyAndConsumeInvitationOtp` runs on the db handle, not the tenant tx:
-    // it bumps the attempt counter, then marks the code used.
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
           returning: jest.fn().mockResolvedValue([{ attempts: 1 }]),
-          then: (resolve: (value: undefined) => unknown) =>
-            Promise.resolve(undefined).then(resolve),
         }),
       }),
     }),
@@ -244,6 +229,13 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
       const lastTable = fromCalls.at(-1)?.[0];
       return Promise.resolve(lastTable === invitationsTable ? [BASE_INVITATION] : []);
     });
+    mockDb.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 1,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      usedAt: null,
+    });
     mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 
     const module = await Test.createTestingModule({
@@ -255,15 +247,153 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
         { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
         { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined) } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
-        // Added when the invitation OTP landed. Without it Nest cannot construct
-        // the service, and every accept test in this file errored before it ran
-        // an assertion — which is how the whole accept surface went untested
-        // through the release that broke it.
-        { provide: EmailService, useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 
     svc = module.get(InvitationAcceptanceService);
+  });
+
+  it("rejects existing-user accept with invitee-friendly message when org is at member limit", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+    mockPlanLimits.assertWithinLimit.mockRejectedValue(
+      new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
+    );
+
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP })).rejects.toThrow(
+      "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+    );
+  });
+
+  it("rejects existing-user accept with ForbiddenException when org is at member limit", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+    mockPlanLimits.assertWithinLimit.mockRejectedValue(
+      new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
+    );
+
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("rejects new-user accept with invitee-friendly message when org is at member limit", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(null);
+    mockDb.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 1,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      usedAt: null,
+    });
+    mockPlanLimits.assertWithinLimit.mockRejectedValue(
+      new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
+    );
+
+    await expect(svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe", emailOtp: NEW_USER_OTP })).rejects.toThrow(
+      "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
+    );
+  });
+
+  it("existing-user accept succeeds when a seat is available", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+
+    const result = await svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP });
+
+    expect(result.ok).toBe(true);
+    expect(result.autoLoginToken).toBeDefined();
+    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(
+      ORG_ID,
+      "members",
+      0,
+      mockDb.universalTx,
+    );
+  });
+
+  it("new-user accept succeeds when a seat is available", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(null);
+    mockDb.query.invitationEmailOtps.findFirst.mockResolvedValue({
+      id: 1,
+      codeHash: NEW_USER_OTP_HASH,
+      attempts: 0,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      usedAt: null,
+    });
+
+    const result = await svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe", emailOtp: NEW_USER_OTP });
+
+    expect(result.ok).toBe(true);
+    expect(result.autoLoginToken).toBeDefined();
+    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(
+      ORG_ID,
+      "members",
+      0,
+      mockDb.universalTx,
+    );
+  });
+
+  it("calls assertWithinLimit with increment=0 (not increment=1) on accept", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+
+    await svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP });
+
+    const call = mockPlanLimits.assertWithinLimit.mock.calls[0];
+    expect(call[2]).toBe(0);
+    expect(call[3]).toBe(mockDb.universalTx);
+    expect(mockDb.universalTx.execute).toHaveBeenCalled();
+    expect(mockDb.universalTx.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPlanLimits.assertWithinLimit.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("does not insert member if limit check fails (no DB write on rejection)", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+    mockPlanLimits.assertWithinLimit.mockRejectedValue(
+      new ForbiddenException("limit exceeded"),
+    );
+
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("never accepts an invitation without an accepted membership id", async () => {
+    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+    mockDb.universalTx.insert.mockImplementation(() => ({
+      values: jest.fn().mockReturnValue({
+        onConflictDoNothing: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([]),
+        }),
+        returning: jest.fn().mockResolvedValue([]),
+      }),
+    }));
+
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it("rejects a concurrent loser before creating a membership", async () => {
+    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
+    mockDb.universalTx.limit.mockResolvedValue([]);
+
+    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: NEW_USER_OTP })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    expect(mockDb.universalTx.insert).not.toHaveBeenCalled();
   });
 
   /**
@@ -283,131 +413,5 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
       "An email verification code is required to accept this invitation",
     );
     expect(mockPlanLimits.assertWithinLimit).not.toHaveBeenCalled();
-  });
-
-  it("rejects existing-user accept with invitee-friendly message when org is at member limit", async () => {
-    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
-    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
-    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
-    mockPlanLimits.assertWithinLimit.mockRejectedValue(
-      new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
-    );
-
-    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toThrow(
-      "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
-    );
-  });
-
-  it("rejects existing-user accept with ForbiddenException when org is at member limit", async () => {
-    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
-    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
-    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
-    mockPlanLimits.assertWithinLimit.mockRejectedValue(
-      new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
-    );
-
-    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it("rejects new-user accept with invitee-friendly message when org is at member limit", async () => {
-    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
-    mockDb.query.users.findFirst.mockResolvedValue(null);
-    mockPlanLimits.assertWithinLimit.mockRejectedValue(
-      new ForbiddenException("Your Free plan allows 5 members. Upgrade your plan to add more."),
-    );
-
-    await expect(svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe", emailOtp: OTP_CODE })).rejects.toThrow(
-      "This organization has reached its member limit. Ask an admin to upgrade the plan or free a seat.",
-    );
-  });
-
-  it("existing-user accept succeeds when a seat is available", async () => {
-    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
-    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
-    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
-
-    const result = await svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE });
-
-    expect(result.ok).toBe(true);
-    expect(result.autoLoginToken).toBeDefined();
-    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(
-      ORG_ID,
-      "members",
-      0,
-      mockDb.universalTx,
-    );
-  });
-
-  it("new-user accept succeeds when a seat is available", async () => {
-    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
-    mockDb.query.users.findFirst.mockResolvedValue(null);
-
-    const result = await svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe", emailOtp: OTP_CODE });
-
-    expect(result.ok).toBe(true);
-    expect(result.autoLoginToken).toBeDefined();
-    expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledWith(
-      ORG_ID,
-      "members",
-      0,
-      mockDb.universalTx,
-    );
-  });
-
-  it("calls assertWithinLimit with increment=0 (not increment=1) on accept", async () => {
-    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
-    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
-    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
-
-    await svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE });
-
-    const call = mockPlanLimits.assertWithinLimit.mock.calls[0];
-    expect(call[2]).toBe(0);
-    expect(call[3]).toBe(mockDb.universalTx);
-    expect(mockDb.universalTx.execute).toHaveBeenCalled();
-    expect(mockDb.universalTx.execute.mock.invocationCallOrder[0]).toBeLessThan(
-      mockPlanLimits.assertWithinLimit.mock.invocationCallOrder[0] ?? 0,
-    );
-  });
-
-  it("does not insert member if limit check fails (no DB write on rejection)", async () => {
-    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
-    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
-    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
-    mockPlanLimits.assertWithinLimit.mockRejectedValue(
-      new ForbiddenException("limit exceeded"),
-    );
-
-    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it("never accepts an invitation without an accepted membership id", async () => {
-    mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
-    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
-    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
-    mockDb.universalTx.insert.mockImplementation(() => ({
-      values: jest.fn().mockReturnValue({
-        onConflictDoNothing: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([]),
-        }),
-        returning: jest.fn().mockResolvedValue([]),
-      }),
-    }));
-
-    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toBeInstanceOf(
-      ConflictException,
-    );
-  });
-
-  it("rejects a concurrent loser before creating a membership", async () => {
-    mockDb.query.users.findFirst.mockResolvedValue(EXISTING_USER);
-    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
-    mockDb.universalTx.limit.mockResolvedValue([]);
-
-    await expect(svc.accept({ token: RAW_TOKEN, emailOtp: OTP_CODE })).rejects.toBeInstanceOf(
-      ConflictException,
-    );
-
-    expect(mockDb.universalTx.insert).not.toHaveBeenCalled();
   });
 });

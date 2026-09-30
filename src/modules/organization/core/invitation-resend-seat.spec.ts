@@ -73,9 +73,17 @@ function buildUniversalTx(query: ReturnType<typeof buildQuery>) {
 function buildMockDb() {
   const query = buildQuery();
   const universalTx = buildUniversalTx(query);
+  const selectChain = {
+    from: jest.fn(),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  selectChain.from.mockReturnValue(selectChain);
+  selectChain.where.mockReturnValue(selectChain);
   return {
     universalTx,
     query,
+    select: jest.fn().mockReturnValue(selectChain),
     transaction: jest.fn().mockImplementation(
       (fn: (tx: typeof universalTx) => Promise<unknown>) => fn(universalTx),
     ),

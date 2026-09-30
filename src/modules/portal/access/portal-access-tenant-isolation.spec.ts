@@ -94,7 +94,7 @@ const GRANT = {
 describe("PortalAccessService — cross-tenant isolation (memberships)", () => {
   it("throws NotFoundException when membership belongs to a different org", async () => {
     const { db } = makeDb([]);
-    const svc = new PortalAccessService(db, audit as never);
+    const svc = new PortalAccessService(db, audit as never, null as never);
 
     await expect(
       svc.setMembershipStatus(ATTACKER_ORG, "user-1", "membership-99", { status: "SUSPENDED" }),
@@ -103,7 +103,7 @@ describe("PortalAccessService — cross-tenant isolation (memberships)", () => {
 
   it("scopes membership query to the requesting org (isolation)", async () => {
     const { db, where } = makeDb([]);
-    const svc = new PortalAccessService(db, audit as never);
+    const svc = new PortalAccessService(db, audit as never, null as never);
 
     await expect(
       svc.setMembershipStatus(ATTACKER_ORG, "user-1", "membership-99", { status: "SUSPENDED" }),
@@ -142,7 +142,7 @@ describe("PortalAccessService — cross-tenant isolation (memberships)", () => {
       }),
     } as unknown as Db;
 
-    const svc = new PortalAccessService(db, audit as never);
+    const svc = new PortalAccessService(db, audit as never, null as never);
     const result = await svc.setMembershipStatus(OWNER_ORG, "user-1", "membership-1", {
       status: "SUSPENDED",
     });
@@ -168,7 +168,7 @@ describe("PortalAccessService — cross-tenant isolation (memberships)", () => {
 describe("PortalAccessService — cross-tenant isolation (grants)", () => {
   it("scopes the grant read to the requesting org", async () => {
     const { db, selectWhere } = makeGrantDb([]);
-    const svc = new PortalAccessService(db, audit as never);
+    const svc = new PortalAccessService(db, audit as never, null as never);
 
     await expect(svc.getGrant(ATTACKER_ORG, "grant-99")).rejects.toThrow(NotFoundException);
 
@@ -178,7 +178,7 @@ describe("PortalAccessService — cross-tenant isolation (grants)", () => {
 
   it("refuses to update a grant owned by another org, and issues no UPDATE", async () => {
     const { db, selectWhere, update } = makeGrantDb([]);
-    const svc = new PortalAccessService(db, audit as never);
+    const svc = new PortalAccessService(db, audit as never, null as never);
 
     await expect(
       svc.updateGrant(ATTACKER_ORG, "user-1", "grant-99", { canViewTasks: true }),
@@ -191,7 +191,7 @@ describe("PortalAccessService — cross-tenant isolation (grants)", () => {
 
   it("scopes the grant UPDATE itself to the requesting org", async () => {
     const { db, updateWhere } = makeGrantDb([GRANT], [{ ...GRANT, canViewTasks: true }]);
-    const svc = new PortalAccessService(db, audit as never);
+    const svc = new PortalAccessService(db, audit as never, null as never);
 
     await svc.updateGrant(OWNER_ORG, "user-1", "grant-1", { canViewTasks: true });
 
@@ -201,7 +201,7 @@ describe("PortalAccessService — cross-tenant isolation (grants)", () => {
 
   it("refuses to revoke a grant owned by another org, and issues no UPDATE", async () => {
     const { db, selectWhere, update } = makeGrantDb([]);
-    const svc = new PortalAccessService(db, audit as never);
+    const svc = new PortalAccessService(db, audit as never, null as never);
 
     await expect(svc.revokeGrant(ATTACKER_ORG, "user-1", "grant-99")).rejects.toThrow(
       NotFoundException,
@@ -214,7 +214,7 @@ describe("PortalAccessService — cross-tenant isolation (grants)", () => {
 
   it("scopes the revoke UPDATE itself to the requesting org", async () => {
     const { db, updateWhere } = makeGrantDb([GRANT], [{ ...GRANT, status: "REVOKED" }]);
-    const svc = new PortalAccessService(db, audit as never);
+    const svc = new PortalAccessService(db, audit as never, null as never);
 
     const result = await svc.revokeGrant(OWNER_ORG, "user-1", "grant-1");
 

@@ -69,6 +69,7 @@ describe("InvitationCreateService.bulkInvite — email deduplication (P2)", () =
       actor.userId,
       "a@x.com",
       role,
+      [],
       "enqueue",
     );
 

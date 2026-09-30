@@ -292,11 +292,22 @@ export class ProjectsWriteService {
       await tx
         .update(ticketComments)
         .set({ deletedAt: now })
-        .where(sql`${ticketComments.ticketId} IN (${subTickets})`);
+        .where(
+          and(
+            sql`${ticketComments.ticketId} IN (${subTickets})`,
+            isNull(ticketComments.deletedAt),
+          ),
+        );
       await tx
         .update(tickets)
         .set({ deletedAt: now })
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+        .where(
+          and(
+            eq(tickets.projectId, projectId),
+            eq(tickets.orgId, orgId),
+            isNull(tickets.deletedAt),
+          ),
+        );
       await tx
         .update(projects)
         .set({ deletedAt: now })

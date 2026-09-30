@@ -185,6 +185,7 @@ export class UsersController {
       { userId: u.userId, isOrgOwner: u.isOrgOwner },
       body.email,
       body.role,
+      body.moduleAccess,
     );
   }
 

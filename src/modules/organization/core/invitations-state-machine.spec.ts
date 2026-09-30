@@ -48,6 +48,14 @@ describe("Invitation sub-services state transitions", () => {
     }),
     insert: jest.fn().mockReturnValue({ values: eventValues }),
   };
+  const dbSelectChain = {
+    from: jest.fn(),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  dbSelectChain.from.mockReturnValue(dbSelectChain);
+  dbSelectChain.where.mockReturnValue(dbSelectChain);
+  const dbSelect = jest.fn().mockReturnValue(dbSelectChain);
   const db = {
     query: {
       invitations: { findFirst: invitationFindFirst },
@@ -55,6 +63,7 @@ describe("Invitation sub-services state transitions", () => {
       organizationMembers: { findFirst: membershipFindFirst },
       users: { findFirst: userFindFirst },
     },
+    select: dbSelect,
     transaction: jest.fn(
       (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx),
     ),

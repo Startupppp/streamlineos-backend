@@ -261,6 +261,30 @@ export const roles = pgTable("roles", {
   ),
 ]);
 
+export const invitationModuleAccess = pgTable("invitation_module_access", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  invitationId: text("invitation_id").notNull(),
+  moduleKey: text("module_key").notNull(),
+  standing: text("standing").$type<"MEMBER" | "ADMIN">().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("uniq_ima_invitation_module").on(table.invitationId, table.moduleKey),
+  index("idx_ima_org_invitation").on(table.orgId, table.invitationId),
+  index("idx_ima_invitation_id").on(table.invitationId),
+  index("idx_ima_org_id").on(table.orgId),
+  foreignKey({
+    name: "fk_ima_invitation",
+    columns: [table.invitationId],
+    foreignColumns: [invitations.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    name: "fk_ima_org",
+    columns: [table.orgId],
+    foreignColumns: [organizations.id],
+  }).onDelete("cascade"),
+]);
+
 export const permissions = pgTable("permissions", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),

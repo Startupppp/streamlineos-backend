@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -14,14 +15,17 @@ import { runInConsumerSavepoint } from "../../../common/outbox/consumer-savepoin
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
+import { assertMayAssignRole } from "../../rbac/assert-role-assignment";
 import { type Db } from "../../../db/drizzle.module";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { lockMembersQuota } from "../../billing/core/seat-definition";
-import { invitationEvents, invitations } from "../../../db/schema";
+import { invitationEvents, invitationModuleAccess, invitations } from "../../../db/schema";
 import {
   findActorMembershipId,
   recordDeliveryFailure,
@@ -34,6 +38,11 @@ import {
   admissionFailure,
   canonicalAdmissionEmail,
 } from "./membership-admission.service";
+import {
+  resolveModuleStandingRole,
+  validateModuleKeyAndStanding,
+  type ModuleStanding,
+} from "../../rbac/resolve-module-standing-role";
 
 interface InvitationMutationResult {
   success: true;
@@ -73,9 +82,11 @@ export class InvitationCreateService {
     actor: InviteActor,
     email: string,
     role: string,
+    moduleAccess?: Array<{ moduleKey: string; standing: ModuleStanding }>,
   ): Promise<InvitationMutationResult> {
     await assertMayGrantRole(this.access, orgId, actor, role);
-    return this.inviteAuthorized(orgId, actor.userId, email.trim().toLowerCase(), role);
+    const validatedAccess = await this.validateModuleAccess(orgId, actor, moduleAccess);
+    return this.inviteAuthorized(orgId, actor.userId, email.trim().toLowerCase(), role, validatedAccess);
   }
 
   async bulkInvite(
@@ -112,7 +123,7 @@ export class InvitationCreateService {
 
       try {
         const result = await runInConsumerSavepoint(() =>
-          this.inviteAuthorized(orgId, actor.userId, canonicalEmail, role, delivery),
+          this.inviteAuthorized(orgId, actor.userId, canonicalEmail, role, [], delivery),
         );
         results.push({
           email: canonicalEmail,
@@ -138,6 +149,7 @@ export class InvitationCreateService {
     actorUserId: string,
     email: string,
     role: string,
+    moduleAccessRows: Array<{ moduleKey: string; standing: ModuleStanding }> = [],
     delivery: InvitationDelivery = "background",
   ): Promise<InvitationMutationResult> {
     const org = await requireActiveOrg(this.db, orgId);
@@ -191,6 +203,19 @@ export class InvitationCreateService {
           event: "RESENT",
           actorMembershipId: null,
         });
+
+        await tx.delete(invitationModuleAccess).where(eq(invitationModuleAccess.invitationId, pendingInvitation.id));
+
+        if (moduleAccessRows.length > 0) {
+          await tx.insert(invitationModuleAccess).values(
+            moduleAccessRows.map((row) => ({
+              orgId,
+              invitationId: pendingInvitation.id,
+              moduleKey: row.moduleKey,
+              standing: row.standing,
+            })),
+          );
+        }
 
         return { pendingInvitation, rawToken };
       },
@@ -281,6 +306,17 @@ export class InvitationCreateService {
             actorMembershipId: actorMembership?.id ?? null,
           });
 
+          if (moduleAccessRows.length > 0) {
+            await tx.insert(invitationModuleAccess).values(
+              moduleAccessRows.map((row) => ({
+                orgId,
+                invitationId,
+                moduleKey: row.moduleKey,
+                standing: row.standing,
+              })),
+            );
+          }
+
           await this.seatLedger.recordSeatEvent(
             {
               orgId,
@@ -329,6 +365,37 @@ export class InvitationCreateService {
       organizationName: org.name,
       resent: false,
     };
+  }
+
+  private async validateModuleAccess(
+    orgId: string,
+    actor: InviteActor,
+    moduleAccess: Array<{ moduleKey: string; standing: ModuleStanding }> | undefined,
+  ): Promise<Array<{ moduleKey: string; standing: ModuleStanding }>> {
+    if (!moduleAccess || moduleAccess.length === 0) return [];
+
+    const actorCtx: CurrentUserContext = {
+      userId: actor.userId,
+      orgId,
+      isOrgOwner: actor.isOrgOwner,
+      role: "MEMBER",
+      sessionId: "",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(0, actor.isOrgOwner),
+    };
+
+    for (const item of moduleAccess) {
+      validateModuleKeyAndStanding(item.moduleKey, item.standing);
+      const resolved = await resolveModuleStandingRole(this.db, orgId, item.moduleKey, item.standing);
+      if (!resolved) {
+        throw new BadRequestException(
+          `No seeded role found for module "${item.moduleKey}" with standing "${item.standing}"`,
+        );
+      }
+      await assertMayAssignRole(this.db, this.access, actorCtx, resolved);
+    }
+
+    return moduleAccess;
   }
 
   private async deliverInvitation(

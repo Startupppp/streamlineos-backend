@@ -15,6 +15,7 @@ import {
   users,
   organizationMembers,
 } from "../../../../db/schema";
+import { businessParties, clientPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AuditService } from "../../../../common/audit/audit.service";
@@ -385,18 +386,23 @@ export class ProjectsQueryService {
     });
     if (!project) throw new ProjectsNotFoundException();
 
-    const crmRows = await this.db.execute(
-      sql`SELECT cpm.client_id, bp.name AS client_name
-          FROM client_party_map cpm
-          JOIN business_parties bp ON bp.id = cpm.party_id
-          JOIN build.projects p ON p.crm_client_id = cpm.client_id
-          WHERE p.id = ${projectId} AND p.org_id = ${orgId}`,
-    );
-    const crmRow = crmRows[0];
-    const crmClient = crmRow
-      ? { id: Number(crmRow["client_id"]), name: (crmRow["client_name"] ?? null) as string | null }
-      : null;
+    return { ...project, crmClient: await this.findCrmClient(orgId, project.crmClientId) };
+  }
 
-    return { ...project, crmClient };
+  private async findCrmClient(orgId: string, clientId: number | null | undefined) {
+    if (clientId === null || clientId === undefined) return null;
+    const [row] = await this.db
+      .select({ id: clientPartyMap.clientId, name: businessParties.name })
+      .from(clientPartyMap)
+      .innerJoin(
+        businessParties,
+        and(
+          eq(businessParties.partyId, clientPartyMap.partyId),
+          eq(businessParties.organizationId, clientPartyMap.organizationId),
+        ),
+      )
+      .where(and(eq(clientPartyMap.organizationId, orgId), eq(clientPartyMap.clientId, clientId)))
+      .limit(1);
+    return row ?? null;
   }
 }

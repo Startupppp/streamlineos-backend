@@ -26,10 +26,15 @@ import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { lockMembersQuota } from "../../billing/core/seat-definition";
 import {
   invitationEvents,
+  invitationModuleAccess,
   invitations,
   users,
 } from "../../../db/schema";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
+import { assertMayAssignRole } from "../../rbac/assert-role-assignment";
+import { resolveModuleStandingRole } from "../../rbac/resolve-module-standing-role";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
   findActorMembershipId,
   invitationTransition,
@@ -77,6 +82,30 @@ export class InvitationLifecycleService {
       throw new NotFoundException("Invitation not found or already accepted");
 
     await assertMayManageOrganizationMembership(this.access, orgId, actor);
+
+    const attachedAccess = await this.db
+      .select({ moduleKey: invitationModuleAccess.moduleKey, standing: invitationModuleAccess.standing })
+      .from(invitationModuleAccess)
+      .where(eq(invitationModuleAccess.invitationId, invitationId))
+      .limit(10);
+
+    if (attachedAccess.length > 0) {
+      const actorCtx: CurrentUserContext = {
+        userId: actor.userId,
+        orgId,
+        isOrgOwner: actor.isOrgOwner,
+        role: "MEMBER",
+        sessionId: "",
+        tokenScopes: null,
+        principal: humanSessionPrincipal(0, actor.isOrgOwner),
+      };
+      for (const row of attachedAccess) {
+        const resolved = await resolveModuleStandingRole(this.db, orgId, row.moduleKey, row.standing);
+        if (resolved) {
+          await assertMayAssignRole(this.db, this.access, actorCtx, resolved);
+        }
+      }
+    }
 
     const rawToken = randomBytes(32).toString("hex");
     const newExpiresAt = addDays(new Date(), 7);

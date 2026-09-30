@@ -7204,6 +7204,13 @@
       "when": 1803093644725,
       "tag": "1701_build_project_crm_client",
       "breakpoints": true
+    },
+    {
+      "idx": 1157,
+      "version": "7",
+      "when": 1803093645725,
+      "tag": "1702_invitation_module_access",
+      "breakpoints": true
     }
   ]
 }

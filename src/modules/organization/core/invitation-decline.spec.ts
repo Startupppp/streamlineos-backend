@@ -6,6 +6,8 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 
 const PENDING_INVITATION = {
@@ -81,10 +83,9 @@ describe("InvitationAcceptanceService.decline", () => {
           },
         },
         { provide: NotificationDispatchService, useValue: { emit } },
-        // Added to the service when the invitation OTP landed; without it Nest
-          // cannot construct it and every decline test here errored before
-          // asserting anything.
-        { provide: EmailService, useValue: { sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined), sendEmailOtpEmail: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
 
