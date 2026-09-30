@@ -30,18 +30,31 @@ interface SelectBuilder {
   limit: jest.Mock;
 }
 
-function makeSelectDb(rows: unknown[]) {
+function makeSelectDb(rows: unknown[], templateTicketRows: unknown[] = []) {
   const where = jest.fn();
-  const builder: SelectBuilder = {
-    from: jest.fn(() => builder),
+  const templateBuilder: SelectBuilder = {
+    from: jest.fn(() => templateBuilder),
     where: jest.fn((condition: unknown) => {
       where(condition);
-      return builder;
+      return templateBuilder;
     }),
-    orderBy: jest.fn(() => builder),
+    orderBy: jest.fn(() => templateBuilder),
     limit: jest.fn(() => Promise.resolve(rows)),
   };
-  const db = { select: jest.fn(() => builder) } as unknown as Db;
+  const ticketBuilder = {
+    from: jest.fn(() => ticketBuilder),
+    where: jest.fn((condition: unknown) => {
+      where(condition);
+      return ticketBuilder;
+    }),
+    orderBy: jest.fn(() => Promise.resolve(templateTicketRows)),
+  };
+  const db = {
+    select: jest
+      .fn()
+      .mockReturnValueOnce(templateBuilder)
+      .mockReturnValueOnce(ticketBuilder),
+  } as unknown as Db;
   return { db, where };
 }
 
