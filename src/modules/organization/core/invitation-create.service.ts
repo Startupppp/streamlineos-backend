@@ -95,11 +95,15 @@ export class InvitationCreateService {
     emails: string[],
     role: string,
     delivery: InvitationDelivery = "background",
+    moduleAccess?: Array<{ moduleKey: string; standing: ModuleStanding }>,
   ): Promise<{
     deliveryMode: InvitationDelivery;
     results: BulkInviteRowResult[];
   }> {
     await assertMayGrantRole(this.access, orgId, actor, role);
+    // Validated once for the batch: one actor, one set of standings. A standing
+    // the actor may not grant refuses the whole batch rather than every row.
+    const validatedAccess = await this.validateModuleAccess(orgId, actor, moduleAccess);
 
     const results: BulkInviteRowResult[] = [];
     const seenCanonical = new Map<string, number>();
@@ -123,7 +127,7 @@ export class InvitationCreateService {
 
       try {
         const result = await runInConsumerSavepoint(() =>
-          this.inviteAuthorized(orgId, actor.userId, canonicalEmail, role, [], delivery),
+          this.inviteAuthorized(orgId, actor.userId, canonicalEmail, role, validatedAccess, delivery),
         );
         results.push({
           email: canonicalEmail,

@@ -198,7 +198,14 @@ export class UsersController {
     @Body() body: BulkInviteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitationsCreate.bulkInvite(u.orgId, { userId: u.userId, isOrgOwner: u.isOrgOwner }, body.emails, body.role);
+    return this.invitationsCreate.bulkInvite(
+      u.orgId,
+      { userId: u.userId, isOrgOwner: u.isOrgOwner },
+      body.emails,
+      body.role,
+      undefined,
+      body.moduleAccess,
+    );
   }
 
   @RequirePermission("settings:organization:manage")
