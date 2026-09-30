@@ -94,6 +94,9 @@ async function seedOrg(org, owner) {
       values (${org}, ${"primary"}, ${"legacy-1"}, ${"primary"}, ${"auto"}, ${"primary"}, ${randomUUID()}, ${new Date(Date.now() + 86400_000)}, ${"ACTIVE"})
     `;
     await tx`insert into org_modules (org_id, module_key, enabled) values (${org}, ${"hr"}, true)`;
+    // The per-org ladder role a module standing resolves to; boot seeding runs for
+    // real organisations, not for rows inserted behind its back.
+    await tx`insert into roles (name, slug, org_id, is_system, module_key, rank) values (${"HR Module Member"}, ${"HR_MODULE_MEMBER"}, ${org}, true, ${"hr"}, 40)`;
   });
 }
 
@@ -255,6 +258,19 @@ try {
     declinedRows.every((row) => row.status === "DECLINED") &&
       (await sql`select id from users where email = ${declineEmail}`).length === 0,
     JSON.stringify(declinedRows));
+
+  // BUG-HRMS-003: a bulk invite carries module standings to every row it creates.
+  const bulkEmails = [`bulk1.${RUN}@allowed.test`, `bulk2.${RUN}@allowed.test`];
+  const bulk = await api(tokenB, "POST", "/users/bulk-invite", {
+    emails: bulkEmails, role: "MEMBER", moduleAccess: [{ moduleKey: "hr", standing: "MEMBER" }],
+  });
+  const bulkAccess = await sql`
+    select i.email, a.module_key, a.standing from invitation_module_access a
+    join invitations i on i.id = a.invitation_id
+    where i.email in ${sql(bulkEmails)} order by i.email`;
+  check("a bulk invite stores the module standing on every invitation",
+    bulk.status < 300 && bulkAccess.length === 2 && bulkAccess.every((r) => r.module_key === "hr" && r.standing === "MEMBER"),
+    `status=${bulk.status} ${JSON.stringify(bulk.body).slice(0, 200)} rows=${JSON.stringify(bulkAccess)}`);
 
   const resendEmail = `resend.${RUN}@allowed.test`;
   const resendInvite = await api(tokenB, "POST", "/users/invite", { email: resendEmail, role: "MEMBER" });
