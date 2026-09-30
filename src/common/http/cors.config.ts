@@ -50,6 +50,10 @@ export const CORS_EXPOSED_HEADERS = [
   "content-disposition",
   "x-has-more",
   "x-next-cursor",
+  // Every 429 sets it. Unexposed, `headers.get("retry-after")` is null cross-origin and the
+  // notification stream retried its token endpoint on a 1s backoff straight back into the limit
+  // (SEC-HRMS-005).
+  "retry-after",
 ] as const;
 
 export function corsOptions(options: {

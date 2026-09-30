@@ -58,4 +58,10 @@ describe("CORS is registered before any middleware that can answer on its own", 
       expect(res.headers["access-control-allow-origin"]).toBe(ORIGIN);
     });
   });
+
+  // SEC-HRMS-005: a 429's Retry-After was unreadable cross-origin, so clients backed off 1s.
+  it("lets a cross-origin client read Retry-After", () => {
+    const options = corsOptions({ origins: [ORIGIN], isDevelopment: false });
+    expect(options.exposedHeaders).toEqual(expect.arrayContaining(["retry-after"]));
+  });
 });
