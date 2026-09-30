@@ -76,7 +76,7 @@ export class MeController {
     @Body() body: UpdateProfileInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ success: true }> {
-    return this.meService.updateProfile(user.userId, user.orgId ?? null, body);
+    return this.meService.updateProfile(user.userId, body);
   }
 
   @Get("login-history")

@@ -75,7 +75,7 @@ describe("MeService.updateProfile invalidates the cached session payload", () =>
   it("ANTI-VACUITY: the transaction callback really runs and writes the fields", async () => {
     const call: TransactionCall = { invoked: false, setFields: null };
     const invalidated: string[] = [];
-    await buildService(call, invalidated).updateProfile(userId, "org-1", {
+    await buildService(call, invalidated).updateProfile(userId, {
       name: "Renamed",
     });
     expect(call.invoked).toBe(true);
@@ -85,7 +85,7 @@ describe("MeService.updateProfile invalidates the cached session payload", () =>
   it("busts the session key when the display name changes", async () => {
     const call: TransactionCall = { invoked: false, setFields: null };
     const invalidated: string[] = [];
-    await buildService(call, invalidated).updateProfile(userId, "org-1", {
+    await buildService(call, invalidated).updateProfile(userId, {
       name: "Renamed",
     });
     expect(invalidated).toEqual([sessionKey]);
@@ -94,7 +94,7 @@ describe("MeService.updateProfile invalidates the cached session payload", () =>
   it("busts the session key when the avatar changes", async () => {
     const call: TransactionCall = { invoked: false, setFields: null };
     const invalidated: string[] = [];
-    await buildService(call, invalidated).updateProfile(userId, "org-1", {
+    await buildService(call, invalidated).updateProfile(userId, {
       image: "https://cdn.example.com/a.png",
     });
     expect(invalidated).toEqual([sessionKey]);
@@ -103,7 +103,7 @@ describe("MeService.updateProfile invalidates the cached session payload", () =>
   it("busts the session key when first and last name change", async () => {
     const call: TransactionCall = { invoked: false, setFields: null };
     const invalidated: string[] = [];
-    await buildService(call, invalidated).updateProfile(userId, "org-1", {
+    await buildService(call, invalidated).updateProfile(userId, {
       firstName: "Ada",
       lastName: "Lovelace",
     });
@@ -113,7 +113,7 @@ describe("MeService.updateProfile invalidates the cached session payload", () =>
   it("busts again after the ambient transaction commits, not only before it", async () => {
     const call: TransactionCall = { invoked: false, setFields: null };
     const invalidated: string[] = [];
-    await buildService(call, invalidated).updateProfile(userId, "org-1", {
+    await buildService(call, invalidated).updateProfile(userId, {
       name: "Renamed",
     });
     expect(invalidated).toEqual([sessionKey]);
@@ -126,7 +126,7 @@ describe("MeService.updateProfile invalidates the cached session payload", () =>
     ambientContextPresent = false;
     const call: TransactionCall = { invoked: false, setFields: null };
     const invalidated: string[] = [];
-    await buildService(call, invalidated).updateProfile(userId, "org-1", {
+    await buildService(call, invalidated).updateProfile(userId, {
       name: "Renamed",
     });
     expect(afterCommitHooks).toHaveLength(0);
@@ -136,7 +136,7 @@ describe("MeService.updateProfile invalidates the cached session payload", () =>
   it("does not bust for a field the session payload never carries", async () => {
     const call: TransactionCall = { invoked: false, setFields: null };
     const invalidated: string[] = [];
-    await buildService(call, invalidated).updateProfile(userId, "org-1", {
+    await buildService(call, invalidated).updateProfile(userId, {
       phone: "+911234567890",
     });
     expect(call.setFields).toEqual({ phone: "+911234567890" });

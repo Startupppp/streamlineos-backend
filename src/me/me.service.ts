@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Inject,
   Injectable,
   NotFoundException,
@@ -12,7 +11,6 @@ import type { UpdateProfileInput } from "./dto/me.schemas";
 import { withClientInfo } from "../common/http/parse-user-agent";
 import { readOrgDisplay, type OrgDisplay } from "./org-display";
 import { EmploymentFactsService } from "../modules/directory/employment-facts.service";
-import { syncCanonicalSensitiveFields } from "../common/hr/sync-canonical-sensitive-fields";
 import { CacheService } from "../common/cache/cache.service";
 import { CACHE_KEYS } from "../common/cache/cache-keys";
 import { registerAfterCommit } from "../common/tenant/tenant-context";
@@ -66,7 +64,6 @@ export class MeService {
 
   async updateProfile(
     userId: string,
-    orgId: string | null,
     input: UpdateProfileInput,
   ): Promise<{ success: true }> {
     const setFields = {
@@ -82,19 +79,9 @@ export class MeService {
       ...(input.emergencyContact !== undefined ? { emergencyContact: input.emergencyContact } : {}),
     };
 
-    if (input.bankDetails !== undefined && !orgId)
-      throw new BadRequestException(
-        "Bank details belong to an organization — select a workspace first",
-      );
-
     await this.db.transaction(async (tx) => {
       if (Object.keys(setFields).length > 0)
         await tx.update(users).set(setFields).where(eq(users.id, userId));
-
-      if (input.bankDetails !== undefined && orgId)
-        await syncCanonicalSensitiveFields(tx, orgId, userId, {
-          bankDetails: input.bankDetails,
-        });
     });
 
     const touchesSession = SESSION_PROJECTED_PROFILE_FIELDS.some(
