@@ -20,6 +20,7 @@ import {
   flattenMessageSender,
 } from "./chat-message-sender-shape";
 import { assertEntityAccess } from "./chat-channel-authorization";
+import { MESSAGE_REACTIONS_WITH, foldReactions } from "./chat-message-reaction-shape";
 
 @Injectable()
 export class ChatPinsService {
@@ -66,6 +67,7 @@ export class ChatPinsService {
           with: {
             senderMembership: SENDER_MEMBERSHIP_WITH_USER,
             attachments: true,
+            reactions: MESSAGE_REACTIONS_WITH,
           },
         },
         pinnedByMembership: {
@@ -77,7 +79,11 @@ export class ChatPinsService {
 
     const resolved = await this.entities.withResolvedReferences(
       actor,
-      rows.map((row) => flattenMessageSender(row.message)),
+      // `chatPinItemSchema` declares `reactions`; the list never loaded them.
+      rows.map((row) => {
+        const { reactions, ...message } = row.message;
+        return { ...flattenMessageSender(message), reactions: foldReactions(reactions) };
+      }),
     );
     return rows.map((row, index) => {
       const { pinnedByMembership, ...pin } = row;
