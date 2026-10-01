@@ -22,7 +22,7 @@ export default [
     summary:
       "GET /build/:projectId/import-export/tickets/export. An export is the highest-value target here and it is the best-bound handler of the six. The tenant predicate is not written by this service at all: ScopedRead mints an unforgeable where-token whose first clause is eq(tickets.orgId, actor.orgId), and the token class is unexported with a private field so no call site can hand-roll a where that omits it. The URL project is AND-ed into the same token, the caller's DataScope narrows further, a `none` scope short-circuits to an empty array, and the read is capped. The permission key on the route matches the key the row scope resolves.",
     blastRadius:
-      "None: the caller-supplied ticketIds filter is an additional narrowing clause, so foreign ids intersect to zero rows rather than overriding the org and project predicates.",
+      "None: the caller-supplied ticketIds filter is an additional narrowing clause that cannot override the org and project predicates, and a list naming any id outside the caller's tenant, project or scope fails whole with 404 rather than exporting the visible subset.",
     evidence: [
       { file: "src/modules/build/import-export/ticket-import-export.controller.ts", line: 83, anchor: /return this\.exports\.exportTickets\(u, projectId, query\);/, note: "the complete authenticated actor reaches the service" },
       { file: "src/modules/build/import-export/ticket-export.service.ts", line: 53, anchor: /const read = await authorizeProjectTicketRead\(this\.db, this\.access, u, projectId\);/, note: "project-access enforces project membership and issues the ticket ScopedRead before the read" },
