@@ -15,6 +15,7 @@ interface Captured {
 function buildDb(captured: Captured) {
   const builder: Record<string, unknown> = {
     from: jest.fn(),
+    leftJoin: jest.fn(),
     where: jest.fn((cond: unknown) => {
       captured.where = cond;
       return builder;
@@ -23,6 +24,7 @@ function buildDb(captured: Captured) {
     limit: jest.fn().mockResolvedValue([]),
   };
   (builder.from as jest.Mock).mockReturnValue(builder);
+  (builder.leftJoin as jest.Mock).mockReturnValue(builder);
   return { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
 }
 
