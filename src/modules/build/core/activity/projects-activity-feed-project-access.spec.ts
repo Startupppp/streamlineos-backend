@@ -24,10 +24,19 @@ const caller: CurrentUserContext = {
 
 type Standing = "member" | "non-member" | "foreign";
 
+type QueryChain = {
+  from: jest.Mock;
+  innerJoin: jest.Mock;
+  leftJoin: jest.Mock;
+  where: jest.Mock;
+  orderBy: jest.Mock;
+  limit: jest.Mock;
+};
+
 async function build(standing: Standing, ticketScope: "all" | "own" = "all") {
   const feedWheres: SQL[] = [];
   const select = jest.fn((projection: Record<string, unknown>) => {
-    const chain = {
+    const chain: QueryChain = {
       from: jest.fn(),
       innerJoin: jest.fn(),
       leftJoin: jest.fn(),

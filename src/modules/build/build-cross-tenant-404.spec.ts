@@ -6,6 +6,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { AccessService } from "../access/access.service";
+import { stubService } from "../../test/service-stub.spec-fixtures";
 
 
 function txDb(deleted: Array<{ id: number }>) {
@@ -34,9 +35,9 @@ function ownerOf(orgId: string): CurrentUserContext {
   };
 }
 
-const access: Pick<AccessService, "resolveUserPermissions"> = {
+const access = stubService<AccessService>({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-};
+});
 
 describe("build — a delete that matched no row answers 404, not 204", () => {
   const ATTACKER_ORG = "org-attacker";

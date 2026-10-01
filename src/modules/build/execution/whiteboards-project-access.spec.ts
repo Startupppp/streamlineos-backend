@@ -47,11 +47,20 @@ const PROJECT_BOARD = {
   updatedAt: new Date("2026-09-01T00:00:00.000Z"),
 };
 
+type QueryChain = {
+  from: jest.Mock;
+  innerJoin: jest.Mock;
+  leftJoin: jest.Mock;
+  where: jest.Mock;
+  orderBy: jest.Mock;
+  limit: jest.Mock;
+};
+
 async function build(standing: Standing) {
   const listWheres: SQL[] = [];
   const select = jest.fn((projection: Record<string, unknown>) => {
     const rows = "board" in projection ? [{ board: PROJECT_BOARD, shareRole: null }] : [];
-    const chain = {
+    const chain: QueryChain = {
       from: jest.fn(),
       leftJoin: jest.fn(),
       innerJoin: jest.fn(),

@@ -4,6 +4,7 @@ import { drizzlePostgresError } from "../../../test/postgres-error-fixture";
 import type { Db } from "../../../db/drizzle.module";
 import { cycleStatusEnum } from "../../../db/schema/common/enums";
 import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { UpdateCycleInput } from "./dto/iterations.schemas";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -23,7 +24,7 @@ const ACTOR: CurrentUserContext = {
 };
 
 const CREATE_INPUT = { name: "Q4 Sprint", startDate: "2026-10-01", endDate: "2026-10-14" };
-const UPDATE_INPUT_ACTIVE = { status: "active" as const, version: 1 };
+const UPDATE_INPUT_ACTIVE: UpdateCycleInput = { status: "active", version: 1, startDate: undefined, endDate: undefined };
 const UPDATE_INPUT_DATES = { startDate: "2026-10-01", endDate: "2026-10-14", version: 1 };
 
 type CycleRowStatus = (typeof cycleStatusEnum.enumValues)[number];

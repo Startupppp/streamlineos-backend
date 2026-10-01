@@ -320,7 +320,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(ORG), PROJECT_A, MODULE_B, { name: "hijacked", version: 1 }),
+      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(ORG), PROJECT_A, MODULE_B, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_B)?.name).toBe("module-b");
   });
@@ -330,7 +330,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(ORG), PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1 }),
+      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(ORG), PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1, startDate: undefined, endDate: undefined }),
     ).resolves.toMatchObject({ id: MODULE_A, name: "module-a-v2" });
   });
 
@@ -339,7 +339,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(OTHER_ORG), PROJECT_A, MODULE_A, { name: "hijacked", version: 1 }),
+      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(OTHER_ORG), PROJECT_A, MODULE_A, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_A)?.name).toBe("module-a");
   });

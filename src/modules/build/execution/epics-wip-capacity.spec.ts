@@ -40,7 +40,7 @@ it("refuses an epic when its destination column has no remaining capacity", asyn
     { provide: AccessService, useValue: {} },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic" }))
+    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .rejects.toThrow("WIP limit");
   } finally {
     await module.close();
@@ -68,7 +68,7 @@ it.each([false, true])("refuses a missing destination with configured workflow=%
     { provide: AccessService, useValue: {} },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic" }))
+    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .rejects.toThrow("no longer exists");
   } finally {
     await module.close();
@@ -98,7 +98,7 @@ it("permits an existing unlimited destination", async () => {
     { provide: AccessService, useValue: {} },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic" }))
+    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .resolves.toMatchObject({ id: 10, title: "Epic" });
   } finally {
     await module.close();

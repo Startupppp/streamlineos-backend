@@ -107,7 +107,7 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
     } as unknown as Db;
     const svc = await epicsService(db);
 
-    await expect(svc.createEpic(owner(ATTACKER_ORG), 1, { title: "Epic" })).rejects.toThrow(NotFoundException);
+    await expect(svc.createEpic(owner(ATTACKER_ORG), 1, { title: "Epic", startDate: undefined, dueDate: undefined })).rejects.toThrow(NotFoundException);
 
     expect(transaction).not.toHaveBeenCalled();
     const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
@@ -124,7 +124,7 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
     } as unknown as Db;
     const svc = await epicsService(db);
 
-    await expect(svc.createEpic(owner(OWNER_ORG), 999, { title: "Epic" })).rejects.toThrow(NotFoundException);
+    await expect(svc.createEpic(owner(OWNER_ORG), 999, { title: "Epic", startDate: undefined, dueDate: undefined })).rejects.toThrow(NotFoundException);
 
     expect(transaction).not.toHaveBeenCalled();
   });
@@ -142,7 +142,7 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
     } as unknown as Db;
     const svc = await epicsService(db, ticketCreation);
 
-    const result = await svc.createEpic(owner(OWNER_ORG), 1, { title: "Epic" });
+    const result = await svc.createEpic(owner(OWNER_ORG), 1, { title: "Epic", startDate: undefined, dueDate: undefined });
 
     expect(result).toEqual(fakeEpic);
     expect(ticketCreation.create).toHaveBeenCalledTimes(1);
@@ -281,7 +281,7 @@ describe("CyclesService — cross-project scope within one org — updateCycle",
     } as unknown as Db;
     const svc = await cyclesService(db);
 
-    await svc.updateCycle(owner(OWNER_ORG), 7, 99, { version: 1, name: "Renamed" });
+    await svc.updateCycle(owner(OWNER_ORG), 7, 99, { version: 1, name: "Renamed", startDate: undefined, endDate: undefined });
 
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(7);
   });
@@ -294,7 +294,7 @@ describe("CyclesService — cross-project scope within one org — updateCycle",
     } as unknown as Db;
     const svc = await cyclesService(db);
 
-    await expect(svc.updateCycle(owner(ATTACKER_ORG), 7, 99, { name: "Renamed", version: 1 })).rejects.toThrow(NotFoundException);
+    await expect(svc.updateCycle(owner(ATTACKER_ORG), 7, 99, { name: "Renamed", version: 1, startDate: undefined, endDate: undefined })).rejects.toThrow(NotFoundException);
     expect(db.update).not.toHaveBeenCalled();
   });
 });
