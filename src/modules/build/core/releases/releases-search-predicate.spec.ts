@@ -1,6 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsReleasesService } from "./projects-releases.service";
-import type { AccessService } from "../../../modules/access/access.service";
+import type { AccessService } from "../../../access/access.service";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { Db } from "../../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";

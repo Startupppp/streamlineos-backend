@@ -51,7 +51,7 @@ describe("MilestonesService.listMilestones — search predicate shape (BE-49)", 
   it("uses a trailing-wildcard pattern, not a leading wildcard, so the milestone name column can use a prefix index rather than a full scan over the project's milestone rows", async () => {
     const captured: Captured = { where: undefined };
     const svc = new MilestonesService(buildDb(captured), mockAccess, mockAudit);
-    await svc.listMilestones(makeOwner("org-1"), 1, { q: "beta" });
+    await svc.listMilestones(makeOwner("org-1"), 1, { limit: 20, q: "beta" });
     const { sql, params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).toContain("ilike");
     const likeParams = params.filter((p): p is string => typeof p === "string" && p.includes("%"));
@@ -62,7 +62,7 @@ describe("MilestonesService.listMilestones — search predicate shape (BE-49)", 
   it("appends a trailing % so a search for 'beta' finds 'Beta Launch' — the name begins with the typed term", async () => {
     const captured: Captured = { where: undefined };
     const svc = new MilestonesService(buildDb(captured), mockAccess, mockAudit);
-    await svc.listMilestones(makeOwner("org-1"), 1, { q: "beta" });
+    await svc.listMilestones(makeOwner("org-1"), 1, { limit: 20, q: "beta" });
     const { params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     const likeParam = params.find((p): p is string => typeof p === "string" && p.endsWith("%"));
     expect(likeParam).toBe("beta%");
@@ -71,7 +71,7 @@ describe("MilestonesService.listMilestones — search predicate shape (BE-49)", 
   it("omits the ilike predicate when no q is given so all milestones in the project are returned", async () => {
     const captured: Captured = { where: undefined };
     const svc = new MilestonesService(buildDb(captured), mockAccess, mockAudit);
-    await svc.listMilestones(makeOwner("org-1"), 1, {});
+    await svc.listMilestones(makeOwner("org-1"), 1, { limit: 20 });
     const { sql } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).not.toContain("ilike");
   });

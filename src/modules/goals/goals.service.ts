@@ -6,7 +6,6 @@ import {
   desc,
   eq,
   gte,
-  ilike,
   inArray,
   isNotNull,
   isNull,
@@ -305,7 +304,7 @@ export class GoalsService {
             ? goalsInManagedProductCondition(orgId, filters.managedProductId)
             : undefined,
           filters.search
-            ? ilike(okrGoals.title, `%${filters.search}%`)
+            ? sql`to_tsvector('english', coalesce(${okrGoals.title}, '')) @@ plainto_tsquery('english', ${filters.search})`
             : undefined,
           filters.due ? lte(okrGoals.dueDate, filters.due) : undefined,
           filters.scope === "own" && membershipId !== null
