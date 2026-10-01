@@ -11,6 +11,7 @@ import {
   users,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
+import { reachableProjectsSql } from "../reachability/project-reachability";
 import type { ScopedRead } from "../../access/scoped-read";
 import { resolveEntityCardScope } from "./build-entity-scope";
 import { type Permissions } from "../../entity-reference/entity-scope";
@@ -122,7 +123,18 @@ export class BuildEntityReadsService {
     projectIds: number[],
   ): Promise<Set<number>> {
     if (projectIds.length === 0) return new Set();
-    const activeMembershipId = sql`(SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId} AND status = 'ACTIVE' LIMIT 1)`;
+    const [memberRow] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .limit(1);
+    if (!memberRow) return new Set();
     const rows = await this.db
       .select({ projectId: projects.id })
       .from(projects)
@@ -130,21 +142,7 @@ export class BuildEntityReadsService {
         and(
           eq(projects.orgId, orgId),
           inArray(projects.id, projectIds),
-          sql`(
-            ${projects.managerMembershipId} = ${activeMembershipId}
-            OR ${projects.id} IN (
-              SELECT project_id FROM project_members
-              WHERE org_id = ${orgId}
-                AND membership_id = ${activeMembershipId}
-            )
-            OR ${projects.id} IN (
-              SELECT pta.project_id FROM project_team_assignments pta
-              INNER JOIN project_team_members ptm
-                ON ptm.team_id = pta.team_id AND ptm.org_id = pta.org_id
-              WHERE pta.org_id = ${orgId}
-                AND ptm.membership_id = ${activeMembershipId}
-            )
-          )`,
+          reachableProjectsSql(orgId, memberRow.id),
         ),
       );
     return new Set(rows.map((row) => row.projectId));

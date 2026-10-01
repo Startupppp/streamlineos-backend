@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { CALENDAR_PER_SOURCE_CAP, CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import { Test } from "@nestjs/testing";
 
+const MEMBERSHIP_ID = 77;
+
 const ctx: CalendarSourceContext = {
   orgId: "org-1",
   userId: "user-1",
@@ -12,14 +14,30 @@ const ctx: CalendarSourceContext = {
   end: new Date("2026-08-31"),
 };
 
-function buildDb(rows: unknown[]): unknown {
+function buildDb(ticketRows: unknown[], membershipRows: { id: number }[] = [{ id: MEMBERSHIP_ID }]): unknown {
+  let callCount = 0;
   return {
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue(rows),
-      }),
+    select: jest.fn().mockImplementation(() => {
+      callCount++;
+      const idx = callCount;
+
+      if (idx === 1) {
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(membershipRows),
+            }),
+          }),
+        };
+      }
+
+      return {
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue(ticketRows),
+        }),
+      };
     }),
   };
 }
@@ -45,6 +63,13 @@ describe("BuildCalendarSource", () => {
 
   it("returns an empty array when no tickets exist in the range", async () => {
     const source = await buildSource(buildDb([]));
+    const result = await source.load(ctx);
+    expect(sourceLoadEvents(result)).toHaveLength(0);
+    expect(sourceLoadTruncated(result)).toBe(false);
+  });
+
+  it("returns an empty event list when the caller has no active org membership so a non-member or suspended user sees no calendar events", async () => {
+    const source = await buildSource(buildDb([], []));
     const result = await source.load(ctx);
     expect(sourceLoadEvents(result)).toHaveLength(0);
     expect(sourceLoadTruncated(result)).toBe(false);
@@ -78,7 +103,7 @@ describe("BuildCalendarSource", () => {
     expect(proj?.meta["projectId"]).toBe(3);
   });
 
-  it("only surfaces tickets where the user is a project member (enforced by join in query)", async () => {
+  it("only surfaces tickets reachable by the user's active membership so tickets in inaccessible projects are excluded", async () => {
     const source = await buildSource(buildDb([]));
     const result = await source.load(ctx);
     expect(sourceLoadEvents(result)).toHaveLength(0);
@@ -92,7 +117,7 @@ describe("BuildCalendarSource", () => {
     expect(sourceLoadEvents(result)).toHaveLength(0);
   });
 
-  it("surfaces a ticket from a project the user is a member of and returns nothing when the join yields no rows", async () => {
+  it("surfaces a ticket from a project the user can reach and returns nothing when reachability yields no rows", async () => {
     const ticketRow = {
       id: 15,
       title: "Fix crash",
