@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { ActionItemsService } from "./action-items.service";
+import type { BuildTicketCreationService } from "../core/tickets";
 import { createActionItemSchema } from "./dto/meetings.schemas";
 
 describe("createActionItemSchema — strict() rejects status field sent by frontend in BUG-049", () => {
@@ -31,7 +32,7 @@ describe("ActionItemsService — cross-tenant isolation", () => {
         meetingActionItems: { findFirst: jest.fn().mockResolvedValue(null) },
       },
     } as unknown as Db;
-    const svc = new ActionItemsService(db, audit);
+    const svc = new ActionItemsService(db, audit, {} as unknown as BuildTicketCreationService);
     await expect(svc.updateItem(ATTACKER_ORG, "u1", 1, 99, 1, { title: "hack" } as never)).rejects.toThrow(NotFoundException);
   });
 
@@ -47,7 +48,7 @@ describe("ActionItemsService — cross-tenant isolation", () => {
       },
       update,
     } as unknown as Db;
-    const svc = new ActionItemsService(db, audit);
+    const svc = new ActionItemsService(db, audit, {} as unknown as BuildTicketCreationService);
     const result = await svc.updateItem(OWNER_ORG, "u1", 1, 1, 1, { title: "Updated" } as never);
     expect(result).toBeDefined();
   });

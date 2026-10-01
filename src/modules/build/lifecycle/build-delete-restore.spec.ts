@@ -12,6 +12,7 @@ import { TestRunsService } from "../qa/test-runs.service";
 import { MilestonesService } from "../execution/workspace.service";
 import { WhiteboardsService } from "../execution/whiteboards.service";
 import { BugsService } from "../qa/bugs.service";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 
 const ORG = "org-1";
 const USER = "user-7";
@@ -131,7 +132,7 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
   it("deleteRun audits build.test_run.deleted", async () => {
     const written = updateDouble([]);
     const { audit, log } = auditDouble();
-    const svc = new TestRunsService(makeDb({ testRuns: { id: 5 } }, written), accessDouble(), audit);
+    const svc = new TestRunsService(makeDb({ testRuns: { id: 5 } }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService);
     await expect(svc.deleteRun(makeU(), PROJECT, 5)).resolves.toEqual({ success: true });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: "build.test_run.deleted", resourceId: "5" }),
@@ -141,7 +142,7 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
   it("deleteBug audits bug.deleted, the parallel soft-delete path onto tickets", async () => {
     const written = updateDouble([]);
     const { audit, log } = auditDouble();
-    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit);
+    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await expect(svc.deleteBug(makeU(), PROJECT, 77)).resolves.toEqual({ success: true });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: "bug.deleted", resourceId: "77" }),
@@ -260,7 +261,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
   it("restoreRun clears deletedAt and audits build.test_run.restored", async () => {
     const written = updateDouble([{ id: 5 }]);
     const { audit, log } = auditDouble();
-    const svc = new TestRunsService(makeDb({ testRuns: DELETED }, written), accessDouble(), audit);
+    const svc = new TestRunsService(makeDb({ testRuns: DELETED }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService);
     await expect(svc.restoreRun(makeU(), PROJECT, 5)).resolves.toEqual({ success: true });
     expect(written.set).toHaveBeenCalledWith({ deletedAt: null });
     expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: "build.test_run.restored" }));

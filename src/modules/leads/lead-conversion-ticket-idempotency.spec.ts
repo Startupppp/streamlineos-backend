@@ -1,5 +1,6 @@
 import type { Db } from "../../db/drizzle.module";
 import { LeadConversionService } from "./lead-conversion.service";
+import type { BuildTicketCreationService } from "../build/core/tickets";
 
 const LEAD = {
   id: 5,
@@ -88,7 +89,7 @@ describe("LeadConversionService — onboarding ticket idempotency (retry safety)
 
   it("run-once: creates the onboarding ticket inside a transaction when none exists", async () => {
     const { db, txInsert } = makeDb(false);
-    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never);
+    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, {} as unknown as BuildTicketCreationService);
 
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
 
@@ -100,7 +101,7 @@ describe("LeadConversionService — onboarding ticket idempotency (retry safety)
 
   it("run-twice: skips ticket creation when a matching ticket already exists (idempotency)", async () => {
     const { db } = makeDb(true);
-    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never);
+    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, {} as unknown as BuildTicketCreationService);
 
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
@@ -147,7 +148,7 @@ describe("LeadConversionService — onboarding ticket idempotency (retry safety)
       }),
     } as unknown as Db;
 
-    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never);
+    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, {} as unknown as BuildTicketCreationService);
 
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);

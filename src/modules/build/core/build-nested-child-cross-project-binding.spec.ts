@@ -9,7 +9,7 @@ import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
 import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";
 import { ProjectsWebhooksService } from "./webhooks/projects-webhooks.service";
-import type { WebhookEndpointService } from "../../webhooks/webhook-endpoint.service";
+import type { WebhookEndpointService } from "../../integrations/core/webhook-endpoint.service";
 import type { UpdateCustomFieldInput } from "./dto/custom-fields.schemas";
 import type { UpdateCustomStateInput } from "./dto/projects.schemas";
 

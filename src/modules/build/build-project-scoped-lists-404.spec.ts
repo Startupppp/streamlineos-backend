@@ -1,7 +1,7 @@
 import { GoneException, NotFoundException } from "@nestjs/common";
 import { listReleasesQuerySchema, ProjectsReleasesService, ProjectsWebhooksService } from "./core";
 import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "./core/tickets";
-import type { WebhookEndpointService } from "../webhooks/webhook-endpoint.service";
+import type { WebhookEndpointService } from "../integrations/core/webhook-endpoint.service";
 import { SprintsService } from "./execution/sprints.service";
 import { EpicsService } from "./execution/epics.service";
 import { CyclesService } from "./execution/cycles.service";

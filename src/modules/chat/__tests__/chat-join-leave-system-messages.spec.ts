@@ -3,7 +3,7 @@ import { ChatMessagesService } from "../chat-messages.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { Db } from "../../../db/drizzle.module";
-import type { EntityReferenceService } from "../../entity-reference/entity-reference.types";
+import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 /**

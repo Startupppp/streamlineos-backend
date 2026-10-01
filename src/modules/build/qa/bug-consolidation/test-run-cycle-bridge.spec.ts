@@ -4,6 +4,7 @@ import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { TestRunsService } from "../test-runs.service";
+import type { BuildTicketCreationService } from "../../core/tickets";
 import { cycles, testRuns } from "../../../../db/schema";
 
 const ORG = "org-1";
@@ -123,7 +124,7 @@ describe("TestRunsService.createRun — cycleId binding", () => {
       calls,
       { id: 2, runNumber: 1, name: "Smoke", cycleId: 44 },
     );
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     const run = await svc.createRun(makeU(), PROJECT_ID, { name: "Smoke", cycleId: 44 });
 
@@ -134,7 +135,7 @@ describe("TestRunsService.createRun — cycleId binding", () => {
   it("rejects a cycleId that does not exist in the tenant before it opens a transaction", async () => {
     const calls: SelectCall[] = [];
     const { db, transaction } = createRunDb([[]], calls, {});
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(
       svc.createRun(makeU(), PROJECT_ID, { name: "Regression", cycleId: 909 }),
@@ -150,7 +151,7 @@ describe("TestRunsService.createRun — cycleId binding", () => {
       name: "Ad hoc",
       cycleId: null,
     });
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     await svc.createRun(makeU(), PROJECT_ID, { name: "Ad hoc" });
 
@@ -162,7 +163,7 @@ describe("TestRunsService.createRun — cycleId binding", () => {
 describe("TestRunsService.updateRun — cycleId binding", () => {
   it("leaves the cycle binding untouched when neither cycleId is in the patch", async () => {
     const { db, setObjects } = updateDb([], { id: 5, cycleId: 31 });
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     await svc.updateRun(makeU(), PROJECT_ID, 5, { name: "Renamed" });
 
@@ -179,7 +180,7 @@ describe("TestRunsService — sprintId removal guard", () => {
       calls,
       { id: 1, runNumber: 1, name: "Regression", cycleId: 55 },
     );
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     await svc.createRun(makeU(), PROJECT_ID, { name: "Regression", cycleId: 55 });
 
@@ -196,7 +197,7 @@ describe("TestRunsService — sprintId removal guard", () => {
       calls,
       { id: 1, runNumber: 1, name: "Regression", cycleId: 55 },
     );
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     const run = await svc.createRun(makeU(), PROJECT_ID, { name: "Regression", cycleId: 55 });
 
@@ -205,7 +206,7 @@ describe("TestRunsService — sprintId removal guard", () => {
 
   it("updateRun SET payload contains no sprintId key", async () => {
     const { db, setObjects } = updateDb([{ id: 55 }], { id: 5, cycleId: 55, name: "Regression" });
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     await svc.updateRun(makeU(), PROJECT_ID, 5, { cycleId: 55 });
 
@@ -215,7 +216,7 @@ describe("TestRunsService — sprintId removal guard", () => {
 
   it("updateRun response row carries no sprintId key", async () => {
     const { db } = updateDb([{ id: 55 }], { id: 5, cycleId: 55, name: "Regression" });
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     const row = await svc.updateRun(makeU(), PROJECT_ID, 5, { cycleId: 55 });
 
@@ -230,7 +231,7 @@ describe("TestRunsService — sprintId removal guard", () => {
       name: "Ad hoc",
       cycleId: null,
     });
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService);
 
     await svc.createRun(makeU(), PROJECT_ID, { name: "Ad hoc" });
 

@@ -3,6 +3,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { Db } from "../../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { BugsService } from "../bugs.service";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../../core/tickets";
 import { bugRowSchema } from "../dto/qa-response.schemas";
 import { tickets, workItemQaDetails } from "../../../../db/schema";
 
@@ -62,6 +63,7 @@ function sidecarLessBugRow() {
     deletedAt: null,
     createdAt: new Date("2026-09-01T00:00:00.000Z"),
     updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+    version: 1,
   };
   for (const field of QA_SIDECAR_FIELDS) row[field] = null;
   return row;
@@ -97,7 +99,7 @@ function listDb(rows: unknown[]) {
 describe("a BUG work item created outside the QA surface still surfaces through listBugs", () => {
   it("joins the QA sidecar with a LEFT JOIN, so a BUG ticket that has no work_item_qa_details row is still returned", async () => {
     const { db, joinArgs } = listDb([sidecarLessBugRow()]);
-    const svc = new BugsService(db, makeAccess(), audit);
+    const svc = new BugsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
     const rows = await svc.listBugs(makeU(), PROJECT_ID, {});
 
@@ -108,7 +110,7 @@ describe("a BUG work item created outside the QA surface still surfaces through 
 
   it("reports every QA field as null for a sidecar-less bug, which is the only signal a caller has that it was never filed through the QA surface", async () => {
     const { db } = listDb([sidecarLessBugRow()]);
-    const svc = new BugsService(db, makeAccess(), audit);
+    const svc = new BugsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
     const [row] = (await svc.listBugs(makeU(), PROJECT_ID, {})) as Record<string, unknown>[];
 
@@ -124,7 +126,7 @@ describe("a BUG work item created outside the QA surface still surfaces through 
 
   it("projects every QA sidecar field the contract declares, so a null here means an absent sidecar and never an omitted column", async () => {
     const { db, projections } = listDb([sidecarLessBugRow()]);
-    const svc = new BugsService(db, makeAccess(), audit);
+    const svc = new BugsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
     await svc.listBugs(makeU(), PROJECT_ID, {});
 

@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../../../db/schema";
 import { KbPageTreeService } from "./kb-page-tree.service";
-import { loadPageChunkState } from "../../retrieval/kb-chunk-repository";
+import { loadPageChunkState } from "../retrieval/kb-chunk-repository";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 

@@ -56,7 +56,7 @@ function makeDb(rows: ReturnType<typeof epicRow>[], captured: { where?: unknown;
 
 describe("EpicsService — the epic list is a keyset page, not a capped array", () => {
   it("returns a cursor page rather than a bare array, so the caller can page instead of seeing a silent truncation", async () => {
-    const service = new EpicsService(makeDb([epicRow(1, "2026-09-01T10:00:00.000001")]));
+    const service = new EpicsService(makeDb([epicRow(1, "2026-09-01T10:00:00.000001")]), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     const page = await service.listEpics(ORG_ID, PROJECT_ID, {});
 
     expect(Array.isArray(page)).toBe(false);
@@ -74,6 +74,9 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
         ],
         captured,
       ),
+      {} as unknown as BuildTicketCreationService,
+      {} as unknown as ProjectsTicketsUpdateService,
+      {} as unknown as ProjectsTicketsDeleteService,
     );
     const page = await service.listEpics(ORG_ID, PROJECT_ID, { limit: 1 });
 
@@ -87,6 +90,9 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
     const shared = "2026-09-05T09:30:00.123456";
     const service = new EpicsService(
       makeDb([epicRow(9, shared, "Later id"), epicRow(4, shared, "Earlier id")]),
+      {} as unknown as BuildTicketCreationService,
+      {} as unknown as ProjectsTicketsUpdateService,
+      {} as unknown as ProjectsTicketsDeleteService,
     );
     const page = await service.listEpics(ORG_ID, PROJECT_ID, { limit: 1 });
 
@@ -97,7 +103,7 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
 
   it("orders by createdAt then id descending, because a one-column order over a shared timestamp skips rows at the boundary", async () => {
     const captured: { order?: unknown } = {};
-    const service = new EpicsService(makeDb([epicRow(1, "2026-09-01T10:00:00.000001")], captured));
+    const service = new EpicsService(makeDb([epicRow(1, "2026-09-01T10:00:00.000001")], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, {});
 
     expect(Array.isArray(captured.order)).toBe(true);
@@ -106,7 +112,7 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
 
   it("binds the cursor position into the where clause, so the next page starts after the previous one", async () => {
     const captured: { where?: unknown } = {};
-    const service = new EpicsService(makeDb([], captured));
+    const service = new EpicsService(makeDb([], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, {
       cursor: encodeCursor({ sortValue: "2026-09-05T09:30:00.123456", id: "9" }),
     });
@@ -118,7 +124,7 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
 
   it("ignores a hand-edited cursor rather than binding it, so a tampered position returns the first page", async () => {
     const captured: { where?: unknown } = {};
-    const service = new EpicsService(makeDb([], captured));
+    const service = new EpicsService(makeDb([], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, { cursor: "not-a-cursor" });
 
     expect(sqlValues(captured.where)).not.toContain("not-a-cursor");
@@ -126,7 +132,7 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
 
   it("caps the page at PAGE_SIZE_CAP even when the caller asks for more", async () => {
     const captured: { limit?: number } = {};
-    const service = new EpicsService(makeDb([], captured));
+    const service = new EpicsService(makeDb([], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, { limit: 5000 });
 
     expect(captured.limit).toBe(101);
@@ -136,7 +142,7 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
 describe("EpicsService — the epic filters are applied in SQL, not by the caller", () => {
   it("binds the search term, so the database narrows the page instead of the client filtering one page of it", async () => {
     const captured: { where?: unknown } = {};
-    const service = new EpicsService(makeDb([], captured));
+    const service = new EpicsService(makeDb([], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, { q: "checkout" });
 
     expect(sqlValues(captured.where)).toContain("%checkout%");
@@ -144,7 +150,7 @@ describe("EpicsService — the epic filters are applied in SQL, not by the calle
 
   it("escapes a wildcard in the search term, so a literal % cannot widen the match", async () => {
     const captured: { where?: unknown } = {};
-    const service = new EpicsService(makeDb([], captured));
+    const service = new EpicsService(makeDb([], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, { q: "50%_off" });
 
     expect(sqlValues(captured.where)).toContain("%50\\%\\_off%");
@@ -152,7 +158,7 @@ describe("EpicsService — the epic filters are applied in SQL, not by the calle
 
   it("binds status and health, the two stored columns the page filters on", async () => {
     const captured: { where?: unknown } = {};
-    const service = new EpicsService(makeDb([], captured));
+    const service = new EpicsService(makeDb([], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, { status: "IN_PROGRESS", health: "at_risk" });
 
     const bound = sqlValues(captured.where);
@@ -162,7 +168,7 @@ describe("EpicsService — the epic filters are applied in SQL, not by the calle
 
   it("resolves an owner filter through the tenant's own memberships, so a user id from another org selects nothing", async () => {
     const captured: { where?: unknown } = {};
-    const service = new EpicsService(makeDb([], captured));
+    const service = new EpicsService(makeDb([], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, { ownerId: "user-77" });
 
     const bound = sqlValues(captured.where);
@@ -172,7 +178,7 @@ describe("EpicsService — the epic filters are applied in SQL, not by the calle
 
   it("binds no filter value when the caller sends none, so the predicates are not always on", async () => {
     const captured: { where?: unknown } = {};
-    const service = new EpicsService(makeDb([], captured));
+    const service = new EpicsService(makeDb([], captured), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await service.listEpics(ORG_ID, PROJECT_ID, {});
 
     const bound = sqlValues(captured.where);
