@@ -5,6 +5,7 @@ import {
   organizationMembers,
   principalGroupMembers,
   roleAssignments,
+  userSessions,
 } from "../../db/schema";
 import { getObservabilityContext } from "../observability/observability-context";
 import { getImpersonationContext } from "../impersonation/impersonation-context";
@@ -34,7 +35,7 @@ export type CommitAccessAudit = AccessCommitActorFields & {
   metadata?: Record<string, unknown>;
 };
 
-export type SessionRevoker = { revokeAllForUser(userId: string): Promise<unknown> };
+export type SessionTombstones = { publishRevocations(sessionIds: string[]): Promise<void> };
 
 export type AccessLoss =
   | { kind: "permissions"; userIds: readonly string[] }
@@ -42,7 +43,7 @@ export type AccessLoss =
   | { kind: "memberships"; membershipIds: readonly number[] }
   | { kind: "group-members"; groupId: string }
   | { kind: "standing"; userIds: readonly string[] }
-  | { kind: "identity"; userId: string; sessions: SessionRevoker };
+  | { kind: "identity"; userId: string; sessions: SessionTombstones };
 
 export interface AccessRevocation {
   cache: CacheService;
@@ -172,12 +173,7 @@ async function resolveRoleHolders(
     .select({ groupId: groupRoleAssignments.principalGroupId })
     .from(groupRoleAssignments)
     .where(and(eq(groupRoleAssignments.orgId, orgId), eq(groupRoleAssignments.roleId, roleId)));
-  const viaGroups = await resolveGroupMembers(
-    tx,
-    orgId,
-    groups.map((row) => row.groupId),
-  );
-  return [...direct, ...viaGroups];
+  return [...direct, ...(await resolveGroupMembers(tx, orgId, groups.map((row) => row.groupId)))];
 }
 
 async function resolveMembershipUsers(
@@ -208,11 +204,7 @@ async function resolveLosers(
   return resolveMembershipUsers(tx, orgId, loss.membershipIds);
 }
 
-interface RevocationPlan {
-  standing: readonly string[];
-  sessions: readonly string[];
-  listKeys: readonly ExactCacheKey[];
-}
+type RevocationPlan = { standing: readonly string[]; sessions: readonly string[]; listKeys: readonly ExactCacheKey[] };
 
 async function bustKeys(cache: CacheService, keys: readonly ExactCacheKey[]): Promise<void> {
   const [only] = keys;
@@ -245,6 +237,21 @@ export function scheduleStandingRevocation(
   return scheduleRevocation(cache, { standing: userIds, sessions: [], listKeys: [] });
 }
 
+async function revokeSessions(
+  tx: DbOrTx,
+  userId: string,
+  sessions: SessionTombstones,
+): Promise<void> {
+  const revoked = await tx
+    .update(userSessions)
+    .set({ isRevoked: true })
+    .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)))
+    .returning({ id: userSessions.id });
+  if (revoked.length === 0) return;
+  const sessionIds = revoked.map((row) => row.id);
+  await afterCommitOrInline(() => sessions.publishRevocations(sessionIds));
+}
+
 async function revokeAccess(
   tx: DbOrTx,
   orgId: string,
@@ -254,7 +261,7 @@ async function revokeAccess(
   const standingUsers = new Set<string>();
   for (const loss of revocation.loses) {
     if (loss.kind === "identity") {
-      await loss.sessions.revokeAllForUser(loss.userId);
+      await revokeSessions(tx, loss.userId, loss.sessions);
       standingUsers.add(loss.userId);
       continue;
     }

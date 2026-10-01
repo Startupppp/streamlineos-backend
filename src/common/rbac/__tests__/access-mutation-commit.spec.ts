@@ -15,7 +15,7 @@ import { runWithTenantContext, type AfterCommitHook } from "../../tenant/tenant-
 import { runInTenantTransaction } from "../../tenant/run-in-tenant-transaction";
 import { observeAfterCommitWork } from "../../observability/after-commit-work";
 import { CACHE_KEYS } from "../../cache/cache-keys";
-import { auditLogs } from "../../../db/schema";
+import { auditLogs, userSessions } from "../../../db/schema";
 import type { CacheService } from "../../cache/cache.service";
 import type { Db } from "../../../db/drizzle.module";
 
@@ -52,9 +52,10 @@ interface FakeTx {
   tx: DbOrTx;
   inserted: { table: unknown; row: unknown }[];
   selects: jest.Mock;
+  updates: jest.Mock;
 }
 
-function makeTx(selectResults: unknown[][] = []): FakeTx {
+function makeTx(selectResults: unknown[][] = [], updateReturning: unknown[] = []): FakeTx {
   const inserted: { table: unknown; row: unknown }[] = [];
   const queue = [...selectResults];
   const next = (): Promise<unknown[]> => Promise.resolve(queue.shift() ?? []);
@@ -70,8 +71,12 @@ function makeTx(selectResults: unknown[][] = []): FakeTx {
     };
     return chain;
   });
+  const updates = jest.fn(() => ({
+    set: () => ({ where: () => ({ returning: () => Promise.resolve(updateReturning) }) }),
+  }));
   const fake = {
     select: selects,
+    update: updates,
     insert: jest.fn((table: unknown) => ({
       values: jest.fn((row: unknown) => {
         inserted.push({ table, row });
@@ -79,7 +84,7 @@ function makeTx(selectResults: unknown[][] = []): FakeTx {
       }),
     })),
   };
-  return { tx: fake as unknown as DbOrTx, inserted, selects };
+  return { tx: fake as unknown as DbOrTx, inserted, selects, updates };
 }
 
 function makeCache() {
@@ -337,39 +342,66 @@ describe("commitAccessChange — ownership intent (standing loss)", () => {
   });
 });
 
-describe("commitAccessChange — identity intent (session tombstone)", () => {
-  it("tombstones sessions inline before the commit returns and defers only the membership bust", async () => {
-    const { tx } = makeTx();
+describe("commitAccessChange — identity intent (session revocation)", () => {
+  it("marks sessions revoked on the tx and publishes tombstones and the membership bust only after commit", async () => {
+    const { tx, updates } = makeTx([], [{ id: "s-1" }, { id: "s-2" }]);
     const cache = makeCache();
-    const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 2 }) };
+    const sessions = { publishRevocations: jest.fn().mockResolvedValue(undefined) };
     const { hooks } = await inRequest(() =>
       commitAccessChange(tx, ORG, {
         revoke: { cache: asCache(cache), loses: [{ kind: "identity", userId: "subject", sessions }] },
       }),
     );
 
-    expect(sessions.revokeAllForUser).toHaveBeenCalledWith("subject");
+    expect(updates).toHaveBeenCalledWith(userSessions);
+    expect(sessions.publishRevocations).not.toHaveBeenCalled();
     expect(bustMembershipStatusCache).not.toHaveBeenCalled();
 
     await drain(hooks);
 
+    expect(sessions.publishRevocations).toHaveBeenCalledWith(["s-1", "s-2"]);
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "subject");
     expect(cache.invalidate).not.toHaveBeenCalled();
   });
 
-  it("propagates a tombstone failure so the access change cannot commit with live sessions", async () => {
-    const { tx } = makeTx();
+  it("does not fail the commit when Redis is down; the tombstone failure surfaces from the after-commit hook", async () => {
+    const { tx } = makeTx([], [{ id: "s-1" }]);
     const cache = makeCache();
-    const sessions = { revokeAllForUser: jest.fn().mockRejectedValue(new Error("redis down")) };
-    const { hooks } = await inRequest(async () => {
-      await expect(
-        commitAccessChange(tx, ORG, {
-          revoke: { cache: asCache(cache), loses: [{ kind: "identity", userId: "subject", sessions }] },
-        }),
-      ).rejects.toThrow("redis down");
+    const sessions = { publishRevocations: jest.fn().mockRejectedValue(new Error("redis down")) };
+    const { hooks } = await inRequest(() =>
+      commitAccessChange(tx, ORG, {
+        revoke: { cache: asCache(cache), loses: [{ kind: "identity", userId: "subject", sessions }] },
+      }),
+    );
+
+    expect(bumpPermissionsVersion).toHaveBeenCalledWith(tx, ORG);
+    const results = await Promise.allSettled(hooks.map((hook) => hook()));
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "subject");
+  });
+
+  it("publishes inline when there is no after-commit context, never dropping the tombstone", async () => {
+    const { tx } = makeTx([], [{ id: "s-1" }]);
+    const cache = makeCache();
+    const sessions = { publishRevocations: jest.fn().mockResolvedValue(undefined) };
+    await commitAccessChange(tx, ORG, {
+      revoke: { cache: asCache(cache), loses: [{ kind: "identity", userId: "subject", sessions }] },
     });
-    expect(sessions.revokeAllForUser).toHaveBeenCalledTimes(1);
-    expect(hooks).toHaveLength(0);
+    expect(sessions.publishRevocations).toHaveBeenCalledWith(["s-1"]);
+  });
+
+  it("publishes nothing when the subject had no live session", async () => {
+    const { tx, updates } = makeTx([], []);
+    const cache = makeCache();
+    const sessions = { publishRevocations: jest.fn().mockResolvedValue(undefined) };
+    const { hooks } = await inRequest(() =>
+      commitAccessChange(tx, ORG, {
+        revoke: { cache: asCache(cache), loses: [{ kind: "identity", userId: "subject", sessions }] },
+      }),
+    );
+    await drain(hooks);
+    expect(updates).toHaveBeenCalledWith(userSessions);
+    expect(sessions.publishRevocations).not.toHaveBeenCalled();
   });
 });
 

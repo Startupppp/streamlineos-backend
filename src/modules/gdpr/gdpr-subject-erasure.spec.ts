@@ -6,7 +6,8 @@ import { GdprController } from "./gdpr.controller";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { SubjectFileKey } from "../storage/storage-key-catalog";
 import type { TenantTx } from "../../db/drizzle.types";
-import { gdprExportJobs, organizationMembers, users } from "../../db/schema";
+import { gdprExportJobs, organizationMembers, userSessions, users } from "../../db/schema";
+import { runWithTenantContext, type AfterCommitHook } from "../../common/tenant/tenant-context";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -108,6 +109,7 @@ function makeDb(opts: {
   chatMsgUpdated?: unknown[];
   dataReqId?: number;
   storagePurgeFailed?: Array<{ key: string; reason: string }>;
+  sessionRows?: unknown[];
 } = {}): DbMocks {
   const membershipRows = opts.membershipRows ?? [{ id: 1 }];
   const legalHoldRows = opts.legalHoldRows ?? [];
@@ -168,6 +170,8 @@ function makeDb(opts: {
     update: jest.fn().mockImplementation((table: unknown) => {
       // The export-artifact retirement is not one of the positional identity updates.
       if (table === gdprExportJobs) return fluentChain([], []);
+      if (table === userSessions)
+        return fluentChain([], opts.sessionRows ?? [{ id: "session-1" }, { id: "session-2" }]);
       txUpdateCount++;
       if (txUpdateCount === 1) return opUpdateChain;
       if (txUpdateCount === 2) return sfUpdateChain;
@@ -217,7 +221,7 @@ function makeDb(opts: {
 /** Every tx.update except the export-artifact retirement, which is a storage sink. */
 function identityUpdates(txMocks: TxMocks): unknown[][] {
   return txMocks.tx.update.mock.calls.filter(
-    (call: unknown[]) => call[0] !== gdprExportJobs,
+    (call: unknown[]) => call[0] !== gdprExportJobs && call[0] !== userSessions,
   );
 }
 
@@ -241,11 +245,11 @@ function makeStoragePurge(
 
 function buildService(
   db: DbMocks["db"],
-  sessionsService?: { revokeAllForUser: jest.Mock },
+  sessionsService?: { publishRevocations: jest.Mock },
   storagePurge?: ReturnType<typeof makeStoragePurge>,
 ): GdprSubjectErasureService {
   const cache = {} as CacheService;
-  const sessions = sessionsService ?? { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
+  const sessions = sessionsService ?? { publishRevocations: jest.fn().mockResolvedValue(undefined) };
   const effectLedger = {
     execute: jest.fn().mockImplementation(async (_eff: unknown, send: () => Promise<unknown>) => {
       await send();
@@ -699,7 +703,7 @@ describe("GdprSubjectErasureService — the id scan drains instead of capping", 
     const cache = { del: jest.fn(), delByPattern: jest.fn() } as unknown as ConstructorParameters<
       typeof GdprSubjectErasureService
     >[1];
-    const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) } as unknown as ConstructorParameters<
+    const sessions = { publishRevocations: jest.fn().mockResolvedValue(undefined) } as unknown as ConstructorParameters<
       typeof GdprSubjectErasureService
     >[2];
     const effectLedger = {
@@ -785,98 +789,95 @@ describe("GdprSubjectErasureService — AI and chat content erasure", () => {
 });
 
 // ─── Session revocation ───────────────────────────────────────────────────────
-//
-// MECHANISM: SessionsService.revokeAllForUser fetches ALL non-revoked sessions
-// (findMany with no LIMIT), then calls tombstone() which sets Redis keys
-// `revoked:session:<id>` WITHOUT a TTL (so volatile-lru cannot evict them) and
-// adds each id to a sorted set keyed by expiry for future pruning.
-// JwtAuthGuard reads only the Redis tombstone — NOT the DB isRevoked flag — so
-// a token remains invalid as long as the tombstone key is present.
 
 describe("GdprSubjectErasureService — session revocation", () => {
-  it("calls revokeAllForUser with the subject userId after the transaction completes", async () => {
+  async function eraseInRequest(
+    svc: GdprSubjectErasureService,
+  ): Promise<AfterCommitHook[]> {
+    const hooks: AfterCommitHook[] = [];
+    await runWithTenantContext(
+      { orgId: ORG, audience: "INTERNAL", tx: {} as never, afterCommit: hooks },
+      () => svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false }),
+    );
+    return hooks;
+  }
+
+  it("marks the subject's sessions revoked in the database on the erasure transaction", async () => {
+    const { db, txMocks } = makeDb({});
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(txMocks.tx.update).toHaveBeenCalledWith(userSessions);
+    expect(db.update).not.toHaveBeenCalledWith(userSessions);
+  });
+
+  it("publishes the Redis tombstones only after the erasure commits", async () => {
     const { db } = makeDb({});
-    const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 2 }) };
+    const sessions = { publishRevocations: jest.fn().mockResolvedValue(undefined) };
+    const svc = buildService(db, sessions);
+
+    const hooks = await eraseInRequest(svc);
+
+    expect(sessions.publishRevocations).not.toHaveBeenCalled();
+    for (const hook of hooks) await hook();
+    expect(sessions.publishRevocations).toHaveBeenCalledWith(["session-1", "session-2"]);
+  });
+
+  it("a Redis outage does not roll back the erasure and the tombstone failure surfaces from the after-commit hook", async () => {
+    const { db } = makeDb({});
+    const sessions = { publishRevocations: jest.fn().mockRejectedValue(new Error("redis down")) };
+    const svc = buildService(db, sessions);
+
+    const hooks = await eraseInRequest(svc);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    const results = await Promise.allSettled(hooks.map((hook) => hook()));
+    expect(results.some((r) => r.status === "rejected" && String(r.reason).includes("redis down"))).toBe(true);
+  });
+
+  it("publishes no tombstone when the subject had no live session", async () => {
+    const { db } = makeDb({ sessionRows: [] });
+    const sessions = { publishRevocations: jest.fn().mockResolvedValue(undefined) };
+    const svc = buildService(db, sessions);
+
+    const hooks = await eraseInRequest(svc);
+    for (const hook of hooks) await hook();
+
+    expect(sessions.publishRevocations).not.toHaveBeenCalled();
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(expect.anything(), SUBJECT);
+  });
+
+  it("revokes nothing when a legal hold blocks erasure", async () => {
+    const { db, txMocks } = makeDb({ legalHoldRows: [{ id: 5, reason: "litigation" }] });
+    const sessions = { publishRevocations: jest.fn().mockResolvedValue(undefined) };
     const svc = buildService(db, sessions);
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(sessions.revokeAllForUser).toHaveBeenCalledTimes(1);
-    expect(sessions.revokeAllForUser).toHaveBeenCalledWith(SUBJECT);
+    expect(txMocks.tx.update).not.toHaveBeenCalledWith(userSessions);
+    expect(sessions.publishRevocations).not.toHaveBeenCalled();
   });
 
-  it("(bite proof) revokeAllForUser is NOT called when a legal hold blocks erasure", async () => {
-    // Mechanism: legal hold → eraseSubject returns early; no transaction, no session revocation.
-    // Neuter: remove the legal-hold check → revokeAllForUser IS called → toHaveBeenCalledTimes(0) FAILS.
-    const { db } = makeDb({ legalHoldRows: [{ id: 5, reason: "litigation" }] });
-    const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
-    const svc = buildService(db, sessions);
-
-    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
-
-    expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
-  });
-
-  it("does not call revokeAllForUser on a dry run", async () => {
-    const { db } = makeDb({});
-    const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
+  it("revokes nothing on a dry run", async () => {
+    const { db, txMocks } = makeDb({});
+    const sessions = { publishRevocations: jest.fn().mockResolvedValue(undefined) };
     const svc = buildService(db, sessions);
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: true });
 
-    expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+    expect(txMocks.tx.update).not.toHaveBeenCalledWith(userSessions);
+    expect(sessions.publishRevocations).not.toHaveBeenCalled();
   });
 
   it("revokes sessions even when the subject still has memberships in other orgs", async () => {
-    // The subject has another org (globalIdentityAnonymised = false) but sessions
-    // are global — they must still be invalidated so the subject re-authenticates
-    // with fresh state after their data in THIS org is erased.
-    const { db } = makeDb({ otherMemberRows: [{ id: 99 }] });
-    const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 1 }) };
-    const svc = buildService(db, sessions);
+    const { db, txMocks } = makeDb({ otherMemberRows: [{ id: 99 }] });
+    const svc = buildService(db);
 
     const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
     expect(result.globalIdentityAnonymised).toBe(false);
-    expect(sessions.revokeAllForUser).toHaveBeenCalledWith(SUBJECT);
-  });
-
-  it("revokeAllForUser runs inside the erasure transaction so no session outlives a committed erasure", async () => {
-    const { db } = makeDb({});
-    const callOrder: string[] = [];
-
-    const origTransaction = db.transaction.getMockImplementation()!;
-    db.transaction.mockImplementation(async (fn: (t: typeof db) => Promise<unknown>) => {
-      const result = await origTransaction(fn);
-      callOrder.push("transaction");
-      return result;
-    });
-
-    const sessions = {
-      revokeAllForUser: jest.fn().mockImplementation(() => {
-        callOrder.push("revokeAllForUser");
-        return Promise.resolve({ revokedCount: 0 });
-      }),
-    };
-
-    const svc = buildService(db, sessions);
-    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
-
-    expect(callOrder).toEqual(["revokeAllForUser", "transaction"]);
-  });
-
-  it("a tombstone failure aborts the erasure transaction instead of leaving live sessions behind", async () => {
-    const { db } = makeDb({});
-    const sessions = {
-      revokeAllForUser: jest.fn().mockRejectedValue(new Error("redis down")),
-    };
-    const svc = buildService(db, sessions);
-
-    await expect(svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false })).rejects.toThrow(
-      "redis down",
-    );
-    expect(sessions.revokeAllForUser).toHaveBeenCalledWith(SUBJECT);
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(txMocks.tx.update).toHaveBeenCalledWith(userSessions);
   });
 });
 
