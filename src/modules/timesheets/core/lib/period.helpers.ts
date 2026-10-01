@@ -25,3 +25,16 @@ export function wholeDaysBetween(from: string, to: string): number {
   if (Number.isNaN(a) || Number.isNaN(b)) throw new Error(`not a date: ${from} / ${to}`);
   return Math.round((b - a) / 86_400_000);
 }
+
+/**
+ * The calendar day of an instant in UTC.
+ *
+ * "Today" must never be derived from the host timezone. `formatDateOnly` reads
+ * local calendar fields, so at 23:00 UTC on 2026-10-03 a UTC server calls it
+ * 2026-10-03 while an Asia/Kolkata server calls it 2026-10-04 — the same
+ * instant, a different day, and therefore a different backdate verdict for the
+ * same request. Use this for every "what day is it" decision.
+ */
+export function utcDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}

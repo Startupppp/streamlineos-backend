@@ -17,7 +17,7 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesReadService } from "./entries-read.service";
 import { EntriesPeriodService } from "./entries-period.service";
 import { roundHours } from "./lib/rounding";
-import { formatDateOnly, wholeDaysBetween } from "./lib/period.helpers";
+import { utcDateOnly, wholeDaysBetween } from "./lib/period.helpers";
 import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 
@@ -108,7 +108,7 @@ export class EntriesService {
       throw new BadRequestException("Hours must be greater than zero");
     }
 
-    const today = formatDateOnly(new Date());
+    const today = utcDateOnly(new Date());
     const allowFuture = settings?.allowFutureEntries ?? false;
     if (!allowFuture && input.date > today) {
       throw new BadRequestException("Future-dated entries are not allowed");
