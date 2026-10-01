@@ -250,7 +250,7 @@ export default [
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 174, anchor: /async getTicketValues\(u: CurrentUserContext, projectId: number, ticketId: number\) \{/, note: "the terminal service receives the authenticated actor and route ids" },
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 175, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before the values query" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 341, anchor: /eq\(tickets\.projectId, projectId\),/, note: "tenant, project, and ticket are bound in one lookup" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -264,9 +264,9 @@ export default [
     evidence: [
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.controller.ts", line: 103, anchor: /upsertTicketValues\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 231, anchor: /async upsertTicketValues\(/, note: "the terminal service receives the authenticated actor and route ids" },
-      { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 237, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before validation or mutation" },
+      { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 237, anchor: /await assertTicketWriteAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before validation or mutation" },
       { file: "src/modules/build/core/custom-fields/projects-custom-fields.service.ts", line: 242, anchor: /await this\.assertFieldDefinitionsInProject\(/, note: "body field ids are independently bound to the same project" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
 
@@ -295,7 +295,7 @@ export default [
       "None: a foreign :ticketId 404s at assertTicketReadAccess, and a relatedTicketId from a different project independently 404s (\"Related ticket not found in this project\") before the INSERT runs.",
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 102, anchor: /addRelation\(/, note: "handler binds both projectId and ticketId and forwards both" },
-      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 138, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId" },
+      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 138, anchor: /await assertTicketWriteAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId" },
       { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 147, anchor: /eq\(tickets\.projectId, projectId\),/, note: "relatedTicketId is independently bound to the same project before the relation is created" },
     ],
   },
@@ -310,7 +310,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 116, anchor: /removeRelation\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 249, anchor: /async removeRelation\(/, note: "signature" },
-      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 255, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId before the delete" },
+      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 255, anchor: /await assertTicketWriteAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId before the delete" },
     ],
   },
   {
@@ -323,8 +323,8 @@ export default [
       "None: a mismatched ticket 404s, while an inaccessible project or ticket scope is rejected before the label mapping is deleted.",
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 183, anchor: /removeLabel\(/, note: "handler binds projectId, ticketId and labelId and forwards all three" },
-      { file: "src/modules/build/core/tickets/projects-ticket-labels.service.ts", line: 48, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before deletion" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-ticket-labels.service.ts", line: 48, anchor: /await assertTicketWriteAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before deletion" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -339,7 +339,7 @@ export default [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 210, anchor: /getGitLinks\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 41, anchor: /await this\.assertTicketAccess\(u, projectId, ticketId\);/, note: "actor-aware authorization runs before the git link query" },
       { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 37, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "the private guard is the canonical ticket decision" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -415,7 +415,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 66, anchor: /getComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 224, anchor: /async getComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number\) \{/, note: "signature carries the authenticated actor and route parents" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 225, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 225, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId, "read"\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 114, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
     ],
   },
@@ -430,7 +430,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 79, anchor: /editComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 231, anchor: /async editComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, content: string\) \{/, note: "signature carries the authenticated actor and route parents" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 232, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 232, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId, "write"\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 237, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
     ],
   },
@@ -445,7 +445,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 94, anchor: /deleteComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 260, anchor: /async deleteComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number\) \{/, note: "signature carries the authenticated actor and route parents" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 261, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 261, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId, "write"\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 266, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
     ],
   },
@@ -509,7 +509,7 @@ export default [
       { file: "src/modules/build/core/tickets/projects-tickets-query.service.ts", line: 122, anchor: /async getTicketActivity\(/, note: "signature carries the actor and route ids" },
       { file: "src/modules/build/core/tickets/projects-tickets-query.service.ts", line: 128, anchor: /await assertTicketReadAccess\(this\.db, this\.access, actor, projectId, ticketId\);/, note: "canonical ticket authorization runs before the activity query" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 341, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -525,7 +525,7 @@ export default [
       { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 35, anchor: /async getTicketByKey\(/, note: "signature" },
       { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 44, anchor: /eq\(tickets\.projectId, projectId\),/, note: "selector binds the lookup to the named project" },
       { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 63, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "ticket DataScope is resolved" },
-      { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 108, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is verified" },
+      { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 108, anchor: /const decision = await decideTicketRead\(this\.db, this\.access, u, ticket\.id, \{ projectId \}\);/, note: "project membership is verified" },
     ],
   },
 

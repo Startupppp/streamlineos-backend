@@ -112,6 +112,42 @@ const MUTATING_VERBS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const REVIEWED_INLINE = [
   {
+    key: "modules/build/core/projects.controller.ts#createProject",
+    verdict: "VERIFIED",
+    finding: "project-relationship-not-applicable",
+    projectRelationshipExempt: "creates a new project; no existing project relationship can be required",
+    summary:
+      "POST /build. The handler creates a project; there is no existing project for the caller to be related to. The route is gated by build:manage and the service binds the new row to the caller's org.",
+    evidence: [
+      { file: "src/modules/build/core/projects.controller.ts", line: 83, anchor: /return this\.projectsProvision\.createProject\(u\.orgId, u\.userId, body\);/, note: "the caller's org reaches the creation service" },
+      { file: "src/modules/build/core/project-crud/projects-provision.service.ts", line: 64, anchor: /async createProject\(orgId: string, creatorUserId: string, input: CreateProjectInput\) \{/, note: "creation takes no existing project id" },
+    ],
+  },
+  {
+    key: "modules/build/core/projects.controller.ts#createFromDeal",
+    verdict: "VERIFIED",
+    finding: "project-relationship-not-applicable",
+    projectRelationshipExempt: "creates a new project from a deal; no existing project relationship can be required",
+    summary:
+      "POST /build/from-deal. The handler creates a project from a CRM deal; there is no existing project for the caller to be related to. The route is gated by its permission key and the service binds the new row to the caller's org.",
+    evidence: [
+      { file: "src/modules/build/core/projects.controller.ts", line: 96, anchor: /return this\.projectsProvision\.createFromDeal\(u\.orgId, u\.userId, body\);/, note: "the caller's org reaches the creation service" },
+      { file: "src/modules/build/core/project-crud/projects-provision.service.ts", line: 178, anchor: /async createFromDeal\(orgId: string, userId: string, input: FromDealInput\) \{/, note: "creation takes no existing project id" },
+    ],
+  },
+  {
+    key: "modules/build/core/project-crud/projects-templates.controller.ts#applyTemplate",
+    verdict: "VERIFIED",
+    finding: "project-relationship-not-applicable",
+    projectRelationshipExempt: "instantiates a template into a new project; no existing project relationship can be required",
+    summary:
+      "POST /build/templates/:templateId/apply. Applying a template creates a new project; the template is read under the caller's org and the route requires build:manage.",
+    evidence: [
+      { file: "src/modules/build/core/project-crud/projects-templates.controller.ts", line: 108, anchor: /return this\.templates\.applyTemplate\(u\.orgId, u\.userId, templateId, body\);/, note: "the caller's org reaches the service" },
+      { file: "src/modules/build/core/project-crud/projects-templates.service.ts", line: 227, anchor: /eq\(projectTemplates\.orgId, orgId\),/, note: "the template is bound to the caller's org" },
+    ],
+  },
+  {
     key: "modules/build/core/custom-fields/projects-custom-fields.controller.ts#updateField",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
@@ -237,7 +273,7 @@ const REVIEWED_INLINE = [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 78, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
       { file: "src/modules/build/core/tickets/projects-tickets-query.service.ts", line: 108, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the subtask query" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 341, anchor: /eq\(tickets\.projectId, projectId\),/, note: "the lookup binds tenant, project, and ticket" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -250,7 +286,7 @@ const REVIEWED_INLINE = [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 117, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
       { file: "src/modules/build/core/tickets/projects-ticket-watchers.service.ts", line: 33, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before the watcher query" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -262,7 +298,7 @@ const REVIEWED_INLINE = [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 130, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
       { file: "src/modules/build/core/tickets/projects-ticket-watchers.service.ts", line: 72, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes member resolution and insertion" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -274,7 +310,7 @@ const REVIEWED_INLINE = [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 143, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
       { file: "src/modules/build/core/tickets/projects-ticket-watchers.service.ts", line: 120, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the watcher delete" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -285,8 +321,8 @@ const REVIEWED_INLINE = [
     blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the write.",
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 157, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/tickets/projects-ticket-labels.service.ts", line: 31, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the label mapping insert" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-ticket-labels.service.ts", line: 31, anchor: /await assertTicketWriteAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "authorization precedes the label mapping insert" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -299,7 +335,7 @@ const REVIEWED_INLINE = [
       { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 184, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
       { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 72, anchor: /await this\.assertTicketAccess\(u, projectId, ticketId\);/, note: "authorization precedes the attachment insert" },
       { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 37, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "the private guard is the canonical ticket decision" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
   {
@@ -311,8 +347,8 @@ const REVIEWED_INLINE = [
     blastRadius: "None: tenant, project membership, route binding, and ticket DataScope are enforced before the comment write.",
     evidence: [
       { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 59, anchor: /return this\.comments\.addComment\(u, projectId, ticketId, body\);/, note: "the actor and both route ids reach the service" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 45, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before ticket and comment storage" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 49, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "the ticket lookup also binds the URL project" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 44, anchor: /const decision = await decideTicketRead\(this\.db, this\.access, u, ticketId, \{ projectId \}\);/, note: "actor-aware project-access decision runs before ticket and comment storage" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 340, anchor: /\.\.\.\(options\.projectId === null \? \[\] : \[eq\(tickets\.projectId, options\.projectId\)\]\),/, note: "the decision binds the ticket to the URL project" },
     ],
   },
 
@@ -392,7 +428,7 @@ const REVIEWED_INLINE = [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 54, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
       { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 63, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "the ticket DataScope is resolved" },
-      { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 108, anchor: /const projectAccess = await resolveProjectAccess\(/, note: "project membership is checked before the record is returned" },
+      { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 108, anchor: /const decision = await decideTicketRead\(this\.db, this\.access, u, ticket\.id, \{ projectId \}\);/, note: "project membership is checked before the record is returned" },
     ],
   },
   {
@@ -405,7 +441,7 @@ const REVIEWED_INLINE = [
       "None: tenant, route binding, project membership, and ticket record scope are enforced before mutation.",
     evidence: [
       { file: "src/modules/build/core/tickets/apply-ticket-change.ts", line: 238, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/tickets/apply-ticket-change.ts", line: 311, anchor: /if \(systemJobCovers\(u\.principal, "build:tickets:update"\)\)/, note: "a system-job principal takes the lock-only arm and does NOT run authorizeMutation" },
+      { file: "src/modules/build/core/tickets/apply-ticket-change.ts", line: 311, anchor: /if \(!accessResult\.rowScoped\)/, note: "decideTicketChange in project-access decides the lock-only arm; only a system-job principal covering build:tickets:update receives rowScoped=false" },
       { file: "src/modules/build/core/tickets/apply-ticket-change.ts", line: 314, anchor: /await deps\.query\.authorizeMutation\(tx, u, ticketProjectId, \[ticketId\]\);/, note: "for every human actor, canonical record-level mutation authorization runs inside the transaction" },
     ],
   },
@@ -419,8 +455,8 @@ const REVIEWED_INLINE = [
     evidence: [
       { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 271, anchor: /return this\.del\.deleteTicket\(u, projectId, ticketId, force === "true"\);/, note: "the complete authenticated actor reaches the service" },
       { file: "src/modules/build/core/tickets/projects-tickets-delete.service.ts", line: 43, anchor: /async deleteTicket\(/, note: "the terminal service accepts CurrentUserContext" },
-      { file: "src/modules/build/core/tickets/projects-tickets-delete.service.ts", line: 50, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before the pre-read and delete path" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
+      { file: "src/modules/build/core/tickets/projects-tickets-delete.service.ts", line: 50, anchor: /await assertTicketWriteAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "canonical ticket authorization runs before the pre-read and delete path" },
+      { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/, note: "project membership and ticket DataScope are both enforced" },
     ],
   },
 
@@ -1150,6 +1186,63 @@ function bindingOfParam(fnNode, paramName, cls, sf, depth = 0, seen = new Set())
   return bound ? "BOUND" : "PASSED-UNBOUND";
 }
 
+const PROJECT_DECISION_FNS = new Set([
+  "resolveProjectAccess",
+  "assertProjectAccess",
+  "assertProjectWriteAccess",
+  "assertProjectVisible",
+  "assertProjectVisibleForWrite",
+  "assertCanManageProject",
+  "authorizeProjectUpdate",
+  "assertProjectAggregateAccess",
+  "authorizeProjectTicketRead",
+  "authorizeTicketMutation",
+  "decideTicketChange",
+  "decideTicketRead",
+  "assertTicketReadAccess",
+  "assertTicketWriteAccess",
+  "authorizeApprovalDecision",
+  "decideProjectWrite",
+  "resolveProjectReach",
+  "resolveTicketVisibility",
+  "resolveProjectsScope",
+  "projectRelationship",
+  "projectReachFor",
+  "assertCanDeleteProject",
+]);
+const TENANT_ONLY_FNS = new Set(["assertProjectInOrg"]);
+const CLIENT_GRANT_RELATIONSHIP = "projectClientGrants";
+
+function projectRelationshipOf(fnNode, cls, sf, depth = 0, seen = new Set()) {
+  const found = { decision: null, tenantOnly: null, touchesProject: false };
+  const body = fnNode?.body;
+  if (!body || depth > CALL_DEPTH) return found;
+  const sig = `${sf.fileName}#${fnNode.pos}`;
+  if (seen.has(sig)) return found;
+  seen.add(sig);
+  const at = (n) => `src/${relative(SRC, sf.fileName).replace(/\\/g, "/")}:${lineOf(n, sf)}`;
+  (function visit(n) {
+    if (found.decision) return;
+    if (ts.isIdentifier(n)) {
+      if (PROJECT_DECISION_FNS.has(n.text)) found.decision = { fn: n.text, at: at(n) };
+      else if (n.text === CLIENT_GRANT_RELATIONSHIP) found.decision = { fn: "client portal grant", at: at(n) };
+      else if (TENANT_ONLY_FNS.has(n.text) && !found.tenantOnly) found.tenantOnly = { fn: n.text, at: at(n) };
+      else if (n.text === "projectId") found.touchesProject = true;
+    }
+    if (ts.isCallExpression(n)) {
+      const target = resolveCallee(n.expression, cls, sf);
+      if (target?.node) {
+        const inner = projectRelationshipOf(target.node, target.cls, target.sf, depth + 1, seen);
+        if (inner.decision) found.decision = inner.decision;
+        if (inner.tenantOnly && !found.tenantOnly) found.tenantOnly = inner.tenantOnly;
+        if (inner.touchesProject) found.touchesProject = true;
+      }
+    }
+    n.forEachChild(visit);
+  })(body);
+  return found;
+}
+
 // ── Controller analysis ──────────────────────────────────────────────────────
 
 function analyzeControllerFile(file, srcRoot) {
@@ -1349,6 +1442,33 @@ function analyzeControllerFile(file, srcRoot) {
         }
       }
 
+      const nestedUnderProject = routeParams.includes("projectId");
+      const projectFacts = svc?.node && svcSf ? projectRelationshipOf(svc.node, svcEntry.cls, svcSf) : null;
+      let projectRelationship;
+      let projectEvidence = null;
+      if (publicDec) {
+        projectRelationship = "N/A (@Public)";
+      } else if (!projectFacts) {
+        projectRelationship = nestedUnderProject ? "UNRESOLVED (service method not found)" : "N/A (service unresolved)";
+      } else if (projectFacts.decision) {
+        projectRelationship = `ENFORCED (${projectFacts.decision.fn})`;
+        projectEvidence = projectFacts.decision.at;
+      } else if (!nestedUnderProject && !projectFacts.touchesProject) {
+        projectRelationship = "N/A (no project-owned resource)";
+      } else if (projectFacts.tenantOnly) {
+        projectRelationship = "TENANT-ONLY (assertProjectInOrg)";
+        projectEvidence = projectFacts.tenantOnly.at;
+      } else {
+        projectRelationship = "NOT-ENFORCED";
+        projectEvidence = `${svc.file}:${lineOf(svc.node, svcSf)}`;
+      }
+      const projectLead =
+        projectRelationship.startsWith("TENANT-ONLY") ||
+        projectRelationship === "NOT-ENFORCED" ||
+        projectRelationship.startsWith("UNRESOLVED")
+          ? `project relationship: ${projectRelationship}`
+          : null;
+
       // ── leads vs notes ──
       // A LEAD is authorization-material and forces NEEDS-REVIEW until a human
       // rules on it. A NOTE is recorded because the census must record it, but
@@ -1392,6 +1512,7 @@ function analyzeControllerFile(file, srcRoot) {
         parentScoping.startsWith("PASSED-ELSEWHERE")
       )
         leads.push(`parent scoping: ${parentScoping}`);
+      if (projectLead) leads.push(projectLead);
 
       rows.push({
         key: `modules/${relative(join(SRC, "modules"), file).replace(/\\/g, "/")}#${m.name.text}`,
@@ -1420,6 +1541,9 @@ function analyzeControllerFile(file, srcRoot) {
         orgEvidence,
         parentScoping,
         parentEvidence,
+        projectRelationship,
+        projectEvidence,
+        projectLead,
         leads,
         notes,
         evidence: `${repoRel}:${methodLine}`,
@@ -1566,6 +1690,16 @@ function classify(rows, entries = REVIEWED) {
     const reviewed = matchReviewed(row.key, byKey, byLoose);
     row.reviewed = reviewed ?? null;
     if (reviewed) {
+      if (row.projectLead && reviewed.projectRelationshipExempt) {
+        row.projectRelationship = `EXEMPT (${reviewed.projectRelationshipExempt})`;
+        row.projectLead = null;
+        row.leads = row.leads.filter((lead) => !lead.startsWith("project relationship:"));
+      }
+      if (row.projectLead && (reviewed.verdict === "VERIFIED" || reviewed.verdict === "CLOSED")) {
+        row.verdict = "NEEDS-REVIEW";
+        row.verdictReason = `${row.projectLead}; the reviewed ${reviewed.verdict} verdict predates the project-relationship dimension and cannot certify it`;
+        continue;
+      }
       row.verdict = reviewed.verdict;
       row.verdictReason = reviewed.summary;
       continue;
@@ -1690,6 +1824,9 @@ function renderMd(files, rows) {
   out.push(
     "- **VERIFIED** — guard chain complete, org identity bound in the service, every route param declared, and either no nested parent resource or a hand read that names the binding line.",
   );
+  out.push(
+    "- **project relationship** — a handler under `:projectId`, or whose service path reads a `projectId`, is VERIFIED only when that path reaches a `project-access` decision (`assertProjectAccess`, `resolveProjectReach`, `assertTicketReadAccess`, …). `assertProjectInOrg` proves tenancy, not the caller's relationship to the project, and reads `TENANT-ONLY`. A hand-read VERIFIED or CLOSED verdict does not override this dimension.",
+  );
   out.push("");
 
   const vulnerable = rows.filter((r) => r.verdict === "VULNERABLE");
@@ -1741,9 +1878,9 @@ function renderMd(files, rows) {
   out.push("## Every handler");
   out.push("");
   out.push(
-    "| verdict | verb | route | controller:line | method | classification | module | guard chain | org scoping | parent scoping | @Validate params | @Idempotent |",
+    "| verdict | verb | route | controller:line | method | classification | module | guard chain | org scoping | parent scoping | project relationship | @Validate params | @Idempotent |",
   );
-  out.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+  out.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
 
   const sorted = [...rows].sort(
     (a, b) => (ORDER[a.verdict] - ORDER[b.verdict]) || a.file.localeCompare(b.file) || a.line - b.line,
@@ -1760,7 +1897,7 @@ function renderMd(files, rows) {
             ? `MISSING [${r.missingParams.join(", ")}]`
             : `complete [${r.declaredParams.join(", ")}]`;
     out.push(
-      `| ${r.verdict} | ${r.verb} | \`${md(r.path)}\` | \`${md(r.file)}:${r.line}\` | \`${md(r.method)}\` | ${md(r.classification)} | ${md(r.moduleGuard)} | ${r.guardChainOk ? "OK" : `INCOMPLETE [${r.guards.join(", ") || "none"}]`} | ${md(r.orgScoping)} | ${md(r.parentScoping)} | ${md(paramCell)} | ${r.idempotent ? "yes" : r.mutating ? "NO (mutating)" : "n/a"} |`,
+      `| ${r.verdict} | ${r.verb} | \`${md(r.path)}\` | \`${md(r.file)}:${r.line}\` | \`${md(r.method)}\` | ${md(r.classification)} | ${md(r.moduleGuard)} | ${r.guardChainOk ? "OK" : `INCOMPLETE [${r.guards.join(", ") || "none"}]`} | ${md(r.orgScoping)} | ${md(r.parentScoping)} | ${md(r.projectRelationship)} | ${md(paramCell)} | ${r.idempotent ? "yes" : r.mutating ? "NO (mutating)" : "n/a"} |`,
     );
   }
   out.push("");
@@ -1871,6 +2008,8 @@ function renderJson(files, rows) {
         orgEvidence: r.orgEvidence,
         parentScoping: r.parentScoping,
         parentEvidence: r.parentEvidence,
+        projectRelationship: r.projectRelationship,
+        projectEvidence: r.projectEvidence,
         leads: r.leads,
         notes: r.notes,
         verdict: r.verdict,
@@ -2204,6 +2343,121 @@ export class FakeController {
     } catch {
       /* ignore */
     }
+  }
+
+  const projBase = join(tmpdir(), `slos-authz-census-proj-${Date.now()}`);
+  try {
+    const projDir = join(projBase, "modules", "fakeproj");
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(
+      join(projDir, "fakeproj.service.ts"),
+      `
+import { assertProjectAccess, assertProjectInOrg } from "./project-access";
+export class FakeProjService {
+  async listThings(u: CurrentUserContext, projectId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    return this.db.select().from(things).where(and(eq(things.orgId, u.orgId), eq(things.projectId, projectId)));
+  }
+  async listTenantOnly(u: CurrentUserContext, projectId: number) {
+    await assertProjectInOrg(this.db, u.orgId, projectId);
+    return this.db.select().from(things).where(and(eq(things.orgId, u.orgId), eq(things.projectId, projectId)));
+  }
+  async listLoose(u: CurrentUserContext) {
+    return this.db.select({ projectId: things.projectId }).from(things).where(eq(things.orgId, u.orgId));
+  }
+  async listPlain(u: CurrentUserContext) {
+    return this.db.select().from(widgets).where(eq(widgets.orgId, u.orgId));
+  }
+}
+`,
+    );
+    writeFileSync(
+      join(projDir, "fakeproj.controller.ts"),
+      `
+import { FakeProjService } from "./fakeproj.service";
+const projectParams = z.object({ projectId: z.coerce.number() }).strict();
+
+@RequireModule("fakeproj")
+@Controller("fakeproj")
+@UseGuards(JwtAuthGuard, PermissionGuard)
+export class FakeProjController {
+  constructor(private readonly svc: FakeProjService) {}
+
+  @Get(":projectId/things")
+  @RequirePermission("fakeproj:view")
+  @Validate({ params: projectParams })
+  listThings(@Param("projectId") projectId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.svc.listThings(u, projectId);
+  }
+
+  @Get(":projectId/tenant-only")
+  @RequirePermission("fakeproj:view")
+  @Validate({ params: projectParams })
+  listTenantOnly(@Param("projectId") projectId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.svc.listTenantOnly(u, projectId);
+  }
+
+  @Get("loose")
+  @RequirePermission("fakeproj:view")
+  listLoose(@CurrentUser() u: CurrentUserContext) {
+    return this.svc.listLoose(u);
+  }
+
+  @Get("plain")
+  @RequirePermission("fakeproj:view")
+  listPlain(@CurrentUser() u: CurrentUserContext) {
+    return this.svc.listPlain(u);
+  }
+}
+`,
+    );
+    sfCache.clear();
+    SERVICE_INDEX = buildServiceIndex([projBase]);
+    const analysed = [...walkControllers(projBase)].flatMap((f) => analyzeControllerFile(f, projBase));
+    const rows = classify(analysed.map((r) => ({ ...r, leads: [...r.leads] })), []);
+    const by = (n) => rows.find((r) => r.method === n);
+    check(
+      "project relationship: a project-access decision on the service path reads ENFORCED and VERIFIED",
+      by("listThings")?.projectRelationship === "ENFORCED (assertProjectAccess)" && by("listThings")?.verdict === "VERIFIED",
+      `${by("listThings")?.projectRelationship} / ${by("listThings")?.verdict}`,
+    );
+    check(
+      "project relationship: SEEDED VIOLATION — assertProjectInOrg alone reads TENANT-ONLY and is never VERIFIED",
+      by("listTenantOnly")?.projectRelationship === "TENANT-ONLY (assertProjectInOrg)" &&
+        by("listTenantOnly")?.verdict === "NEEDS-REVIEW",
+      `${by("listTenantOnly")?.projectRelationship} / ${by("listTenantOnly")?.verdict}`,
+    );
+    check(
+      "project relationship: SEEDED VIOLATION — a route outside :projectId that reads project-owned rows with no decision is NOT-ENFORCED",
+      by("listLoose")?.projectRelationship === "NOT-ENFORCED" && by("listLoose")?.verdict === "NEEDS-REVIEW",
+      `${by("listLoose")?.projectRelationship} / ${by("listLoose")?.verdict}`,
+    );
+    check(
+      "project relationship: a route that touches no project-owned resource is N/A and stays VERIFIED",
+      by("listPlain")?.projectRelationship === "N/A (no project-owned resource)" && by("listPlain")?.verdict === "VERIFIED",
+      `${by("listPlain")?.projectRelationship} / ${by("listPlain")?.verdict}`,
+    );
+    const tenantOnlyKey = by("listTenantOnly")?.key;
+    const reviewedVerified = classify(
+      analysed.map((r) => ({ ...r, leads: [...r.leads] })),
+      [{ key: tenantOnlyKey, verdict: "VERIFIED", summary: "hand read", evidence: [] }],
+    ).find((r) => r.key === tenantOnlyKey);
+    check(
+      "project relationship: SEEDED VIOLATION — a hand-read VERIFIED verdict cannot certify a TENANT-ONLY handler",
+      reviewedVerified?.verdict === "NEEDS-REVIEW",
+      reviewedVerified?.verdict,
+    );
+    const reviewedExempt = classify(
+      analysed.map((r) => ({ ...r, leads: [...r.leads] })),
+      [{ key: tenantOnlyKey, verdict: "VERIFIED", summary: "hand read", projectRelationshipExempt: "fixture", evidence: [] }],
+    ).find((r) => r.key === tenantOnlyKey);
+    check(
+      "project relationship: VIOLATION REMOVED — a named exemption on the hand read restores VERIFIED",
+      reviewedExempt?.verdict === "VERIFIED" && reviewedExempt?.projectRelationship === "EXEMPT (fixture)",
+      `${reviewedExempt?.verdict} / ${reviewedExempt?.projectRelationship}`,
+    );
+  } finally {
+    rmSync(projBase, { recursive: true, force: true });
   }
 
   // ── Part 2: real tree — a census that resolves nothing reports zero. ──

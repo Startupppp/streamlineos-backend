@@ -7,12 +7,13 @@ import type { Db } from "../../../../db/drizzle.module";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import {
   projectReleases,
+  projects,
   releaseTickets,
   tickets,
   users,
 } from "../../../../db/schema";
 import type { CreateReleaseInput, ListReleasesQuery, OrgListReleasesQuery, UpdateReleaseInput } from "../dto/releases.schemas";
-import { assertProjectAccess, assertProjectWriteAccess } from "../project-crud/project-access";
+import { assertProjectAccess, assertProjectWriteAccess, resolveProjectReach } from "../project-crud/project-access";
 import { escapeLike } from "../lib/escape-like";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
@@ -41,6 +42,7 @@ export class ProjectsReleasesService {
     const orgId = u.orgId;
     const { cursor, limit, status } = query;
     const pos = decodeIntegerCursor(cursor ?? null);
+    const reach = await resolveProjectReach(this.access, u);
     const rows = await this.db
       .select({
         id: projectReleases.id,
@@ -72,6 +74,7 @@ export class ProjectsReleasesService {
         and(
           eq(projectReleases.orgId, orgId),
           isNull(projectReleases.deletedAt),
+          sql`${projectReleases.projectId} IN (SELECT ${projects.id} FROM ${projects} WHERE ${projects.orgId} = ${orgId} AND ${projects.deletedAt} IS NULL AND ${reach.where})`,
           status ? eq(projectReleases.status, status) : undefined,
           pos ? lt(projectReleases.id, pos.id) : undefined,
         ),
