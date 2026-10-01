@@ -1,5 +1,9 @@
-import { Inject, Injectable, Optional, type OnModuleInit } from "@nestjs/common";
-import { createHmac } from "node:crypto";
+import {
+  Inject,
+  Injectable,
+  Optional,
+  type OnModuleInit,
+} from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import {
   integrationWebhookEndpointCredentials,
@@ -22,6 +26,7 @@ import {
   type ProviderDescriptor,
 } from "../../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../../common/outbound/provider-circuit-breaker";
+import { buildSignedRequest } from "./webhook-signing";
 
 export const INTEGRATIONS_WEBHOOK_DELIVERY_EVENT =
   "integrations.webhook.delivery.requested";
@@ -66,7 +71,9 @@ class WebhookResponseError extends Error {
 function classifyWebhookError(error: unknown): "terminal" | "retryable" {
   if (!(error instanceof WebhookResponseError)) return "retryable";
   if ([408, 425, 429].includes(error.statusCode)) return "retryable";
-  return error.statusCode >= 400 && error.statusCode < 500 ? "terminal" : "retryable";
+  return error.statusCode >= 400 && error.statusCode < 500
+    ? "terminal"
+    : "retryable";
 }
 
 function outcomeFromProviderResult(
@@ -105,7 +112,9 @@ function outcomeFromProviderResult(
 }
 
 @Injectable()
-export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit {
+export class WebhookDeliveryService
+  implements OutboxEventConsumer, OnModuleInit
+{
   readonly eventType = INTEGRATIONS_WEBHOOK_DELIVERY_EVENT;
   private readonly breaker = new ProviderCircuitBreaker();
 
@@ -121,7 +130,9 @@ export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit
   async handle(event: OutboxEventRow): Promise<void> {
     const raw = event.payload;
     const deliveryId =
-      typeof raw === "object" && raw !== null ? Reflect.get(raw, "deliveryId") : undefined;
+      typeof raw === "object" && raw !== null
+        ? Reflect.get(raw, "deliveryId")
+        : undefined;
     if (
       typeof deliveryId !== "number" ||
       !Number.isSafeInteger(deliveryId) ||
@@ -131,7 +142,10 @@ export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit
     await this.processDelivery(event.organizationId, deliveryId);
   }
 
-  private async processDelivery(orgId: string, deliveryId: number): Promise<void> {
+  private async processDelivery(
+    orgId: string,
+    deliveryId: number,
+  ): Promise<void> {
     const rows = await this.db
       .select({
         deliveryId: integrationWebhookDeliveries.id,
@@ -173,9 +187,15 @@ export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit
     if (!outcome.success) {
       const responseError =
         outcome.responseCode !== null
-          ? new WebhookResponseError(outcome.responseCode, outcome.responseBody ?? "")
+          ? new WebhookResponseError(
+              outcome.responseCode,
+              outcome.responseBody ?? "",
+            )
           : null;
-      if (responseError !== null && classifyWebhookError(responseError) === "retryable")
+      if (
+        responseError !== null &&
+        classifyWebhookError(responseError) === "retryable"
+      )
         throw responseError;
       if (
         outcome.lastError &&
@@ -187,7 +207,10 @@ export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit
     }
   }
 
-  private async deliverPayload(row: DeliveryRow, deliveryId: number): Promise<DeliveryOutcome> {
+  private async deliverPayload(
+    row: DeliveryRow,
+    deliveryId: number,
+  ): Promise<DeliveryOutcome> {
     if (!row.signingSecret)
       return {
         responseCode: null,
@@ -197,12 +220,12 @@ export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit
         attempts: 0,
       };
 
-    const body = JSON.stringify({
-      event: row.event,
-      data: row.payload ?? {},
-      timestamp: new Date().toISOString(),
-    });
-    const signature = createHmac("sha256", row.signingSecret).update(body).digest("hex");
+    const { body, headers } = buildSignedRequest(
+      row.signingSecret,
+      row.event,
+      row.payload,
+      deliveryId,
+    );
 
     const descriptor: ProviderDescriptor = {
       provider: `integrations-webhook:${row.credentialId ?? deliveryId}`,
@@ -220,17 +243,15 @@ export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit
           const response = await postSafeWebhook(
             row.targetUrl,
             body,
-            {
-              "Content-Type": "application/json",
-              "X-StreamlineOS-Signature": `sha256=${signature}`,
-              "X-Webhook-Event": row.event,
-              "X-StreamlineOS-Delivery-Id": String(deliveryId),
-            },
+            headers,
             WEBHOOK_TIMEOUT_MS,
             RESPONSE_BODY_LIMIT,
           );
           if (response.statusCode < 200 || response.statusCode >= 300)
-            throw new WebhookResponseError(response.statusCode, response.responseBody);
+            throw new WebhookResponseError(
+              response.statusCode,
+              response.responseBody,
+            );
           return response;
         } catch (error) {
           if (error instanceof UnsafeWebhookTargetError)
@@ -254,7 +275,8 @@ export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit
       .set({
         status: outcome.success ? "success" : "failed",
         responseCode: outcome.responseCode,
-        responseBody: outcome.responseBody?.slice(0, RESPONSE_BODY_LIMIT) ?? null,
+        responseBody:
+          outcome.responseBody?.slice(0, RESPONSE_BODY_LIMIT) ?? null,
         attempts: sql`${integrationWebhookDeliveries.attempts} + ${outcome.attempts}`,
         lastError: outcome.lastError,
         ...(outcome.success ? { deliveredAt: new Date() } : {}),

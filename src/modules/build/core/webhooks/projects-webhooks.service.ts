@@ -3,19 +3,15 @@ import { and, eq, desc, ilike, lt, gte, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { projectWebhooks } from "../../../../db/schema/build/tasks";
-import {
-  integrationWebhookEndpointCredentials,
-  integrationWebhookDeliveries,
-} from "../../../../db/schema/integrations/webhook-delivery";
 import type {
   CreateWebhookInput,
   ListWebhooksQuery,
   UpdateWebhookInput,
 } from "../dto/webhook.schemas";
-import { generateWebhookSecret } from "./projects-webhooks-dispatch.service";
 import { assertProjectInOrg } from "../project-crud/project-access";
 import { buildIdCursorPage } from "../../../../common/pagination/cursor";
 import { TicketVersionConflictException } from "../tickets";
+import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
 
 const PAGE_SIZE = 50;
 
@@ -35,7 +31,10 @@ const webhookProjection = {
 
 @Injectable()
 export class ProjectsWebhooksService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly webhookEndpoint: WebhookEndpointService,
+  ) {}
 
   async listWebhooks(
     orgId: string,
@@ -98,49 +97,7 @@ export class ProjectsWebhooksService {
     }
 
     const webhookIds = page.data.map((r) => r.id);
-
-    const statsRows = await this.db.execute<{
-      webhookId: number;
-      lastDeliveryAt: Date | null;
-      lastDeliveryStatus: string | null;
-      failureRate: number | null;
-    }>(sql`
-      WITH ranked AS (
-        SELECT
-          build_webhook_id,
-          created_at,
-          status,
-          ROW_NUMBER() OVER (PARTITION BY build_webhook_id ORDER BY created_at DESC) AS rn,
-          COUNT(CASE WHEN status = 'failed' THEN 1 END) OVER (PARTITION BY build_webhook_id)::float
-            / NULLIF(COUNT(*) OVER (PARTITION BY build_webhook_id), 0) AS failure_rate
-        FROM integration_webhook_deliveries
-        WHERE org_id = ${orgId}
-          AND build_webhook_id = ANY(${webhookIds})
-      )
-      SELECT
-        build_webhook_id::int AS "webhookId",
-        created_at AS "lastDeliveryAt",
-        status AS "lastDeliveryStatus",
-        failure_rate AS "failureRate"
-      FROM ranked
-      WHERE rn = 1
-    `);
-
-    const statsMap = new Map<
-      number,
-      {
-        lastDeliveryAt: Date | null;
-        lastDeliveryStatus: string | null;
-        failureRate: number | null;
-      }
-    >();
-    for (const row of statsRows) {
-      statsMap.set(row.webhookId, {
-        lastDeliveryAt: row.lastDeliveryAt,
-        lastDeliveryStatus: row.lastDeliveryStatus,
-        failureRate: row.failureRate,
-      });
-    }
+    const statsMap = await this.webhookEndpoint.deliveryStats(orgId, webhookIds);
 
     return {
       ...page,
@@ -163,15 +120,13 @@ export class ProjectsWebhooksService {
     data: CreateWebhookInput,
   ) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    const secret = data.secret ?? generateWebhookSecret();
-    const secretSetAt = new Date();
 
     return this.db.transaction(async (tx) => {
-      const [credential] = await tx
-        .insert(integrationWebhookEndpointCredentials)
-        .values({ orgId, signingSecret: secret, secretSetAt })
-        .returning({ id: integrationWebhookEndpointCredentials.id });
-      if (!credential) throw new Error("Failed to create webhook credential");
+      const { id: credId, secretSetAt } = await this.webhookEndpoint.createCredential(
+        tx,
+        orgId,
+        data.secret,
+      );
 
       const [webhook] = await tx
         .insert(projectWebhooks)
@@ -181,9 +136,8 @@ export class ProjectsWebhooksService {
           createdBy,
           url: data.url,
           events: data.events,
-          secret,
           secretSetAt,
-          integrationsEndpointId: credential.id,
+          integrationsEndpointId: credId,
         })
         .returning(webhookProjection);
       if (!webhook) throw new Error("Failed to create webhook row");
@@ -280,14 +234,7 @@ export class ProjectsWebhooksService {
         );
 
       if (row.integrationsEndpointId) {
-        await tx
-          .delete(integrationWebhookEndpointCredentials)
-          .where(
-            and(
-              eq(integrationWebhookEndpointCredentials.orgId, orgId),
-              eq(integrationWebhookEndpointCredentials.id, row.integrationsEndpointId),
-            ),
-          );
+        await this.webhookEndpoint.deleteCredential(tx, orgId, row.integrationsEndpointId);
       }
     });
   }
@@ -313,26 +260,6 @@ export class ProjectsWebhooksService {
 
   async listDeliveries(orgId: string, projectId: number, webhookId: number) {
     await this.assertWebhookOwnership(orgId, projectId, webhookId);
-    return this.db
-      .select({
-        id: integrationWebhookDeliveries.id,
-        webhookId: integrationWebhookDeliveries.buildWebhookId,
-        event: integrationWebhookDeliveries.event,
-        status: integrationWebhookDeliveries.status,
-        responseCode: integrationWebhookDeliveries.responseCode,
-        attempts: integrationWebhookDeliveries.attempts,
-        lastError: integrationWebhookDeliveries.lastError,
-        createdAt: integrationWebhookDeliveries.createdAt,
-        deliveredAt: integrationWebhookDeliveries.deliveredAt,
-      })
-      .from(integrationWebhookDeliveries)
-      .where(
-        and(
-          eq(integrationWebhookDeliveries.orgId, orgId),
-          eq(integrationWebhookDeliveries.buildWebhookId, webhookId),
-        ),
-      )
-      .orderBy(desc(integrationWebhookDeliveries.createdAt))
-      .limit(20);
+    return this.webhookEndpoint.listDeliveries(orgId, webhookId);
   }
 }

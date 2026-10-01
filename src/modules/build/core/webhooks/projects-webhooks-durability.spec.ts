@@ -1,14 +1,9 @@
-import { outboxEvents } from "../../../../db/schema/common/outbox";
-import { integrationWebhookDeliveries } from "../../../../db/schema/integrations/webhook-delivery";
-import { runWithTenantContext } from "../../../../common/tenant/tenant-context";
 import { OutboxConsumerRegistry } from "../../../../common/outbox/outbox-consumer.registry";
 import type { Db } from "../../../../db/drizzle.module";
 import { postSafeWebhook } from "../../../../common/outbound/safe-webhook-transport";
-import {
-  ProjectsWebhooksDispatchService,
-  MISSING_SIGNING_SECRET_ERROR,
-} from "./projects-webhooks-dispatch.service";
-import { WebhookDeliveryService } from "../../../integrations/core/webhook-delivery.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { WebhookDeliveryService, MISSING_SIGNING_SECRET_ERROR } from "../../../integrations/core/webhook-delivery.service";
+import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
 
 jest.mock("../../../../common/outbound/safe-webhook-transport", () => {
   const actual = jest.requireActual("../../../../common/outbound/safe-webhook-transport");
@@ -20,8 +15,8 @@ const post = postSafeWebhook as jest.MockedFunction<typeof postSafeWebhook>;
 describe("ProjectsWebhooksDispatchService durable outbox", () => {
   beforeEach(() => post.mockReset());
 
-  it("persists delivery intent into integration_webhook_deliveries and outbox event before returning, without network I/O", async () => {
-    const inserts: unknown[] = [];
+  it("calls webhookEndpoint.requestDeliveries with delivery intents for each active wired endpoint, without network I/O", async () => {
+    const requestDeliveries = jest.fn().mockResolvedValue(undefined);
     const tx = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
@@ -30,50 +25,28 @@ describe("ProjectsWebhooksDispatchService durable outbox", () => {
           ]),
         }),
       }),
-      insert: jest.fn((table: unknown) => {
-        inserts.push(table);
-        return {
-          values: jest.fn().mockReturnValue(
-            table === integrationWebhookDeliveries
-              ? { returning: jest.fn().mockResolvedValue([{ id: 77 }]) }
-              : Promise.resolve(undefined),
-          ),
-        };
-      }),
     };
-    const service = new ProjectsWebhooksDispatchService({} as Db);
-
-    await runWithTenantContext(
-      { orgId: "org-1", audience: "INTERNAL", tx: tx as never },
-      () =>
-        service.dispatch("org-1", 9, "ticket.created", {
-          id: 12,
-          projectId: 9,
-          actor: "member-1",
-          timestamp: new Date().toISOString(),
-        }),
+    const service = new ProjectsWebhooksDispatchService(
+      {} as Db,
+      { requestDeliveries } as unknown as WebhookEndpointService,
     );
 
-    expect(inserts).toEqual([integrationWebhookDeliveries, outboxEvents]);
+    await service.enqueue(tx as never, "org-1", 9, "ticket.created", {
+      id: 12,
+      projectId: 9,
+      actor: "member-1",
+      timestamp: new Date().toISOString(),
+    });
+
+    expect(requestDeliveries).toHaveBeenCalledTimes(1);
+    expect(requestDeliveries.mock.calls[0]?.[2]).toEqual([
+      expect.objectContaining({ credentialId: 3, buildWebhookId: 5, targetUrl: "https://hooks.example.test", event: "ticket.created" }),
+    ]);
     expect(post).not.toHaveBeenCalled();
   });
 
-  it("registers the legacy consumer with the outbox registry (backward-compat for in-flight build webhook rows)", () => {
-    const registry = new OutboxConsumerRegistry();
-    const service = new ProjectsWebhooksDispatchService({} as Db, registry);
-    service.onModuleInit();
-    expect(registry.get("build.project-webhook.delivery.requested")).toBe(service);
-  });
-
-  it("WebhookDeliveryService registers the new consumer with the outbox registry", () => {
-    const registry = new OutboxConsumerRegistry();
-    const service = new WebhookDeliveryService({} as Db, registry);
-    service.onModuleInit();
-    expect(registry.get("integrations.webhook.delivery.requested")).toBe(service);
-  });
-
-  it("skips a webhook endpoint that has no integrations_endpoint_id, so pre-backfill rows do not cause delivery failures", async () => {
-    const inserts: unknown[] = [];
+  it("skips a webhook endpoint that has no integrations_endpoint_id so pre-backfill rows do not cause delivery failures", async () => {
+    const requestDeliveries = jest.fn();
     const tx = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
@@ -82,26 +55,28 @@ describe("ProjectsWebhooksDispatchService durable outbox", () => {
           ]),
         }),
       }),
-      insert: jest.fn((table: unknown) => {
-        inserts.push(table);
-        return { values: jest.fn().mockResolvedValue([]) };
-      }),
     };
-    const service = new ProjectsWebhooksDispatchService({} as Db);
-
-    await runWithTenantContext(
-      { orgId: "org-1", audience: "INTERNAL", tx: tx as never },
-      () =>
-        service.dispatch("org-1", 9, "ticket.created", {
-          id: 12,
-          projectId: 9,
-          actor: "member-1",
-          timestamp: new Date().toISOString(),
-        }),
+    const service = new ProjectsWebhooksDispatchService(
+      {} as Db,
+      { requestDeliveries } as unknown as WebhookEndpointService,
     );
 
-    expect(inserts).toHaveLength(0);
+    await service.enqueue(tx as never, "org-1", 9, "ticket.created", {
+      id: 12,
+      projectId: 9,
+      actor: "member-1",
+      timestamp: new Date().toISOString(),
+    });
+
+    expect(requestDeliveries).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it("WebhookDeliveryService registers the outbox consumer with the registry so background deliveries are routed", () => {
+    const registry = new OutboxConsumerRegistry();
+    const service = new WebhookDeliveryService({} as Db, registry);
+    service.onModuleInit();
+    expect(registry.get("integrations.webhook.delivery.requested")).toBe(service);
   });
 });
 

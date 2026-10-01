@@ -2,7 +2,16 @@ import type { Db } from "../../../../db/drizzle.module";
 import { NotFoundException } from "@nestjs/common";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
 import { runWithTenantContext } from "../../../../common/tenant/tenant-context";
+
+const endpointStub = {
+  deliveryStats: jest.fn().mockResolvedValue(new Map()),
+  requestDeliveries: jest.fn().mockResolvedValue(undefined),
+  listDeliveries: jest.fn().mockResolvedValue([]),
+  createCredential: jest.fn().mockResolvedValue({ id: 1, secretSetAt: new Date() }),
+  deleteCredential: jest.fn().mockResolvedValue(undefined),
+} as unknown as WebhookEndpointService;
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -44,7 +53,7 @@ describe("ProjectsWebhooksService — cross-tenant isolation", () => {
       query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
-    const svc = new ProjectsWebhooksService(db);
+    const svc = new ProjectsWebhooksService(db, endpointStub);
 
     await expect(svc.listWebhooks(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
 
@@ -79,7 +88,7 @@ describe("ProjectsWebhooksService — cross-tenant isolation", () => {
         }),
       }),
     } as unknown as Db;
-    const svc = new ProjectsWebhooksService(db);
+    const svc = new ProjectsWebhooksService(db, endpointStub);
 
     const result = await svc.listWebhooks(OWNER_ORG, 1);
     expect(result.data).toHaveLength(1);
@@ -94,7 +103,7 @@ describe("ProjectsWebhooksService — cross-tenant isolation", () => {
         }),
       }),
     } as unknown as Db;
-    const svc = new ProjectsWebhooksService(db);
+    const svc = new ProjectsWebhooksService(db, endpointStub);
 
     await expect(svc.assertWebhookOwnership(ATTACKER_ORG, 1, 999)).rejects.toThrow(NotFoundException);
   });
@@ -108,7 +117,7 @@ describe("ProjectsWebhooksDispatchService — cross-tenant isolation", () => {
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     };
-    const svc = new ProjectsWebhooksDispatchService({} as Db);
+    const svc = new ProjectsWebhooksDispatchService({} as Db, endpointStub);
 
     await runWithTenantContext(
       { orgId: ATTACKER_ORG, audience: "INTERNAL", tx: tx as never },

@@ -67,21 +67,6 @@ function evaluateBuildConditions(
   return conditions.every((c) => evaluateBuildCondition(c, payload));
 }
 
-/**
- * Loop prevention. `BuildAutomationActionExecutor`'s writes (`set_status`/
- * `set_assignee`/`set_priority`) currently go straight to `tickets` via
- * Drizzle and never call back into `ProjectsTicketsUpdateService.updateTicket`
- * — the only two call sites of `runForTicketEvent` are the create/update
- * ticket services themselves (grepped: `projects-tickets-create.service.ts`,
- * `projects-tickets-update.service.ts`), so today's action set cannot
- * re-trigger this runner. But that is an accident of how those five actions
- * happen to be implemented, not a structural guarantee — a natural future
- * refactor (routing `set_status` through the shared update service to reuse
- * its capacity-check/notification logic) would create unbounded recursion
- * with zero guard. This context is keyed on the async call chain (not passed
- * as an argument) so it protects the real re-entrancy point regardless of
- * which future call path triggers it.
- */
 interface AutomationChainContext {
   readonly depth: number;
   readonly seen: ReadonlySet<string>;
@@ -108,10 +93,6 @@ export class BuildAutomationRunnerService {
     const chainKey = `${ticket.ticketId}:${triggerEvent}`;
     const parent = automationChainStorage.getStore();
 
-    // Loop prevention: a max-depth ceiling AND a per-(ticket, trigger event)
-    // dedup within one chain. The dedup catches the tighter cycle — a rule
-    // that re-triggers the exact event that matched it — before it even has
-    // to burn through the depth budget.
     if (parent && (parent.depth >= MAX_AUTOMATION_CHAIN_DEPTH || parent.seen.has(chainKey))) {
       logger.error("BuildAutomationRunner: loop guard blocked a re-entrant trigger", {
         orgId,
@@ -133,8 +114,6 @@ export class BuildAutomationRunnerService {
       return;
     }
 
-    // Event-driven, no HTTP entry point — `@UseRateLimit`/`TIERS` per BE-35's
-    // convention, called directly rather than through the guard.
     const rateLimit = await this.rateLimiter.check("build:automation-run", `${orgId}:${projectId}`);
     if (!rateLimit.allowed) {
       logger.warn("BuildAutomationRunner: rate limit exceeded, skipping run", {
@@ -226,7 +205,7 @@ export class BuildAutomationRunnerService {
       const actionResults: AutomationActionRunResult[] = [];
       for (const [index, action] of rule.actions.entries()) {
         try {
-          await this.actionExecutor.execute(orgId, ticket.projectId, ticket.ticketId, rule.id, action, rule.createdBy);
+          await this.actionExecutor.execute(orgId, ticket.projectId, ticket.ticketId, action, rule.createdBy);
           actionResults.push({ index, type: action.type, outcome: "success", errorMessage: null });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -258,23 +237,19 @@ export class BuildAutomationRunnerService {
     }
   }
 
-  /**
-   * Automation actions write tickets, labels and comments, so they must not be
-   * fired into the request's own transaction and left to race its COMMIT. The
-   * DRIZZLE handle is the tenant-aware proxy: a promise started here and resumed
-   * after the handler returns still resolves `this.db` to the ambient `tx`, which
-   * by then is committed and has lost its GUC, so the write dies 42501 and the
-   * rule silently never applies. Deferring also means a rolled-back ticket write
-   * cannot leave its automations applied. CLAUDE.md §4, mechanism 3.
-   */
   runForTicketEvent(
     orgId: string,
     projectId: number,
     triggerEvent: string,
     ticket: TicketEventPayload,
   ): void {
+    const chain = automationChainStorage.getStore();
+    const start = (): Promise<void> =>
+      chain
+        ? automationChainStorage.run(chain, () => this.execute(orgId, projectId, triggerEvent, ticket))
+        : this.execute(orgId, projectId, triggerEvent, ticket);
     const run = (): Promise<void> =>
-      this.execute(orgId, projectId, triggerEvent, ticket).catch((error: unknown) => {
+      start().catch((error: unknown) => {
         logger.error("BuildAutomationRunner: unexpected failure", {
           orgId,
           projectId,

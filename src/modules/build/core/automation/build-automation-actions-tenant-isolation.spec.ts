@@ -1,15 +1,18 @@
-import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
-import type { Db } from "../../../../db/drizzle.module";
-import { assertTransitionAllowed } from "../tickets/projects-tickets-workflow-utils";
-import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
+import { NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
+import type { TestingModule } from "@nestjs/testing";
+import {
+  BuildAutomationActionExecutor,
+  AUTOMATION_TICKET_CHANGE,
+} from "./build-automation-actions.service";
+import { ProjectsTicketLabelsService } from "../tickets/projects-ticket-labels.service";
+import { ProjectsTicketCommentsService } from "../tickets/projects-ticket-comments.service";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
 
-jest.mock("../tickets/projects-tickets-workflow-utils", () => ({
-  assertTransitionAllowed: jest.fn(),
-}));
-
-jest.mock("../../../../common/outbox/outbox-writer", () => ({
-  OutboxWriter: { emit: jest.fn() },
-}));
+const OWNER_ORG = "org-owner";
+const ATTACKER_ORG = "org-attacker";
+const PROJECT = 10;
+const TICKET = 42;
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -30,181 +33,119 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-const OWNER_ORG = "org-owner";
-const ATTACKER_ORG = "org-attacker";
-const OWNER_PROJECT_ID = 10;
-const FOREIGN_PROJECT_ID = 99;
-const TICKET_ID = 42;
-const RULE_ID = 1;
-
-function makeUpdateDb() {
-  const returning = jest.fn().mockResolvedValue([]);
-  const where = jest.fn().mockReturnValue({ returning });
-  const set = jest.fn().mockReturnValue({ where });
-  const update = jest.fn().mockReturnValue({ set });
+function makeCapturingLabelDb() {
+  let capturedWhere: unknown = undefined;
   const db = {
-    update,
-    query: {
-      organizationMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
-    },
-  } as unknown as Db;
-  return { db, where };
-}
-
-function makeActivity() {
-  return { logTicketActivity: jest.fn().mockResolvedValue(undefined) };
-}
-
-beforeEach(() => {
-  jest.resetAllMocks();
-  jest.mocked(assertTransitionAllowed).mockResolvedValue(undefined);
-  jest.mocked(OutboxWriter.emit).mockResolvedValue(undefined);
-});
-
-describe("BuildAutomationActionExecutor — cross-org tenant isolation (set_priority)", () => {
-  it("binds attacker orgId in the WHERE clause — cross-org ticket is unreachable (DENY)", async () => {
-    const { db, where } = makeUpdateDb();
-    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
-
-    await executor.execute(
-      ATTACKER_ORG,
-      OWNER_PROJECT_ID,
-      TICKET_ID,
-      RULE_ID,
-      { type: "set_priority", value: "HIGH" },
-      null,
-    );
-
-    expect(where).toHaveBeenCalledTimes(1);
-    const predicate = where.mock.calls[0]?.[0];
-    const values = sqlValues(predicate);
-    expect(values).toContain(ATTACKER_ORG);
-    expect(values).not.toContain(OWNER_ORG);
-  });
-
-  it("binds projectId in the WHERE clause — cross-project ticket is unreachable (DENY)", async () => {
-    const { db, where } = makeUpdateDb();
-    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
-
-    await executor.execute(
-      ATTACKER_ORG,
-      FOREIGN_PROJECT_ID,
-      TICKET_ID,
-      RULE_ID,
-      { type: "set_priority", value: "HIGH" },
-      null,
-    );
-
-    expect(where).toHaveBeenCalledTimes(1);
-    const predicate = where.mock.calls[0]?.[0];
-    const values = sqlValues(predicate);
-    expect(values).toContain(FOREIGN_PROJECT_ID);
-    expect(values).not.toContain(OWNER_PROJECT_ID);
-  });
-
-  it("resolves without error and WHERE clause carries owner org + project (positive control)", async () => {
-    const { db, where } = makeUpdateDb();
-    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
-
-    await expect(
-      executor.execute(
-        OWNER_ORG,
-        OWNER_PROJECT_ID,
-        TICKET_ID,
-        RULE_ID,
-        { type: "set_priority", value: "HIGH" },
-        null,
-      ),
-    ).resolves.toBeUndefined();
-
-    expect(where).toHaveBeenCalledTimes(1);
-    const predicate = where.mock.calls[0]?.[0];
-    const values = sqlValues(predicate);
-    expect(values).toContain(OWNER_ORG);
-    expect(values).toContain(OWNER_PROJECT_ID);
-    expect(values).toContain(TICKET_ID);
-  });
-});
-
-describe("BuildAutomationActionExecutor — cross-org isolation via set_status guard", () => {
-  function makeStatusLookupDb(statusRow: unknown, currentStatus: string | null = "TODO") {
-    const returning = jest.fn().mockResolvedValue([{ version: 2 }]);
-    const txWhere = jest.fn().mockReturnValue({ returning });
-    const txSet = jest.fn().mockReturnValue({ where: txWhere });
-    const txUpdate = jest.fn().mockReturnValue({ set: txSet });
-    const txInsert = jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
-    });
-    const transaction = jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-      cb({
-        update: txUpdate,
-        insert: txInsert,
-        execute: jest.fn().mockResolvedValue([]),
-        select: jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-          }),
-        }),
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation((predicate: unknown) => {
+        capturedWhere = predicate;
+        return { limit: jest.fn().mockResolvedValue([]) };
       }),
-    );
+    }),
+    getCapturedWhere: () => capturedWhere,
+  };
+  return db;
+}
 
-    let statusFindFirstPredicate: unknown = undefined;
-    const findFirstStatus = jest.fn().mockImplementation(({ where: predicate }: { where: unknown }) => {
-      statusFindFirstPredicate = predicate;
-      return Promise.resolve(statusRow);
-    });
+function makeFoundLabelDb(labelId: number) {
+  return {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: labelId }]) }),
+    }),
+  };
+}
 
-    const findFirstTicket = jest.fn().mockResolvedValue(
-      currentStatus !== null ? { id: TICKET_ID, status: currentStatus, version: 1 } : undefined,
-    );
+async function buildExecutorWithDb(db: object): Promise<BuildAutomationActionExecutor> {
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      BuildAutomationActionExecutor,
+      { provide: DRIZZLE, useValue: db },
+      { provide: AUTOMATION_TICKET_CHANGE, useValue: { updateTicket: jest.fn().mockResolvedValue({}) } },
+      { provide: ProjectsTicketLabelsService, useValue: { addTicketLabel: jest.fn().mockResolvedValue({ success: true }) } },
+      { provide: ProjectsTicketCommentsService, useValue: { addComment: jest.fn().mockResolvedValue({}) } },
+    ],
+  }).compile();
+  return module.get(BuildAutomationActionExecutor);
+}
 
-    const db = {
-      query: {
-        projectStatuses: { findFirst: findFirstStatus },
-        tickets: { findFirst: findFirstTicket },
-      },
-      transaction,
-    } as unknown as Db;
-
-    return { db, findFirst: findFirstStatus, txWhere, getStatusPredicate: () => statusFindFirstPredicate };
-  }
-
-  it("projectStatuses lookup carries attacker orgId — cross-org status lookup is isolated (DENY path)", async () => {
-    const { db, findFirst, getStatusPredicate } = makeStatusLookupDb(undefined);
-    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
-
-    await executor.execute(
-      ATTACKER_ORG,
-      FOREIGN_PROJECT_ID,
-      TICKET_ID,
-      RULE_ID,
-      { type: "set_status", value: "DONE" },
-      null,
-    );
-
-    expect(findFirst).toHaveBeenCalledTimes(1);
-    const values = sqlValues(getStatusPredicate());
-    expect(values).toContain(ATTACKER_ORG);
-    expect(values).not.toContain(OWNER_ORG);
-    expect(values).toContain(FOREIGN_PROJECT_ID);
-    expect(values).not.toContain(OWNER_PROJECT_ID);
-  });
-
-  it("resolves and executes the transaction when status exists in the correct project (positive control)", async () => {
-    const { db, findFirst } = makeStatusLookupDb({ id: 7 }, "TODO");
-    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
+describe("BuildAutomationActionExecutor — label lookup is scoped to the calling org", () => {
+  it("attacker org's label query carries attacker orgId, not owner orgId (DENY path: NotFoundException expected)", async () => {
+    const db = makeCapturingLabelDb();
+    const executor = await buildExecutorWithDb(db);
 
     await expect(
-      executor.execute(
-        OWNER_ORG,
-        OWNER_PROJECT_ID,
-        TICKET_ID,
-        RULE_ID,
-        { type: "set_status", value: "DONE" },
-        null,
-      ),
-    ).resolves.toBeUndefined();
+      executor.execute(ATTACKER_ORG, PROJECT, TICKET, { type: "add_label", value: "77" }, null),
+    ).rejects.toBeInstanceOf(NotFoundException);
 
-    expect(findFirst).toHaveBeenCalledTimes(1);
+    const values = sqlValues(db.getCapturedWhere());
+    expect(values).toContain(ATTACKER_ORG);
+    expect(values).not.toContain(OWNER_ORG);
+  });
+
+  it("owner org label query carries owner orgId and the label is found (positive control)", async () => {
+    const db = makeFoundLabelDb(77);
+    const executor = await buildExecutorWithDb(db);
+
+    await expect(
+      executor.execute(OWNER_ORG, PROJECT, TICKET, { type: "add_label", value: "77" }, null),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("BuildAutomationActionExecutor — actor carries the orgId from the execute call", () => {
+  it("actor.orgId equals the orgId passed to execute, not a hard-coded value", async () => {
+    const updateTicketFn = jest.fn().mockResolvedValue({});
+    const db = makeFoundLabelDb(77);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BuildAutomationActionExecutor,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AUTOMATION_TICKET_CHANGE, useValue: { updateTicket: updateTicketFn } },
+        { provide: ProjectsTicketLabelsService, useValue: { addTicketLabel: jest.fn().mockResolvedValue({ success: true }) } },
+        { provide: ProjectsTicketCommentsService, useValue: { addComment: jest.fn().mockResolvedValue({}) } },
+      ],
+    }).compile();
+    const executor = module.get(BuildAutomationActionExecutor);
+
+    await executor.execute(OWNER_ORG, PROJECT, TICKET, { type: "set_status", value: "DONE" }, null);
+
+    expect(updateTicketFn).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: OWNER_ORG }),
+      PROJECT,
+      TICKET,
+      { status: "DONE" },
+    );
+  });
+
+  it("calling with different orgId produces an actor bound to that org, not the owner org", async () => {
+    const updateTicketFn = jest.fn().mockResolvedValue({});
+    const db = makeFoundLabelDb(77);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BuildAutomationActionExecutor,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AUTOMATION_TICKET_CHANGE, useValue: { updateTicket: updateTicketFn } },
+        { provide: ProjectsTicketLabelsService, useValue: { addTicketLabel: jest.fn().mockResolvedValue({ success: true }) } },
+        { provide: ProjectsTicketCommentsService, useValue: { addComment: jest.fn().mockResolvedValue({}) } },
+      ],
+    }).compile();
+    const executor = module.get(BuildAutomationActionExecutor);
+
+    await executor.execute(ATTACKER_ORG, PROJECT, TICKET, { type: "set_status", value: "DONE" }, null);
+
+    expect(updateTicketFn).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: ATTACKER_ORG }),
+      PROJECT,
+      TICKET,
+      { status: "DONE" },
+    );
+    expect(updateTicketFn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: OWNER_ORG }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });

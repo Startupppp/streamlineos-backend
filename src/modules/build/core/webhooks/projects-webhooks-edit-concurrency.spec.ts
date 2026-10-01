@@ -2,6 +2,7 @@ import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
+import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
 import { TicketVersionConflictException } from "../tickets/ticket-version-conflict.exception";
 import { createWebhookSchema, updateWebhookSchema } from "../dto/webhook.schemas";
 import { projectWebhookSchema } from "../dto/build-core-response.schemas";
@@ -43,9 +44,7 @@ async function webhooksService(
     where: jest.fn().mockReturnValue({ returning: updateReturning }),
   });
   const update = jest.fn().mockReturnValue({ set });
-  const returning = jest.fn()
-    .mockResolvedValueOnce([{ id: 55 }])
-    .mockResolvedValue([returnedRow({ version: 1 })]);
+  const returning = jest.fn().mockResolvedValue([returnedRow({ version: 1 })]);
   const values = jest.fn().mockReturnValue({ returning });
   const insert = jest.fn().mockReturnValue({ values });
   const db: Record<string, unknown> = {
@@ -55,8 +54,18 @@ async function webhooksService(
     query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }) } },
   };
   db.transaction = jest.fn().mockImplementation((cb: (tx: unknown) => unknown) => cb(db));
+  const webhookEndpoint = {
+    createCredential: jest.fn().mockResolvedValue({ id: 55, secretSetAt: new Date("2026-09-28T00:00:00.000Z") }),
+    deleteCredential: jest.fn().mockResolvedValue(undefined),
+    deliveryStats: jest.fn().mockResolvedValue(new Map()),
+    listDeliveries: jest.fn().mockResolvedValue([]),
+  } as unknown as WebhookEndpointService;
   const module = await Test.createTestingModule({
-    providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db as unknown as Record<string, unknown> }],
+    providers: [
+      ProjectsWebhooksService,
+      { provide: DRIZZLE, useValue: db as unknown as Record<string, unknown> },
+      { provide: WebhookEndpointService, useValue: webhookEndpoint },
+    ],
   }).compile();
   return { service: module.get(ProjectsWebhooksService), module, select, update, set, values, returning, updateReturning };
 }
@@ -210,10 +219,8 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    // calls[0] is credential insert (signingSecret), calls[1] is webhook row insert
-    const webhookInsert = values.mock.calls[1]?.[0] as Record<string, unknown>;
+    const webhookInsert = values.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(webhookInsert.secretSetAt).toBeInstanceOf(Date);
-    expect(webhookInsert.secret).toEqual(expect.any(String));
     await module.close();
   });
 
@@ -223,8 +230,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    // returning.mock.calls[0] is credential returning({ id }); calls[1] is webhook projection
-    const projection = Object.keys(returning.mock.calls[1]?.[0] as Record<string, unknown>);
+    const projection = Object.keys(returning.mock.calls[0]?.[0] as Record<string, unknown>);
     expect(projection).toEqual(expect.arrayContaining(["hasSecret", "secretSetAt", "version", "updatedAt"]));
     expect(projection).not.toContain("secret");
     await module.close();
@@ -254,8 +260,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    // calls[1] is the webhook insert projection; calls[0] is the credential id projection
-    const projection = returning.mock.calls[1]?.[0] as Record<string, { queryChunks?: unknown[] }>;
+    const projection = returning.mock.calls[0]?.[0] as Record<string, { queryChunks?: unknown[] }>;
     const chunks = projection.hasSecret?.queryChunks ?? [];
     const rendered = chunks
       .map((chunk) => {
@@ -317,7 +322,14 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       }),
     };
     const module = await Test.createTestingModule({
-      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }],
+      providers: [
+        ProjectsWebhooksService,
+        { provide: DRIZZLE, useValue: db },
+        {
+          provide: WebhookEndpointService,
+          useValue: { deliveryStats: jest.fn().mockResolvedValue(new Map()) },
+        },
+      ],
     }).compile();
     await module.get(ProjectsWebhooksService).listWebhooks(ORG, PROJECT_ID);
 
@@ -326,8 +338,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    // calls[0] is credential returning({ id }); calls[1] is webhook projection
-    const writeKeys = Object.keys(write.returning.mock.calls[1]?.[0] as Record<string, unknown>);
+    const writeKeys = Object.keys(write.returning.mock.calls[0]?.[0] as Record<string, unknown>);
 
     expect(listKeys.sort()).toEqual(writeKeys.sort());
     await module.close();

@@ -107,6 +107,12 @@ export async function resolveProjectAccess(
     return { hasAccess: true, role: "OWNER" };
   }
 
+  if (u.principal.kind === "system-job") {
+    if (!(await projectRow)) throw new NotFoundException("Project not found");
+    const reaches = systemJobCovers(u.principal, "build:tickets:view");
+    return { hasAccess: reaches, role: reaches ? "OWNER" : null };
+  }
+
   const [perms, project] = await Promise.all([
     access.resolveUserPermissions(u.orgId, u.userId),
     projectRow,

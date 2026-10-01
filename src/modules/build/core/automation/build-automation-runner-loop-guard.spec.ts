@@ -5,6 +5,12 @@ import { BuildAutomationRunHistoryService } from "./build-automation-run-history
 import { RateLimitService } from "../../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
+import {
+  runWithTenantContext,
+  type AfterCommitHook,
+  type TenantContext,
+} from "../../../../common/tenant/tenant-context";
+import type { TenantTx } from "../../../../db/drizzle.types";
 
 jest.mock("../../../../common/logger/logger.service", () => ({
   logger: { warn: jest.fn(), error: jest.fn() },
@@ -32,24 +38,10 @@ function flush(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 20));
 }
 
-/**
- * Today `BuildAutomationActionExecutor`'s writes never call back into
- * `runForTicketEvent` (see the loop-prevention note on
- * `BuildAutomationRunnerService`) — verified by grep, not by this test. What
- * this test proves is that IF an action ever did re-trigger the runner (a
- * plausible future refactor the brief asks to defend against), the guard
- * stops it rather than recursing unbounded. `BuildAutomationActionExecutor`
- * is replaced with a stub whose "action" is exactly that re-entrant call.
- */
 describe("BuildAutomationRunnerService — loop-prevention guard", () => {
   const dbSelect = { from: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue([RULE]) };
   const mockDb = {
     select: jest.fn().mockReturnValue(dbSelect),
-    query: {
-      ticketLabels: { findFirst: jest.fn().mockResolvedValue(null) },
-      projectStatuses: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
-      organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
-    },
   } as unknown as Db;
 
   const recordRun = jest.fn().mockResolvedValue(null);
@@ -94,8 +86,6 @@ describe("BuildAutomationRunnerService — loop-prevention guard", () => {
     service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
     await flush();
 
-    // The rules query only ever runs for the outer call — the re-entrant
-    // inner call is blocked before it reaches rule evaluation at all.
     expect(dbSelect.where).toHaveBeenCalledTimes(1);
 
     const blocked = recordRun.mock.calls.find((c) => (c[0] as { outcome: string }).outcome === "blocked_loop_guard");
@@ -141,7 +131,40 @@ describe("BuildAutomationRunnerService — loop-prevention guard", () => {
 
     const blocked = recordRun.mock.calls.filter((c) => (c[0] as { outcome: string }).outcome === "blocked_loop_guard");
     expect(blocked.length).toBeGreaterThan(0);
-    // The chain never got anywhere near the full 5-event list before the depth ceiling cut it off.
     expect(dbSelect.where.mock.calls.length).toBeLessThan(events.length);
+  });
+
+  it("loop guard holds when the re-entrant trigger is deferred via registerAfterCommit", async () => {
+    let service!: BuildAutomationRunnerService;
+    const actionExecutor = {
+      execute: jest.fn().mockImplementation(async () => {
+        service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
+      }),
+    };
+    service = await buildService(actionExecutor);
+
+    const afterCommit: AfterCommitHook[] = [];
+    const context: TenantContext = {
+      orgId: "org-1",
+      audience: "INTERNAL",
+      tx: {} as TenantTx,
+      afterCommit,
+    };
+
+    await runWithTenantContext(context, async () => {
+      service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
+    });
+
+    expect(dbSelect.where).not.toHaveBeenCalled();
+    expect(afterCommit).toHaveLength(1);
+
+    for (const hook of afterCommit) await hook();
+    await flush();
+
+    expect(dbSelect.where).toHaveBeenCalledTimes(1);
+    const blocked = recordRun.mock.calls.find(
+      (c) => (c[0] as { outcome: string }).outcome === "blocked_loop_guard",
+    );
+    expect(blocked).toBeDefined();
   });
 });
