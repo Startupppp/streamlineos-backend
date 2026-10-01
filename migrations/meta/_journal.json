@@ -7225,6 +7225,13 @@
       "when": 1803093647725,
       "tag": "1704_ai_credit_ledger_convergence",
       "breakpoints": true
+    },
+    {
+      "idx": 1160,
+      "version": "7",
+      "when": 1803093648725,
+      "tag": "1705_timesheet_periods_locked_status_repair",
+      "breakpoints": true
     }
   ]
 }

@@ -170,7 +170,7 @@ export class TimesheetAnalyticsService {
         .select({
           userId: periodMember.userId,
           periodsSubmitted: sql<number>`COUNT(*) FILTER (WHERE ${timesheetPeriods.submittedAt} IS NOT NULL)::int`,
-          periodsApproved: sql<number>`COUNT(*) FILTER (WHERE ${timesheetPeriods.status} = 'APPROVED')::int`,
+          periodsApproved: sql<number>`COUNT(*) FILTER (WHERE ${timesheetPeriods.status} IN ('APPROVED', 'LOCKED'))::int`,
           periodsOverdue: sql<number>`COUNT(*) FILTER (WHERE ${timesheetPeriods.status} IN ('OPEN', 'DRAFT') AND ${timesheetPeriods.periodEnd} < CURRENT_DATE - INTERVAL '3 days')::int`,
         })
         .from(timesheetPeriods)

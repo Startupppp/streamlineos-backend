@@ -504,6 +504,31 @@ describe("TS-24 period lifecycle durable rows", () => {
       expect(new Set(outbox.map((r) => r.aggregateVersion)).size).toBe(2);
     });
 
+    it("writes LOCKED, so the status agrees with the locked event it emits", async () => {
+      const outbox: OutboxRow[] = [];
+      const { db, periodUpdates } = makeDb(approveScript(5, true), outbox);
+
+      await approvalsService(db, makeNotifications([])).approvePeriod(APPROVER, PERIOD_ID);
+
+      expect(periodUpdates()[0]).toMatchObject({
+        status: "LOCKED",
+        lockedAt: expect.any(Date),
+      });
+      // The approval event still reports the approval it describes.
+      expect(outbox[0]!.payload).toMatchObject({ status: "APPROVED" });
+      expect(outbox[1]!.payload).toMatchObject({ status: "LOCKED" });
+    });
+
+    it("leaves the status at APPROVED, and emits no locked event, when the organisation does not lock", async () => {
+      const outbox: OutboxRow[] = [];
+      const { db, periodUpdates } = makeDb(approveScript(4, false), outbox);
+
+      await approvalsService(db, makeNotifications([])).approvePeriod(APPROVER, PERIOD_ID);
+
+      expect(periodUpdates()[0]).toMatchObject({ status: "APPROVED", lockedAt: null });
+      expect(outbox.map((r) => r.eventType)).toEqual(["timesheets.period.approved"]);
+    });
+
     it("emits only the approval when the organisation does not lock on approve", async () => {
       const outbox: OutboxRow[] = [];
       const { db } = makeDb(approveScript(4, false), outbox);
@@ -610,7 +635,8 @@ describe("TS-24 period lifecycle durable rows", () => {
       await approvalsService(db, makeNotifications(notes)).approvePeriod(APPROVER, PERIOD_ID);
 
       expect(ranTransaction()).toBe(true);
-      expect(periodUpdates()[0]).toMatchObject({ status: "APPROVED" });
+      // lockAfterApproval is on in this script, so the row lands on LOCKED.
+      expect(periodUpdates()[0]).toMatchObject({ status: "LOCKED" });
       expect(outbox).toEqual([]);
       expect(notes).toEqual([]);
       expect(warn).toHaveBeenCalledWith(
