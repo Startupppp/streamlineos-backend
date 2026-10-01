@@ -169,6 +169,23 @@ const drifted = new Map(
 );
 
 let succeeded = 0;
+const deferred = [];
+
+async function applyEntry(entry) {
+  const filePath = resolve(migrationsDir, `${entry.tag}.sql`);
+  const content = readFileSync(filePath, "utf8");
+  const hash = sha256(content);
+  const statements = splitStatements(content);
+  const autocommit = requiresAutocommit(content);
+  await withRetry(
+    () =>
+      applyMigrationStatements(directUrl, statements, autocommit, {
+        hash,
+        when: entry.when,
+      }),
+    4
+  );
+}
 
 for (const entry of journal.entries) {
   if (!pendingTags.has(entry.tag)) {
@@ -182,33 +199,40 @@ for (const entry of journal.entries) {
     continue;
   }
 
-  const filePath = resolve(migrationsDir, `${entry.tag}.sql`);
-  const content = readFileSync(filePath, "utf8");
-  const hash = sha256(content);
-
-  const statements = splitStatements(content);
-  const autocommit = requiresAutocommit(content);
-
   try {
-    await withRetry(
-      () =>
-        applyMigrationStatements(directUrl, statements, autocommit, {
-          hash,
-          when: entry.when,
-        }),
-      4
-    );
-
+    await applyEntry(entry);
     console.log(`OK    [${entry.tag}]`);
     succeeded++;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`FAIL  [${entry.tag}] ${msg}`);
-    console.log(
-      `\nRESULT: FAILED at ${entry.tag} (${succeeded}/${total} ok before failure)`
-    );
-    process.exit(1);
+    console.error(`DEFER [${entry.tag}] ${msg}`);
+    deferred.push({ entry, msg });
   }
+}
+
+while (deferred.length > 0) {
+  const retrying = deferred.splice(0, deferred.length);
+  let progressed = 0;
+  for (const item of retrying) {
+    try {
+      await applyEntry(item.entry);
+      console.log(`OK    [${item.entry.tag}]  (deferred)`);
+      succeeded++;
+      progressed++;
+    } catch (err) {
+      item.msg = err instanceof Error ? err.message : String(err);
+      deferred.push(item);
+    }
+  }
+  if (progressed === 0) break;
+  console.log(`\nRETRY: ${progressed} deferred migration(s) applied, ${deferred.length} still failing`);
+}
+
+if (deferred.length > 0) {
+  console.error(`\nFAILED  ${deferred.length} migration(s) could not be applied in any order:`);
+  for (const item of deferred) console.error(`  ${item.entry.tag}: ${item.msg}`);
+  console.log(`\nRESULT: FAILED ${succeeded}/${total} applied`);
+  process.exit(1);
 }
 
 if (drifted.size > 0) {
