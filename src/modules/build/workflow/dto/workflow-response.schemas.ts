@@ -25,7 +25,7 @@ export const projectStatusSchema = z.object({
   name: z.string(),
   order: z.number().int(),
   color: z.string().nullable(),
-  type: z.enum(DB_ENUMS.state_group).nullable(),
+  type: z.enum(DB_ENUMS.state_group),
   wipLimit: z.number().int().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),

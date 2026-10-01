@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
-import { roadmapStatusEnum, feedbackStatusEnum } from "../../../../db/schema";
+import { roadmapStatusEnum, feedbackStatusEnum, changelogTypeEnum } from "../../../../db/schema";
 import {
   RICE_INPUT_NAMES,
   RICE_METHOD,
@@ -144,6 +144,7 @@ export const changelogEntrySchema = z.object({
   title: z.string(),
   content: z.string(),
   version: z.string().nullable(),
+  type: z.enum(changelogTypeEnum.enumValues),
   isPublished: z.boolean(),
   linkedRoadmapItemId: z.number().int().nullable(),
   publishedAt: nullableWireDate(),

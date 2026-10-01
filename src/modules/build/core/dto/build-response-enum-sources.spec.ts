@@ -20,6 +20,7 @@ import {
 } from "./build-tickets-response.schemas";
 import { analyticsSchema } from "./build-reports-response.schemas";
 import { RELEASE_STATUSES } from "./releases.schemas";
+import { changelogEntrySchema } from "./build-roadmap-response.schemas";
 import { timesheetRowSchema } from "../../execution/dto/timesheets-response.schemas";
 import { viewRowSchema } from "../../execution/dto/workspace-response.schemas";
 import { projectStatusSchema as workflowStateSchema } from "../../workflow/dto/workflow-response.schemas";
@@ -70,7 +71,8 @@ const cases: FieldCase[] = [
   ["timesheet invoicing status", timesheetRowSchema.shape.invoicingStatus.unwrap(), DB_ENUMS.timesheet_invoicing_status],
   ["timesheet source", timesheetRowSchema.shape.source, DB_ENUMS.timesheet_entry_source],
   ["view layout type", viewRowSchema.shape.layoutType, DB_ENUMS.view_layout],
-  ["workflow state type", workflowStateSchema.shape.type.unwrap(), DB_ENUMS.state_group],
+  ["workflow state type", workflowStateSchema.shape.type, DB_ENUMS.state_group],
+  ["build changelog type", changelogEntrySchema.shape.type, DB_ENUMS.changelog_type],
   ["test case priority", testCaseRowSchema.shape.priority, DB_ENUMS.test_case_priority],
   ["test case automation status", testCaseRowSchema.shape.automationStatus, DB_ENUMS.test_case_automation_status],
   ["test run status", testRunRowSchema.shape.status, DB_ENUMS.test_run_status],
@@ -103,4 +105,11 @@ describe("Build response fields are declared over the closed set that decides th
       expect(schema.safeParse(OUT_OF_SET).success).toBe(false);
     },
   );
+});
+
+describe("Build response nullability is not widened by the enum narrowing", () => {
+  it("keeps the workflow state type non-null, matching the contract the frontend already parses", () => {
+    expect(workflowStateSchema.shape.type.safeParse(null).success).toBe(false);
+    expect(workflowStateSchema.shape.type.safeParse("started").success).toBe(true);
+  });
 });
