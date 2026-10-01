@@ -282,6 +282,16 @@ export function scanAccessSideEffects(rel, source) {
   return out;
 }
 
+export function isProductionSource(entry) {
+  return (
+    entry.endsWith(".ts") &&
+    !entry.endsWith(".d.ts") &&
+    !entry.endsWith(".spec.ts") &&
+    !entry.endsWith(".e2e-spec.ts") &&
+    !entry.endsWith(".spec-fixtures.ts")
+  );
+}
+
 function walkTs(dir, out = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
@@ -289,13 +299,7 @@ function walkTs(dir, out = []) {
       walkTs(full, out);
       continue;
     }
-    if (
-      entry.endsWith(".ts") &&
-      !entry.endsWith(".d.ts") &&
-      !entry.endsWith(".spec.ts") &&
-      !entry.endsWith(".e2e-spec.ts")
-    )
-      out.push(full);
+    if (isProductionSource(entry)) out.push(full);
   }
   return out;
 }
@@ -459,6 +463,10 @@ if (RUN_DIRECTLY && process.argv.includes("--self-test")) {
     ).length,
     0,
   );
+  check("a service file is scanned", isProductionSource("org-membership.service.ts"), true);
+  check("a spec is not scanned", isProductionSource("org-membership.service.spec.ts"), false);
+  check("a spec-only fixture is not scanned", isProductionSource("hrms-kb-seed.spec-fixtures.ts"), false);
+  check("a production fixture-named file is still scanned", isProductionSource("retention-drill-fixtures.ts"), true);
   check("rbac is access-scoped", isAccessScoped("src/modules/rbac/roles.service.ts"), true);
   check("ownership is access-scoped", isAccessScoped("src/modules/ownership/x.ts"), true);
   check("hr is not access-scoped", isAccessScoped("src/modules/hr/x.ts"), false);
