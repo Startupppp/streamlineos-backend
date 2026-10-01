@@ -69,15 +69,12 @@ export default [
     verdict: "VERIFIED",
     finding: "org-scoping-verified",
     summary:
-      "POST /build/:projectId/intake. Assert-enforced with the weaker assert, and the only one of the six that was once actually unsafe: the service's own record states that listIntake resolved the project while this path did not, so a cross-tenant :projectId reached the INSERT and the composite tenant foreign key refused it with an uncaught 23503 — a corrupted write prevented, but not an authorization decision. assertProjectInOrg now runs first and 404s. As with createEpic, intra-org project membership is not checked. Also worth a reader's attention though not a defect of this route: submitterEmail is caller-supplied with no tie to u.userId, so the recorded submitter is unauthenticated data on a route that is itself permission-gated.",
-    blastRadius:
-      "No cross-tenant reach as of the assert. Within one org, a holder of build:workspace:manage can file intake against any project in that org.",
+      "POST /build/:projectId/intake. The handler forwards the authenticated actor and createIntake calls assertProjectAccess(u, projectId) before the INSERT, so a foreign project 404s and a same-org caller outside the project is refused 403. The row's tenant binding is values-only and backed by the composite tenant foreign key. submitterEmail remains caller-supplied data with no tie to u.userId, on a route that is itself permission-gated.",
+    blastRadius: "None: tenant and project membership are both enforced before the write.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 175, anchor: /return this\.intake\.createIntake\(u\.orgId, projectId, body\);/, note: "the tenant comes from the authenticated context" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 310, anchor: /async createIntake\(orgId: string, projectId: number, input: CreateIntakeInput\) \{/, note: "the terminal service signature" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 313, anchor: /\.insert\(intakeItems\)/, note: "the write whose tenant binding is values-only" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 31, anchor: /eq\(projects\.orgId, orgId\),/, note: "the predicate that makes the write safe, reached through assertProjectInOrg" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 30, anchor: /throw new NotFoundException\("Project not found"\);/, note: "a foreign or soft-deleted project 404s before the INSERT" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 175, anchor: /return this\.intake\.createIntake\(u, projectId, body\);/, note: "the actor reaches the service" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 318, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced before the INSERT" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 321, anchor: /\.insert\(intakeItems\)/, note: "the write whose tenant binding is values-only" },
     ],
   },
   {
@@ -85,13 +82,11 @@ export default [
     verdict: "VERIFIED",
     finding: "org-scoping-verified",
     summary:
-      "POST /build/:projectId/views. Assert-enforced with the weaker assert and no read to filter, so the tenant appears only as an INSERT value plus assertProjectInOrg's predicate plus a composite (org_id, project_id) foreign key. Tenant isolation holds on all three. The intra-org gap is the widest of the six and is worth its own ticket rather than a census row: createView takes (orgId, userId) and so discards the CurrentUserContext that assertProjectAccess needs, which is why the weaker assert is used. Closing it is a signature change at the service and controller, shared with three sibling call sites in the same file.",
-    blastRadius:
-      "No cross-tenant reach. Within one org, a holder of build:workspace:manage can create a project view on any project in that org, including one they are not a member of and have no team assignment to.",
+      "POST /build/:projectId/views. The handler forwards the authenticated actor and createView calls assertProjectAccess(u, projectId) before the INSERT, closing the intra-org gap this row used to record. The tenant appears as an INSERT value backed by the composite (org_id, project_id) foreign key.",
+    blastRadius: "None: tenant and project membership are both enforced before the write.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 220, anchor: /return this\.views\.createView\(u\.orgId, u\.userId, projectId, body\);/, note: "the tenant and actor come from the authenticated context" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 444, anchor: /async createView\(orgId: string, userId: string, projectId: number, input: CreateViewInput\) \{/, note: "the signature that discards CurrentUserContext and so forces the weaker assert" },
-      { file: "src/modules/build/core/project-crud/project-access.ts", line: 31, anchor: /eq\(projects\.orgId, orgId\),/, note: "the decisive tenant predicate, reached through assertProjectInOrg" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 220, anchor: /return this\.views\.createView\(u, projectId, body\);/, note: "the actor reaches the service" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 459, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced before the INSERT" },
       { file: "src/db/schema/build/members.ts", line: 66, anchor: /name: "fk_project_views_org_project" \}\)/, note: "a composite tenant foreign key backstops the row" },
     ],
   },

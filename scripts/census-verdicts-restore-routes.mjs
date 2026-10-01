@@ -47,12 +47,12 @@ export default [
     verdict: "VERIFIED",
     finding: "parent-binding-verified",
     summary:
-      "POST /build/:projectId/milestones/:milestoneId/restore. restoreMilestone resolves the project under the caller's org with assertProjectInOrg, then the lookup and the restoring UPDATE bind id+projectId+orgId. Like its delete sibling it relies on the build:workspace:restore permission rather than project membership.",
-    blastRadius: "None cross-tenant or cross-project: a foreign milestoneId matches no row.",
+      "POST /build/:projectId/milestones/:milestoneId/restore. restoreMilestone takes the actor and calls assertProjectAccess(u, projectId), so a same-org caller outside the project is refused 403 and a foreign project 404s; the lookup and the restoring UPDATE then bind id+projectId+orgId.",
+    blastRadius: "None: membership, tenant and project are all bound before the write.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 143, anchor: /return this\.milestones\.restoreMilestone\(u\.orgId, u\.userId, projectId, milestoneId\);/, note: "org comes from the verified actor" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 226, anchor: /await assertProjectInOrg\(this\.db, orgId, projectId\);/, note: "the URL project is resolved under the caller's org" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 243, anchor: /eq\(projectMilestones\.projectId, projectId\),/, note: "the restoring UPDATE binds the URL project" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 143, anchor: /return this\.milestones\.restoreMilestone\(u, projectId, milestoneId\);/, note: "the actor and both route ids reach the service" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 230, anchor: PA, note: "project membership is enforced first" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 248, anchor: /eq\(projectMilestones\.projectId, projectId\),/, note: "the restoring UPDATE binds the URL project" },
     ],
   },
   {

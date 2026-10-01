@@ -11055,7 +11055,7 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.milestones.updateMilestone(u.orgId, projectId, milestoneId, body)",
+        "call": "this.milestones.updateMilestone(u, projectId, milestoneId, body)",
         "type": "MilestonesService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
@@ -11069,12 +11069,17 @@
         "mutating verb without @Idempotent"
       ],
       "verdict": "CLOSED",
-      "verdictReason": "PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is \"build/:projectId/milestones\", yet no @Param(\"projectId\") is declared and the UPDATE binds (id, orgId).",
+      "verdictReason": "PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is \"build/:projectId/milestones\", yet no @Param(\"projectId\") is declared and the UPDATE binds (id, orgId). Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:107",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 191,
+          "line": 179,
+          "note": "membership of the URL project is now enforced before the row is touched"
+        },
+        {
+          "file": "src/modules/build/execution/workspace.service.ts",
+          "line": 193,
           "note": "bound to the URL project"
         }
       ]
@@ -11108,26 +11113,31 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.milestones.deleteMilestone(u.orgId, u.userId, projectId, milestoneId)",
+        "call": "this.milestones.deleteMilestone(u, projectId, milestoneId)",
         "type": "MilestonesService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:207",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:209",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/workspace.service.ts:207",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:209",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "CLOSED",
-      "verdictReason": "DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.",
+      "verdictReason": "DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:120",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 211,
+          "line": 210,
+          "note": "membership of the URL project is now enforced before the row is touched"
+        },
+        {
+          "file": "src/modules/build/execution/workspace.service.ts",
+          "line": 215,
           "note": "bound to the URL project"
         }
       ]
@@ -11161,36 +11171,36 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.milestones.restoreMilestone(u.orgId, u.userId, projectId, milestoneId)",
+        "call": "this.milestones.restoreMilestone(u, projectId, milestoneId)",
         "type": "MilestonesService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:225",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:229",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/workspace.service.ts:225",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:229",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "POST /build/:projectId/milestones/:milestoneId/restore. restoreMilestone resolves the project under the caller's org with assertProjectInOrg, then the lookup and the restoring UPDATE bind id+projectId+orgId. Like its delete sibling it relies on the build:workspace:restore permission rather than project membership.",
+      "verdictReason": "POST /build/:projectId/milestones/:milestoneId/restore. restoreMilestone takes the actor and calls assertProjectAccess(u, projectId), so a same-org caller outside the project is refused 403 and a foreign project 404s; the lookup and the restoring UPDATE then bind id+projectId+orgId.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:133",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.controller.ts",
           "line": 143,
-          "note": "org comes from the verified actor"
+          "note": "the actor and both route ids reach the service"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 226,
-          "note": "the URL project is resolved under the caller's org"
+          "line": 230,
+          "note": "project membership is enforced first"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 243,
+          "line": 248,
           "note": "the restoring UPDATE binds the URL project"
         }
       ]
@@ -11222,13 +11232,13 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.intake.listIntake(u.orgId, projectId, query)",
+        "call": "this.intake.listIntake(u, projectId, query)",
         "type": "IntakeService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:270",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:276",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11265,13 +11275,13 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.intake.createIntake(u.orgId, projectId, body)",
+        "call": "this.intake.createIntake(u, projectId, body)",
         "type": "IntakeService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:310",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:317",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -11281,33 +11291,23 @@
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "POST /build/:projectId/intake. Assert-enforced with the weaker assert, and the only one of the six that was once actually unsafe: the service's own record states that listIntake resolved the project while this path did not, so a cross-tenant :projectId reached the INSERT and the composite tenant foreign key refused it with an uncaught 23503 — a corrupted write prevented, but not an authorization decision. assertProjectInOrg now runs first and 404s. As with createEpic, intra-org project membership is not checked. Also worth a reader's attention though not a defect of this route: submitterEmail is caller-supplied with no tie to u.userId, so the recorded submitter is unauthenticated data on a route that is itself permission-gated.",
+      "verdictReason": "POST /build/:projectId/intake. The handler forwards the authenticated actor and createIntake calls assertProjectAccess(u, projectId) before the INSERT, so a foreign project 404s and a same-org caller outside the project is refused 403. The row's tenant binding is values-only and backed by the composite tenant foreign key. submitterEmail remains caller-supplied data with no tie to u.userId, on a route that is itself permission-gated.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:165",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.controller.ts",
           "line": 175,
-          "note": "the tenant comes from the authenticated context"
+          "note": "the actor reaches the service"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 310,
-          "note": "the terminal service signature"
+          "line": 318,
+          "note": "project membership is enforced before the INSERT"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 313,
+          "line": 321,
           "note": "the write whose tenant binding is values-only"
-        },
-        {
-          "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 31,
-          "note": "the predicate that makes the write safe, reached through assertProjectInOrg"
-        },
-        {
-          "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 36,
-          "note": "a foreign or soft-deleted project 404s before the INSERT"
         }
       ]
     },
@@ -11340,26 +11340,31 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.intake.updateIntake(u.orgId, u.userId, projectId, requestId, body)",
+        "call": "this.intake.updateIntake(u, projectId, requestId, body)",
         "type": "IntakeService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:329",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:337",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/workspace.service.ts:329",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:337",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "CLOSED",
-      "verdictReason": "PATCH /build/:projectId/intake/:requestId. No @Param(\"projectId\"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.",
+      "verdictReason": "PATCH /build/:projectId/intake/:requestId. No @Param(\"projectId\"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:178",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 333,
+          "line": 338,
+          "note": "membership of the URL project is now enforced before the row is touched"
+        },
+        {
+          "file": "src/modules/build/execution/workspace.service.ts",
+          "line": 343,
           "note": "bound to the URL project"
         }
       ]
@@ -11391,13 +11396,13 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.views.listViews(u.orgId, u.userId, projectId, query)",
+        "call": "this.views.listViews(u, projectId, query)",
         "type": "ViewsService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:407",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:420",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11434,13 +11439,13 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.views.createView(u.orgId, u.userId, projectId, body)",
+        "call": "this.views.createView(u, projectId, body)",
         "type": "ViewsService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:444",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:458",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -11450,23 +11455,18 @@
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "POST /build/:projectId/views. Assert-enforced with the weaker assert and no read to filter, so the tenant appears only as an INSERT value plus assertProjectInOrg's predicate plus a composite (org_id, project_id) foreign key. Tenant isolation holds on all three. The intra-org gap is the widest of the six and is worth its own ticket rather than a census row: createView takes (orgId, userId) and so discards the CurrentUserContext that assertProjectAccess needs, which is why the weaker assert is used. Closing it is a signature change at the service and controller, shared with three sibling call sites in the same file.",
+      "verdictReason": "POST /build/:projectId/views. The handler forwards the authenticated actor and createView calls assertProjectAccess(u, projectId) before the INSERT, closing the intra-org gap this row used to record. The tenant appears as an INSERT value backed by the composite (org_id, project_id) foreign key.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:210",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.controller.ts",
           "line": 220,
-          "note": "the tenant and actor come from the authenticated context"
+          "note": "the actor reaches the service"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 444,
-          "note": "the signature that discards CurrentUserContext and so forces the weaker assert"
-        },
-        {
-          "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 31,
-          "note": "the decisive tenant predicate, reached through assertProjectInOrg"
+          "line": 459,
+          "note": "project membership is enforced before the INSERT"
         },
         {
           "file": "src/db/schema/build/members.ts",
@@ -11504,31 +11504,36 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.views.updateView(u.orgId, u.userId, projectId, viewId, body)",
+        "call": "this.views.updateView(u, projectId, viewId, body)",
         "type": "ViewsService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:467",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:481",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/workspace.service.ts:467",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:481",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "CLOSED",
-      "verdictReason": "PATCH /build/:projectId/views/:viewId. No @Param(\"projectId\"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId.",
+      "verdictReason": "PATCH /build/:projectId/views/:viewId. No @Param(\"projectId\"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:223",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 469,
+          "line": 482,
+          "note": "membership of the URL project is now enforced before the row is touched"
+        },
+        {
+          "file": "src/modules/build/execution/workspace.service.ts",
+          "line": 485,
           "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 479,
+          "line": 495,
           "note": "UPDATE binds id + orgId"
         }
       ]
@@ -11562,31 +11567,36 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.views.deleteView(u.orgId, u.userId, projectId, viewId)",
+        "call": "this.views.deleteView(u, projectId, viewId)",
         "type": "ViewsService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:484",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:500",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/workspace.service.ts:484",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:500",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "CLOSED",
-      "verdictReason": "DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.",
+      "verdictReason": "DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:236",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 469,
+          "line": 501,
+          "note": "membership of the URL project is now enforced before the row is touched"
+        },
+        {
+          "file": "src/modules/build/execution/workspace.service.ts",
+          "line": 485,
           "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 493,
+          "line": 511,
           "note": "DELETE binds id + orgId"
         }
       ]
@@ -11620,7 +11630,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:497",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:515",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11659,7 +11669,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:512",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:530",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -11674,12 +11684,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 516,
+          "line": 534,
           "note": "the row is intentionally project-less, so there is no parent dimension"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
-          "line": 352,
+          "line": 362,
           "note": "org bound as an ES6 shorthand column in .values()"
         }
       ]
@@ -11717,7 +11727,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:533",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:551",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11762,7 +11772,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workspace.service.ts:554",
+      "orgEvidence": "src/modules/build/execution/workspace.service.ts:572",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],

@@ -621,13 +621,14 @@ Evidence:
 
 Finding: `parent-binding-missing`
 
-PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is "build/:projectId/milestones", yet no @Param("projectId") is declared and the UPDATE binds (id, orgId).
+PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is "build/:projectId/milestones", yet no @Param("projectId") is declared and the UPDATE binds (id, orgId). Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.
 
 Blast radius: Intra-tenant cross-project write; org-wide permission is sufficient, there is no row-derived re-check.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:191` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:179` — membership of the URL project is now enforced before the row is touched
+- `src/modules/build/execution/workspace.service.ts:193` — bound to the URL project
 
 ### CLOSED — `DELETE /build/:projectId/milestones/:milestoneId`
 
@@ -635,13 +636,14 @@ Evidence:
 
 Finding: `parent-binding-missing`
 
-DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.
+DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.
 
 Blast radius: Intra-tenant cross-project delete.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:211` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:210` — membership of the URL project is now enforced before the row is touched
+- `src/modules/build/execution/workspace.service.ts:215` — bound to the URL project
 
 ### CLOSED — `PATCH /build/:projectId/intake/:requestId`
 
@@ -649,13 +651,14 @@ Evidence:
 
 Finding: `parent-binding-missing`
 
-PATCH /build/:projectId/intake/:requestId. No @Param("projectId"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.
+PATCH /build/:projectId/intake/:requestId. No @Param("projectId"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.
 
 Blast radius: Intra-tenant cross-project write.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:333` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:338` — membership of the URL project is now enforced before the row is touched
+- `src/modules/build/execution/workspace.service.ts:343` — bound to the URL project
 
 ### CLOSED — `PATCH /build/:projectId/views/:viewId`
 
@@ -663,14 +666,15 @@ Evidence:
 
 Finding: `parent-binding-missing`
 
-PATCH /build/:projectId/views/:viewId. No @Param("projectId"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId.
+PATCH /build/:projectId/views/:viewId. No @Param("projectId"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.
 
 Blast radius: Intra-tenant. Private views are additionally user-scoped; SHARED views have no project or user constraint, so any org member can edit a shared view belonging to any project.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:469` — bound to the URL project
-- `src/modules/build/execution/workspace.service.ts:479` — UPDATE binds id + orgId
+- `src/modules/build/execution/workspace.service.ts:482` — membership of the URL project is now enforced before the row is touched
+- `src/modules/build/execution/workspace.service.ts:485` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:495` — UPDATE binds id + orgId
 
 ### CLOSED — `DELETE /build/:projectId/views/:viewId`
 
@@ -678,14 +682,15 @@ Evidence:
 
 Finding: `parent-binding-missing`
 
-DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.
+DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.
 
 Blast radius: Intra-tenant; shared views are deletable across projects by any org member.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:469` — bound to the URL project
-- `src/modules/build/execution/workspace.service.ts:493` — DELETE binds id + orgId
+- `src/modules/build/execution/workspace.service.ts:501` — membership of the URL project is now enforced before the row is touched
+- `src/modules/build/execution/workspace.service.ts:485` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:511` — DELETE binds id + orgId
 
 ## Reviewed and cleared
 
@@ -1244,33 +1249,30 @@ PATCH /public/whiteboard-links/:token. An unauthenticated write, and correctly b
 
 `MilestonesController.restoreMilestone` — `src/modules/build/execution/workspace.controller.ts:133`
 
-POST /build/:projectId/milestones/:milestoneId/restore. restoreMilestone resolves the project under the caller's org with assertProjectInOrg, then the lookup and the restoring UPDATE bind id+projectId+orgId. Like its delete sibling it relies on the build:workspace:restore permission rather than project membership.
+POST /build/:projectId/milestones/:milestoneId/restore. restoreMilestone takes the actor and calls assertProjectAccess(u, projectId), so a same-org caller outside the project is refused 403 and a foreign project 404s; the lookup and the restoring UPDATE then bind id+projectId+orgId.
 
-- `src/modules/build/execution/workspace.controller.ts:143` — org comes from the verified actor
-- `src/modules/build/execution/workspace.service.ts:226` — the URL project is resolved under the caller's org
-- `src/modules/build/execution/workspace.service.ts:243` — the restoring UPDATE binds the URL project
+- `src/modules/build/execution/workspace.controller.ts:143` — the actor and both route ids reach the service
+- `src/modules/build/execution/workspace.service.ts:230` — project membership is enforced first
+- `src/modules/build/execution/workspace.service.ts:248` — the restoring UPDATE binds the URL project
 
 ### VERIFIED — `POST /build/:projectId/intake`
 
 `IntakeController.createIntake` — `src/modules/build/execution/workspace.controller.ts:165`
 
-POST /build/:projectId/intake. Assert-enforced with the weaker assert, and the only one of the six that was once actually unsafe: the service's own record states that listIntake resolved the project while this path did not, so a cross-tenant :projectId reached the INSERT and the composite tenant foreign key refused it with an uncaught 23503 — a corrupted write prevented, but not an authorization decision. assertProjectInOrg now runs first and 404s. As with createEpic, intra-org project membership is not checked. Also worth a reader's attention though not a defect of this route: submitterEmail is caller-supplied with no tie to u.userId, so the recorded submitter is unauthenticated data on a route that is itself permission-gated.
+POST /build/:projectId/intake. The handler forwards the authenticated actor and createIntake calls assertProjectAccess(u, projectId) before the INSERT, so a foreign project 404s and a same-org caller outside the project is refused 403. The row's tenant binding is values-only and backed by the composite tenant foreign key. submitterEmail remains caller-supplied data with no tie to u.userId, on a route that is itself permission-gated.
 
-- `src/modules/build/execution/workspace.controller.ts:175` — the tenant comes from the authenticated context
-- `src/modules/build/execution/workspace.service.ts:310` — the terminal service signature
-- `src/modules/build/execution/workspace.service.ts:313` — the write whose tenant binding is values-only
-- `src/modules/build/core/project-crud/project-access.ts:31` — the predicate that makes the write safe, reached through assertProjectInOrg
-- `src/modules/build/core/project-crud/project-access.ts:36` — a foreign or soft-deleted project 404s before the INSERT
+- `src/modules/build/execution/workspace.controller.ts:175` — the actor reaches the service
+- `src/modules/build/execution/workspace.service.ts:318` — project membership is enforced before the INSERT
+- `src/modules/build/execution/workspace.service.ts:321` — the write whose tenant binding is values-only
 
 ### VERIFIED — `POST /build/:projectId/views`
 
 `ViewsController.createView` — `src/modules/build/execution/workspace.controller.ts:210`
 
-POST /build/:projectId/views. Assert-enforced with the weaker assert and no read to filter, so the tenant appears only as an INSERT value plus assertProjectInOrg's predicate plus a composite (org_id, project_id) foreign key. Tenant isolation holds on all three. The intra-org gap is the widest of the six and is worth its own ticket rather than a census row: createView takes (orgId, userId) and so discards the CurrentUserContext that assertProjectAccess needs, which is why the weaker assert is used. Closing it is a signature change at the service and controller, shared with three sibling call sites in the same file.
+POST /build/:projectId/views. The handler forwards the authenticated actor and createView calls assertProjectAccess(u, projectId) before the INSERT, closing the intra-org gap this row used to record. The tenant appears as an INSERT value backed by the composite (org_id, project_id) foreign key.
 
-- `src/modules/build/execution/workspace.controller.ts:220` — the tenant and actor come from the authenticated context
-- `src/modules/build/execution/workspace.service.ts:444` — the signature that discards CurrentUserContext and so forces the weaker assert
-- `src/modules/build/core/project-crud/project-access.ts:31` — the decisive tenant predicate, reached through assertProjectInOrg
+- `src/modules/build/execution/workspace.controller.ts:220` — the actor reaches the service
+- `src/modules/build/execution/workspace.service.ts:459` — project membership is enforced before the INSERT
 - `src/db/schema/build/members.ts:66` — a composite tenant foreign key backstops the row
 
 ### VERIFIED — `POST /build/views`
@@ -1279,8 +1281,8 @@ POST /build/:projectId/views. Assert-enforced with the weaker assert and no read
 
 POST on the workspace views controller. An org-level route with no :projectId, and the row is deliberately project-less: the INSERT into project_views sets projectId: null and scope: 'workspace' explicitly (workspace.service.ts:316) and binds the tenant by writing orgId as a column at :317. PASSED-UNBOUND is the documented false reading for create endpoints — the binding is an INSERT column, not a predicate. The sibling readers and mutators of the same table (listWorkspaceViews, updateWorkspaceView, deleteWorkspaceView) all bind eq(projectViews.orgId, orgId) in their WHERE clauses and additionally refuse a private view the caller does not own.
 
-- `src/modules/build/execution/workspace.service.ts:516` — the row is intentionally project-less, so there is no parent dimension
-- `src/modules/build/execution/workspace.service.ts:352` — org bound as an ES6 shorthand column in .values()
+- `src/modules/build/execution/workspace.service.ts:534` — the row is intentionally project-less, so there is no parent dimension
+- `src/modules/build/execution/workspace.service.ts:362` — org bound as an ES6 shorthand column in .values()
 
 ### VERIFIED — `GET /build/:projectId/whiteboards/:whiteboardId`
 

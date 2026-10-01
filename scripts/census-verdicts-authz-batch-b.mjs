@@ -33,9 +33,9 @@ export default [
     blastRadius: "None beyond the caller's own org/project/form: a foreign submissionId or formId 404s at loadForm/loadSubmission before the UPDATE executes.",
     evidence: [
       { file: "src/modules/build/forms/submissions.controller.ts", line: 96, anchor: /return this\.svc\.updateSubmission\(u, projectId, formId, submissionId, body\);/, note: "route handler forwards the actor and all path params" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "binds formId to projectId" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await this\.loadSubmission\(orgId, formId, submissionId\);/, note: "binds submissionId to formId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 266, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 266, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "binds formId to projectId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 266, anchor: /await this\.loadSubmission\(orgId, formId, submissionId\);/, note: "binds submissionId to formId" },
       { file: "src/modules/build/forms/submissions.service.ts", line: 274, anchor: /eq\(formSubmissions\.formId, formId\),/, note: "UPDATE WHERE clause re-binds formId" },
     ],
   },

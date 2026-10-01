@@ -139,9 +139,9 @@ export default [
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 55, anchor: /toggleTicketVisibility\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 92, anchor: /eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\), eq\(tickets\.projectId, projectId\), isNull\(tickets\.deletedAt\)/, note: "existence check binds id+orgId+projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 103, anchor: /eq\(tickets\.id, ticketId\),$/, note: "UPDATE keyed by the already-verified PK" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 103, anchor: /eq\(tickets\.orgId, orgId\),$/, note: "the UPDATE also binds the tenant" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 103, anchor: /version !== undefined \? eq\(tickets\.version, version\) : undefined,/, note: "an optional optimistic-lock arm was added to the UPDATE; it narrows the key, never widens it" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 104, anchor: /eq\(tickets\.id, ticketId\),$/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 104, anchor: /eq\(tickets\.orgId, orgId\),$/, note: "the UPDATE also binds the tenant" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 104, anchor: /version !== undefined \? eq\(tickets\.version, version\) : undefined,/, note: "an optional optimistic-lock arm was added to the UPDATE; it narrows the key, never widens it" },
     ],
   },
   {
@@ -168,8 +168,8 @@ export default [
       "None: a commentId whose parent ticket belongs to a different project 404s at the join before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 81, anchor: /toggleCommentVisibility\(/, note: "handler binds both projectId and commentId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 168, anchor: /\.innerJoin\(tickets, and\(/, note: "join binds the comment's ticket to the named project via tickets.projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 168, anchor: /\.where\(and\(eq\(ticketComments\.id, commentId\), eq\(ticketComments\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 156, anchor: /\.innerJoin\(tickets, and\(/, note: "join binds the comment's ticket to the named project via tickets.projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 156, anchor: /\.where\(and\(eq\(ticketComments\.id, commentId\), eq\(ticketComments\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
     ],
   },
   {
@@ -182,7 +182,7 @@ export default [
       "None: an attachmentId whose parent ticket belongs to a different project 404s at the join before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 94, anchor: /toggleAttachmentVisibility\(/, note: "handler binds both projectId and attachmentId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 168, anchor: /async toggleAttachmentVisibility\(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean\) \{/, note: "signature carries the authenticated actor and projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 156, anchor: /async toggleAttachmentVisibility\(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean\) \{/, note: "signature carries the authenticated actor and projectId" },
       { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 188, anchor: /eq\(tickets\.projectId, projectId\),/, note: "join binds the attachment's ticket to the named project" },
     ],
   },
@@ -696,7 +696,7 @@ export default [
     blastRadius:
       "None: a whiteboardId belonging to a different project 404s at loadBoardWithAccess, and the UPDATE's own WHERE independently re-asserts the same binding.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 367, anchor: /updateWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 375, anchor: /updateWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
       { file: "src/modules/build/execution/whiteboards.service.ts", line: 269, anchor: /async updateWhiteboard\(/, note: "signature" },
       { file: "src/modules/build/execution/whiteboards.service.ts", line: 293, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the UPDATE's own WHERE re-binds id+projectId+orgId" },
     ],
@@ -710,7 +710,7 @@ export default [
     blastRadius:
       "None: a whiteboardId belonging to a different project 404s at loadBoardWithAccess, and the UPDATE's own WHERE independently re-asserts the same binding.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 367, anchor: /deleteWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 375, anchor: /deleteWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
       { file: "src/modules/build/execution/whiteboards.service.ts", line: 306, anchor: /async deleteWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
       { file: "src/modules/build/execution/whiteboards.service.ts", line: 320, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId" },
     ],

@@ -485,20 +485,22 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is \"build/:projectId/milestones\", yet no @Param(\"projectId\") is declared and the UPDATE binds (id, orgId).",
+      "PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is \"build/:projectId/milestones\", yet no @Param(\"projectId\") is declared and the UPDATE binds (id, orgId). Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
     blastRadius: "Intra-tenant cross-project write; org-wide permission is sufficient, there is no row-derived re-check.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 191, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\), eq\(projectMilestones\.version, before\.version\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 179, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "membership of the URL project is now enforced before the row is touched" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 193, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\), eq\(projectMilestones\.version, before\.version\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/execution/workspace.controller.ts#deleteMilestone",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.",
+    summary: "DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
     blastRadius: "Intra-tenant cross-project delete.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 211, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 210, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "membership of the URL project is now enforced before the row is touched" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 215, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
@@ -506,10 +508,11 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/intake/:requestId. No @Param(\"projectId\"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.",
+      "PATCH /build/:projectId/intake/:requestId. No @Param(\"projectId\"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 333, anchor: /\.where\(and\(eq\(intakeItems\.id, requestId\), eq\(intakeItems\.projectId, projectId\), eq\(intakeItems\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 338, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "membership of the URL project is now enforced before the row is touched" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 343, anchor: /\.where\(and\(eq\(intakeItems\.id, requestId\), eq\(intakeItems\.projectId, projectId\), eq\(intakeItems\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
@@ -517,23 +520,25 @@ const REVIEWED_INLINE = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/views/:viewId. No @Param(\"projectId\"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId.",
+      "PATCH /build/:projectId/views/:viewId. No @Param(\"projectId\"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
     blastRadius:
       "Intra-tenant. Private views are additionally user-scoped; SHARED views have no project or user constraint, so any org member can edit a shared view belonging to any project.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 469, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 479, anchor: /\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\)/, note: "UPDATE binds id + orgId" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 482, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "membership of the URL project is now enforced before the row is touched" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 485, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 495, anchor: /\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\)/, note: "UPDATE binds id + orgId" },
     ],
   },
   {
     key: "modules/build/execution/workspace.controller.ts#deleteView",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.",
+    summary: "DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass. Since closed further: the method now takes the actor and calls assertProjectAccess(u, projectId) first, so a same-org caller outside the project is refused 403.",
     blastRadius: "Intra-tenant; shared views are deletable across projects by any org member.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 469, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/workspace.service.ts", line: 493, anchor: /await this\.db\.delete\(projectViews\)\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\);/, note: "DELETE binds id + orgId" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 501, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "membership of the URL project is now enforced before the row is touched" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 485, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 511, anchor: /await this\.db\.delete\(projectViews\)\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\);/, note: "DELETE binds id + orgId" },
     ],
   },
 
