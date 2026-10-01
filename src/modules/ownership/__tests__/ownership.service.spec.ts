@@ -163,7 +163,7 @@ describe("OwnershipService — access / business-rule logic", () => {
             cachedVersionedForOrg: jest.fn(),
           },
         },
-        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined), emitInTx: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: OrganizationSagaService,
           useValue: {
@@ -328,7 +328,8 @@ describe("OwnershipService — access / business-rule logic", () => {
         `user:session:${TARGET_USER}`,
         "user:session:u-previous-owner",
       ]);
-      expect(dispatch.emit).toHaveBeenCalledWith(
+      expect(dispatch.emitInTx).toHaveBeenCalledWith(
+        mockDb,
         expect.objectContaining({
           eventKey: "ownership.module_owner.changed",
           targetUserIds: [TARGET_USER, "u-previous-owner"],
@@ -349,7 +350,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       await expect(
         ownership.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 }),
       ).rejects.toThrow("rolled back");
-      expect(dispatch.emit).not.toHaveBeenCalled();
+      expect(dispatch.emitInTx).not.toHaveBeenCalled();
       expect(cache.invalidateMany).not.toHaveBeenCalled();
       expect(cache.invalidateForOrg).not.toHaveBeenCalled();
     });

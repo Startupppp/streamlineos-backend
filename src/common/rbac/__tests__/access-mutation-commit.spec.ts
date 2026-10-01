@@ -308,10 +308,10 @@ describe("commitAccessChange — membership and group intents", () => {
 });
 
 describe("commitAccessChange — ownership intent (standing loss)", () => {
-  it("busts both parties' sessions and membership status after commit, and notifies inside the commit", async () => {
+  it("busts both parties' sessions and membership status after commit, and writes the notification outbox on the passed tx", async () => {
     const { tx, inserted } = makeTx();
     const cache = makeCache();
-    const notifier = { emit: jest.fn().mockResolvedValue(undefined) };
+    const notifier = { emitInTx: jest.fn().mockResolvedValue(undefined) };
     const event = { eventKey: "ownership.transfer.accepted", targetUserIds: ["from"] };
     const { hooks } = await inRequest(() =>
       commitAccessChange(tx, ORG, {
@@ -322,7 +322,7 @@ describe("commitAccessChange — ownership intent (standing loss)", () => {
     );
 
     expect(inserted[0]?.row).toMatchObject({ action: "ownership.transfer_accepted" });
-    expect(notifier.emit).toHaveBeenCalledWith(event);
+    expect(notifier.emitInTx).toHaveBeenCalledWith(tx, event);
     expect(bustMembershipStatusCacheMany).not.toHaveBeenCalled();
 
     await drain(hooks);
@@ -336,9 +336,9 @@ describe("commitAccessChange — ownership intent (standing loss)", () => {
 
   it("emits nothing when the notification carries no events", async () => {
     const { tx } = makeTx();
-    const notifier = { emit: jest.fn().mockResolvedValue(undefined) };
+    const notifier = { emitInTx: jest.fn().mockResolvedValue(undefined) };
     await commitAccessChange(tx, ORG, { notify: { via: notifier, events: [] } });
-    expect(notifier.emit).not.toHaveBeenCalled();
+    expect(notifier.emitInTx).not.toHaveBeenCalled();
     expect(bumpPermissionsVersion).toHaveBeenCalledTimes(1);
   });
 });

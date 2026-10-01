@@ -3,6 +3,7 @@ import { inArray, eq, and } from "drizzle-orm";
 import { notificationOutbox, notificationPreferences, userPreferences, users, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../../db/drizzle.types";
 import { buildNotifOutboxDedupeKey, buildNotifIdempotencyKey } from "./notification-dispatch-keys";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
@@ -78,7 +79,10 @@ export class NotificationDispatchService {
   async emit(input: DispatchEventInput): Promise<DispatchResult> {
     const ambient = getTenantContext();
     if (!ambient || ambient.orgId !== input.orgId) return this.emitNow(input);
+    return this.emitInTx(ambient.tx, input);
+  }
 
+  async emitInTx(tx: Db | TenantTx, input: DispatchEventInput): Promise<DispatchResult> {
     const chunks = this.chunkRecipients(input.targetUserIds);
     const chunkData = chunks.map((chunkIds, i) => {
       const chunkInput: DispatchEventInput = { ...input, targetUserIds: chunkIds };
@@ -87,7 +91,7 @@ export class NotificationDispatchService {
       return { chunkInput, dedupeKey };
     });
 
-    await ambient.tx
+    await tx
       .insert(notificationOutbox)
       .values(
         chunkData.map(({ chunkInput, dedupeKey }) => ({

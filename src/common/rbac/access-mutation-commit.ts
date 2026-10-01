@@ -54,7 +54,7 @@ export interface AccessRevocation {
 export interface CommitAccessOpts<E = never> {
   audit?: CommitAccessAudit;
   revoke?: AccessRevocation;
-  notify?: { via: { emit(event: E): Promise<unknown> }; events: readonly E[] };
+  notify?: { via: { emitInTx(tx: DbOrTx, event: E): Promise<unknown> }; events: readonly E[] };
   afterCommit?: () => Promise<void>;
 }
 
@@ -288,6 +288,6 @@ export async function commitAccessChange<E = never>(
   if (opts?.audit) await writeAudit(tx, orgId, opts.audit);
   if (opts?.revoke) await revokeAccess(tx, orgId, opts.revoke);
   if (opts?.notify)
-    for (const event of opts.notify.events) await opts.notify.via.emit(event);
+    for (const event of opts.notify.events) await opts.notify.via.emitInTx(tx, event);
   if (opts?.afterCommit) await afterCommitOrInline(opts.afterCommit);
 }

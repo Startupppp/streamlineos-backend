@@ -166,7 +166,7 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
             cachedVersionedForOrg: jest.fn().mockResolvedValue(undefined),
           },
         },
-        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined), emitInTx: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: OrganizationSagaService,
           useValue: {
