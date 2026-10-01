@@ -61,7 +61,7 @@ export function intakeService(world: WorldDb): IntakeService {
 }
 
 export function modulesService(world: WorldDb): ModulesService {
-  return new ModulesService(world.db);
+  return new ModulesService(world.db, accessFor(world));
 }
 
 export function webhooksService(world: WorldDb): ProjectsWebhooksService {

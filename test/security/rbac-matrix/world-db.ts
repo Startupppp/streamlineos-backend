@@ -59,6 +59,10 @@ function knownTable(table: unknown): Table {
 }
 
 function subselectOver(rows: WorldRows): Subselect {
+  return Object.assign(legacySubselect(rows), { rowsOf: (table: Table) => rows.get(table) ?? [] });
+}
+
+function legacySubselect(rows: WorldRows): Subselect {
   return (tableName, columnName, conditions) => {
     const table = [...SCHEMA_TABLES].find((candidate) => getTableName(candidate) === tableName);
     if (table === undefined) throw new UnsupportedQuery(`subselect over unknown table ${tableName}`);

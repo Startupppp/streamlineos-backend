@@ -15,10 +15,13 @@ type Token =
   | { readonly kind: "value"; readonly value: unknown }
   | { readonly kind: "list"; readonly values: readonly unknown[] }
   | { readonly kind: "word"; readonly text: string }
-  | { readonly kind: "ident"; readonly text: string };
+  | { readonly kind: "ident"; readonly text: string }
+  | { readonly kind: "table"; readonly table: Table };
 
 export type Lookup = (column: Column) => unknown;
-export type Subselect = (table: string, column: string, conditions: ReadonlyArray<readonly [string, unknown]>) => readonly unknown[];
+export type Subselect = ((table: string, column: string, conditions: ReadonlyArray<readonly [string, unknown]>) => readonly unknown[]) & {
+  readonly rowsOf?: (table: Table) => readonly Row[];
+};
 
 const NO_SUBSELECT: Subselect = (table) => {
   throw new UnsupportedQuery(`subselect over ${table}`);
@@ -27,6 +30,7 @@ const NO_SUBSELECT: Subselect = (table) => {
 const LEXEME = /\s*(<>|!=|>=|<=|=|<|>|\(|\)|,|'(?:[^']|'')*'|-?\d+(?:\.\d+)?|[A-Za-z_]+)\s*/y;
 const KEYWORDS = new Set(["and", "or", "not", "is", "null", "in", "true", "false", "asc", "desc", "like", "ilike"]);
 const COMPARATORS = new Set(["=", "<>", "!=", ">", ">=", "<", "<="]);
+const SUBQUERY_CLAUSES = new Set(["select", "from", "inner", "left", "join", "on", "where", "limit"]);
 
 const propertyCache = new Map<Column, string>();
 
@@ -88,7 +92,10 @@ export function tokensOf(node: unknown, out: Token[] = []): Token[] {
     out.push({ kind: "list", values: node.map(listValue) });
     return out;
   }
-  if (is(node, Table)) throw new UnsupportedQuery(`table reference ${getTableName(node)} inside an expression`);
+  if (is(node, Table)) {
+    out.push({ kind: "table", table: node });
+    return out;
+  }
   if (node === null || ["string", "number", "boolean", "bigint"].includes(typeof node)) {
     out.push({ kind: "value", value: node });
     return out;
@@ -203,6 +210,10 @@ class Parser {
     }
     if (this.take("true")) return true;
     if (this.take("false")) return false;
+    if (this.identAt(this.position) === "exists") {
+      this.position += 1;
+      return this.subquery().length > 0;
+    }
     const left = this.operand();
     if (this.take("is")) {
       const negated = this.take("not");
@@ -213,7 +224,8 @@ class Parser {
     const negatedIn = this.take("not");
     if (this.take("in")) {
       if (this.peekWord() === "(" && this.identAt(this.position + 1) === "select") {
-        const found = orOf(this.subselectValues().map((value) => {
+        const values = this.subqueryAt(this.position) ? this.subquery() : this.subselectValues();
+        const found = orOf(values.map((value) => {
           const order = compare(left, value);
           return order === null ? null : order === 0;
         }));
@@ -282,7 +294,106 @@ class Parser {
     return this.subselect(table, column, conditions);
   }
 
+  private closingParen(open: number): number {
+    let depth = 0;
+    for (let index = open; index < this.tokens.length; index += 1) {
+      const token = this.tokens[index];
+      if (token.kind !== "word") continue;
+      if (token.text === "(") depth += 1;
+      if (token.text === ")") depth -= 1;
+      if (depth === 0) return index;
+    }
+    throw new UnsupportedQuery("unbalanced parentheses around a subquery");
+  }
+
+  private topLevel(from: number, to: number): Array<readonly [number, string]> {
+    const marks: Array<readonly [number, string]> = [];
+    let depth = 0;
+    for (let index = from; index < to; index += 1) {
+      const token = this.tokens[index];
+      if (token.kind === "word" && token.text === "(") depth += 1;
+      else if (token.kind === "word" && token.text === ")") depth -= 1;
+      else if (depth === 0 && token.kind === "ident" && SUBQUERY_CLAUSES.has(token.text)) marks.push([index, token.text]);
+    }
+    return marks;
+  }
+
+  subqueryAt(open: number): boolean {
+    const token = this.tokens[open];
+    if (token?.kind !== "word" || token.text !== "(" || this.identAt(open + 1) !== "select") return false;
+    const close = this.closingParen(open);
+    const from = this.topLevel(open + 1, close).find(([, text]) => text === "from");
+    return from !== undefined && this.tokens[from[0] + 1]?.kind === "table";
+  }
+
+  private tableAt(index: number): Table {
+    const token = this.tokens[index];
+    if (token?.kind !== "table") throw new UnsupportedQuery("subquery source that is not a schema table");
+    return token.table;
+  }
+
+  private nested(start: number, end: number, lookup: Lookup): Parser {
+    return new Parser(this.tokens.slice(start, end), lookup, this.subselect);
+  }
+
+  subquery(): unknown[] {
+    const rowsOf = this.subselect.rowsOf;
+    if (rowsOf === undefined) throw new UnsupportedQuery("correlated subquery without a row source");
+    const open = this.position;
+    const close = this.closingParen(open);
+    const marks = this.topLevel(open + 1, close);
+    const boundary = (order: number): number => (order < marks.length ? marks[order][0] : close);
+    const fromMark = marks.findIndex(([, text]) => text === "from");
+    const source = this.tableAt(marks[fromMark][0] + 1);
+    const outer = this.lookup;
+    const scoped = (combo: ReadonlyMap<Table, Row | null>): Lookup => (column) => {
+      if (!combo.has(column.table)) return outer(column);
+      const row = combo.get(column.table);
+      if (row === null || row === undefined) return null;
+      const property = propertyOf(column);
+      if (!(property in row))
+        throw new UnsupportedQuery(`fixture row of ${getTableName(column.table)} has no ${property} column the subquery reads`);
+      return row[property];
+    };
+    let combos: Array<ReadonlyMap<Table, Row | null>> = rowsOf(source).map((row) => new Map([[source, row]]));
+    let where: readonly [number, number] | null = null;
+    let cap = Number.POSITIVE_INFINITY;
+    for (let order = fromMark + 1; order < marks.length; order += 1) {
+      const [index, text] = marks[order];
+      if (text === "join") {
+        const outerJoin = marks[order - 1]?.[1] === "left";
+        const joined = this.tableAt(index + 1);
+        const onOrder = order + 1;
+        if (marks[onOrder]?.[1] !== "on") throw new UnsupportedQuery("subquery join without on");
+        const onStart = marks[onOrder][0] + 1;
+        const onEnd = boundary(onOrder + 1);
+        const candidates = rowsOf(joined);
+        combos = combos.flatMap((combo) => {
+          const matched = candidates
+            .map((row): ReadonlyMap<Table, Row | null> => new Map([...combo, [joined, row]]))
+            .filter((next) => this.nested(onStart, onEnd, scoped(next)).expression() === true);
+          if (matched.length > 0 || !outerJoin) return matched;
+          return [new Map([...combo, [joined, null]])];
+        });
+      } else if (text === "where") where = [index + 1, boundary(order + 1)];
+      else if (text === "limit") {
+        const limit = this.tokens[index + 1];
+        if (limit?.kind !== "value" || typeof limit.value !== "number") throw new UnsupportedQuery("subquery limit");
+        cap = limit.value;
+      }
+    }
+    const span = where;
+    const kept = span === null
+      ? combos
+      : combos.filter((combo) => this.nested(span[0], span[1], scoped(combo)).expression() === true);
+    const selectEnd = marks[fromMark][0];
+    const values = kept.slice(0, cap).map((combo) => this.nested(open + 2, selectEnd, scoped(combo)).operand());
+    this.position = close + 1;
+    return values;
+  }
+
   operand(): unknown {
+    if (this.subqueryAt(this.position)) return this.subquery()[0] ?? null;
     const token = this.tokens[this.position];
     if (token === undefined) throw new UnsupportedQuery("predicate ended early");
     this.position += 1;
@@ -306,6 +417,11 @@ export function scalar(node: unknown, lookup: Lookup, subselect: Subselect = NO_
   const tokens = tokensOf(node);
   if (tokens.length === 1 && tokens[0].kind === "column") return lookup(tokens[0].column);
   if (tokens.length === 1 && tokens[0].kind === "value") return tokens[0].value;
+  const parser = new Parser(tokens, lookup, subselect);
+  if (parser.subqueryAt(0)) {
+    const value = parser.operand();
+    if (parser.done()) return value;
+  }
   return evaluate(node, lookup, subselect);
 }
 
