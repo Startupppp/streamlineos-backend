@@ -1,4 +1,5 @@
 export {
+  assertCanManageProject,
   assertProjectAccess,
   assertProjectInOrg,
   resolveProjectAccess,

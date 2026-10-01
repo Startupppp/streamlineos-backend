@@ -1,10 +1,9 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { ForbiddenException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   organizationMembers,
   projectWhiteboardShares,
   projectWhiteboards,
-  projects,
   users,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
@@ -12,14 +11,8 @@ import { AccessService } from "../../access/access.service";
 import { resolveWhiteboardAccess } from "./whiteboard-access";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-
-export async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
-  const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-    columns: { id: true },
-  });
-  if (!project) throw new NotFoundException("Project not found");
-}
+import { assertProjectInOrg as assertProject } from "../core/project-crud/project-access";
+export { assertProject };
 
 export type ShareEntry = {
   userId: string;
