@@ -93,6 +93,6 @@ payload and processes it idempotently.
 - `build.project_webhooks.integrations_endpoint_id` is the mapping ID.
 - Migrations 1720-1724 created the tables and backfilled credentials and
   delivery history; they are applied in production.
-- Contraction still pending: drop `build.project_webhooks.secret` and
-  `build.webhook_deliveries` after the backend that no longer reads them is
-  deployed.
+- Migration 1725 dropped `build.project_webhooks.secret` and
+  `build.webhook_deliveries`; applied in production 2026-10-01 after deploy
+  `42901aa0b`.
