@@ -24,7 +24,6 @@ import {
   ProjectsTicketRelationsService,
   ProjectsTicketWatchersService,
   ProjectsTicketLabelsService,
-  ProjectsTicketSubresourcesService,
   BuildTicketStatusChangedConsumerService,
   ProjectsTicketsRestoreService,
 } from "./tickets";
@@ -145,7 +144,6 @@ import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.s
     ProjectsTicketRelationsService,
     ProjectsTicketWatchersService,
     ProjectsTicketLabelsService,
-    ProjectsTicketSubresourcesService,
     BuildAutomationRunnerService,
     BuildAutomationActionExecutor,
     BuildAutomationRunHistoryService,
@@ -167,7 +165,7 @@ import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.s
     ProjectsTicketsRestoreService,
     ProjectsWorkQueryService,
     ProjectsReportsService,
-    ProjectsTicketSubresourcesService,
+    ProjectsTicketCommentsService,
   ],
 })
 export class ProjectsModule {}

@@ -23,10 +23,10 @@ import {
   type TicketsListQuery,
 } from "../build/core";
 import {
+  ProjectsTicketCommentsService,
   ProjectsTicketsCreateService,
   ProjectsTicketsReadService,
   ProjectsTicketsService,
-  ProjectsTicketSubresourcesService,
 } from "../build/core/tickets";
 import { agentCommentSchema, agentUpdateTicketSchema, type AgentCommentInput, type AgentUpdateTicketInput } from "./dto/agent-tokens.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -58,7 +58,7 @@ export class AgentController {
     private readonly ticketsCreateSvc: ProjectsTicketsCreateService,
     private readonly ticketsReadSvc: ProjectsTicketsReadService,
     private readonly workQuerySvc: ProjectsWorkQueryService,
-    private readonly subresourcesSvc: ProjectsTicketSubresourcesService,
+    private readonly commentsSvc: ProjectsTicketCommentsService,
   ) {}
 
   @Get("me")
@@ -164,6 +164,6 @@ export class AgentController {
     @Body() body: AgentCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresourcesSvc.addComment(u, null, ticketId, { content: body.body });
+    return this.commentsSvc.addComment(u, null, ticketId, { content: body.body });
   }
 }

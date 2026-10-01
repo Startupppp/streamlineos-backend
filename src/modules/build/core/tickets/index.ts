@@ -29,4 +29,3 @@ export { lockProjectTicketMutation, assertTicketReadAccess, type TicketReadAcces
 export { resolveValidTicketStatuses } from "./ticket-status.util";
 export { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 export { resolveTicketsScope, ticketScope, TICKETS_PERMISSION } from "../lib/tickets-scope";
-export { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
