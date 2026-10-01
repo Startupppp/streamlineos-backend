@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const updateRowSchema = z.object({
   id: z.number().int(),
@@ -12,8 +13,8 @@ export const updateRowSchema = z.object({
   risks: z.string().nullable(),
   next: z.string().nullable(),
   citations: z.string().nullable(),
-  status: z.enum(["draft", "published"]),
-  audience: z.enum(["internal", "client"]),
+  status: z.enum(DB_ENUMS.project_update_status),
+  audience: z.enum(DB_ENUMS.project_update_audience),
   createdAt: wireDate(),
   updatedAt: wireDate(),
   deletedAt: nullableWireDate(),

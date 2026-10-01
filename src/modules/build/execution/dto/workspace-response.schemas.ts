@@ -2,7 +2,7 @@ import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 import { whiteboardShareRoleEnum, whiteboardVisibilityEnum } from "../../../../db/schema";
-import { intakeSourceEnum, intakeStatusEnum } from "../../../../db/schema";
+import { intakeSourceEnum, intakeStatusEnum, viewLayoutEnum } from "../../../../db/schema";
 
 const milestoneOwnerSchema = z.object({
   membershipId: z.number().int(),
@@ -69,7 +69,7 @@ export const viewRowSchema = z.object({
   filters: z.unknown(),
   groupBy: z.string().nullable(),
   orderBy: z.string().nullable(),
-  layoutType: z.enum(["board", "list", "table", "calendar", "gantt"]),
+  layoutType: z.enum(viewLayoutEnum.enumValues),
   isPinned: z.boolean(),
   visibility: z.enum(["private", "shared"]),
   displayOptions: z.unknown(),

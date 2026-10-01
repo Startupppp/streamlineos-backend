@@ -49,7 +49,7 @@ export const analyticsSchema = z.object({
   cycleVelocity: z.unknown(),
   estimateVsActual: z.unknown(),
   healthScore: z.number().int(),
-  healthStatus: z.string(),
+  healthStatus: z.enum(["NOT_STARTED", "EXCELLENT", "GOOD", "AT_RISK", "CRITICAL"]),
   healthBreakdown: z.object({
     completionPct: z.number().int(),
     onTimePct: z.number().int(),

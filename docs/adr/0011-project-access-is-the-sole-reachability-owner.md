@@ -1,7 +1,6 @@
 # ADR 0011: project-access is the sole reachability owner
 
-**Status:** accepted — reinforces ADR 0004; written from the architecture
-review (2026-10-01).
+**Status:** accepted and implemented — reinforces ADR 0004 (2026-10-01).
 **Date:** 2026-10-01.
 **Decision:** `backend/src/modules/build/core/project-crud/project-access.ts`
 is the only code that may decide whether an actor can reach a project. No other
@@ -83,3 +82,14 @@ conformance signal.
 > `project-access.ts` is the only code in Build that decides whether an actor
 > can reach a project. Callers add their own operation permission on top; they
 > do not re-query the reachability tables.
+
+## Implementation
+
+- `project-access.ts` exports `assertCanManageProject`; members, custom states,
+  budget, automations and timesheets call it instead of rebuilding the manager
+  check.
+- Portfolios, programs and whiteboards call `assertProjectInOrg` instead of
+  private copies; the whiteboard alias re-export is gone.
+- System-job principals reach a project only when their ceiling covers
+  `build:tickets:view`.
+- `project-access-conformance.spec.ts` pins the decision table.

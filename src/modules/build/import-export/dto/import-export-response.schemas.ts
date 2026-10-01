@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { importFormatSchema, importModeSchema } from "./import-export-request.schemas";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const importIssueKindSchema = z.enum([
   "INVALID",
@@ -14,9 +15,9 @@ export const importRowOutcomeSchema = z.enum([
   "ROLLED_BACK",
 ]);
 
-const ticketTypeSchema = z.enum(["EPIC", "STORY", "TASK", "BUG"]);
+const ticketTypeSchema = z.enum(DB_ENUMS.ticket_type);
 
-const ticketPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
+const ticketPrioritySchema = z.enum(DB_ENUMS.ticket_priority);
 
 export const importRowIssueSchema = z.object({
   rowNumber: z.number().int(),

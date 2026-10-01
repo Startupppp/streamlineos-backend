@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const portalProjectItemSchema = z.object({
   id: z.number().int(),
   name: z.string(),
   key: z.string(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.project_status),
   startDate: nullableWireDate(),
   targetEndDate: nullableWireDate(),
 });
@@ -53,7 +54,7 @@ export const portalChangeRequestItemSchema = z.object({
   title: z.string(),
   description: z.string().nullable(),
   impact: z.string().nullable(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.change_request_status),
   estimateMinutes: z.number().int().nullable(),
   budgetImpactCents: z.number().int().nullable(),
   timelineImpactDays: z.number().int().nullable(),
@@ -65,7 +66,7 @@ const ticketVisibilityItemSchema = z.object({
   id: z.number().int(),
   ticketNumber: z.number().int(),
   title: z.string(),
-  type: z.string(),
+  type: z.enum(DB_ENUMS.ticket_type),
   clientVisible: z.boolean(),
   version: z.number().int(),
 });

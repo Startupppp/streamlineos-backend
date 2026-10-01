@@ -46,7 +46,7 @@ export const projectRowSchema = z.object({
   managerMembershipId: z.number().int().nullable(),
   startDate: nullableWireDate(),
   endDate: nullableWireDate(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.project_status),
   priority: z.string().nullable(),
   dealId: z.number().int().nullable(),
   managedProductId: z.number().int().nullable(),

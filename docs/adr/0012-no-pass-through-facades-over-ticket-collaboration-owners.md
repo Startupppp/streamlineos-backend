@@ -1,7 +1,6 @@
 # ADR 0012: no pass-through facades over ticket collaboration owners
 
-**Status:** accepted — extends BE-143; written from the architecture review
-(2026-10-01).
+**Status:** accepted and implemented — extends BE-143 (2026-10-01).
 **Date:** 2026-10-01.
 **Decision:** controllers reach ticket collaboration modules (comments,
 checklists, links, relations) directly. A service whose entire body delegates
@@ -86,3 +85,9 @@ pure pass-through is moved to its cohesive owner before the file is deleted.
 > A function that only forwards to one other exported function is deleted.
 > Controllers reach collaboration owners directly. Shared context is a utility,
 > not a facade.
+
+## Implementation
+
+`core/tickets/projects-ticket-subresources.service.ts` is deleted. Controllers,
+the agent controller and automation call the comment, checklist, link,
+relation and label owners directly.
