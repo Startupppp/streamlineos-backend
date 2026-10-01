@@ -13,7 +13,9 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { actingMembershipId, systemJobCovers } from "../../../../common/auth/principal";
 import type { AccessService } from "../../../access/access.service";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
+import type { ScopedRead } from "../../../access/scoped-read";
 import { resolveTicketsScope, ticketScope, ticketsScopeIsUnrestricted } from "../lib/tickets-scope";
+import type { ProjectAccessCache } from "../../reachability/project-access-cache";
 
 export type TicketReadAccess = Pick<AccessService, "scopeFor" | "resolveUserPermissions">;
 
@@ -176,6 +178,53 @@ export async function assertProjectAccess(
 ): Promise<void> {
   const { hasAccess } = await resolveProjectAccess(db, access, u, projectId, options);
   if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
+}
+
+export async function authorizeProjectTicketRead(
+  db: Db,
+  access: TicketReadAccess,
+  actor: CurrentUserContext,
+  projectId: number,
+  cache?: ProjectAccessCache,
+): Promise<ScopedRead> {
+  const resolve = () => resolveProjectAccess(db, access, actor, projectId);
+  const [{ hasAccess }, read] = await Promise.all([
+    cache ? cache.get(actor.orgId, actor.userId, projectId, resolve) : resolve(),
+    resolveTicketsScope(access, actor),
+  ]);
+  if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
+  return read;
+}
+
+export async function assertCanDeleteProject(
+  access: Pick<AccessService, "resolveUserPermissions">,
+  actor: CurrentUserContext,
+): Promise<void> {
+  if (actor.isOrgOwner) return;
+  const perms = await access.resolveUserPermissions(actor.orgId, actor.userId);
+  if (!perms.has("build:delete"))
+    throw new ForbiddenException("Only organization owners can delete projects");
+}
+
+export type RecordAuthor = { membershipId: number | null } | { userId: string | null };
+
+export async function assertCanModifyAuthoredRecord(
+  access: Pick<AccessService, "resolveUserPermissions">,
+  actor: CurrentUserContext,
+  author: RecordAuthor,
+  managePermission: string | null,
+  message: string,
+): Promise<void> {
+  const isAuthor =
+    "membershipId" in author
+      ? author.membershipId !== null && actingMembershipId(actor.principal) === author.membershipId
+      : author.userId === actor.userId;
+  if (isAuthor || actor.isOrgOwner) return;
+  if (managePermission !== null) {
+    const perms = await access.resolveUserPermissions(actor.orgId, actor.userId);
+    if (perms.has(managePermission)) return;
+  }
+  throw new ForbiddenException(message);
 }
 
 export async function assertProjectAggregateAccess(

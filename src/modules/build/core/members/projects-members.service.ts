@@ -68,13 +68,6 @@ export class ProjectsMembersService {
     private readonly labelsService: ProjectsLabelsService,
   ) {}
 
-  async assertCanManageProject(
-    u: CurrentUserContext,
-    projectId: number,
-  ): Promise<void> {
-    return assertCanManageProject(this.db, this.access, u, projectId);
-  }
-
   async listMembers(
     u: CurrentUserContext,
     projectId: number,
@@ -229,7 +222,7 @@ export class ProjectsMembersService {
   ) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     let actor: OrganizationActor;
     try {
@@ -287,7 +280,7 @@ export class ProjectsMembersService {
   async removeMember(projectId: number, userId: string, u: CurrentUserContext) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     const targetActor = await assertOrganizationActor(this.db, orgId, {
       kind: "user",
       userId,
@@ -353,7 +346,7 @@ export class ProjectsMembersService {
   ) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     const targetActor = await assertOrganizationActor(this.db, orgId, {
       kind: "user",
       userId: memberUserId,
@@ -409,7 +402,7 @@ export class ProjectsMembersService {
     projectId: number,
     body: CreateStateInput,
   ) {
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     return this.statesService.createCustomState(u.orgId, projectId, body);
   }
 
@@ -438,8 +431,18 @@ export class ProjectsMembersService {
     return this.labelsService.listLabels(orgId);
   }
 
+  async listProjectLabels(u: CurrentUserContext, projectId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    return this.labelsService.listLabels(u.orgId);
+  }
+
   createLabel(orgId: string, body: CreateLabelInput) {
     return this.labelsService.createLabel(orgId, body);
+  }
+
+  async createProjectLabel(u: CurrentUserContext, projectId: number, body: CreateLabelInput) {
+    await assertCanManageProject(this.db, this.access, u, projectId);
+    return this.labelsService.createLabel(u.orgId, body);
   }
 
   updateLabel(orgId: string, labelId: number, data: UpdateLabelInput) {

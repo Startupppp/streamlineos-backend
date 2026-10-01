@@ -4,20 +4,26 @@ export default [
     verdict: "VERIFIED",
     finding: "insert-binds-org-in-values",
     summary:
-      "POST /build/:projectId/labels. Org is bound twice. The handler first calls assertCanManageProject, whose project lookup is predicated on the caller's own org at projects-members.service.ts:71, so a foreign :projectId answers 404 before any write. The write itself is an INSERT into ticket_labels and scopes the row by writing orgId into .values({ orgId, ... }) at projects-labels.service.ts:23. The static pass reports PASSED-UNBOUND because its binding detection is syntactic — it looks for eq()/inArray()/a sql interpolation in a predicate — and an INSERT has no predicate; the ES6 shorthand property `orgId,` in a .values() object is invisible to it. The delegation controller -> ProjectsMembersService.createLabel (a one-line re-export at projects-members.service.ts:434) -> ProjectsLabelsService.createLabel also adds a hop. ticket_labels carries no project_id column, so there is no parent dimension to bind; the :projectId segment is verified for addressing only.",
+      "POST /build/:projectId/labels. Org is bound twice. The handler forwards the actor and :projectId to ProjectsMembersService.createProjectLabel, which calls the canonical assertCanManageProject in project-access.ts before the insert; its project lookup is predicated on the caller's own org, so a foreign :projectId answers 404 before any write. The write itself is an INSERT into ticket_labels and scopes the row by writing orgId into .values({ orgId, ... }) at projects-labels.service.ts:23. The static pass reports PASSED-UNBOUND because its binding detection is syntactic — it looks for eq()/inArray()/a sql interpolation in a predicate — and an INSERT has no predicate; the ES6 shorthand property `orgId,` in a .values() object is invisible to it. The delegation is controller -> ProjectsMembersService.createProjectLabel -> ProjectsLabelsService.createLabel. ticket_labels carries no project_id column, so there is no parent dimension to bind; the :projectId segment is verified for addressing only.",
     blastRadius:
       "None. Neither cross-tenant nor intra-tenant: the row is created in the caller's own org, and a :projectId belonging to another organisation is rejected 404 by assertCanManageProject before the insert runs.",
     evidence: [
       {
         file: "src/modules/build/core/project-crud/project-resources.controller.ts",
-        line: 228,
-        anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/,
-        note: "the url project is resolved under the caller's org before the write",
+        line: 227,
+        anchor: /return this\.members\.createProjectLabel\(u, projectId, body\);/,
+        note: "the handler forwards the actor and the url project together",
       },
       {
         file: "src/modules/build/core/members/projects-members.service.ts",
-        line: 76,
-        anchor: /const \{ hasAccess, role \} = await resolveProjectAccess\(/,
+        line: 444,
+        anchor: /await assertCanManageProject\(this\.db, this\.access, u, projectId\);/,
+        note: "the url project is resolved under the caller's org before the write",
+      },
+      {
+        file: "src/modules/build/core/project-crud/project-access.ts",
+        line: 349,
+        anchor: /const \{ hasAccess, role \} = await resolveProjectAccess\(db, access, u, projectId\);/,
         note: "the project lookup that makes a foreign :projectId a 404",
       },
       {

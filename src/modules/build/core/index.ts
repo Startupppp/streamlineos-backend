@@ -1,9 +1,11 @@
 export {
+  assertCanModifyAuthoredRecord,
   assertProjectAccess,
   assertProjectAggregateAccess,
   assertProjectInOrg,
   assertTicketInProject,
   assertTicketReadAccess,
+  authorizeProjectTicketRead,
   authorizeTicketMutation,
   lockProjectTicketMutation,
   readMutationTickets,

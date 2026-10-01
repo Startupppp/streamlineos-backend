@@ -1,5 +1,4 @@
 import {
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -26,7 +25,7 @@ import type {
   UpdateProjectInput,
 } from "../dto/projects.schemas";
 import { ProjectsQueryService } from "./projects-query.service";
-import { assertProjectAccess, assertCanManageProject } from "./project-access";
+import { assertProjectAccess, assertCanDeleteProject, assertCanManageProject } from "./project-access";
 
 @Injectable()
 export class ProjectsWriteService {
@@ -233,14 +232,7 @@ export class ProjectsWriteService {
   }
 
   async deleteProject(u: CurrentUserContext, projectId: number) {
-    if (!u.isOrgOwner) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("build:delete")) {
-        throw new ForbiddenException(
-          "Only organization owners can delete projects",
-        );
-      }
-    }
+    await assertCanDeleteProject(this.access, u);
     const orgId = u.orgId;
 
     const project = await this.db.query.projects.findFirst({

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -16,7 +15,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
-import { assertTicketReadAccess, type TicketReadAccess } from "../project-crud/project-access";
+import { assertCanModifyAuthoredRecord, assertTicketReadAccess, type TicketReadAccess } from "../project-crud/project-access";
 import type {
   AddRelatedLinkInput,
   AttachmentInput,
@@ -189,8 +188,7 @@ export class ProjectsTicketLinksService {
         ),
       );
     if (!link) throw new NotFoundException("Related link not found");
-    if (link.createdBy !== u.userId && !u.isOrgOwner)
-      throw new ForbiddenException("Cannot edit another user's link");
+    await assertCanModifyAuthoredRecord(this.access, u, { userId: link.createdBy }, null, "Cannot edit another user's link");
     const update: { url?: string; label?: string | null } = {};
     if (body.url !== undefined) update.url = body.url;
     if (body.label !== undefined) update.label = body.label;
@@ -230,8 +228,7 @@ export class ProjectsTicketLinksService {
         ),
       );
     if (!link) throw new NotFoundException("Related link not found");
-    if (link.createdBy !== u.userId && !u.isOrgOwner)
-      throw new ForbiddenException("Cannot delete another user's link");
+    await assertCanModifyAuthoredRecord(this.access, u, { userId: link.createdBy }, null, "Cannot delete another user's link");
     await this.db.delete(ticketRelatedLinks).where(
       and(
         eq(ticketRelatedLinks.orgId, u.orgId),

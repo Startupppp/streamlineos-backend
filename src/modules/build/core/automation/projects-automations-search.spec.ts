@@ -1,6 +1,11 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsAutomationsService } from "./projects-automations.service";
 
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
+
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
   if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
@@ -29,13 +34,13 @@ function makeDb() {
 }
 
 const planLimits = { assertWithinLimit: jest.fn() } as never;
-const members = { assertProjectAccess: jest.fn().mockResolvedValue(undefined) } as never;
+const access = {} as never;
 const u = { orgId: "org-1", userId: "user-1" } as never;
 
 describe("ProjectsAutomationsService — server-side search predicate (B10)", () => {
   it("with search term — WHERE carries the trimmed term so a page 2 match is not missed by client filter (BE-134 failing first)", async () => {
     const { db, capturedWhereConds } = makeDb();
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
 
     await svc.listAutomations(u, 1, { limit: 50, search: "notify" });
 
@@ -45,7 +50,7 @@ describe("ProjectsAutomationsService — server-side search predicate (B10)", ()
 
   it("without search term — WHERE does not carry a name-match literal (BE-141 positive control)", async () => {
     const { db, capturedWhereConds } = makeDb();
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
 
     await svc.listAutomations(u, 1, { limit: 50 });
 
