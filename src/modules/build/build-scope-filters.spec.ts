@@ -1,3 +1,4 @@
+import { managedProductsService } from "./managed-products/__tests__/managed-products-spec-fixtures";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
@@ -26,7 +27,7 @@ function makeListDb() {
 describe("Build scope filters reach the WHERE clause", () => {
   it("filters managed products by a trailing-wildcard search term, so the predicate can use an org-led btree index under RLS where a trigram index is dead (BE-49, BE-80)", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit).listManagedProducts(
+    await (await managedProductsService(db, audit)).listManagedProducts(
       ORG,
       { limit: 20, search: "atlas" } as never,
       MEMBER,
@@ -47,7 +48,7 @@ describe("Build scope filters reach the WHERE clause", () => {
 
   it("keeps every scoped list bound to the caller's organization", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit).listManagedProducts(
+    await (await managedProductsService(db, audit)).listManagedProducts(
       ORG,
       { limit: 20, search: "atlas" } as never,
       MEMBER,
