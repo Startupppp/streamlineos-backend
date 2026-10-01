@@ -108,9 +108,9 @@ export class ProjectsWebhooksService {
       WITH ranked AS (
         SELECT
           build_webhook_id,
-          delivered_at,
+          created_at,
           status,
-          ROW_NUMBER() OVER (PARTITION BY build_webhook_id ORDER BY delivered_at DESC) AS rn,
+          ROW_NUMBER() OVER (PARTITION BY build_webhook_id ORDER BY created_at DESC) AS rn,
           COUNT(CASE WHEN status = 'failed' THEN 1 END) OVER (PARTITION BY build_webhook_id)::float
             / NULLIF(COUNT(*) OVER (PARTITION BY build_webhook_id), 0) AS failure_rate
         FROM integration_webhook_deliveries
@@ -119,7 +119,7 @@ export class ProjectsWebhooksService {
       )
       SELECT
         build_webhook_id::int AS "webhookId",
-        delivered_at AS "lastDeliveryAt",
+        created_at AS "lastDeliveryAt",
         status AS "lastDeliveryStatus",
         failure_rate AS "failureRate"
       FROM ranked
@@ -322,6 +322,7 @@ export class ProjectsWebhooksService {
         responseCode: integrationWebhookDeliveries.responseCode,
         attempts: integrationWebhookDeliveries.attempts,
         lastError: integrationWebhookDeliveries.lastError,
+        createdAt: integrationWebhookDeliveries.createdAt,
         deliveredAt: integrationWebhookDeliveries.deliveredAt,
       })
       .from(integrationWebhookDeliveries)
@@ -331,7 +332,7 @@ export class ProjectsWebhooksService {
           eq(integrationWebhookDeliveries.buildWebhookId, webhookId),
         ),
       )
-      .orderBy(desc(integrationWebhookDeliveries.deliveredAt))
+      .orderBy(desc(integrationWebhookDeliveries.createdAt))
       .limit(20);
   }
 }

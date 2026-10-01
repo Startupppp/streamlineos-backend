@@ -2,7 +2,7 @@ SET lock_timeout = '5s';
 --> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "integration_webhook_deliveries" (
-  "id"              BIGSERIAL PRIMARY KEY,
+  "id"              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   "org_id"          TEXT NOT NULL REFERENCES "organizations"("id") ON DELETE CASCADE,
   "credential_id"   INTEGER,
   "build_webhook_id" INTEGER,
@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS "integration_webhook_deliveries" (
   "attempts"        INTEGER NOT NULL DEFAULT 0,
   "last_error"      TEXT,
   "next_attempt_at" TIMESTAMP WITH TIME ZONE,
-  "delivered_at"    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  "created_at"      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  "delivered_at"    TIMESTAMP WITH TIME ZONE,
   CONSTRAINT "chk_integration_webhook_deliveries_status"
     CHECK ("status" IN ('pending', 'success', 'failed')),
   CONSTRAINT "fk_int_wh_deliveries_credential"
@@ -37,8 +38,8 @@ CREATE INDEX IF NOT EXISTS "idx_integration_webhook_deliveries_build_webhook"
   ON "integration_webhook_deliveries" ("org_id", "build_webhook_id");
 --> statement-breakpoint
 
-CREATE INDEX IF NOT EXISTS "idx_integration_webhook_deliveries_delivered_at"
-  ON "integration_webhook_deliveries" ("delivered_at");
+CREATE INDEX IF NOT EXISTS "idx_integration_webhook_deliveries_created_at"
+  ON "integration_webhook_deliveries" ("created_at");
 --> statement-breakpoint
 
 CREATE UNIQUE INDEX IF NOT EXISTS "uniq_integration_webhook_deliveries_org_id"

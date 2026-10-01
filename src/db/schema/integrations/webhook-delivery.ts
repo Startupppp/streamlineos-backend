@@ -1,5 +1,5 @@
 import {
-  bigserial,
+  bigint,
   check,
   foreignKey,
   index,
@@ -36,7 +36,7 @@ export const integrationWebhookEndpointCredentials = pgTable(
 export const integrationWebhookDeliveries = pgTable(
   "integration_webhook_deliveries",
   {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
@@ -51,7 +51,8 @@ export const integrationWebhookDeliveries = pgTable(
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   },
   (t) => [
     foreignKey({
@@ -61,7 +62,7 @@ export const integrationWebhookDeliveries = pgTable(
     }).onDelete("set null"),
     index("idx_integration_webhook_deliveries_credential").on(t.orgId, t.credentialId),
     index("idx_integration_webhook_deliveries_build_webhook").on(t.orgId, t.buildWebhookId),
-    index("idx_integration_webhook_deliveries_delivered_at").on(t.deliveredAt),
+    index("idx_integration_webhook_deliveries_created_at").on(t.createdAt),
     unique("uniq_integration_webhook_deliveries_org_id").on(t.orgId, t.id),
     check(
       "chk_integration_webhook_deliveries_status",

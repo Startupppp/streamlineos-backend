@@ -108,7 +108,6 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
           status: "pending" as const,
           attempts: 0,
           nextAttemptAt: now,
-          deliveredAt: now,
         })),
       )
       .returning({ id: integrationWebhookDeliveries.id });
@@ -196,7 +195,6 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
             status: "pending",
             attempts: 0,
             nextAttemptAt: now,
-            deliveredAt: now,
           })
           .returning({ id: integrationWebhookDeliveries.id });
         if (!delivery) throw new Error("Failed to persist test webhook delivery intent");
@@ -238,7 +236,7 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
     if (!signingSecret) {
       await this.db
         .update(integrationWebhookDeliveries)
-        .set({ status: "failed", lastError: MISSING_SIGNING_SECRET_ERROR, deliveredAt: new Date() })
+        .set({ status: "failed", lastError: MISSING_SIGNING_SECRET_ERROR })
         .where(
           and(
             eq(integrationWebhookDeliveries.orgId, orgId),
@@ -291,7 +289,7 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
         responseCode,
         lastError,
         attempts: sql`${integrationWebhookDeliveries.attempts} + 1`,
-        deliveredAt: new Date(),
+        ...(success ? { deliveredAt: new Date() } : {}),
       })
       .where(
         and(

@@ -257,7 +257,7 @@ export class WebhookDeliveryService implements OutboxEventConsumer, OnModuleInit
         responseBody: outcome.responseBody?.slice(0, RESPONSE_BODY_LIMIT) ?? null,
         attempts: sql`${integrationWebhookDeliveries.attempts} + ${outcome.attempts}`,
         lastError: outcome.lastError,
-        deliveredAt: new Date(),
+        ...(outcome.success ? { deliveredAt: new Date() } : {}),
       })
       .where(
         and(
