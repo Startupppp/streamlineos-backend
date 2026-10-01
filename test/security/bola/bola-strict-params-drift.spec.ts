@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { findStrictParamsDrift, parseParamSchemas, pathParamsOf } from "./strict-params-drift";
 
 /**
@@ -137,41 +139,21 @@ export class BugsController {
 describe("the live inventory of routes that 400 to every caller", () => {
   const findings = findStrictParamsDrift();
   const routes = [...new Set(findings.map((f) => f.route))].sort();
+  const realBugs = readFileSync(join(__dirname, "..", "..", "..", "src", "modules", "build", "qa", "bugs.controller.ts"), "utf8");
 
-  it("ANTI-VACUITY: the scanner sees real controllers, not an empty tree", () => {
-    expect(findings.length).toBeGreaterThan(0);
-    expect(findings.every((f) => f.file.startsWith("src/modules/"))).toBe(true);
-    expect(findings.every((f) => f.missing.length > 0)).toBe(true);
+  it("ANTI-VACUITY: the scanner parses the real bugs controller's strict schema, so an empty inventory is a measurement, not a blind spot", () => {
+    expect(parseParamSchemas(realBugs).get("bugRouteParams")).toEqual({ keys: ["projectId", "bugId"], strict: true });
   });
 
-  /**
-   * A repaired route is reported rather than failed — an exact-equality pin turns every fix red and
-   * teaches the next person to delete the assertion instead of fixing anything.
-   */
-  it("no NEW route acquires a strict params schema that omits its own path parameter", () => {
-    const healed = KNOWN_STRICT_PARAMS_DRIFT.filter((route) => !routes.includes(route));
-    if (healed.length > 0)
-      process.stderr.write(
-        `[bola-strict-params] ${String(healed.length)} pinned routes are fixed — remove them from ` +
-          `KNOWN_STRICT_PARAMS_DRIFT: ${healed.join(", ")}\n`,
-      );
-    expect(routes.filter((route) => !KNOWN_STRICT_PARAMS_DRIFT.includes(route))).toEqual([]);
+  it("ANTI-VACUITY: dropping projectId from that real schema is reported, so the live scan would see a regression in the real file shape", () => {
+    const { mkdtempSync, writeFileSync } = jest.requireActual<typeof import("node:fs")>("node:fs");
+    const { tmpdir } = jest.requireActual<typeof import("node:os")>("node:os");
+    const file = join(mkdtempSync(join(tmpdir(), "bola-strict-real-")), "bugs.controller.ts");
+    writeFileSync(file, realBugs.replace(/projectId: z\.coerce\.number\(\)\.int\(\)\.positive\(\),\s*bugId/, "bugId"));
+    expect(findStrictParamsDrift([file]).map((f) => f.route)).toContain("GET /build/:projectId/bugs/:bugId");
   });
 
-  it("RATCHET: the count does not grow", () => {
-    process.stderr.write(`[bola-strict-params] ${String(routes.length)} routes answer 400 to every caller\n`);
-    expect(routes.length).toBeLessThanOrEqual(KNOWN_STRICT_PARAMS_DRIFT.length);
-  });
-
-  /**
-   * Named so the shape is legible without reading 31 paths: every one is a QA/governance/forms/
-   * workflow sub-controller under `@Controller("build/:projectId/…")` whose id schema forgot the
-   * prefix. One is worse — the submissions route omits two.
-   */
-  it("every finding is under build's :projectId prefix, and one omits two parameters", () => {
-    expect(findings.every((f) => f.file.startsWith("src/modules/build/"))).toBe(true);
-    const worst = findings.find((f) => f.missing.length > 1);
-    expect(worst?.route).toBe("PATCH /build/:projectId/forms/:formId/submissions/:submissionId");
-    expect(worst?.missing).toEqual(["projectId", "formId"]);
+  it("every one of the 31 routes pinned by the sweep is healed and no route acquires the defect", () => {
+    expect({ reopened: KNOWN_STRICT_PARAMS_DRIFT.filter((route) => routes.includes(route)), fresh: routes }).toEqual({ reopened: [], fresh: [] });
   });
 });
