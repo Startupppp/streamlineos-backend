@@ -63,6 +63,7 @@ function buildHarness(options: { writeRejectsWith?: Error } = {}): Harness {
             where: jest.fn(() => ({ returning: jest.fn(() => Promise.resolve([])) })),
           })),
         })),
+        delete: jest.fn(() => ({ where: jest.fn(() => Promise.resolve(undefined)) })),
         insert: jest.fn(() => ({
           values: jest.fn((input: Record<string, unknown> | Record<string, unknown>[]) => {
             const rows = Array.isArray(input) ? input : [input];
