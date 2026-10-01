@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   organizationMembers,
@@ -11,8 +11,7 @@ import { AccessService } from "../../access/access.service";
 import { resolveWhiteboardAccess } from "./whiteboard-access";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { assertProjectInOrg as assertProject } from "../core/project-crud/project-access";
-export { assertProject };
+import { assertProjectInOrg } from "../core/project-crud/project-access";
 
 export type ShareEntry = {
   userId: string;
@@ -45,7 +44,7 @@ export async function requireWhiteboardManageAccess(
   projectId: number,
   whiteboardId: number,
 ): Promise<typeof projectWhiteboards.$inferSelect> {
-  await assertProject(db, u.orgId, projectId);
+  await assertProjectInOrg(db, u.orgId, projectId);
 
   const rows = await db
     .select({
