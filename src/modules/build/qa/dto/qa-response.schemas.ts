@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+} from "../../../../common/openapi/wire-types";
 import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const testSuiteRowSchema = z.object({
@@ -28,7 +31,9 @@ export const testCaseRowSchema = z.object({
   caseNumber: z.number().int(),
   title: z.string(),
   preconditions: z.string().nullable(),
-  steps: z.unknown(),
+  steps: z
+    .array(z.object({ action: z.string(), expected: z.string() }))
+    .nullable(),
   expectedResult: z.string().nullable(),
   priority: z.enum(DB_ENUMS.test_case_priority),
   component: z.string().nullable(),

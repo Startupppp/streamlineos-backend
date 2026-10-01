@@ -2,6 +2,19 @@ import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { formSubmissionStatusEnum, formTypeEnum } from "../../../../db/schema";
 
+const formFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  type: z.enum(["text", "long_text", "number", "date", "dropdown", "multiselect", "checkbox", "url", "user", "currency", "rating"]),
+  required: z.boolean(),
+  options: z.array(z.string()).optional(),
+});
+
+const formActionSchema = z.object({
+  type: z.string(),
+  config: z.record(z.string(), z.unknown()).optional(),
+});
+
 export const formRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -10,8 +23,8 @@ export const formRowSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   type: z.enum(formTypeEnum.enumValues),
-  fields: z.unknown(),
-  actions: z.unknown(),
+  fields: z.array(formFieldSchema),
+  actions: z.array(formActionSchema),
   isActive: z.boolean(),
   isPublic: z.boolean(),
   publicToken: z.string().nullable(),
@@ -37,7 +50,7 @@ export const submissionRowSchema = z.object({
   orgId: z.string(),
   formId: z.number().int(),
   projectId: z.number().int(),
-  values: z.unknown(),
+  values: z.record(z.string(), z.unknown()),
   status: z.enum(formSubmissionStatusEnum.enumValues),
   submittedByName: z.string().nullable(),
   submittedById: z.string().nullable(),
@@ -59,7 +72,7 @@ export const submissionCreateResultSchema = z.object({
   orgId: z.string(),
   formId: z.number().int(),
   projectId: z.number().int(),
-  values: z.unknown(),
+  values: z.record(z.string(), z.unknown()),
   status: z.enum(formSubmissionStatusEnum.enumValues),
   submittedByName: z.string().nullable(),
   submittedById: z.string().nullable(),
@@ -74,7 +87,7 @@ export const publicSubmissionResultSchema = z.object({
   id: z.number().int(),
   status: z.enum(formSubmissionStatusEnum.enumValues),
   submittedByName: z.string().nullable(),
-  values: z.unknown(),
+  values: z.record(z.string(), z.unknown()),
   createdAt: wireDate(),
   executedActionTypes: z.array(z.string()),
   skippedActionTypes: z.array(z.string()),
