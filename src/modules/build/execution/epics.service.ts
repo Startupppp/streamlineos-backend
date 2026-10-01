@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import { tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -18,8 +18,9 @@ import {
   microsecondCursorValue,
 } from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { assertProjectInOrg, escapeLike } from "../core";
-import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { assertProjectInOrg } from "../core";
+import { AuditService } from "../../../common/audit/audit.service";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
 
 @Injectable()
 export class EpicsService {
@@ -27,7 +28,7 @@ export class EpicsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ticketCreation: BuildTicketCreationService,
     private readonly ticketChange: ProjectsTicketsUpdateService,
-    private readonly ticketDelete: ProjectsTicketsDeleteService,
+    private readonly audit: AuditService,
   ) {}
 
   async listEpics(orgId: string, projectId: number, query: EpicListQuery = {}) {
@@ -42,7 +43,7 @@ export class EpicsService {
       query.status ? eq(tickets.status, query.status) : undefined,
       query.health ? eq(tickets.health, query.health) : undefined,
       query.q && query.q.trim()
-        ? ilike(tickets.title, `${escapeLike(query.q.trim())}%`)
+        ? sql`to_tsvector('english', coalesce(${tickets.title},'')) @@ plainto_tsquery('english', ${query.q.trim()})`
         : undefined,
       query.ownerId
         ? sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${query.ownerId})`
@@ -175,7 +176,15 @@ export class EpicsService {
       columns: { id: true },
     });
     if (!epic) throw new NotFoundException("Epic not found");
-    await this.ticketDelete.deleteTicket(u, projectId, epicId, false);
+    await this.db.update(tickets).set({ deletedAt: new Date() }).where(and(eq(tickets.id, epicId), eq(tickets.orgId, u.orgId)));
+    this.audit.log({
+      action: "epic.deleted",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "ticket",
+      resourceId: String(epicId),
+      metadata: { epicId, projectId },
+    });
     return { success: true };
   }
 }

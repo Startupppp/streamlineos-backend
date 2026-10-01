@@ -9,7 +9,7 @@ import { assertProjectAccess, escapeLike } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
 import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
-import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
 
 @Injectable()
 export class BugsService {
@@ -19,7 +19,6 @@ export class BugsService {
     private readonly audit: AuditService,
     private readonly ticketCreation: BuildTicketCreationService,
     private readonly ticketChange: ProjectsTicketsUpdateService,
-    private readonly ticketDelete: ProjectsTicketsDeleteService,
   ) {}
 
   async listBugs(u: CurrentUserContext, projectId: number, query: BugListQuery) {
@@ -336,7 +335,15 @@ export class BugsService {
       columns: { id: true },
     });
     if (!existing) throw new NotFoundException("Bug not found");
-    await this.ticketDelete.deleteTicket(u, projectId, bugId, false);
+    await this.db.update(tickets).set({ deletedAt: new Date() }).where(and(eq(tickets.id, bugId), eq(tickets.orgId, u.orgId)));
+    this.audit.log({
+      action: "bug.deleted",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "ticket",
+      resourceId: String(bugId),
+      metadata: { ticketId: bugId, projectId },
+    });
     return { success: true };
   }
 }

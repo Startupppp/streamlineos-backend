@@ -49,31 +49,29 @@ const mockAudit = {} as AuditService;
 const mockStorage = {} as StorageService;
 
 describe("FilesService.listFiles — search predicate shape (BE-49)", () => {
-  it("uses a trailing-wildcard pattern, not a leading wildcard, so the file name column can use a prefix index rather than a full scan over the project's file rows", async () => {
+  it("uses full-text search so mid-name matches are found, not just prefix matches", async () => {
     const captured: Captured = { where: undefined };
     const svc = new FilesService(buildDb(captured), mockAccess, mockAudit, mockStorage);
     await svc.listFiles(makeOwner("org-1"), 1, { q: "report", limit: 25 });
-    const { sql, params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
-    expect(sql.toLowerCase()).toContain("ilike");
-    const likeParams = params.filter((p): p is string => typeof p === "string" && p.includes("%"));
-    expect(likeParams.length).toBeGreaterThan(0);
-    expect(likeParams.every((p) => !p.startsWith("%"))).toBe(true);
+    const { sql } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(sql.toLowerCase()).toContain("to_tsvector");
+    expect(sql.toLowerCase()).toContain("plainto_tsquery");
   });
 
-  it("appends a trailing % so a search for 'report' finds 'report-q3.pdf' — the file name begins with the typed term", async () => {
+  it("places the search term directly in params without a wildcard suffix", async () => {
     const captured: Captured = { where: undefined };
     const svc = new FilesService(buildDb(captured), mockAccess, mockAudit, mockStorage);
     await svc.listFiles(makeOwner("org-1"), 1, { q: "report", limit: 25 });
     const { params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
-    const likeParam = params.find((p): p is string => typeof p === "string" && p.endsWith("%"));
-    expect(likeParam).toBe("report%");
+    expect(params).toContain("report");
+    expect(params.every((p) => typeof p !== "string" || !p.includes("%"))).toBe(true);
   });
 
-  it("omits the ilike predicate when no q is given so all files in the project are returned", async () => {
+  it("omits the fts predicate when no q is given so all files in the project are returned", async () => {
     const captured: Captured = { where: undefined };
     const svc = new FilesService(buildDb(captured), mockAccess, mockAudit, mockStorage);
     await svc.listFiles(makeOwner("org-1"), 1, { limit: 25 });
     const { sql } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
-    expect(sql.toLowerCase()).not.toContain("ilike");
+    expect(sql.toLowerCase()).not.toContain("plainto_tsquery");
   });
 });

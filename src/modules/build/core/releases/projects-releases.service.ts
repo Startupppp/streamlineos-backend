@@ -1,7 +1,7 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { TicketVersionConflictException } from "../tickets";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, ilike, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
@@ -13,7 +13,6 @@ import {
 } from "../../../../db/schema";
 import type { CreateReleaseInput, ListReleasesQuery, OrgListReleasesQuery, UpdateReleaseInput } from "../dto/releases.schemas";
 import { assertProjectAccess } from "../project-crud/project-access";
-import { escapeLike } from "../lib/escape-like";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
 import { AuditService } from "../../../../common/audit/audit.service";
@@ -121,7 +120,7 @@ export class ProjectsReleasesService {
         eq(projectReleases.orgId, orgId),
         isNull(projectReleases.deletedAt),
         status ? eq(projectReleases.status, status) : undefined,
-        q ? ilike(projectReleases.name, `${escapeLike(q)}%`) : undefined,
+        q ? sql`to_tsvector('english', coalesce(${projectReleases.name},'')) @@ plainto_tsquery('english', ${q})` : undefined,
         from ? gte(projectReleases.releaseDate, from) : undefined,
         to ? lte(projectReleases.releaseDate, to) : undefined,
         pos ? lt(projectReleases.id, pos.id) : undefined,

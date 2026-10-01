@@ -6,14 +6,14 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { projectAttachments } from "../../../db/schema/build/project-attachments";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertCanModifyAuthoredRecord, assertProjectAccess, escapeLike } from "../core";
+import { assertCanModifyAuthoredRecord, assertProjectAccess } from "../core";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   buildCursorPage,
@@ -98,7 +98,7 @@ export class FilesService {
           eq(projectAttachments.orgId, u.orgId),
           eq(projectAttachments.projectId, projectId),
           isNull(projectAttachments.deletedAt),
-          query.q ? ilike(projectAttachments.fileName, `${escapeLike(query.q)}%`) : undefined,
+          query.q ? sql`to_tsvector('english', coalesce(${projectAttachments.fileName},'')) @@ plainto_tsquery('english', ${query.q})` : undefined,
           position
             ? keysetBeforeMicros(projectAttachments.createdAt, projectAttachments.id, position)
             : undefined,

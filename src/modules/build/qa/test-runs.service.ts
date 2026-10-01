@@ -1,11 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, gt, ilike, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { cycles, testCases, testRunResults, testRuns, tickets, workItemQaDetails, projectStatuses } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess, escapeLike } from "../core";
+import { assertProjectAccess } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   assertRestorable,
@@ -63,7 +63,7 @@ export class TestRunsService {
       isNull(testRuns.deletedAt),
     ];
     if (query.status) conditions.push(eq(testRuns.status, query.status));
-    if (query.q) conditions.push(ilike(testRuns.name, `${escapeLike(query.q)}%`));
+    if (query.q) conditions.push(sql`to_tsvector('english', coalesce(${testRuns.name},'')) @@ plainto_tsquery('english', ${query.q})`);
     if (query.cursor !== undefined) conditions.push(gt(testRuns.id, query.cursor));
     const rawRuns = await this.db
       .select()
