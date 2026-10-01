@@ -546,17 +546,38 @@ describe("InvitationCreateService.invite() — invite-time authority check", () 
 
 describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)", () => {
   async function buildService(): Promise<InvitationCreateService> {
+    const bulkDb = {
+      query: {
+        organizations: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ name: "Org", status: "ACTIVE", deletedAt: null }),
+        },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 17 }) },
+      },
+    };
+    const screenMany = jest.fn(
+      (_executor: unknown, input: { emails: string[] }) =>
+        Promise.resolve(
+          new Map(
+            input.emails.map((email) => [
+              email,
+              { kind: "clear" as const, userId: null },
+            ]),
+          ),
+        ),
+    );
     const moduleRef = await Test.createTestingModule({
       providers: [
         InvitationCreateService,
-        { provide: DRIZZLE, useValue: {} },
+        { provide: DRIZZLE, useValue: bulkDb },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: {} },
         { provide: EmailService, useValue: {} },
         { provide: PlanLimitsService, useValue: {} },
         { provide: SeatLedgerService, useValue: {} },
         { provide: AccessService, useValue: {} },
-        { provide: MembershipAdmissionService, useValue: {} },
+        { provide: MembershipAdmissionService, useValue: { screenMany } },
       ],
     }).compile();
     return moduleRef.get(InvitationCreateService);
