@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -10,12 +10,19 @@ import {
   tickets,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../../common/auth/principal";
 import type {
   EntityActionResult,
   EntityActor,
   EntityReference,
 } from "../../entity-reference/entity-reference.types";
-import { BuildTicketCreationService, resolveValidTicketStatuses, reserveTicketCapacity } from "../core/tickets";
+import {
+  BuildTicketCreationService,
+  ProjectsTicketsUpdateService,
+  resolveValidTicketStatuses,
+  TicketVersionConflictException,
+} from "../core/tickets";
 import { isProjectMember, text } from "./build-entity-action-helpers";
 import { createTicketFromAction } from "./build-entity-ticket-create";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -33,6 +40,7 @@ export class BuildEntityActions {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly ticketCreation: BuildTicketCreationService,
+    private readonly ticketChange: ProjectsTicketsUpdateService,
   ) {}
 
   async run(
@@ -62,6 +70,7 @@ export class BuildEntityActions {
         assigneeMembershipId: true,
         dueDate: true,
         projectId: true,
+        version: true,
       },
     });
     if (!ticket?.projectId) return { ok: false, reason: "not-found" };
@@ -70,9 +79,9 @@ export class BuildEntityActions {
     if (!allowed) return { ok: false, reason: "forbidden" };
 
     const result = actionId === "status"
-      ? await this.changeStatus(actor, ticket.id, ticket.projectId, ticket.status, input)
+      ? await this.changeStatus(actor, ticket.id, ticket.projectId, ticket.status, input, ticket.version)
       : actionId === "assign"
-        ? await this.assign(actor, ticket.id, ticket.projectId, ticket.assigneeMembershipId, input)
+        ? await this.assign(actor, ticket.id, ticket.projectId, input, ticket.version)
         : actionId === "due-date"
           ? await this.setDueDate(actor, ticket.id, ticket.projectId, ticket.dueDate, input)
           : { ok: false as const, reason: "invalid" as const };
@@ -83,12 +92,28 @@ export class BuildEntityActions {
     return result;
   }
 
+  private toUserContext(actor: EntityActor): CurrentUserContext {
+    const principal = actor.membershipId !== undefined
+      ? humanSessionPrincipal(actor.membershipId, actor.isOrgOwner)
+      : ACCOUNT_ONLY_PRINCIPAL;
+    return {
+      userId: actor.userId,
+      orgId: actor.orgId,
+      role: actor.isOrgOwner ? "admin" : "member",
+      isOrgOwner: actor.isOrgOwner,
+      sessionId: `entity-action:${actor.userId}`,
+      tokenScopes: null,
+      principal,
+    };
+  }
+
   private async changeStatus(
     actor: EntityActor,
     ticketId: number,
     projectId: number,
     currentStatus: string,
     input: Record<string, unknown>,
+    version: number,
   ): Promise<EntityActionResult> {
     const nextStatus = text(input, "status");
     if (!nextStatus) return { ok: false, reason: "invalid" };
@@ -103,23 +128,23 @@ export class BuildEntityActions {
     const valid = await resolveValidTicketStatuses(this.db, projectId, actor.orgId);
     if (!valid.has(nextStatus)) return { ok: false, reason: "invalid" };
 
-    await this.db.transaction(async (tx) => {
-      await reserveTicketCapacity(tx, actor.orgId, projectId, [{ status: nextStatus, count: 1 }], [ticketId]);
-      await tx
-        .update(tickets)
-        .set({ status: nextStatus, updatedAt: new Date() })
-        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
-
-      await this.logActivity(
-        tx,
-        actor,
-        ticketId,
+    try {
+      await this.ticketChange.updateTicket(
+        this.toUserContext(actor),
         projectId,
-        "status_changed",
-        currentStatus,
-        nextStatus,
+        ticketId,
+        { status: nextStatus, version },
       );
-    });
+    } catch (error) {
+      if (
+        error instanceof TicketVersionConflictException ||
+        error instanceof BadRequestException
+      ) return { ok: false, reason: "invalid" };
+      if (error instanceof ForbiddenException) return { ok: false, reason: "forbidden" };
+      if (error instanceof NotFoundException) return { ok: false, reason: "not-found" };
+      throw error;
+    }
+
     this.audit.log({
       action: "ticket.status_changed",
       userId: actor.userId,
@@ -140,15 +165,12 @@ export class BuildEntityActions {
     actor: EntityActor,
     ticketId: number,
     projectId: number,
-    currentAssigneeId: number | null,
     input: Record<string, unknown>,
+    version: number,
   ): Promise<EntityActionResult> {
     const assigneeId = text(input, "assigneeId");
     if (!assigneeId) return { ok: false, reason: "invalid" };
 
-    // The same set the action's declared option source offers. Without this,
-    // submission accepted anyone the picker would never have shown - including
-    // someone outside the project, who cannot open the ticket they were given.
     const targetActor = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.orgId, actor.orgId), eq(organizationMembers.userId, assigneeId), eq(organizationMembers.status, "ACTIVE")),
       columns: { id: true },
@@ -163,22 +185,23 @@ export class BuildEntityActions {
     });
     if (!assignable) return { ok: false, reason: "invalid" };
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(tickets)
-        .set({ assigneeMembershipId: targetActor.id, updatedAt: new Date() })
-        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
-
-      await this.logActivity(
-        tx,
-        actor,
-        ticketId,
+    try {
+      await this.ticketChange.updateTicket(
+        this.toUserContext(actor),
         projectId,
-        "assignee_changed",
-        currentAssigneeId === null ? null : String(currentAssigneeId),
-        assigneeId,
+        ticketId,
+        { assigneeId, version },
       );
-    });
+    } catch (error) {
+      if (
+        error instanceof TicketVersionConflictException ||
+        error instanceof BadRequestException
+      ) return { ok: false, reason: "invalid" };
+      if (error instanceof ForbiddenException) return { ok: false, reason: "forbidden" };
+      if (error instanceof NotFoundException) return { ok: false, reason: "not-found" };
+      throw error;
+    }
+
     this.audit.log({
       action: "ticket.assignee_changed",
       userId: actor.userId,

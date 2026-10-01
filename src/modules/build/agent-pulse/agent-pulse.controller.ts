@@ -48,6 +48,6 @@ export class AgentPulseController {
   @Validate({ params: applyDraftParamsSchema })
   @BodylessAction()
   applyDraft(@Param("draftId", ParseIntPipe) draftId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.svc.applyDraft(u.orgId, u.userId, actingMembershipId(u.principal), draftId);
+    return this.svc.applyDraft(u, draftId);
   }
 }
