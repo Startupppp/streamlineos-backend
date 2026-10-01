@@ -10,7 +10,7 @@ import { TestRunsService } from "../qa/test-runs.service";
 import { MilestonesService } from "../execution/workspace.service";
 import { WhiteboardsService } from "../execution/whiteboards.service";
 import { BugsService } from "../qa/bugs.service";
-import type { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 import { EpicsService } from "../execution/epics.service";
 
 const ORG = "org-1";
@@ -138,24 +138,25 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
     );
   });
 
-  it("deleteBug audits bug.deleted, the parallel soft-delete path onto tickets", async () => {
+  it("deleteBug delegates to ProjectsTicketsDeleteService.deleteTicket which writes the bug.deleted audit row", async () => {
     const written = updateDouble([]);
-    const { audit, log } = auditDouble();
-    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService);
-    await expect(svc.deleteBug(makeU(), PROJECT, 77)).resolves.toEqual({ success: true });
-    expect(log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "bug.deleted", resourceId: "77" }),
-    );
+    const { audit } = auditDouble();
+    const deleteTicket = jest.fn().mockResolvedValue({ deleted: true });
+    const ticketDelete = { deleteTicket } as unknown as ProjectsTicketsDeleteService;
+    const u = makeU();
+    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, ticketDelete);
+    await expect(svc.deleteBug(u, PROJECT, 77)).resolves.toEqual({ success: true });
+    expect(deleteTicket).toHaveBeenCalledWith(u, PROJECT, 77, false);
   });
 
-  it("deleteEpic audits epic.deleted, the parallel soft-delete path onto tickets", async () => {
+  it("deleteEpic delegates to ProjectsTicketsDeleteService.deleteTicket which writes the epic.deleted audit row", async () => {
     const written = updateDouble([]);
-    const { audit, log } = auditDouble();
-    const svc = new EpicsService(makeDb({ tickets: { id: 55 } }, written), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, audit);
-    await expect(svc.deleteEpic(makeU(), PROJECT, 55)).resolves.toEqual({ success: true });
-    expect(log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "epic.deleted", resourceId: "55" }),
-    );
+    const deleteTicket = jest.fn().mockResolvedValue({ deleted: true });
+    const ticketDelete = { deleteTicket } as unknown as ProjectsTicketsDeleteService;
+    const u = makeU();
+    const svc = new EpicsService(makeDb({ tickets: { id: 55 } }, written), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, ticketDelete);
+    await expect(svc.deleteEpic(u, PROJECT, 55)).resolves.toEqual({ success: true });
+    expect(deleteTicket).toHaveBeenCalledWith(u, PROJECT, 55, false);
   });
 
   it("deleteMilestone audits build.milestone.deleted", async () => {

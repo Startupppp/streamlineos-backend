@@ -1,7 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EpicsService } from "./epics.service";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 import { ProjectsWebhooksDispatchService } from "../core";
 import { BuildAutomationRunnerService } from "../core";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -26,6 +26,7 @@ it("refuses an epic when its destination column has no remaining capacity", asyn
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
     { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {
@@ -55,6 +56,7 @@ it.each([false, true])("refuses a missing destination with configured workflow=%
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
     { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {
@@ -86,6 +88,7 @@ it("permits an existing unlimited destination", async () => {
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
     { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {

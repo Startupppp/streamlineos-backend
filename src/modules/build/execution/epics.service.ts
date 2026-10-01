@@ -19,8 +19,7 @@ import {
 } from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { assertProjectInOrg } from "../core";
-import { AuditService } from "../../../common/audit/audit.service";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 
 @Injectable()
 export class EpicsService {
@@ -28,7 +27,7 @@ export class EpicsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ticketCreation: BuildTicketCreationService,
     private readonly ticketChange: ProjectsTicketsUpdateService,
-    private readonly audit: AuditService,
+    private readonly ticketDelete: ProjectsTicketsDeleteService,
   ) {}
 
   async listEpics(orgId: string, projectId: number, query: EpicListQuery = {}) {
@@ -176,15 +175,7 @@ export class EpicsService {
       columns: { id: true },
     });
     if (!epic) throw new NotFoundException("Epic not found");
-    await this.db.update(tickets).set({ deletedAt: new Date() }).where(and(eq(tickets.id, epicId), eq(tickets.orgId, u.orgId)));
-    this.audit.log({
-      action: "epic.deleted",
-      userId: u.userId,
-      orgId: u.orgId,
-      resourceType: "ticket",
-      resourceId: String(epicId),
-      metadata: { epicId, projectId },
-    });
+    await this.ticketDelete.deleteTicket(u, projectId, epicId, false);
     return { success: true };
   }
 }
