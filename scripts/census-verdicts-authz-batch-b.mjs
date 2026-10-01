@@ -168,8 +168,8 @@ export default [
     summary: "POST /build/:projectId/meetings/:meetingId/action-items. createItem calls assertMeeting(orgId, projectId, meetingId), whose WHERE binds id=meetingId AND orgId AND projectId, before inserting the action item. A meetingId belonging to another project 404s before any row is written.",
     blastRadius: "None beyond the caller's own org/project: a foreign meetingId 404s at assertMeeting before the insert.",
     evidence: [
-      { file: "src/modules/build/meetings/action-items.controller.ts", line: 50, anchor: /return this\.svc\.createItem\(u\.orgId, u\.userId, projectId, meetingId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/meetings/action-items.service.ts", line: 62, anchor: /await this\.assertMeeting\(orgId, projectId, meetingId\);/, note: "createItem binds via assertMeeting before inserting" },
+      { file: "src/modules/build/meetings/action-items.controller.ts", line: 50, anchor: /return this\.svc\.createItem\(u, projectId, meetingId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/meetings/action-items.service.ts", line: 62, anchor: /await this\.assertMeetingAccess\(actor, projectId, meetingId\);/, note: "createItem binds via assertMeeting before inserting" },
       { file: "src/modules/build/meetings/action-items.service.ts", line: 34, anchor: /eq\(projectMeetings\.projectId, projectId\),/, note: "assertMeeting's WHERE binds meetingId to projectId and orgId together" },
     ],
   },
@@ -180,8 +180,8 @@ export default [
     summary: "PATCH /build/:projectId/meetings/:meetingId/action-items/:itemId — three route params. updateItem binds all three: assertMeeting(orgId, projectId, meetingId) confirms the meeting belongs to the project, then loadItem(orgId, meetingId, itemId) confirms the item belongs to that meeting and org (404 otherwise). The final UPDATE's WHERE only re-checks id+orgId (not meetingId), but that is safe: loadItem already proved this exact primary-key row belongs to the named meeting, meetingId is never reassigned by any other endpoint in this file, and the UPDATE targets the row by its immutable primary key — so it can only ever touch the row already confirmed to be under the right parent.",
     blastRadius: "None beyond the caller's own org/project/meeting: a foreign itemId or meetingId 404s at assertMeeting/loadItem before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/meetings/action-items.controller.ts", line: 64, anchor: /return this\.svc\.updateItem\(u\.orgId, u\.userId, projectId, meetingId, itemId, body\);/, note: "route handler passes all three raw path params straight to the service" },
-      { file: "src/modules/build/meetings/action-items.service.ts", line: 96, anchor: /await this\.assertMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via assertMeeting" },
+      { file: "src/modules/build/meetings/action-items.controller.ts", line: 64, anchor: /return this\.svc\.updateItem\(u, projectId, meetingId, itemId, body\);/, note: "route handler passes all three raw path params straight to the service" },
+      { file: "src/modules/build/meetings/action-items.service.ts", line: 96, anchor: /await this\.assertMeetingAccess\(actor, projectId, meetingId\);/, note: "binds meetingId to projectId via assertMeeting" },
       { file: "src/modules/build/meetings/action-items.service.ts", line: 97, anchor: /await this\.loadItem\(orgId, meetingId, itemId\);/, note: "binds itemId to meetingId via loadItem before patching" },
       { file: "src/modules/build/meetings/action-items.service.ts", line: 107, anchor: /\.where\(and\(eq\(meetingActionItems\.id, itemId\), eq\(meetingActionItems\.orgId, orgId\)\)\)/, note: "UPDATE targets the already-verified row by primary key id + orgId" },
     ],
@@ -193,8 +193,8 @@ export default [
     summary: "DELETE /build/:projectId/meetings/:meetingId/action-items/:itemId. Same binding shape as updateItem: assertMeeting(orgId, projectId, meetingId) then loadItem(orgId, meetingId, itemId) 404s a foreign itemId or meetingId before the soft-delete UPDATE runs, which targets the already-verified row by primary key.",
     blastRadius: "None beyond the caller's own org/project/meeting: a foreign itemId or meetingId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/meetings/action-items.controller.ts", line: 78, anchor: /return this\.svc\.deleteItem\(u\.orgId, u\.userId, projectId, meetingId, itemId\);/, note: "route handler passes all three raw path params straight to the service" },
-      { file: "src/modules/build/meetings/action-items.service.ts", line: 122, anchor: /await this\.assertMeeting\(orgId, projectId, meetingId\);/, note: "binds meetingId to projectId via assertMeeting" },
+      { file: "src/modules/build/meetings/action-items.controller.ts", line: 78, anchor: /return this\.svc\.deleteItem\(u, projectId, meetingId, itemId\);/, note: "route handler passes all three raw path params straight to the service" },
+      { file: "src/modules/build/meetings/action-items.service.ts", line: 122, anchor: /await this\.assertMeetingAccess\(actor, projectId, meetingId\);/, note: "binds meetingId to projectId via assertMeeting" },
       { file: "src/modules/build/meetings/action-items.service.ts", line: 123, anchor: /await this\.loadItem\(orgId, meetingId, itemId\);/, note: "binds itemId to meetingId via loadItem before deleting" },
       { file: "src/modules/build/meetings/action-items.service.ts", line: 127, anchor: /\.where\(and\(eq\(meetingActionItems\.id, itemId\), eq\(meetingActionItems\.orgId, orgId\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
     ],
@@ -206,7 +206,7 @@ export default [
     summary: "POST /build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task. convertToTask does its own inline binding inside one transaction: it looks up the meeting by id/org/project (404 otherwise), then the action item by id/org/meetingId (404 otherwise), and only then creates the ticket and updates the action item row (WHERE id=itemId AND orgId, targeting the row already proven to belong to the right meeting/project in the same transaction).",
     blastRadius: "None beyond the caller's own org/project/meeting: a foreign itemId or meetingId 404s before the ticket is created or the item is touched.",
     evidence: [
-      { file: "src/modules/build/meetings/action-items.controller.ts", line: 93, anchor: /return this\.svc\.convertToTask\(u\.orgId, u\.userId, projectId, meetingId, itemId\);/, note: "route handler passes all three raw path params straight to the service" },
+      { file: "src/modules/build/meetings/action-items.controller.ts", line: 93, anchor: /return this\.svc\.convertToTask\(u, projectId, meetingId, itemId\);/, note: "route handler passes all three raw path params straight to the service" },
       { file: "src/modules/build/meetings/action-items.service.ts", line: 145, anchor: /eq\(projectMeetings\.projectId, projectId\),/, note: "inline meeting lookup binds meetingId to projectId and orgId" },
       { file: "src/modules/build/meetings/action-items.service.ts", line: 156, anchor: /eq\(meetingActionItems\.meetingId, meetingId\),/, note: "inline item lookup binds itemId to meetingId and orgId" },
       { file: "src/modules/build/meetings/action-items.service.ts", line: 185, anchor: /eq\(meetingActionItems\.id, itemId\),/, note: "final UPDATE targets the already-verified row by primary key id + orgId, inside the same transaction" },
@@ -502,7 +502,7 @@ export default [
     summary: "DELETE /build/teams/:teamId/projects/:projectId. removeProject calls teams.loadTeam(orgId, teamId), whose WHERE binds id=teamId AND orgId (404 on a foreign teamId), then deletes the assignment row scoped by teamId+projectId+orgId. Because teamId is already proven to belong to this org and orgId is repeated on the delete, a projectId belonging to another team/org simply matches zero rows.",
     blastRadius: "None: the DELETE only ever removes the one (teamId, projectId, orgId) assignment row; a mismatched projectId is a no-op, and the underlying project row is never touched.",
     evidence: [
-      { file: "src/modules/build/teams/teams.controller.ts", line: 217, anchor: /return this\.teamProjects\.removeProject\(u\.orgId, u\.userId, teamId, projectId\);/, note: "route handler passes teamId and projectId straight to the service" },
+      { file: "src/modules/build/teams/teams.controller.ts", line: 217, anchor: /return this\.teamProjects\.removeProject\(u, teamId, projectId\);/, note: "route handler passes teamId and projectId straight to the service" },
       { file: "src/modules/build/teams/team-projects.service.ts", line: 91, anchor: /await this\.teams\.loadTeam\(orgId, teamId\);/, note: "binds teamId to orgId via loadTeam before deleting" },
       { file: "src/modules/build/teams/team-projects.service.ts", line: 97, anchor: /eq\(projectTeamAssignments\.projectId, projectId\),/, note: "DELETE WHERE clause scopes to teamId + projectId + orgId together" },
     ],

@@ -57,8 +57,8 @@ export default [
     blastRadius:
       "No cross-tenant reach. Within one org, a caller holding build:tickets:create can create an epic in a project they are not a member of. That is this handler's deliberate coarser model, not a defect of this verdict; it is recorded here because the census's parent-scoping dimension answers a narrower question than a reader may assume.",
     evidence: [
-      { file: "src/modules/build/execution/iterations.controller.ts", line: 297, anchor: /return this\.epics\.createEpic\(u\.orgId, u\.userId, projectId, body\);/, note: "the tenant and actor come from the authenticated context" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 107, anchor: /async createEpic\(orgId: string, userId: string, projectId: number, input: CreateEpicInput\) \{/, note: "the service takes orgId and projectId, never a client-supplied tenant" },
+      { file: "src/modules/build/execution/iterations.controller.ts", line: 297, anchor: /return this\.epics\.createEpic\(u, projectId, body\);/, note: "the tenant and actor come from the authenticated context" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 107, anchor: /async createEpic\(actor: CurrentUserContext, projectId: number, input: CreateEpicInput\) \{/, note: "the service takes orgId and projectId, never a client-supplied tenant" },
       { file: "src/modules/build/execution/epics.service.ts", line: 110, anchor: /^ +orgId,$/, note: "the INSERT writes the tenant as a value, which constrains nothing on its own" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 30, anchor: /eq\(projects\.id, projectId\),/, note: "assertProjectInOrg binds the project id" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 31, anchor: /eq\(projects\.orgId, orgId\),/, note: "and the tenant, in the same conjunction — this is the decisive predicate" },
