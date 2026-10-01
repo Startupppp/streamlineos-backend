@@ -96,3 +96,8 @@ payload and processes it idempotently.
 - Migration 1725 dropped `build.project_webhooks.secret` and
   `build.webhook_deliveries`; applied in production 2026-10-01 after deploy
   `42901aa0b`.
+- Git connection signing secrets live in `integration_git_connection_credentials`
+  (migration 1726, backfilled); `integrations/git` reads them inside the
+  tenant transaction and fails closed when absent. Migration 1727 dropped
+  `build.git_connections.webhook_secret`; both applied in production
+  2026-10-01 after deploy `363a14f0d`.
