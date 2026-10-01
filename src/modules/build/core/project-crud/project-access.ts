@@ -10,7 +10,7 @@ import {
 } from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../../common/auth/principal";
+import { actingMembershipId, systemJobCovers } from "../../../../common/auth/principal";
 import type { AccessService } from "../../../access/access.service";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
 
@@ -99,6 +99,12 @@ export async function resolveProjectAccess(
   if (u.isOrgOwner) {
     if (!(await projectRow)) throw new NotFoundException("Project not found");
     return { hasAccess: true, role: "OWNER" };
+  }
+
+  if (u.principal.kind === "system-job") {
+    if (!(await projectRow)) throw new NotFoundException("Project not found");
+    const reaches = systemJobCovers(u.principal, "build:tickets:view");
+    return { hasAccess: reaches, role: reaches ? "OWNER" : null };
   }
 
   const [perms, project] = await Promise.all([

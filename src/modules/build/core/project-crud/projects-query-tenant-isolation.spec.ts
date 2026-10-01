@@ -1,6 +1,7 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsNotFoundException } from "../../../../common/http/api-exceptions";
 import { ProjectsQueryService } from "./projects-query.service";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
 describe("ProjectsQueryService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -14,7 +15,7 @@ describe("ProjectsQueryService — cross-tenant isolation", () => {
       query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
     } as unknown as Db;
     const svc = new ProjectsQueryService(db, audit, access);
-    const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
+    const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false, principal: humanSessionPrincipal(1, false) } as never;
     await expect(svc.getProject(u, 99)).rejects.toThrow(ProjectsNotFoundException);
   });
 
@@ -24,7 +25,7 @@ describe("ProjectsQueryService — cross-tenant isolation", () => {
       query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } },
     } as unknown as Db;
     const svc = new ProjectsQueryService(db, audit, access);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: humanSessionPrincipal(1, true) } as never;
     const result = await svc.getProject(u, 1);
     expect(result).toMatchObject({ id: 1 });
   });

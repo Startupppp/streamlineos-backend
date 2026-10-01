@@ -3,6 +3,7 @@ import { assertProjectAccess, assertCanManageProject } from "./project-access";
 import type { Db } from "../../../../db/drizzle.types";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { systemActor } from "../../../../common/auth/system-actor";
 
 function makeDb(opts: {
   project: { managerMembershipId: number | null } | undefined;
@@ -203,5 +204,44 @@ describe("project-access conformance matrix — assertCanManageProject", () => {
         assertCanManageProject(db, makeAccess(), user(), 1),
       ).rejects.not.toThrow(NotFoundException);
     });
+  });
+});
+
+describe("project-access conformance matrix — system-job principal path", () => {
+  it("resolves for a system-job whose ceiling includes build:tickets:view (build.automation.apply-action)", async () => {
+    const db = makeDb({ project: PROJECT_WITH_OTHER_MANAGER });
+    const actor = systemActor("build.automation.apply-action", "org-1");
+
+    await expect(
+      assertProjectAccess(db, makeAccess(), actor, 1),
+    ).resolves.toBeUndefined();
+  });
+
+  it("throws ForbiddenException for a system-job whose ceiling does not include build:tickets:view (build.daily-snapshots)", async () => {
+    const db = makeDb({ project: PROJECT_WITH_OTHER_MANAGER });
+    const actor = systemActor("build.daily-snapshots", "org-1");
+
+    await expect(
+      assertProjectAccess(db, makeAccess(), actor, 1),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it("throws NotFoundException when the project is absent from the org, even for a privileged system-job", async () => {
+    const db = makeDb({ project: undefined });
+    const actor = systemActor("build.automation.apply-action", "org-1");
+
+    await expect(
+      assertProjectAccess(db, makeAccess(), actor, 1),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it("does not call resolveUserPermissions for a system-job — permission set is unused", async () => {
+    const db = makeDb({ project: PROJECT_WITH_OTHER_MANAGER });
+    const access = makeAccess();
+    const actor = systemActor("build.automation.apply-action", "org-1");
+
+    await assertProjectAccess(db, access, actor, 1);
+
+    expect(access.resolveUserPermissions).not.toHaveBeenCalled();
   });
 });

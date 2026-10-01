@@ -1,244 +1,269 @@
-import { BadRequestException } from "@nestjs/common";
-import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
-import type { Db } from "../../../../db/drizzle.module";
-import { assertTransitionAllowed } from "../tickets/projects-tickets-workflow-utils";
-import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
+import type { TestingModule } from "@nestjs/testing";
+import {
+  BuildAutomationActionExecutor,
+  AUTOMATION_TICKET_CHANGE,
+} from "./build-automation-actions.service";
+import { ProjectsTicketLabelsService } from "../tickets/projects-ticket-labels.service";
+import { ProjectsTicketCommentsService } from "../tickets/projects-ticket-comments.service";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { TicketVersionConflictException } from "../tickets/ticket-version-conflict.exception";
+import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 
-jest.mock("../tickets/projects-tickets-workflow-utils", () => ({
-  assertTransitionAllowed: jest.fn(),
-}));
-
-jest.mock("../../../../common/outbox/outbox-writer", () => ({
-  OutboxWriter: { emit: jest.fn() },
-}));
-
-const ORG = "org-enforcement";
+const ORG = "org-canonical";
 const PROJECT = 5;
 const TICKET = 42;
-const RULE = 1;
 const AUTHOR = "user-auto";
 
-function makeDb(opts: {
-  statusExists?: boolean;
-  currentStatus?: string;
-  label?: { id: number } | null;
-  member?: { id: number } | null;
-} = {}) {
-  const {
-    statusExists = true,
-    currentStatus = "TODO",
-    label = { id: 77 },
-    member = null,
-  } = opts;
-
-  const returning = jest.fn().mockResolvedValue([{ version: 2 }]);
-  const txWhere = jest.fn().mockReturnValue({ returning });
-  const txSet = jest.fn().mockReturnValue({ where: txWhere });
-  const txUpdate = jest.fn().mockReturnValue({ set: txSet });
-  const txInsert = jest.fn().mockReturnValue({
-    values: jest.fn().mockResolvedValue([{ id: 999 }]),
-    onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
-  });
-  const txSelectWhere = jest.fn().mockResolvedValue([]);
-  const txSelectFrom = jest.fn().mockReturnValue({ where: txSelectWhere });
-  const txSelect = jest.fn().mockReturnValue({ from: txSelectFrom });
-
-  const transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
-    cb({ update: txUpdate, insert: txInsert, select: txSelect, execute: jest.fn().mockResolvedValue([]) }),
-  );
-
-  const selectWhere = jest.fn().mockResolvedValue([]);
-  const selectFrom = jest.fn().mockReturnValue({ where: selectWhere });
-  const select = jest.fn().mockReturnValue({ from: selectFrom });
-
-  const topInsertValues = jest.fn().mockReturnValue({
-    onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
-  });
-  const topInsert = jest.fn().mockReturnValue({ values: topInsertValues });
-  const topWhere = jest.fn().mockResolvedValue([]);
-  const topSet = jest.fn().mockReturnValue({ where: topWhere });
-  const topUpdate = jest.fn().mockReturnValue({ set: topSet });
-
-  const db = {
-    query: {
-      projectStatuses: {
-        findFirst: jest.fn().mockResolvedValue(statusExists ? { id: 7 } : undefined),
-      },
-      tickets: {
-        findFirst: jest.fn().mockResolvedValue(
-          currentStatus !== null ? { id: TICKET, status: currentStatus, version: 1 } : undefined,
-        ),
-      },
-      ticketLabels: {
-        findFirst: jest.fn().mockResolvedValue(label),
-      },
-      organizationMembers: {
-        findFirst: jest.fn().mockResolvedValue(member),
-      },
-    },
-    select,
-    insert: topInsert,
-    update: topUpdate,
-    transaction,
-  } as unknown as Db;
-
-  return { db, transaction, txUpdate, txWhere, txInsert };
+function makeLabelDb(labelId: number | null) {
+  return {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnValue({
+        limit: jest.fn().mockResolvedValue(labelId !== null ? [{ id: labelId }] : []),
+      }),
+    }),
+  };
 }
 
-function makeActivity() {
-  return { logTicketActivity: jest.fn().mockResolvedValue(undefined) };
+async function buildModule(opts: {
+  labelId?: number | null;
+  updateTicketFn?: jest.Mock;
+  addTicketLabelFn?: jest.Mock;
+  addCommentFn?: jest.Mock;
+}): Promise<{
+  executor: BuildAutomationActionExecutor;
+  updateTicketFn: jest.Mock;
+  addTicketLabelFn: jest.Mock;
+  addCommentFn: jest.Mock;
+}> {
+  const updateTicketFn = opts.updateTicketFn ?? jest.fn().mockResolvedValue({});
+  const addTicketLabelFn = opts.addTicketLabelFn ?? jest.fn().mockResolvedValue({ success: true });
+  const addCommentFn = opts.addCommentFn ?? jest.fn().mockResolvedValue({});
+  const labelId = opts.labelId !== undefined ? opts.labelId : 77;
+
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      BuildAutomationActionExecutor,
+      { provide: DRIZZLE, useValue: makeLabelDb(labelId) },
+      { provide: AUTOMATION_TICKET_CHANGE, useValue: { updateTicket: updateTicketFn } },
+      { provide: ProjectsTicketLabelsService, useValue: { addTicketLabel: addTicketLabelFn } },
+      { provide: ProjectsTicketCommentsService, useValue: { addComment: addCommentFn } },
+    ],
+  }).compile();
+
+  return {
+    executor: module.get(BuildAutomationActionExecutor),
+    updateTicketFn,
+    addTicketLabelFn,
+    addCommentFn,
+  };
 }
 
-beforeEach(() => {
-  jest.clearAllMocks();
-  jest.mocked(assertTransitionAllowed).mockResolvedValue(undefined);
-  jest.mocked(OutboxWriter.emit).mockResolvedValue(undefined);
-});
+function systemJobActorShape(orgId: string, userId: string) {
+  return expect.objectContaining({
+    orgId,
+    userId,
+    isOrgOwner: false,
+    principal: expect.objectContaining({
+      kind: "system-job",
+      jobId: "build.automation.apply-action",
+    }),
+  });
+}
 
-describe("BuildAutomationActionExecutor — set_status enforcement", () => {
-  it("calls assertTransitionAllowed inside the transaction before committing", async () => {
-    const { db } = makeDb({ currentStatus: "TODO" });
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+describe("BuildAutomationActionExecutor — set_status routes to canonical ticket-change owner", () => {
+  it("calls updateTicket with a system-job actor carrying the calling org and author", async () => {
+    const { executor, updateTicketFn } = await buildModule({});
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "set_status", value: "DONE" }, AUTHOR);
+    await executor.execute(ORG, PROJECT, TICKET, { type: "set_status", value: "IN_PROGRESS" }, AUTHOR);
 
-    expect(assertTransitionAllowed).toHaveBeenCalledWith(
-      expect.anything(),
-      ORG,
+    expect(updateTicketFn).toHaveBeenCalledWith(
+      systemJobActorShape(ORG, AUTHOR),
       PROJECT,
-      "TODO",
-      "DONE",
-      expect.objectContaining({ ticketId: TICKET }),
+      TICKET,
+      { status: "IN_PROGRESS" },
     );
   });
 
-  it("aborts when assertTransitionAllowed rejects with BadRequestException", async () => {
-    const { db, transaction } = makeDb({ currentStatus: "TODO" });
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+  it("does not call addTicketLabel or addComment when set_status succeeds", async () => {
+    const { executor, addTicketLabelFn, addCommentFn } = await buildModule({});
 
-    jest.mocked(assertTransitionAllowed).mockRejectedValue(
-      new BadRequestException("Transition blocked"),
-    );
+    await executor.execute(ORG, PROJECT, TICKET, { type: "set_status", value: "DONE" }, AUTHOR);
+
+    expect(addTicketLabelFn).not.toHaveBeenCalled();
+    expect(addCommentFn).not.toHaveBeenCalled();
+  });
+
+  it("propagates TicketVersionConflictException thrown by updateTicket", async () => {
+    const { executor } = await buildModule({
+      updateTicketFn: jest.fn().mockRejectedValue(new TicketVersionConflictException(3)),
+    });
 
     await expect(
-      executor.execute(ORG, PROJECT, TICKET, RULE, { type: "set_status", value: "DONE" }, AUTHOR),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(activity.logTicketActivity).not.toHaveBeenCalled();
+      executor.execute(ORG, PROJECT, TICKET, { type: "set_status", value: "DONE" }, AUTHOR),
+    ).rejects.toBeInstanceOf(TicketVersionConflictException);
   });
 
-  it("emits a build.ticket.status_changed outbox event inside the transaction", async () => {
-    const { db } = makeDb({ currentStatus: "TODO" });
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+  it("propagates ProjectsInvalidTicketStatusException thrown by updateTicket", async () => {
+    const { executor } = await buildModule({
+      updateTicketFn: jest.fn().mockRejectedValue(new ProjectsInvalidTicketStatusException("UNKNOWN")),
+    });
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "set_status", value: "DONE" }, AUTHOR);
-
-    expect(OutboxWriter.emit).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        eventType: "build.ticket.status_changed",
-        organizationId: ORG,
-        payload: expect.objectContaining({
-          ticketId: TICKET,
-          projectId: PROJECT,
-          previousStatus: "TODO",
-          newStatus: "DONE",
-        }),
-      }),
-    );
+    await expect(
+      executor.execute(ORG, PROJECT, TICKET, { type: "set_status", value: "UNKNOWN" }, AUTHOR),
+    ).rejects.toBeInstanceOf(ProjectsInvalidTicketStatusException);
   });
 
-  it("logs status_changed activity after the transaction commits", async () => {
-    const { db } = makeDb({ currentStatus: "TODO" });
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+  it("propagates ConflictException (WIP limit exceeded) thrown by updateTicket", async () => {
+    const { executor } = await buildModule({
+      updateTicketFn: jest.fn().mockRejectedValue(new ConflictException("Column exceeds WIP limit")),
+    });
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "set_status", value: "DONE" }, AUTHOR);
-
-    expect(activity.logTicketActivity).toHaveBeenCalledWith(
-      ORG,
-      TICKET,
-      AUTHOR,
-      "status_changed",
-      "TODO",
-      "DONE",
-    );
-  });
-
-  it("does not emit the outbox event when the ticket is not found (early exit)", async () => {
-    const { db } = makeDb({ statusExists: false });
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
-
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "set_status", value: "DONE" }, AUTHOR);
-
-    expect(OutboxWriter.emit).not.toHaveBeenCalled();
-    expect(activity.logTicketActivity).not.toHaveBeenCalled();
+    await expect(
+      executor.execute(ORG, PROJECT, TICKET, { type: "set_status", value: "IN_PROGRESS" }, AUTHOR),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });
 
-describe("BuildAutomationActionExecutor — activity logging for non-status actions", () => {
-  it("logs assignee_changed after set_assignee", async () => {
-    const { db } = makeDb({ member: { id: 3 } });
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+describe("BuildAutomationActionExecutor — set_priority routes to canonical ticket-change owner", () => {
+  it("calls updateTicket with priority payload when the value is a valid priority", async () => {
+    const { executor, updateTicketFn } = await buildModule({});
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "set_assignee", value: "user-x" }, AUTHOR);
+    await executor.execute(ORG, PROJECT, TICKET, { type: "set_priority", value: "HIGH" }, AUTHOR);
 
-    expect(activity.logTicketActivity).toHaveBeenCalledWith(ORG, TICKET, AUTHOR, "assignee_changed");
+    expect(updateTicketFn).toHaveBeenCalledWith(
+      systemJobActorShape(ORG, AUTHOR),
+      PROJECT,
+      TICKET,
+      { priority: "HIGH" },
+    );
   });
 
-  it("logs priority_changed after set_priority", async () => {
-    const { db } = makeDb();
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+  it("throws BadRequestException before calling updateTicket when the priority value is invalid", async () => {
+    const { executor, updateTicketFn } = await buildModule({});
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "set_priority", value: "HIGH" }, AUTHOR);
+    await expect(
+      executor.execute(ORG, PROJECT, TICKET, { type: "set_priority", value: "WHATEVER" }, AUTHOR),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(activity.logTicketActivity).toHaveBeenCalledWith(ORG, TICKET, AUTHOR, "priority_changed");
+    expect(updateTicketFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("BuildAutomationActionExecutor — set_assignee routes to canonical ticket-change owner", () => {
+  it("calls updateTicket with assigneeId payload", async () => {
+    const { executor, updateTicketFn } = await buildModule({});
+
+    await executor.execute(ORG, PROJECT, TICKET, { type: "set_assignee", value: "user-x" }, AUTHOR);
+
+    expect(updateTicketFn).toHaveBeenCalledWith(
+      systemJobActorShape(ORG, AUTHOR),
+      PROJECT,
+      TICKET,
+      { assigneeId: "user-x" },
+    );
   });
 
-  it("logs label_changed after add_label when the label exists", async () => {
-    const { db } = makeDb({ label: { id: 77 } });
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+  it("propagates NotFoundException thrown by updateTicket when the assignee is not a project member", async () => {
+    const { executor } = await buildModule({
+      updateTicketFn: jest.fn().mockRejectedValue(new NotFoundException("User is not a project member")),
+    });
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "add_label", value: "77" }, AUTHOR);
+    await expect(
+      executor.execute(ORG, PROJECT, TICKET, { type: "set_assignee", value: "outsider" }, AUTHOR),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
 
-    expect(activity.logTicketActivity).toHaveBeenCalledWith(ORG, TICKET, AUTHOR, "label_changed");
+describe("BuildAutomationActionExecutor — add_label resolves label id then routes to labels service", () => {
+  it("resolves the label by numeric id and calls addTicketLabel with it", async () => {
+    const { executor, addTicketLabelFn } = await buildModule({ labelId: 77 });
+
+    await executor.execute(ORG, PROJECT, TICKET, { type: "add_label", value: "77" }, AUTHOR);
+
+    expect(addTicketLabelFn).toHaveBeenCalledWith(
+      systemJobActorShape(ORG, AUTHOR),
+      PROJECT,
+      TICKET,
+      { labelId: 77 },
+    );
   });
 
-  it("does not log when the label is not found", async () => {
-    const { db } = makeDb({ label: null });
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+  it("resolves the label by name and calls addTicketLabel with the resolved id", async () => {
+    const { executor, addTicketLabelFn } = await buildModule({ labelId: 99 });
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "add_label", value: "99" }, AUTHOR);
+    await executor.execute(ORG, PROJECT, TICKET, { type: "add_label", value: "bug" }, AUTHOR);
 
-    expect(activity.logTicketActivity).not.toHaveBeenCalled();
+    expect(addTicketLabelFn).toHaveBeenCalledWith(
+      systemJobActorShape(ORG, AUTHOR),
+      PROJECT,
+      TICKET,
+      { labelId: 99 },
+    );
   });
 
-  it("logs comment_added after add_comment when authorId is present", async () => {
-    const { db } = makeDb();
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+  it("throws NotFoundException and does not call addTicketLabel when the label does not exist", async () => {
+    const { executor, addTicketLabelFn } = await buildModule({ labelId: null });
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "add_comment", value: "hello" }, AUTHOR);
+    await expect(
+      executor.execute(ORG, PROJECT, TICKET, { type: "add_label", value: "99" }, AUTHOR),
+    ).rejects.toBeInstanceOf(NotFoundException);
 
-    expect(activity.logTicketActivity).toHaveBeenCalledWith(ORG, TICKET, AUTHOR, "comment_added");
+    expect(addTicketLabelFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("BuildAutomationActionExecutor — add_comment routes to comments service", () => {
+  it("calls addComment with the rule author as actor when authorId is provided", async () => {
+    const { executor, addCommentFn } = await buildModule({});
+
+    await executor.execute(ORG, PROJECT, TICKET, { type: "add_comment", value: "hello" }, AUTHOR);
+
+    expect(addCommentFn).toHaveBeenCalledWith(
+      systemJobActorShape(ORG, AUTHOR),
+      PROJECT,
+      TICKET,
+      { content: "hello" },
+    );
   });
 
-  it("does not log comment_added when authorId is null", async () => {
-    const { db } = makeDb();
-    const activity = makeActivity();
-    const executor = new BuildAutomationActionExecutor(db, activity as never);
+  it("throws BadRequestException and does not call addComment when authorId is null", async () => {
+    const { executor, addCommentFn } = await buildModule({});
 
-    await executor.execute(ORG, PROJECT, TICKET, RULE, { type: "add_comment", value: "hello" }, null);
+    await expect(
+      executor.execute(ORG, PROJECT, TICKET, { type: "add_comment", value: "hello" }, null),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(activity.logTicketActivity).not.toHaveBeenCalled();
+    expect(addCommentFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("BuildAutomationActionExecutor — actor userId equals the rule author, not a fixed system value", () => {
+  it("sets userId to the supplied authorId, not to 'system'", async () => {
+    const { executor, updateTicketFn } = await buildModule({});
+
+    await executor.execute(ORG, PROJECT, TICKET, { type: "set_status", value: "DONE" }, "rule-author-abc");
+
+    expect(updateTicketFn).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "rule-author-abc" }),
+      PROJECT,
+      TICKET,
+      { status: "DONE" },
+    );
+  });
+
+  it("sets userId to 'system' when authorId is null (add_comment excluded — it throws first)", async () => {
+    const { executor, updateTicketFn } = await buildModule({});
+
+    await executor.execute(ORG, PROJECT, TICKET, { type: "set_status", value: "DONE" }, null);
+
+    expect(updateTicketFn).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "system" }),
+      PROJECT,
+      TICKET,
+      { status: "DONE" },
+    );
   });
 });
