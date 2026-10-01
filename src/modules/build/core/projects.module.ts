@@ -168,6 +168,7 @@ import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.s
     ProjectsWorkQueryService,
     ProjectsReportsService,
     ProjectsTicketCommentsService,
+    ProjectsTicketsDeleteService,
   ],
 })
 export class ProjectsModule {}
