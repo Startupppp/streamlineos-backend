@@ -11,7 +11,7 @@ import type { ExecutableCell } from "../matrix.types";
 import { probeHttp } from "../adapters/http-adapter";
 import { projectAccess, projectWrite, ticketRead } from "../adapters/service-adapter";
 import { signedFileUrl } from "../adapters/file-adapter";
-import { accessFor, ORG_A, ORG_B, userOf } from "../standings";
+import { accessFor, actorFor, ORG_A, ORG_B, userOf } from "../standings";
 import { standIn, type WorldDb } from "../world-db";
 import { FILE_A, PROJECT_A, SIBLING_PROJECT_A, TICKET_A } from "../fixtures";
 
@@ -43,8 +43,8 @@ const WRITERS: ReadonlyArray<{ readonly id: string; readonly route: string; read
     id: "intake",
     route: "POST /build/:projectId/intake",
     write: (world, orgId) =>
-      new IntakeService(world.db, standIn({})).createIntake(
-        orgId,
+      new IntakeService(world.db, standIn({}), accessFor(world)).createIntake(
+        actorFor("module:admin", orgId),
         PROJECT_A,
         createIntakeSchema.parse({ title: "Intake", submitterEmail: "intake@example.com" }),
       ),
@@ -53,9 +53,8 @@ const WRITERS: ReadonlyArray<{ readonly id: string; readonly route: string; read
     id: "views",
     route: "POST /build/:projectId/views",
     write: (world, orgId) =>
-      new ViewsService(world.db).createView(
-        orgId,
-        userOf("module:admin", orgId),
+      new ViewsService(world.db, accessFor(world)).createView(
+        actorFor("module:admin", orgId),
         PROJECT_A,
         createViewSchema.parse({ name: "Board" }),
       ),

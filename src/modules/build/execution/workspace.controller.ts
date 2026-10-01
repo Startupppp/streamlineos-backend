@@ -159,7 +159,7 @@ export class IntakeController {
     @Query() query: IntakeListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.intake.listIntake(u.orgId, projectId, query);
+    return this.intake.listIntake(u, projectId, query);
   }
 
   @Post()
@@ -172,7 +172,7 @@ export class IntakeController {
     @Body() body: CreateIntakeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.intake.createIntake(u.orgId, projectId, body);
+    return this.intake.createIntake(u, projectId, body);
   }
 
   @Patch(":requestId")
@@ -185,7 +185,7 @@ export class IntakeController {
     @Body() body: UpdateIntakeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.intake.updateIntake(u.orgId, u.userId, projectId, requestId, body);
+    return this.intake.updateIntake(u, projectId, requestId, body);
   }
 }
 
@@ -204,7 +204,7 @@ export class ViewsController {
     @Query() query: ListViewsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.listViews(u.orgId, u.userId, projectId, query);
+    return this.views.listViews(u, projectId, query);
   }
 
   @Post()
@@ -217,7 +217,7 @@ export class ViewsController {
     @Body() body: CreateViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.createView(u.orgId, u.userId, projectId, body);
+    return this.views.createView(u, projectId, body);
   }
 
   @Patch(":viewId")
@@ -230,7 +230,7 @@ export class ViewsController {
     @Body() body: UpdateViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.updateView(u.orgId, u.userId, projectId, viewId, body);
+    return this.views.updateView(u, projectId, viewId, body);
   }
 
   @Delete(":viewId")
@@ -243,7 +243,7 @@ export class ViewsController {
     @Param("viewId", ParseIntPipe) viewId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.deleteView(u.orgId, u.userId, projectId, viewId);
+    return this.views.deleteView(u, projectId, viewId);
   }
 }
 
