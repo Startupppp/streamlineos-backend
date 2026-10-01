@@ -41,7 +41,7 @@ export class ProjectsCustomFieldsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.listFields(u.orgId, projectId);
+    return this.customFields.listFields(u, projectId);
   }
 
   @Post(":projectId/custom-fields")
@@ -54,7 +54,7 @@ export class ProjectsCustomFieldsController {
     @Body() body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.createField(u.orgId, projectId, body);
+    return this.customFields.createField(u, projectId, body);
   }
 
   @Patch(":projectId/custom-fields/:fieldId")
@@ -67,7 +67,7 @@ export class ProjectsCustomFieldsController {
     @Body() body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.updateField(u.orgId, projectId, fieldId, body);
+    return this.customFields.updateField(u, projectId, fieldId, body);
   }
 
   @Delete(":projectId/custom-fields/:fieldId")
@@ -80,7 +80,7 @@ export class ProjectsCustomFieldsController {
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.deleteField(u.orgId, projectId, fieldId);
+    return this.customFields.deleteField(u, projectId, fieldId);
   }
 
   @Get(":projectId/tickets/:ticketId/custom-field-values")

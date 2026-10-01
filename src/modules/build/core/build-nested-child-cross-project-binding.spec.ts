@@ -10,6 +10,8 @@ import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
 import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";
 import { ProjectsWebhooksService } from "./webhooks/projects-webhooks.service";
+import { ProjectsWebhooksDispatchService } from "./webhooks/projects-webhooks-dispatch.service";
+import { WebhookEndpointService } from "../../integrations/core/webhook-endpoint.service";
 import type { UpdateCustomFieldInput } from "./dto/custom-fields.schemas";
 import type { UpdateCustomStateInput } from "./dto/projects.schemas";
 
@@ -218,6 +220,13 @@ function makeStatesService(store: Store, afterFirstLookup?: () => void) {
 
 function makeFieldsService(store: Store) {
   const db = {
+    select: jest.fn(() => ({
+      from: () => ({
+        where: (where: unknown) => ({
+          limit: async () => store.projects.filter((row) => matches(where, row)).map(() => projectAccessRow()),
+        }),
+      }),
+    })),
     query: {
       projects: {
         findFirst: jest.fn(async (args: { where?: unknown }) =>
@@ -251,34 +260,41 @@ function makeFieldsService(store: Store) {
 function makeWebhooksService(store: Store, afterOwnershipCheck?: () => void) {
   const deleteStatements = jest.fn();
 
-  const db = {
-    select: jest.fn(() => ({
-      from: (table: unknown) => ({
-        where: (where: unknown) => ({
-          limit: async () => {
-            const rows =
-              table === projectWebhooks
-                ? store.webhooks.filter((row) => matches(where, row)).map((row) => ({ id: row.id }))
-                : [];
-            if (afterOwnershipCheck) afterOwnershipCheck();
-            return rows;
-          },
-        }),
-      }),
-    })),
-    delete: (table: unknown) => ({
+  const select = () => ({
+    from: (table: unknown) => ({
       where: (where: unknown) => ({
-        returning: async () => {
-          deleteStatements();
-          const hit = table === projectWebhooks ? store.webhooks.filter((row) => matches(where, row)) : [];
-          store.webhooks = store.webhooks.filter((row) => !hit.includes(row));
-          return hit.map((row) => ({ ...row }));
+        limit: async () => {
+          if (table === projects)
+            return store.projects.filter((row) => matches(where, row)).map(() => projectAccessRow());
+          const rows =
+            table === projectWebhooks
+              ? store.webhooks.filter((row) => matches(where, row)).map(() => ({ integrationsEndpointId: null }))
+              : [];
+          if (afterOwnershipCheck) afterOwnershipCheck();
+          return rows;
         },
       }),
     }),
+  });
+  const remove = (table: unknown) => ({
+    where: async (where: unknown) => {
+      deleteStatements();
+      const hit = table === projectWebhooks ? store.webhooks.filter((row) => matches(where, row)) : [];
+      store.webhooks = store.webhooks.filter((row) => !hit.includes(row));
+    },
+  });
+  const tx = { select, delete: remove };
+  const db = {
+    select: jest.fn(select),
+    delete: remove,
+    transaction: async (work: (handle: typeof tx) => Promise<unknown>) => work(tx),
   } as unknown as Db;
+  const endpoint = new WebhookEndpointService(db);
 
-  return { svc: new ProjectsWebhooksService(db), deleteStatements };
+  return {
+    svc: new ProjectsWebhooksService(db, endpoint, makeAccess(), new ProjectsWebhooksDispatchService(db, endpoint)),
+    deleteStatements,
+  };
 }
 
 const rename = (name: string): UpdateCustomStateInput => ({ name });
@@ -420,7 +436,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     const svc = makeFieldsService(store);
 
     await expect(
-      svc.updateField(ORG, PROJECT_A, FIELD_B, { name: "Hijacked" } as UpdateCustomFieldInput),
+      svc.updateField(makeU(), PROJECT_A, FIELD_B, { name: "Hijacked" } as UpdateCustomFieldInput),
     ).rejects.toThrow(NotFoundException);
     expect(store.fields.find((row) => row.id === FIELD_B)?.label).toBe("Priority");
   });
@@ -430,7 +446,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     const svc = makeFieldsService(store);
 
     await expect(
-      svc.updateField(ORG, PROJECT_A, FIELD_A, { name: "Blast radius" } as UpdateCustomFieldInput),
+      svc.updateField(makeU(), PROJECT_A, FIELD_A, { name: "Blast radius" } as UpdateCustomFieldInput),
     ).resolves.toMatchObject({ id: FIELD_A, name: "Blast radius", projectId: PROJECT_A });
   });
 
@@ -439,7 +455,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     const svc = makeFieldsService(store);
 
     await expect(
-      svc.updateField(ORG, ABSENT_PROJECT, FIELD_A, { name: "Hijacked" } as UpdateCustomFieldInput),
+      svc.updateField(makeU(), ABSENT_PROJECT, FIELD_A, { name: "Hijacked" } as UpdateCustomFieldInput),
     ).rejects.toThrow(NotFoundException);
     expect(store.fields.find((row) => row.id === FIELD_A)?.label).toBe("Severity");
   });
@@ -449,7 +465,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     const svc = makeFieldsService(store);
 
     await expect(
-      svc.updateField(OTHER_ORG, PROJECT_A, FIELD_A, { name: "Hijacked" } as UpdateCustomFieldInput),
+      svc.updateField(makeU(OTHER_ORG), PROJECT_A, FIELD_A, { name: "Hijacked" } as UpdateCustomFieldInput),
     ).rejects.toThrow(NotFoundException);
     expect(store.fields.find((row) => row.id === FIELD_A)?.label).toBe("Severity");
   });
@@ -461,7 +477,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     const svc = makeFieldsService(store);
 
     await expect(
-      svc.updateField(ORG, PROJECT_A, FIELD_A, { name: "Hijacked" } as UpdateCustomFieldInput),
+      svc.updateField(makeU(), PROJECT_A, FIELD_A, { name: "Hijacked" } as UpdateCustomFieldInput),
     ).rejects.toThrow(NotFoundException);
     expect(store.fields.find((row) => row.id === FIELD_A)?.label).toBe("Severity");
   });
@@ -470,7 +486,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     const store = makeStore();
     const svc = makeFieldsService(store);
 
-    await expect(svc.deleteField(ORG, PROJECT_A, FIELD_B)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteField(makeU(), PROJECT_A, FIELD_B)).rejects.toThrow(NotFoundException);
     expect(store.fields.some((row) => row.id === FIELD_B)).toBe(true);
   });
 
@@ -478,7 +494,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     const store = makeStore();
     const svc = makeFieldsService(store);
 
-    await expect(svc.deleteField(ORG, PROJECT_A, FIELD_A)).resolves.toEqual({ success: true });
+    await expect(svc.deleteField(makeU(), PROJECT_A, FIELD_A)).resolves.toEqual({ success: true });
     expect(store.fields.some((row) => row.id === FIELD_A)).toBe(false);
     expect(store.fields.some((row) => row.id === FIELD_B)).toBe(true);
   });
@@ -487,7 +503,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     const store = makeStore();
     const svc = makeFieldsService(store);
 
-    await expect(svc.deleteField(ORG, ABSENT_PROJECT, FIELD_A)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteField(makeU(), ABSENT_PROJECT, FIELD_A)).rejects.toThrow(NotFoundException);
     expect(store.fields.some((row) => row.id === FIELD_A)).toBe(true);
   });
 
@@ -497,7 +513,7 @@ describe("ProjectsCustomFieldsService — custom field lookups bind to the URL p
     if (project) project.deletedAt = new Date(0);
     const svc = makeFieldsService(store);
 
-    await expect(svc.deleteField(ORG, PROJECT_A, FIELD_A)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteField(makeU(), PROJECT_A, FIELD_A)).rejects.toThrow(NotFoundException);
     expect(store.fields.some((row) => row.id === FIELD_A)).toBe(true);
   });
 });
@@ -507,7 +523,7 @@ describe("ProjectsWebhooksService — webhook deletion binds to the URL project"
     const store = makeStore();
     const { svc, deleteStatements } = makeWebhooksService(store);
 
-    await expect(svc.deleteWebhook(ORG, PROJECT_A, HOOK_B)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteWebhook(makeU(), PROJECT_A, HOOK_B)).rejects.toThrow(NotFoundException);
     expect(store.webhooks.some((row) => row.id === HOOK_B)).toBe(true);
     expect(deleteStatements).not.toHaveBeenCalled();
   });
@@ -516,7 +532,7 @@ describe("ProjectsWebhooksService — webhook deletion binds to the URL project"
     const store = makeStore();
     const { svc, deleteStatements } = makeWebhooksService(store);
 
-    await expect(svc.deleteWebhook(ORG, PROJECT_A, HOOK_A)).resolves.toBeUndefined();
+    await expect(svc.deleteWebhook(makeU(), PROJECT_A, HOOK_A)).resolves.toBeUndefined();
     expect(store.webhooks.some((row) => row.id === HOOK_A)).toBe(false);
     expect(store.webhooks.some((row) => row.id === HOOK_B)).toBe(true);
     expect(deleteStatements).toHaveBeenCalledTimes(1);
@@ -526,7 +542,7 @@ describe("ProjectsWebhooksService — webhook deletion binds to the URL project"
     const store = makeStore();
     const { svc, deleteStatements } = makeWebhooksService(store);
 
-    await expect(svc.deleteWebhook(OTHER_ORG, PROJECT_A, HOOK_A)).rejects.toThrow(
+    await expect(svc.deleteWebhook(makeU(OTHER_ORG), PROJECT_A, HOOK_A)).rejects.toThrow(
       NotFoundException,
     );
     expect(store.webhooks.some((row) => row.id === HOOK_A)).toBe(true);
@@ -541,7 +557,7 @@ describe("ProjectsWebhooksService — webhook deletion binds to the URL project"
     };
     const { svc } = makeWebhooksService(store, move);
 
-    await expect(svc.deleteWebhook(ORG, PROJECT_A, HOOK_A)).rejects.toThrow(NotFoundException);
+    await svc.deleteWebhook(makeU(), PROJECT_A, HOOK_A);
     expect(store.webhooks.some((row) => row.id === HOOK_A)).toBe(true);
   });
 });

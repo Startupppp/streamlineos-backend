@@ -1,5 +1,5 @@
 import { GoneException, NotFoundException } from "@nestjs/common";
-import { listReleasesQuerySchema, ProjectsReleasesService, ProjectsWebhooksService } from "./core";
+import { listReleasesQuerySchema, ProjectsReleasesService, ProjectsWebhooksDispatchService, ProjectsWebhooksService } from "./core";
 import { SprintsService } from "./execution/sprints.service";
 import { EpicsService } from "./execution/epics.service";
 import { CyclesService } from "./execution/cycles.service";
@@ -78,13 +78,13 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   const cases: Array<[string, (db: Db) => Promise<unknown>]> = [
     ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess, lifecycleAuditDouble()).listReleases(releasesU, 1, listReleasesQuerySchema.parse({}))],
-    ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db, new WebhookEndpointService(db)).listWebhooks(ATTACKER_ORG, 1)],
+    ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db, new WebhookEndpointService(db), releasesAccess, new ProjectsWebhooksDispatchService(db, new WebhookEndpointService(db))).listWebhooks(releasesU, 1)],
     ["GET /build/:projectId/epics", async (db) => (await epicsService(db, releasesAccess)).listEpics(releasesU, 1)],
     ["GET /build/:projectId/cycles", (db) => new CyclesService(db, releasesAccess).listCycles(releasesU, 1, {})],
     ["GET /build/:projectId/modules", (db) => new ModulesService(db, releasesAccess).listModules(releasesU, 1)],
     [
       "GET /build/:projectId/custom-fields",
-      (db) => new ProjectsCustomFieldsService(db, releasesAccess).listFields(ATTACKER_ORG, 1),
+      (db) => new ProjectsCustomFieldsService(db, releasesAccess).listFields(releasesU, 1),
     ],
     [
       "GET /build/:projectId/analytics",
