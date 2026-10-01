@@ -4,7 +4,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../core/tickets";
 import { toggleVisibilitySchema } from "./dto/client-portal.schemas";
 
 function makeU(orgId: string): CurrentUserContext {

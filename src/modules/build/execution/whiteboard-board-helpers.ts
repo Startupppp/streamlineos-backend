@@ -11,7 +11,7 @@ import { AccessService } from "../../access/access.service";
 import { resolveWhiteboardAccess } from "./whiteboard-access";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { assertProjectInOrg } from "../core/project-crud/project-access";
+import { assertProjectInOrg } from "../core";
 
 export type ShareEntry = {
   userId: string;

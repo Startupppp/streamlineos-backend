@@ -8,14 +8,14 @@ import {
   pageSizeField,
   withSortField,
 } from "./list-query.schema";
-import { listProjectsSchema } from "../../modules/build/core/dto/project-core.schemas";
-import { listProjectCustomersSchema } from "../../modules/build/core/dto/projects-customers.schemas";
-import { listBuildMembersSchema } from "../../modules/build/core/dto/build-members.schemas";
 import {
+  listProjectsSchema,
+  listProjectCustomersSchema,
+  listBuildMembersSchema,
   roadmapListQuerySchema,
   feedbackListQuerySchema,
   changelogListQuerySchema,
-} from "../../modules/build/core/dto/roadmap.schemas";
+} from "../../modules/build/core";
 import {
   timeEntriesListQuerySchema,
   teamTimesheetsQuerySchema,
@@ -33,7 +33,7 @@ import {
   organizationListSchema,
   orgDuplicatesQuerySchema,
 } from "../../modules/crm/core/dto/organizations.schemas";
-import { searchTicketsQuerySchema } from "../../modules/build/core/dto/ticket.schemas";
+import { searchTicketsQuerySchema } from "../../modules/build/core";
 import { intakeListQuerySchema } from "../../modules/build/execution/dto/workspace.schemas";
 import { territoryListSchema } from "../../modules/crm/core/dto/territories.schemas";
 import {

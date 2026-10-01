@@ -50,6 +50,17 @@ export { ProjectsReportsService } from "./analytics/projects-reports.service";
 export { BuildDueSweepService } from "./due-sweep/build-due-sweep.service";
 export { computeNextRunAt } from "./lib/projects-recurrence.util";
 export { listReleasesQuerySchema } from "./dto/releases.schemas";
+export { BuildAutomationRunnerService } from "./automation/build-automation-runner.service";
+export { ProjectsRoadmapService } from "./roadmap/projects-roadmap.service";
+export { ProjectsFeedbackService } from "./feedback/projects-feedback.service";
+export { createWebhookSchema } from "./dto/webhook.schemas";
+export { createCustomFieldSchema } from "./dto/custom-fields.schemas";
+export { listProjectCustomersSchema } from "./dto/projects-customers.schemas";
+export { listBuildMembersSchema } from "./dto/build-members.schemas";
+export { BuildReleasePublishedConsumerService } from "./releases/build-release-published-consumer.service";
+export { roadmapListQuerySchema, feedbackListQuerySchema, changelogListQuerySchema } from "./dto/roadmap.schemas";
+export { searchTicketsQuerySchema } from "./dto/ticket.schemas";
+export { attachmentSchema } from "./dto/ticket-subresources.schemas";
 export {
   allWorkQuerySchema,
   createProjectSchema,

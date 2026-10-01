@@ -1,4 +1,4 @@
-import { BuildReleasePublishedConsumerService } from "src/modules/build/core/releases/build-release-published-consumer.service";
+import { BuildReleasePublishedConsumerService } from "src/modules/build/core";
 import type { OutboxEventRow, OutboxConsumerRegistry } from "src/common/outbox/outbox-consumer.registry";
 import type { NotificationDispatchService } from "src/modules/notifications/notification-dispatch.service";
 import type { Observation } from "../matrix.types";

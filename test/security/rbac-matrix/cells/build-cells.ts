@@ -1,11 +1,9 @@
 import { FilesController } from "src/modules/build/files/files.controller";
-import { ProjectsTicketAssociationsController } from "src/modules/build/core/tickets/projects-ticket-associations.controller";
-import { ProjectsCustomFieldsService, ProjectsWebhooksService } from "src/modules/build/core";
+import { ProjectsTicketAssociationsController } from "src/modules/build/core/tickets";
+import { ProjectsCustomFieldsService, ProjectsWebhooksService, createWebhookSchema, createCustomFieldSchema } from "src/modules/build/core";
 import { WebhookEndpointService } from "src/modules/integrations/core/webhook-endpoint.service";
 import { IntakeService, ViewsService } from "src/modules/build/execution/workspace.service";
 import { ModulesService } from "src/modules/build/execution/modules.service";
-import { createWebhookSchema } from "src/modules/build/core/dto/webhook.schemas";
-import { createCustomFieldSchema } from "src/modules/build/core/dto/custom-fields.schemas";
 import { createIntakeSchema, createViewSchema } from "src/modules/build/execution/dto/workspace.schemas";
 import { createModuleSchema } from "src/modules/build/execution/dto/iterations.schemas";
 import type { ExecutableCell } from "../matrix.types";

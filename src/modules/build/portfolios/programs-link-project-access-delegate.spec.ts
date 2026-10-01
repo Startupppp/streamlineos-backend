@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import * as projectAccess from "../core/project-crud/project-access";
+import * as projectAccess from "../core";
 import { ProgramsService } from "./programs.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";

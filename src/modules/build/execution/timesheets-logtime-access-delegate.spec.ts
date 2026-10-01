@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import * as projectAccess from "../core/project-crud/project-access";
+import * as projectAccess from "../core";
 import { TimesheetsService } from "./timesheets.service";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";

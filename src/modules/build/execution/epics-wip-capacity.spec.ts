@@ -3,7 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EpicsService } from "./epics.service";
 import { BuildTicketCreationService } from "../core/tickets";
 import { ProjectsWebhooksDispatchService } from "../core";
-import { BuildAutomationRunnerService } from "../core/automation/build-automation-runner.service";
+import { BuildAutomationRunnerService } from "../core";
 import { CacheService } from "../../../common/cache/cache.service";
 
 it("refuses an epic when its destination column has no remaining capacity", async () => {

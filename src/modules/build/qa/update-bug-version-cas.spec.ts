@@ -5,7 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
-import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../core/tickets";
 import { updateBugSchema } from "./dto/bugs.schemas";
 
 function makeU(orgId: string): CurrentUserContext {

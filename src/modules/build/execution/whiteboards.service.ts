@@ -26,7 +26,7 @@ import type {
   UpdateWhiteboardInput,
 } from "./dto/workspace.schemas";
 import { loadShares, type BoardRow, type ShareEntry } from "./whiteboard-board-helpers";
-import { assertProjectInOrg } from "../core/project-crud/project-access";
+import { assertProjectInOrg } from "../core";
 import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
 import { keysetInteger, keysetTimestamp } from "../../../common/pagination/keyset";
 
