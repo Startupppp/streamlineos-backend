@@ -49,8 +49,8 @@ export default [
       "None: a foreign :approvalId (wrong project or wrong org) 404s at loadApproval before the decision logic or the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/approvals/approvals.controller.ts", line: 131, anchor: /decideApproval\(/, note: "handler binds both projectId and approvalId and forwards both" },
-      { file: "src/modules/build/approvals/approvals.service.ts", line: 162, anchor: /const approval = await loadApproval\(this\.db, orgId, projectId, approvalId\);/, note: "first statement binds id+orgId+projectId; 404 on mismatch before any further logic" },
-      { file: "src/modules/build/approvals/approvals.service.ts", line: 183, anchor: /\.where\(and\(eq\(projectApprovals\.id, approvalId\), eq\(projectApprovals\.orgId, orgId\), isNull\(projectApprovals\.deletedAt\)\)\)/, note: "mutation keyed by already-verified PK+org" },
+      { file: "src/modules/build/approvals/approvals.service.ts", line: 186, anchor: /const approval = await loadApproval\(this\.db, orgId, projectId, approvalId\);/, note: "first statement binds id+orgId+projectId; 404 on mismatch before any further logic" },
+      { file: "src/modules/build/approvals/approvals.service.ts", line: 207, anchor: /\.where\(and\(eq\(projectApprovals\.id, approvalId\), eq\(projectApprovals\.orgId, orgId\), isNull\(projectApprovals\.deletedAt\)\)\)/, note: "mutation keyed by already-verified PK+org" },
       { file: "src/modules/build/approvals/approval-lookup.ts", line: 11, anchor: /eq\(projectApprovals\.projectId, projectId\),/, note: "loadApproval's project binding" },
     ],
   },
@@ -64,8 +64,8 @@ export default [
       "None: a foreign :approvalId 404s at loadApproval before the patch is built or the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/approvals/approvals.controller.ts", line: 144, anchor: /updateApproval\(/, note: "handler binds both projectId and approvalId and forwards both" },
-      { file: "src/modules/build/approvals/approvals.service.ts", line: 206, anchor: /await loadApproval\(this\.db, orgId, projectId, approvalId\);/, note: "binds id+orgId+projectId; 404 on mismatch before the patch is built" },
-      { file: "src/modules/build/approvals/approvals.service.ts", line: 224, anchor: /\.where\(and\(eq\(projectApprovals\.id, approvalId\), eq\(projectApprovals\.orgId, orgId\), isNull\(projectApprovals\.deletedAt\)\)\)/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/approvals/approvals.service.ts", line: 186, anchor: /await loadApproval\(this\.db, orgId, projectId, approvalId\);/, note: "binds id+orgId+projectId; 404 on mismatch before the patch is built" },
+      { file: "src/modules/build/approvals/approvals.service.ts", line: 207, anchor: /\.where\(and\(eq\(projectApprovals\.id, approvalId\), eq\(projectApprovals\.orgId, orgId\), isNull\(projectApprovals\.deletedAt\)\)\)/, note: "UPDATE keyed by the already-verified PK" },
     ],
   },
   {
@@ -78,8 +78,8 @@ export default [
       "None: a foreign :approvalId 404s at loadApproval before the soft-delete UPDATE runs.",
     evidence: [
       { file: "src/modules/build/approvals/approvals.controller.ts", line: 158, anchor: /softDeleteApproval\(/, note: "handler binds both projectId and approvalId and forwards both" },
-      { file: "src/modules/build/approvals/approvals.service.ts", line: 264, anchor: /await loadApproval\(this\.db, orgId, projectId, approvalId\);/, note: "binds id+orgId+projectId; 404 on mismatch before the delete" },
-      { file: "src/modules/build/approvals/approvals.service.ts", line: 268, anchor: /\.where\(and\(eq\(projectApprovals\.id, approvalId\), eq\(projectApprovals\.orgId, orgId\), isNull\(projectApprovals\.deletedAt\)\)\);/, note: "soft-delete UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/approvals/approvals.service.ts", line: 288, anchor: /await loadApproval\(this\.db, orgId, projectId, approvalId\);/, note: "binds id+orgId+projectId; 404 on mismatch before the delete" },
+      { file: "src/modules/build/approvals/approvals.service.ts", line: 292, anchor: /\.where\(and\(eq\(projectApprovals\.id, approvalId\), eq\(projectApprovals\.orgId, orgId\), isNull\(projectApprovals\.deletedAt\)\)\);/, note: "soft-delete UPDATE keyed by the already-verified PK" },
     ],
   },
 
@@ -138,10 +138,10 @@ export default [
       "None: a ticketId belonging to a different project 404s at the existence check before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 55, anchor: /toggleTicketVisibility\(/, note: "handler binds both projectId and ticketId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 91, anchor: /eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\), eq\(tickets\.projectId, projectId\), isNull\(tickets\.deletedAt\)/, note: "existence check binds id+orgId+projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 102, anchor: /eq\(tickets\.id, ticketId\),$/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 92, anchor: /eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\), eq\(tickets\.projectId, projectId\), isNull\(tickets\.deletedAt\)/, note: "existence check binds id+orgId+projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 103, anchor: /eq\(tickets\.id, ticketId\),$/, note: "UPDATE keyed by the already-verified PK" },
       { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 103, anchor: /eq\(tickets\.orgId, orgId\),$/, note: "the UPDATE also binds the tenant" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 104, anchor: /version !== undefined \? eq\(tickets\.version, version\) : undefined,/, note: "an optional optimistic-lock arm was added to the UPDATE; it narrows the key, never widens it" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 103, anchor: /version !== undefined \? eq\(tickets\.version, version\) : undefined,/, note: "an optional optimistic-lock arm was added to the UPDATE; it narrows the key, never widens it" },
     ],
   },
   {
@@ -154,8 +154,8 @@ export default [
       "None: a milestoneId belonging to a different project 404s at the existence check before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 68, anchor: /toggleMilestoneVisibility\(/, note: "handler binds both projectId and milestoneId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 126, anchor: /eq\(projectMilestones\.id, milestoneId\),/, note: "existence check binds id+orgId+projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 137, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 127, anchor: /eq\(projectMilestones\.id, milestoneId\),/, note: "existence check binds id+orgId+projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 138, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
     ],
   },
   {
@@ -168,8 +168,8 @@ export default [
       "None: a commentId whose parent ticket belongs to a different project 404s at the join before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 81, anchor: /toggleCommentVisibility\(/, note: "handler binds both projectId and commentId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 185, anchor: /\.innerJoin\(tickets, and\(/, note: "join binds the comment's ticket to the named project via tickets.projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 185, anchor: /\.where\(and\(eq\(ticketComments\.id, commentId\), eq\(ticketComments\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 168, anchor: /\.innerJoin\(tickets, and\(/, note: "join binds the comment's ticket to the named project via tickets.projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 168, anchor: /\.where\(and\(eq\(ticketComments\.id, commentId\), eq\(ticketComments\.orgId, orgId\)\)\);/, note: "UPDATE keyed by the already-verified PK" },
     ],
   },
   {
@@ -182,8 +182,8 @@ export default [
       "None: an attachmentId whose parent ticket belongs to a different project 404s at the join before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/client-portal/client-visibility.controller.ts", line: 94, anchor: /toggleAttachmentVisibility\(/, note: "handler binds both projectId and attachmentId and forwards both" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 185, anchor: /async toggleAttachmentVisibility\(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean\) \{/, note: "signature carries the authenticated actor and projectId" },
-      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 187, anchor: /eq\(tickets\.projectId, projectId\),/, note: "join binds the attachment's ticket to the named project" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 168, anchor: /async toggleAttachmentVisibility\(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean\) \{/, note: "signature carries the authenticated actor and projectId" },
+      { file: "src/modules/build/client-portal/client-visibility.service.ts", line: 188, anchor: /eq\(tickets\.projectId, projectId\),/, note: "join binds the attachment's ticket to the named project" },
     ],
   },
 
@@ -198,9 +198,9 @@ export default [
       "None cross-tenant, and none cross-project either: the UPDATE's own WHERE requires the target membership to be a member of this exact :projectId, so a memberUserId who is only a member of a different project in the same org gets 404, not a role change.",
     evidence: [
       { file: "src/modules/build/core/project-crud/project-resources.controller.ts", line: 128, anchor: /updateMemberRole\(/, note: "handler binds both projectId and memberUserId and forwards both" },
-      { file: "src/modules/build/core/members/projects-members.service.ts", line: 362, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "confirms projectId belongs to this org, 404 otherwise" },
-      { file: "src/modules/build/core/members/projects-members.service.ts", line: 428, anchor: /const targetActor = await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberUserId \}\);/, note: "resolves the target membership scoped to this org" },
-      { file: "src/modules/build/core/members/projects-members.service.ts", line: 371, anchor: /eq\(projectMembers\.projectId, projectId\),/, note: "UPDATE's WHERE requires the target membership to belong to this exact project; 404 otherwise" },
+      { file: "src/modules/build/core/members/projects-members.service.ts", line: 392, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "confirms projectId belongs to this org, 404 otherwise" },
+      { file: "src/modules/build/core/members/projects-members.service.ts", line: 350, anchor: /const targetActor = await assertOrganizationActor\(this\.db, orgId, \{ kind: "user", userId: memberUserId \}\);/, note: "resolves the target membership scoped to this org" },
+      { file: "src/modules/build/core/members/projects-members.service.ts", line: 361, anchor: /eq\(projectMembers\.projectId, projectId\),/, note: "UPDATE's WHERE requires the target membership to belong to this exact project; 404 otherwise" },
     ],
   },
 
@@ -217,7 +217,7 @@ export default [
       { file: "src/modules/build/core/automation/projects-automations.controller.ts", line: 107, anchor: /update\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
       { file: "src/modules/build/core/automation/projects-automations.controller.ts", line: 113, anchor: /return this\.automations\.updateAutomation\(u, projectId, automationId, body\);/, note: "projectId is passed into the service call" },
       { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 128, anchor: /await assertCanManageProject\(this\.db, this\.access, u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
-      { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 60, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the UPDATE's WHERE now re-binds projectId, so a foreign automationId 404s" },
+      { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 61, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the UPDATE's WHERE now re-binds projectId, so a foreign automationId 404s" },
     ],
   },
   {
@@ -232,7 +232,7 @@ export default [
       { file: "src/modules/build/core/automation/projects-automations.controller.ts", line: 121, anchor: /delete\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
       { file: "src/modules/build/core/automation/projects-automations.controller.ts", line: 126, anchor: /return this\.automations\.deleteAutomation\(u, projectId, automationId\);/, note: "projectId is passed into the service call" },
       { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 128, anchor: /await assertCanManageProject\(this\.db, this\.access, u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
-      { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 138, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the DELETE's WHERE now re-binds projectId, so a foreign automationId 404s" },
+      { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 139, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the DELETE's WHERE now re-binds projectId, so a foreign automationId 404s" },
     ],
   },
 
@@ -280,8 +280,8 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s at assertTicketReadAccess before any relation row is read.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 79, anchor: /listRelations\(/, note: "handler binds both projectId and ticketId and forwards both" },
-      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 56, anchor: /async listRelations\(/, note: "signature" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 89, anchor: /listRelations\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 59, anchor: /async listRelations\(/, note: "signature" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 341, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch" },
     ],
   },
@@ -294,9 +294,9 @@ export default [
     blastRadius:
       "None: a foreign :ticketId 404s at assertTicketReadAccess, and a relatedTicketId from a different project independently 404s (\"Related ticket not found in this project\") before the INSERT runs.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 92, anchor: /addRelation\(/, note: "handler binds both projectId and ticketId and forwards both" },
-      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 135, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId" },
-      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 144, anchor: /eq\(tickets\.projectId, projectId\),/, note: "relatedTicketId is independently bound to the same project before the relation is created" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 102, anchor: /addRelation\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 138, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId" },
+      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 147, anchor: /eq\(tickets\.projectId, projectId\),/, note: "relatedTicketId is independently bound to the same project before the relation is created" },
     ],
   },
   {
@@ -308,9 +308,9 @@ export default [
     blastRadius:
       "None: a foreign :ticketId 404s at assertTicketReadAccess before the DELETE runs; a wrong relatedId simply matches zero rows rather than deleting anything cross-tenant.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 106, anchor: /removeRelation\(/, note: "handler binds both projectId and ticketId and forwards both" },
-      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 216, anchor: /async removeRelation\(/, note: "signature" },
-      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 222, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId before the delete" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 116, anchor: /removeRelation\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 249, anchor: /async removeRelation\(/, note: "signature" },
+      { file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts", line: 255, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId before the delete" },
     ],
   },
   {
@@ -322,7 +322,7 @@ export default [
     blastRadius:
       "None: a mismatched ticket 404s, while an inaccessible project or ticket scope is rejected before the label mapping is deleted.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 173, anchor: /removeLabel\(/, note: "handler binds projectId, ticketId and labelId and forwards all three" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 183, anchor: /removeLabel\(/, note: "handler binds projectId, ticketId and labelId and forwards all three" },
       { file: "src/modules/build/core/tickets/projects-ticket-labels.service.ts", line: 48, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "actor-aware authorization runs before deletion" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
     ],
@@ -336,7 +336,7 @@ export default [
     blastRadius:
       "None: an inaccessible or mismatched ticket is rejected before any git link row is read.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 200, anchor: /getGitLinks\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 210, anchor: /getGitLinks\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 41, anchor: /await this\.assertTicketAccess\(u, projectId, ticketId\);/, note: "actor-aware authorization runs before the git link query" },
       { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 37, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "the private guard is the canonical ticket decision" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 349, anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/, note: "project membership and ticket DataScope are both enforced" },
@@ -351,9 +351,9 @@ export default [
     blastRadius:
       "None: a foreign :ticketId 404s at assertTicketAccess, and the UPDATE's own WHERE independently requires ticketId=ticketId, so a linkId belonging to a different ticket/project also 404s.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 238, anchor: /updateRelatedLink\(/, note: "handler binds projectId, ticketId and linkId and forwards all three" },
-      { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 163, anchor: /async updateRelatedLink\(/, note: "signature" },
-      { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 170, anchor: /await this\.assertTicketAccess\(u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId before any read or write" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 248, anchor: /updateRelatedLink\(/, note: "handler binds projectId, ticketId and linkId and forwards all three" },
+      { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 169, anchor: /async updateRelatedLink\(/, note: "signature" },
+      { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 176, anchor: /await this\.assertTicketAccess\(u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId before any read or write" },
     ],
   },
   {
@@ -365,9 +365,9 @@ export default [
     blastRadius:
       "None: a foreign :ticketId 404s at assertTicketAccess, and the DELETE's own WHERE independently requires ticketId=ticketId.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 253, anchor: /deleteRelatedLink\(/, note: "handler binds projectId, ticketId and linkId and forwards all three" },
-      { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 205, anchor: /async deleteRelatedLink\(/, note: "signature" },
-      { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 211, anchor: /await this\.assertTicketAccess\(u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId before any read or write" },
+      { file: "src/modules/build/core/tickets/projects-ticket-associations.controller.ts", line: 263, anchor: /deleteRelatedLink\(/, note: "handler binds projectId, ticketId and linkId and forwards all three" },
+      { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 210, anchor: /async deleteRelatedLink\(/, note: "signature" },
+      { file: "src/modules/build/core/tickets/projects-ticket-links.service.ts", line: 216, anchor: /await this\.assertTicketAccess\(u, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId before any read or write" },
     ],
   },
 
@@ -413,10 +413,10 @@ export default [
     blastRadius:
       "None: an inaccessible or mismatched ticket is rejected before the comment is read, and a comment from another ticket cannot match.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 61, anchor: /getComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 222, anchor: /async getComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number\) \{/, note: "signature carries the authenticated actor and route parents" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 223, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 112, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 66, anchor: /getComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 224, anchor: /async getComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number\) \{/, note: "signature carries the authenticated actor and route parents" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 225, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 114, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
     ],
   },
   {
@@ -428,10 +428,10 @@ export default [
     blastRadius:
       "None: project membership, ticket DataScope, route binding, comment-to-ticket binding, and authorship are enforced before the update.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 74, anchor: /editComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 229, anchor: /async editComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, content: string\) \{/, note: "signature carries the authenticated actor and route parents" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 230, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 235, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 79, anchor: /editComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 231, anchor: /async editComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, content: string\) \{/, note: "signature carries the authenticated actor and route parents" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 232, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 237, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
     ],
   },
   {
@@ -443,10 +443,10 @@ export default [
     blastRadius:
       "None: project membership, ticket DataScope, route binding, comment-to-ticket binding, and authorship are enforced before deletion.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 89, anchor: /deleteComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 258, anchor: /async deleteComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number\) \{/, note: "signature carries the authenticated actor and route parents" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 259, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 264, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 94, anchor: /deleteComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 260, anchor: /async deleteComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number\) \{/, note: "signature carries the authenticated actor and route parents" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 261, anchor: /await this\.resolveTicketForComment\(u, projectId, ticketId\);/, note: "actor-aware ticket authorization runs before the comment lookup" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 266, anchor: /eq\(ticketComments\.ticketId, ticketId\),/, note: "the comment lookup binds commentId to ticketId+orgId" },
     ],
   },
   {
@@ -458,7 +458,7 @@ export default [
     blastRadius:
       "None: tenant, project membership, route binding, ticket DataScope, comment binding, and organization membership are enforced before insertion.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 103, anchor: /addReaction\(/, note: "handler declares every route parent" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 123, anchor: /addReaction\(/, note: "handler declares every route parent" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 130, anchor: /return this\.comments\.addReaction\(u, projectId, ticketId, commentId, body\.emoji\);/, note: "the actor and route ids are forwarded together" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 305, anchor: /async addReaction\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, emoji: string\) \{/, note: "terminal implementation receives the actor" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 307, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced before the comment lookup" },
@@ -473,7 +473,7 @@ export default [
     blastRadius:
       "None: tenant, project membership, route binding, ticket DataScope, comment binding, and reaction ownership are enforced before deletion.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 118, anchor: /removeReaction\(/, note: "handler declares every route parent" },
+      { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 138, anchor: /removeReaction\(/, note: "handler declares every route parent" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.controller.ts", line: 145, anchor: /return this\.comments\.removeReaction\(u, projectId, ticketId, commentId, decodeURIComponent\(emoji\)\);/, note: "the actor and route ids are forwarded together" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 328, anchor: /async removeReaction\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, emoji: string\) \{/, note: "terminal implementation receives the actor" },
       { file: "src/modules/build/core/tickets/projects-ticket-comments.service.ts", line: 330, anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/, note: "project membership and ticket DataScope are enforced before the comment lookup" },
@@ -490,10 +490,10 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s directly at the final UPDATE's WHERE clause, which independently requires projectId=projectId.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 197, anchor: /rankTicket\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 198, anchor: /rankTicket\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 50, anchor: /export async function rankTicket\(/, note: "signature takes projectId" },
-      { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 196, anchor: /\.set\(\{ rank: rankValue, status, updatedAt: now \}\)/, note: "this is the mutation, not a pre-check" },
-      { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 199, anchor: /eq\(tickets\.orgId, actor\.orgId\), eq\(tickets\.projectId, projectId\), eq\(tickets\.id, ticketId\), isNull\(tickets\.deletedAt\),/, note: "the actual UPDATE's WHERE binds orgId+projectId+id together; 404 on mismatch" },
+      { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 155, anchor: /\.set\(\{ rank: rankValue, status, updatedAt: now \}\)/, note: "this is the mutation, not a pre-check" },
+      { file: "src/modules/build/core/tickets/projects-tickets-rank-utils.ts", line: 158, anchor: /eq\(tickets\.orgId, actor\.orgId\), eq\(tickets\.projectId, projectId\), eq\(tickets\.id, ticketId\), isNull\(tickets\.deletedAt\),/, note: "the actual UPDATE's WHERE binds orgId+projectId+id together; 404 on mismatch" },
     ],
   },
   {
@@ -505,7 +505,7 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s at assertTicketReadAccess before any activity is read.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 210, anchor: /getActivity\(/, note: "handler binds both projectId and ticketId and forwards both" },
+      { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 211, anchor: /getActivity\(/, note: "handler binds both projectId and ticketId and forwards both" },
       { file: "src/modules/build/core/tickets/projects-tickets-query.service.ts", line: 122, anchor: /async getTicketActivity\(/, note: "signature carries the actor and route ids" },
       { file: "src/modules/build/core/tickets/projects-tickets-query.service.ts", line: 128, anchor: /await assertTicketReadAccess\(this\.db, this\.access, actor, projectId, ticketId\);/, note: "canonical ticket authorization runs before the activity query" },
       { file: "src/modules/build/core/project-crud/project-access.ts", line: 341, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch" },
@@ -521,7 +521,7 @@ export default [
     blastRadius:
       "None: tenant, project membership, composite key binding, and ticket DataScope are enforced before the record is returned.",
     evidence: [
-      { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 226, anchor: /getTicketByKey\(/, note: "handler binds both projectId and ticketNumber and forwards both" },
+      { file: "src/modules/build/core/tickets/projects-tickets.controller.ts", line: 227, anchor: /getTicketByKey\(/, note: "handler binds both projectId and ticketNumber and forwards both" },
       { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 35, anchor: /async getTicketByKey\(/, note: "signature" },
       { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 44, anchor: /eq\(tickets\.projectId, projectId\),/, note: "selector binds the lookup to the named project" },
       { file: "src/modules/build/core/tickets/projects-tickets-detail.service.ts", line: 63, anchor: /const read = await resolveTicketsScope\(this\.access, u\);/, note: "ticket DataScope is resolved" },
@@ -540,8 +540,8 @@ export default [
       "None: a webhookId belonging to a different project 404s at assertWebhookOwnership before any delivery row is read.",
     evidence: [
       { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 97, anchor: /listDeliveries\(/, note: "handler binds both projectId and webhookId and forwards both" },
-      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 277, anchor: /async listDeliveries\(orgId: string, projectId: number, webhookId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 258, anchor: /async assertWebhookOwnership\(orgId: string, projectId: number, webhookId: number\): Promise<void> \{/, note: "ownership check binds id+orgId+projectId; 404 on mismatch" },
+      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 314, anchor: /async listDeliveries\(orgId: string, projectId: number, webhookId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 295, anchor: /async assertWebhookOwnership\(orgId: string, projectId: number, webhookId: number\): Promise<void> \{/, note: "ownership check binds id+orgId+projectId; 404 on mismatch" },
     ],
   },
   {
@@ -555,7 +555,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 111, anchor: /async sendTest\(/, note: "handler binds both projectId and webhookId" },
       { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 116, anchor: /await this\.webhooks\.assertWebhookOwnership\(u\.orgId, projectId, webhookId\);/, note: "controller-level ownership check runs before dispatch.sendTest" },
-      { file: "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts", line: 328, anchor: /async sendTest\(/, note: "signature" },
+      { file: "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts", line: 133, anchor: /async sendTest\(/, note: "signature" },
     ],
   },
 
@@ -598,8 +598,8 @@ export default [
       "None: an epicId belonging to a different project 404s directly at the UPDATE's own WHERE clause.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 304, anchor: /updateEpic\(/, note: "handler binds both projectId and epicId and forwards both" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 133, anchor: /async updateEpic\(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 135, anchor: /eq\(tickets\.id, epicId\),/, note: "UPDATE's own WHERE binds id+orgId+projectId+type" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 129, anchor: /async updateEpic\(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 131, anchor: /eq\(tickets\.id, epicId\),/, note: "UPDATE's own WHERE binds id+orgId+projectId+type" },
     ],
   },
   {
@@ -612,8 +612,8 @@ export default [
       "None: an epicId belonging to a different project 404s at the existence check before the DELETE runs.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 318, anchor: /deleteEpic\(/, note: "handler binds both projectId and epicId and forwards both" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 163, anchor: /async deleteEpic\(orgId: string, projectId: number, epicId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 135, anchor: /eq\(tickets\.id, epicId\),/, note: "existence check binds id+orgId+projectId+type; 404 on mismatch" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 159, anchor: /async deleteEpic\(orgId: string, projectId: number, epicId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 131, anchor: /eq\(tickets\.id, epicId\),/, note: "existence check binds id+orgId+projectId+type; 404 on mismatch" },
     ],
   },
 
@@ -629,7 +629,7 @@ export default [
     evidence: [
       { file: "src/modules/build/execution/whiteboard-sharing.controller.ts", line: 61, anchor: /updateSharing\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
       { file: "src/modules/build/execution/whiteboard-sharing.service.ts", line: 46, anchor: /const board = await requireWhiteboardManageAccess\(this\.db, this\.access, u, projectId, whiteboardId\);/, note: "binds whiteboardId to this projectId+orgId before any mutation" },
-      { file: "src/modules/build/execution/whiteboard-board-helpers.ts", line: 48, anchor: /export async function requireWhiteboardManageAccess\(/, note: "signature takes projectId; its WHERE (a few lines below) binds id+projectId+orgId, 404 on mismatch" },
+      { file: "src/modules/build/execution/whiteboard-board-helpers.ts", line: 40, anchor: /export async function requireWhiteboardManageAccess\(/, note: "signature takes projectId; its WHERE (a few lines below) binds id+projectId+orgId, 404 on mismatch" },
     ],
   },
   {
@@ -682,9 +682,9 @@ export default [
     blastRadius:
       "None: a whiteboardId belonging to a different project 404s at loadBoardWithAccess before any board data is returned.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 335, anchor: /getWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 235, anchor: /async getWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 67, anchor: /private async loadBoardWithAccess\(/, note: "private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 349, anchor: /getWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 242, anchor: /async getWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 74, anchor: /private async loadBoardWithAccess\(/, note: "private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch" },
     ],
   },
   {
@@ -696,9 +696,9 @@ export default [
     blastRadius:
       "None: a whiteboardId belonging to a different project 404s at loadBoardWithAccess, and the UPDATE's own WHERE independently re-asserts the same binding.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 347, anchor: /updateWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 262, anchor: /async updateWhiteboard\(/, note: "signature" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 286, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the UPDATE's own WHERE re-binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 367, anchor: /updateWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 269, anchor: /async updateWhiteboard\(/, note: "signature" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 293, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the UPDATE's own WHERE re-binds id+projectId+orgId" },
     ],
   },
   {
@@ -710,9 +710,9 @@ export default [
     blastRadius:
       "None: a whiteboardId belonging to a different project 404s at loadBoardWithAccess, and the UPDATE's own WHERE independently re-asserts the same binding.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.controller.ts", line: 361, anchor: /deleteWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 299, anchor: /async deleteWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 313, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId" },
+      { file: "src/modules/build/execution/workspace.controller.ts", line: 367, anchor: /deleteWhiteboard\(/, note: "handler binds both projectId and whiteboardId and forwards both" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 306, anchor: /async deleteWhiteboard\(u: CurrentUserContext, projectId: number, whiteboardId: number\) \{/, note: "signature takes projectId" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 320, anchor: /eq\(projectWhiteboards\.id, whiteboardId\),/, note: "the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId" },
     ],
   },
 
@@ -742,7 +742,7 @@ export default [
     evidence: [
       { file: "src/modules/build/files/files.controller.ts", line: 90, anchor: /softDeleteFile\(/, note: "handler binds both projectId and fileId and forwards both" },
       { file: "src/modules/build/files/files.service.ts", line: 174, anchor: /async softDeleteFile\(u: CurrentUserContext, projectId: number, fileId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/files/files.service.ts", line: 188, anchor: /eq\(projectAttachments\.id, fileId\),/, note: "the soft-delete UPDATE's own WHERE re-binds id+orgId+projectId" },
+      { file: "src/modules/build/files/files.service.ts", line: 189, anchor: /eq\(projectAttachments\.id, fileId\),/, note: "the soft-delete UPDATE's own WHERE re-binds id+orgId+projectId" },
     ],
   },
 

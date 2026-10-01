@@ -9,7 +9,7 @@ export default [
       { file: "src/modules/build/forms/submissions.controller.ts", line: 68, anchor: /return this\.svc\.listSubmissions\(u, projectId, formId, query\);/, note: "route handler forwards the actor and path params" },
       { file: "src/modules/build/forms/submissions.service.ts", line: 168, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
       { file: "src/modules/build/forms/submissions.service.ts", line: 169, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "listSubmissions binds via loadForm before querying" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 53, anchor: /eq\(projectForms\.projectId, projectId\),/, note: "loadForm's WHERE binds formId to projectId and orgId together" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 55, anchor: /eq\(projectForms\.projectId, projectId\),/, note: "loadForm's WHERE binds formId to projectId and orgId together" },
     ],
   },
   {
@@ -22,7 +22,7 @@ export default [
       { file: "src/modules/build/forms/submissions.controller.ts", line: 82, anchor: /return this\.svc\.createSubmission\(u, projectId, formId, body\);/, note: "route handler forwards the actor and path params" },
       { file: "src/modules/build/forms/submissions.service.ts", line: 211, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
       { file: "src/modules/build/forms/submissions.service.ts", line: 212, anchor: /const form = await this\.loadForm\(orgId, projectId, formId\);/, note: "createSubmission binds via loadForm before running the submission" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 92, anchor: /const \{ orgId, id: formId, projectId \} = form;/, note: "runSubmission derives tenant and parent ids from the validated row" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 94, anchor: /const \{ orgId, id: formId, projectId \} = form;/, note: "runSubmission derives tenant and parent ids from the validated row" },
     ],
   },
   {
@@ -33,10 +33,10 @@ export default [
     blastRadius: "None beyond the caller's own org/project/form: a foreign submissionId or formId 404s at loadForm/loadSubmission before the UPDATE executes.",
     evidence: [
       { file: "src/modules/build/forms/submissions.controller.ts", line: 96, anchor: /return this\.svc\.updateSubmission\(u, projectId, formId, submissionId, body\);/, note: "route handler forwards the actor and all path params" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 264, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced" },
       { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await this\.loadForm\(orgId, projectId, formId\);/, note: "binds formId to projectId" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 266, anchor: /await this\.loadSubmission\(orgId, formId, submissionId\);/, note: "binds submissionId to formId" },
-      { file: "src/modules/build/forms/submissions.service.ts", line: 273, anchor: /eq\(formSubmissions\.formId, formId\),/, note: "UPDATE WHERE clause re-binds formId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 265, anchor: /await this\.loadSubmission\(orgId, formId, submissionId\);/, note: "binds submissionId to formId" },
+      { file: "src/modules/build/forms/submissions.service.ts", line: 274, anchor: /eq\(formSubmissions\.formId, formId\),/, note: "UPDATE WHERE clause re-binds formId" },
     ],
   },
   {
@@ -46,7 +46,7 @@ export default [
     summary: "GET /build/:projectId/decisions/:decisionId. getDecision calls assertProjectAccess(projectId) (404 if the project isn't in the caller's org) then loadDecision(orgId, projectId, decisionId), whose WHERE binds id=decisionId AND orgId AND projectId together. A decisionId belonging to another project 404s.",
     blastRadius: "None beyond the caller's own org/project: a foreign decisionId 404s inside loadDecision.",
     evidence: [
-      { file: "src/modules/build/governance/decisions.controller.ts", line: 63, anchor: /return this\.svc\.getDecision\(u, projectId, decisionId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/decisions.controller.ts", line: 64, anchor: /return this\.svc\.getDecision\(u, projectId, decisionId\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/governance/decisions.service.ts", line: 76, anchor: /return this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "getDecision delegates to loadDecision" },
       { file: "src/modules/build/governance/decisions.service.ts", line: 41, anchor: /eq\(projectDecisions\.projectId, projectId\),/, note: "loadDecision's WHERE binds decisionId to projectId and orgId together" },
     ],
@@ -58,7 +58,7 @@ export default [
     summary: "PATCH /build/:projectId/decisions/:decisionId. updateDecision calls assertProjectAccess(projectId), then loadDecision(orgId, projectId, decisionId) (404 on mismatch), then the UPDATE's own WHERE independently re-binds id+orgId+projectId. Both the pre-check and the write itself scope the row to the named project.",
     blastRadius: "None beyond the caller's own org/project: a foreign decisionId 404s before the UPDATE runs, and the UPDATE's own WHERE repeats the binding.",
     evidence: [
-      { file: "src/modules/build/governance/decisions.controller.ts", line: 89, anchor: /return this\.svc\.updateDecision\(u, projectId, decisionId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/decisions.controller.ts", line: 91, anchor: /return this\.svc\.updateDecision\(u, projectId, decisionId, body\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/governance/decisions.service.ts", line: 126, anchor: /await this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "binds decisionId to projectId via loadDecision before patching" },
       { file: "src/modules/build/governance/decisions.service.ts", line: 141, anchor: /\.where\(and\(eq\(projectDecisions\.id, decisionId\), eq\(projectDecisions\.orgId, u\.orgId\), eq\(projectDecisions\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
@@ -70,7 +70,7 @@ export default [
     summary: "DELETE /build/:projectId/decisions/:decisionId (soft delete). Same binding as updateDecision: assertProjectAccess + loadDecision(orgId, projectId, decisionId) 404s a foreign decisionId, and the soft-delete UPDATE's own WHERE independently repeats id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign decisionId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/governance/decisions.controller.ts", line: 102, anchor: /return this\.svc\.softDeleteDecision\(u, projectId, decisionId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/decisions.controller.ts", line: 104, anchor: /return this\.svc\.softDeleteDecision\(u, projectId, decisionId\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/governance/decisions.service.ts", line: 158, anchor: /await this\.loadDecision\(u\.orgId, projectId, decisionId\);/, note: "binds decisionId to projectId via loadDecision before deleting" },
       { file: "src/modules/build/governance/decisions.service.ts", line: 162, anchor: /\.where\(and\(eq\(projectDecisions\.id, decisionId\), eq\(projectDecisions\.orgId, u\.orgId\), eq\(projectDecisions\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
@@ -82,7 +82,7 @@ export default [
     summary: "GET /build/:projectId/risks/:riskId. getRisk calls assertProjectAccess(projectId) then loadRisk(orgId, projectId, riskId), whose WHERE binds id=riskId AND orgId AND projectId. A riskId from another project 404s.",
     blastRadius: "None beyond the caller's own org/project: a foreign riskId 404s inside loadRisk.",
     evidence: [
-      { file: "src/modules/build/governance/risks.controller.ts", line: 90, anchor: /return this\.svc\.getRisk\(u, projectId, riskId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/risks.controller.ts", line: 91, anchor: /return this\.svc\.getRisk\(u, projectId, riskId\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/governance/risks.service.ts", line: 150, anchor: /return this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "getRisk delegates to loadRisk" },
       { file: "src/modules/build/governance/risks.service.ts", line: 34, anchor: /eq\(projectRisks\.projectId, projectId\),/, note: "loadRisk's WHERE binds riskId to projectId and orgId together" },
     ],
@@ -94,7 +94,7 @@ export default [
     summary: "PATCH /build/:projectId/risks/:riskId. updateRisk calls assertProjectAccess(projectId) then loadRisk(orgId, projectId, riskId) before patching, and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign riskId 404s before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/governance/risks.controller.ts", line: 116, anchor: /return this\.svc\.updateRisk\(u, projectId, riskId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/risks.controller.ts", line: 118, anchor: /return this\.svc\.updateRisk\(u, projectId, riskId, body\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/governance/risks.service.ts", line: 199, anchor: /await this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "binds riskId to projectId via loadRisk before patching" },
       { file: "src/modules/build/governance/risks.service.ts", line: 213, anchor: /\.where\(and\(eq\(projectRisks\.id, riskId\), eq\(projectRisks\.orgId, u\.orgId\), eq\(projectRisks\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
@@ -106,7 +106,7 @@ export default [
     summary: "DELETE /build/:projectId/risks/:riskId (soft delete). Same binding as updateRisk: assertProjectAccess + loadRisk(orgId, projectId, riskId) 404s a foreign riskId, and the soft-delete UPDATE's own WHERE independently repeats id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign riskId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/governance/risks.controller.ts", line: 129, anchor: /return this\.svc\.softDeleteRisk\(u, projectId, riskId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/governance/risks.controller.ts", line: 131, anchor: /return this\.svc\.softDeleteRisk\(u, projectId, riskId\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/governance/risks.service.ts", line: 230, anchor: /await this\.loadRisk\(u\.orgId, projectId, riskId\);/, note: "binds riskId to projectId via loadRisk before deleting" },
       { file: "src/modules/build/governance/risks.service.ts", line: 234, anchor: /\.where\(and\(eq\(projectRisks\.id, riskId\), eq\(projectRisks\.orgId, u\.orgId\), eq\(projectRisks\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
@@ -118,7 +118,7 @@ export default [
     summary: "GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the bounded child-resource queries run.",
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s inside loadIncident.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 97, anchor: /return this\.svc\.getIncident\(u, projectId, incidentId, query\);/, note: "route handler passes both path params and the validated child query to the service" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 98, anchor: /return this\.svc\.getIncident\(u, projectId, incidentId, query\);/, note: "route handler passes both path params and the validated child query to the service" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 151, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading child resources" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 68, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "loadIncident's WHERE binds incidentId to projectId and orgId together" },
     ],
@@ -130,7 +130,7 @@ export default [
     summary: "PATCH /build/:projectId/incidents/:incidentId. updateIncident calls assertProjectAccess(projectId), then binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId), and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction.",
     blastRadius: "None beyond the caller's own org/project: project access is required and a foreign incidentId 404s before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 123, anchor: /return this\.svc\.updateIncident\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 125, anchor: /return this\.svc\.updateIncident\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 202, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 203, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 243, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
@@ -143,7 +143,7 @@ export default [
     summary: "DELETE /build/:projectId/incidents/:incidentId (soft delete). deleteIncident calls assertProjectAccess(projectId), then loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: project access is required and a foreign incidentId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 136, anchor: /return this\.svc\.deleteIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 138, anchor: /return this\.svc\.deleteIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 303, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project-membership gate" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 304, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before deleting" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 312, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
@@ -156,7 +156,7 @@ export default [
     summary: "POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.",
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s before any row is written.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 150, anchor: /return this\.svc\.addUpdate\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 152, anchor: /return this\.svc\.addUpdate\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 332, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
       { file: "src/modules/build/incidents/incidents.service.ts", line: 363, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
     ],
@@ -207,9 +207,9 @@ export default [
     blastRadius: "None beyond the caller's own org/project/meeting: a foreign itemId or meetingId 404s before the ticket is created or the item is touched.",
     evidence: [
       { file: "src/modules/build/meetings/action-items.controller.ts", line: 93, anchor: /return this\.svc\.convertToTask\(u\.orgId, u\.userId, projectId, meetingId, itemId\);/, note: "route handler passes all three raw path params straight to the service" },
-      { file: "src/modules/build/meetings/action-items.service.ts", line: 144, anchor: /eq\(projectMeetings\.projectId, projectId\),/, note: "inline meeting lookup binds meetingId to projectId and orgId" },
-      { file: "src/modules/build/meetings/action-items.service.ts", line: 155, anchor: /eq\(meetingActionItems\.meetingId, meetingId\),/, note: "inline item lookup binds itemId to meetingId and orgId" },
-      { file: "src/modules/build/meetings/action-items.service.ts", line: 187, anchor: /eq\(meetingActionItems\.id, itemId\),/, note: "final UPDATE targets the already-verified row by primary key id + orgId, inside the same transaction" },
+      { file: "src/modules/build/meetings/action-items.service.ts", line: 145, anchor: /eq\(projectMeetings\.projectId, projectId\),/, note: "inline meeting lookup binds meetingId to projectId and orgId" },
+      { file: "src/modules/build/meetings/action-items.service.ts", line: 156, anchor: /eq\(meetingActionItems\.meetingId, meetingId\),/, note: "inline item lookup binds itemId to meetingId and orgId" },
+      { file: "src/modules/build/meetings/action-items.service.ts", line: 185, anchor: /eq\(meetingActionItems\.id, itemId\),/, note: "final UPDATE targets the already-verified row by primary key id + orgId, inside the same transaction" },
     ],
   },
   {
@@ -291,8 +291,8 @@ export default [
     blastRadius: "None: the DELETE only ever removes the one (portfolioId, projectId, orgId) association row; a mismatched projectId is a no-op, and the underlying project row is never touched.",
     evidence: [
       { file: "src/modules/build/portfolios/portfolios.controller.ts", line: 134, anchor: /return this\.svc\.unlinkProject\(u\.orgId, u\.userId, portfolioId, projectId\);/, note: "route handler passes both raw path params straight to the service" },
-      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 360, anchor: /await this\.loadPortfolio\(orgId, portfolioId\);/, note: "binds portfolioId to orgId via loadPortfolio before the delete" },
-      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 367, anchor: /eq\(portfolioProjects\.orgId, orgId\),/, note: "DELETE WHERE clause scopes to portfolioId + projectId + orgId together" },
+      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 358, anchor: /await this\.loadPortfolio\(orgId, portfolioId\);/, note: "binds portfolioId to orgId via loadPortfolio before the delete" },
+      { file: "src/modules/build/portfolios/portfolios.service.ts", line: 365, anchor: /eq\(portfolioProjects\.orgId, orgId\),/, note: "DELETE WHERE clause scopes to portfolioId + projectId + orgId together" },
     ],
   },
   {
@@ -303,8 +303,8 @@ export default [
     blastRadius: "None: the DELETE only ever removes the one (programId, projectId, orgId) association row; a mismatched projectId is a no-op, and the underlying project row is never touched.",
     evidence: [
       { file: "src/modules/build/portfolios/programs.controller.ts", line: 134, anchor: /return this\.svc\.unlinkProject\(u\.orgId, u\.userId, programId, projectId\);/, note: "route handler passes both raw path params straight to the service" },
-      { file: "src/modules/build/portfolios/programs.service.ts", line: 433, anchor: /await this\.loadProgram\(orgId, programId\);/, note: "binds programId to orgId via loadProgram before the delete" },
-      { file: "src/modules/build/portfolios/programs.service.ts", line: 440, anchor: /eq\(programProjects\.orgId, orgId\),/, note: "DELETE WHERE clause scopes to programId + projectId + orgId together" },
+      { file: "src/modules/build/portfolios/programs.service.ts", line: 419, anchor: /await this\.loadProgram\(orgId, programId\);/, note: "binds programId to orgId via loadProgram before the delete" },
+      { file: "src/modules/build/portfolios/programs.service.ts", line: 426, anchor: /eq\(programProjects\.orgId, orgId\),/, note: "DELETE WHERE clause scopes to programId + projectId + orgId together" },
     ],
   },
   {
@@ -315,7 +315,7 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign bugId 404s.",
     evidence: [
       { file: "src/modules/build/qa/bugs.controller.ts", line: 68, anchor: /return this\.svc\.getBug\(u, projectId, bugId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 119, anchor: /eq\(tickets\.orgId, u\.orgId\),/, note: "SELECT WHERE clause binds bugId to projectId and orgId together" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 123, anchor: /eq\(tickets\.orgId, u\.orgId\),/, note: "SELECT WHERE clause binds bugId to projectId and orgId together" },
     ],
   },
   {
@@ -326,8 +326,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign bugId 404s before either UPDATE runs.",
     evidence: [
       { file: "src/modules/build/qa/bugs.controller.ts", line: 94, anchor: /return this\.svc\.updateBug\(u, projectId, bugId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 226, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before patching" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 350, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\)/, note: "tickets UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 227, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before patching" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 351, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\)/, note: "tickets UPDATE targets the already-verified row by primary key id + orgId" },
     ],
   },
   {
@@ -338,8 +338,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign bugId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/qa/bugs.controller.ts", line: 107, anchor: /return this\.svc\.deleteBug\(u, projectId, bugId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 340, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before deleting" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 350, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 341, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before deleting" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 351, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
     ],
   },
   {
@@ -349,8 +349,8 @@ export default [
     summary: "GET /build/:projectId/test-cases/:caseId. getCase calls assertProjectAccess(projectId) then queries testCases WHERE id=caseId AND orgId AND projectId (not deleted), throwing NotFoundException on zero rows.",
     blastRadius: "None beyond the caller's own org/project: a foreign caseId 404s.",
     evidence: [
-      { file: "src/modules/build/qa/test-cases.controller.ts", line: 63, anchor: /return this\.svc\.getCase\(u, projectId, caseId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 181, anchor: /eq\(testCases\.projectId, projectId\),/, note: "SELECT WHERE clause binds caseId to projectId and orgId together" },
+      { file: "src/modules/build/qa/test-cases.controller.ts", line: 65, anchor: /return this\.svc\.getCase\(u, projectId, caseId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 209, anchor: /eq\(testCases\.projectId, projectId\),/, note: "SELECT WHERE clause binds caseId to projectId and orgId together" },
     ],
   },
   {
@@ -360,9 +360,9 @@ export default [
     summary: "PATCH /build/:projectId/test-cases/:caseId. updateCase calls assertProjectAccess(projectId) then an existence check WHERE id=caseId AND orgId AND projectId (404 otherwise), and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign caseId 404s before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/qa/test-cases.controller.ts", line: 89, anchor: /return this\.svc\.updateCase\(u, projectId, caseId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 232, anchor: /eq\(testCases\.projectId, projectId\),/, note: "existence check binds caseId to projectId and orgId before patching" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 252, anchor: /\.where\(and\(eq\(testCases\.id, caseId\), eq\(testCases\.orgId, orgId\), eq\(testCases\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-cases.controller.ts", line: 92, anchor: /return this\.svc\.updateCase\(u, projectId, caseId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 233, anchor: /eq\(testCases\.projectId, projectId\),/, note: "existence check binds caseId to projectId and orgId before patching" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 304, anchor: /\.where\(and\(eq\(testCases\.id, caseId\), eq\(testCases\.orgId, orgId\), eq\(testCases\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -372,9 +372,9 @@ export default [
     summary: "DELETE /build/:projectId/test-cases/:caseId (soft delete). deleteCase calls assertProjectAccess(projectId) then an existence check WHERE id=caseId AND orgId AND projectId (404 otherwise), and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign caseId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/qa/test-cases.controller.ts", line: 102, anchor: /return this\.svc\.deleteCase\(u, projectId, caseId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 264, anchor: /eq\(testCases\.projectId, projectId\),/, note: "existence check binds caseId to projectId and orgId before deleting" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 273, anchor: /\.where\(and\(eq\(testCases\.id, caseId\), eq\(testCases\.orgId, orgId\), eq\(testCases\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-cases.controller.ts", line: 105, anchor: /return this\.svc\.deleteCase\(u, projectId, caseId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 248, anchor: /eq\(testCases\.projectId, projectId\),/, note: "existence check binds caseId to projectId and orgId before deleting" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 325, anchor: /\.where\(and\(eq\(testCases\.id, caseId\), eq\(testCases\.orgId, orgId\), eq\(testCases\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -384,9 +384,9 @@ export default [
     summary: "PATCH /build/:projectId/test-suites/:suiteId. updateSuite calls assertProjectAccess(projectId) then an existence check WHERE id=suiteId AND orgId AND projectId (404 otherwise), and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign suiteId 404s before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/qa/test-suites.controller.ts", line: 77, anchor: /return this\.svc\.updateSuite\(u, projectId, suiteId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 114, anchor: /eq\(testSuites\.projectId, projectId\),/, note: "existence check binds suiteId to projectId and orgId before patching" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 128, anchor: /\.where\(and\(eq\(testSuites\.id, suiteId\), eq\(testSuites\.orgId, orgId\), eq\(testSuites\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-suites.controller.ts", line: 80, anchor: /return this\.svc\.updateSuite\(u, projectId, suiteId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 120, anchor: /eq\(testSuites\.projectId, projectId\),/, note: "existence check binds suiteId to projectId and orgId before patching" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 134, anchor: /\.where\(and\(eq\(testSuites\.id, suiteId\), eq\(testSuites\.orgId, orgId\), eq\(testSuites\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -396,9 +396,9 @@ export default [
     summary: "DELETE /build/:projectId/test-suites/:suiteId (soft delete). deleteSuite calls assertProjectAccess(projectId) then an existence check WHERE id=suiteId AND orgId AND projectId (404 otherwise), and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign suiteId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/qa/test-suites.controller.ts", line: 90, anchor: /return this\.svc\.deleteSuite\(u, projectId, suiteId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 140, anchor: /eq\(testSuites\.projectId, projectId\),/, note: "existence check binds suiteId to projectId and orgId before deleting" },
-      { file: "src/modules/build/qa/test-management.service.ts", line: 149, anchor: /\.where\(and\(eq\(testSuites\.id, suiteId\), eq\(testSuites\.orgId, orgId\), eq\(testSuites\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-suites.controller.ts", line: 93, anchor: /return this\.svc\.deleteSuite\(u, projectId, suiteId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 146, anchor: /eq\(testSuites\.projectId, projectId\),/, note: "existence check binds suiteId to projectId and orgId before deleting" },
+      { file: "src/modules/build/qa/test-management.service.ts", line: 155, anchor: /\.where\(and\(eq\(testSuites\.id, suiteId\), eq\(testSuites\.orgId, orgId\), eq\(testSuites\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -408,8 +408,8 @@ export default [
     summary: "GET /build/:projectId/test-runs/:runId. getRun calls assertProjectAccess(projectId) then queries testRuns WHERE id=runId AND orgId AND projectId (not deleted), throwing NotFoundException on zero rows. The joined results query that follows filters by runId+orgId, safe because runId was already proven bound to this project.",
     blastRadius: "None beyond the caller's own org/project: a foreign runId 404s.",
     evidence: [
-      { file: "src/modules/build/qa/test-runs.controller.ts", line: 91, anchor: /return this\.svc\.getRun\(u, projectId, runId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 109, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "SELECT WHERE clause binds runId to projectId and orgId together" },
+      { file: "src/modules/build/qa/test-runs.controller.ts", line: 94, anchor: /return this\.svc\.getRun\(u, projectId, runId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 115, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "SELECT WHERE clause binds runId to projectId and orgId together" },
     ],
   },
   {
@@ -419,8 +419,8 @@ export default [
     summary: "GET /build/:projectId/test-runs/:runId/results. listRunResults calls assertProjectAccess(projectId) then an explicit existence check WHERE id=runId AND orgId AND projectId (404 otherwise) before listing results filtered by runId+orgId — safe because runId was already proven bound to this project.",
     blastRadius: "None beyond the caller's own org/project: a foreign runId 404s before any result row is read.",
     evidence: [
-      { file: "src/modules/build/qa/test-runs.controller.ts", line: 104, anchor: /return this\.svc\.listRunResults\(u, projectId, runId, query\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 153, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before listing results" },
+      { file: "src/modules/build/qa/test-runs.controller.ts", line: 107, anchor: /return this\.svc\.listRunResults\(u, projectId, runId, query\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 159, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before listing results" },
     ],
   },
   {
@@ -430,9 +430,9 @@ export default [
     summary: "PATCH /build/:projectId/test-runs/:runId. updateRun calls assertProjectAccess(projectId) then an existence check WHERE id=runId AND orgId AND projectId (404 otherwise), and the UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign runId 404s before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/qa/test-runs.controller.ts", line: 130, anchor: /return this\.svc\.updateRun\(u, projectId, runId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 285, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before patching" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 307, anchor: /\.where\(and\(eq\(testRuns\.id, runId\), eq\(testRuns\.orgId, orgId\), eq\(testRuns\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-runs.controller.ts", line: 134, anchor: /return this\.svc\.updateRun\(u, projectId, runId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 291, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before patching" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 313, anchor: /\.where\(and\(eq\(testRuns\.id, runId\), eq\(testRuns\.orgId, orgId\), eq\(testRuns\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -442,9 +442,9 @@ export default [
     summary: "DELETE /build/:projectId/test-runs/:runId (soft delete). deleteRun calls assertProjectAccess(projectId) then an existence check WHERE id=runId AND orgId AND projectId (404 otherwise), and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId.",
     blastRadius: "None beyond the caller's own org/project: a foreign runId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/qa/test-runs.controller.ts", line: 143, anchor: /return this\.svc\.deleteRun\(u, projectId, runId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 329, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before deleting" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 338, anchor: /\.where\(and\(eq\(testRuns\.id, runId\), eq\(testRuns\.orgId, orgId\), eq\(testRuns\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-runs.controller.ts", line: 147, anchor: /return this\.svc\.deleteRun\(u, projectId, runId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 335, anchor: /eq\(testRuns\.projectId, projectId\),/, note: "existence check binds runId to projectId and orgId before deleting" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 344, anchor: /\.where\(and\(eq\(testRuns\.id, runId\), eq\(testRuns\.orgId, orgId\), eq\(testRuns\.projectId, projectId\)\)\);/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -454,9 +454,9 @@ export default [
     summary: "PATCH /build/:projectId/test-runs/:runId/results/:resultId — three route params. updateResult calls assertProjectAccess(projectId) then an existence check whose WHERE binds ALL of id=resultId, runId, orgId AND projectId in one query (404 if any mismatch), and the subsequent UPDATE's WHERE re-binds id+orgId+projectId, targeting the row already proven to belong to the named run.",
     blastRadius: "None beyond the caller's own org/project/run: a resultId belonging to a different run, project, or org 404s before the UPDATE runs.",
     evidence: [
-      { file: "src/modules/build/qa/test-runs.controller.ts", line: 157, anchor: /return this\.svc\.updateResult\(u, projectId, runId, resultId, body\);/, note: "route handler passes all three raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 355, anchor: /eq\(testRunResults\.runId, runId\),/, note: "existence check binds resultId to runId, orgId, and projectId together in one WHERE" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 374, anchor: /\.where\(and\(eq\(testRunResults\.id, resultId\), eq\(testRunResults\.orgId, orgId\), eq\(testRunResults\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/qa/test-runs.controller.ts", line: 174, anchor: /return this\.svc\.updateResult\(u, projectId, runId, resultId, body\);/, note: "route handler passes all three raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 407, anchor: /eq\(testRunResults\.runId, runId\),/, note: "existence check binds resultId to runId, orgId, and projectId together in one WHERE" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 426, anchor: /\.where\(and\(eq\(testRunResults\.id, resultId\), eq\(testRunResults\.orgId, orgId\), eq\(testRunResults\.projectId, projectId\)\)\)/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -466,9 +466,9 @@ export default [
     summary: "POST /build/:projectId/test-runs/:runId/results/:resultId/bug. createBugFromResultConsolidated calls assertProjectAccess(projectId) then binds resultId to runId+orgId+projectId in one WHERE (404 otherwise). The linked test case is then looked up by the *result row's own* testCaseId (a trusted DB value, not a client-supplied param) scoped to orgId. The final testRunResults UPDATE (linking the new ticket) targets the row by primary key id + orgId — safe because resultId was already proven bound to this run/project.",
     blastRadius: "None beyond the caller's own org/project/run: a resultId belonging to a different run, project, or org 404s before any ticket is created.",
     evidence: [
-      { file: "src/modules/build/qa/test-runs.controller.ts", line: 172, anchor: /return this\.svc\.createBugFromResultConsolidated\(u, projectId, runId, resultId, body\);/, note: "route handler passes all three raw path params straight to the service" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 394, anchor: /eq\(testRunResults\.projectId, projectId\),/, note: "existence check binds resultId to runId, orgId, and projectId together in one WHERE" },
-      { file: "src/modules/build/qa/test-runs.service.ts", line: 400, anchor: /where: and\(eq\(testCases\.id, result\.testCaseId\), eq\(testCases\.orgId, orgId\)\),/, note: "linked test case is resolved from the already-validated result row's own testCaseId, not a client param" },
+      { file: "src/modules/build/qa/test-runs.controller.ts", line: 189, anchor: /return this\.svc\.createBugFromResultConsolidated\(u, projectId, runId, resultId, body\);/, note: "route handler passes all three raw path params straight to the service" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 409, anchor: /eq\(testRunResults\.projectId, projectId\),/, note: "existence check binds resultId to runId, orgId, and projectId together in one WHERE" },
+      { file: "src/modules/build/qa/test-runs.service.ts", line: 452, anchor: /where: and\(eq\(testCases\.id, result\.testCaseId\), eq\(testCases\.orgId, orgId\)\),/, note: "linked test case is resolved from the already-validated result row's own testCaseId, not a client param" },
     ],
   },
   {
@@ -515,8 +515,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign updateId 404s before the UPDATE runs.",
     evidence: [
       { file: "src/modules/build/updates/updates.controller.ts", line: 81, anchor: /return this\.svc\.editUpdate\(u, projectId, updateId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/updates/updates.service.ts", line: 184, anchor: /const update = await this\.loadUpdate\(u\.orgId, projectId, updateId\);/, note: "binds updateId to projectId via loadUpdate before patching" },
-      { file: "src/modules/build/updates/updates.service.ts", line: 204, anchor: /eq\(projectUpdates\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/updates/updates.service.ts", line: 188, anchor: /const update = await this\.loadUpdate\(u\.orgId, projectId, updateId\);/, note: "binds updateId to projectId via loadUpdate before patching" },
+      { file: "src/modules/build/updates/updates.service.ts", line: 209, anchor: /eq\(projectUpdates\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -527,8 +527,8 @@ export default [
     blastRadius: "None beyond the caller's own org/project: a foreign updateId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/updates/updates.controller.ts", line: 94, anchor: /return this\.svc\.softDeleteUpdate\(u, projectId, updateId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/updates/updates.service.ts", line: 223, anchor: /const update = await this\.loadUpdate\(u\.orgId, projectId, updateId\);/, note: "binds updateId to projectId via loadUpdate before deleting" },
-      { file: "src/modules/build/updates/updates.service.ts", line: 233, anchor: /\.where\(and\(eq\(projectUpdates\.id, updateId\), eq\(projectUpdates\.orgId, u\.orgId\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/updates/updates.service.ts", line: 228, anchor: /const update = await this\.loadUpdate\(u\.orgId, projectId, updateId\);/, note: "binds updateId to projectId via loadUpdate before deleting" },
+      { file: "src/modules/build/updates/updates.service.ts", line: 239, anchor: /\.where\(and\(eq\(projectUpdates\.id, updateId\), eq\(projectUpdates\.orgId, u\.orgId\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
     ],
   },
   {
