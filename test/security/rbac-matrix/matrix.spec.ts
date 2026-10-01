@@ -22,6 +22,7 @@ import { recruitmentIntegrationsIsolationScenarios } from "./cells/recruitment-i
 import { recruitmentPipelineIsolationScenarios } from "./cells/recruitment-pipeline-isolation-scenarios";
 import { recruitmentInboundIsolationScenarios } from "./cells/recruitment-inbound-isolation-scenarios";
 import { kbWebhookIsolationScenarios } from "./cells/kb-webhook-isolation-scenarios";
+import { sweepIsolationScenarios } from "./cells/sweep-isolation-scenarios";
 import { evidenceSuites } from "./evidence-suites";
 
 jest.setTimeout(120_000);
@@ -76,6 +77,7 @@ const scenarios: Scenario[] = [
   ...recruitmentPipelineIsolationScenarios(),
   ...recruitmentInboundIsolationScenarios(),
   ...kbWebhookIsolationScenarios(),
+  ...sweepIsolationScenarios(),
   ...(process.env.RBAC_MATRIX_PLANT_FAILURE === "1" ? [plantedFailure] : []),
 ];
 for (const scenario of scenarios) runner.declare(scenario);
