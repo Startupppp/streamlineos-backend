@@ -7,9 +7,9 @@
   "counts": {
     "VULNERABLE": 0,
     "CLOSED-IN-FLIGHT": 0,
-    "NEEDS-REVIEW": 81,
-    "CLOSED": 35,
-    "VERIFIED": 238
+    "NEEDS-REVIEW": 44,
+    "CLOSED": 37,
+    "VERIFIED": 273
   },
   "handlersDetail": [
     {
@@ -17,7 +17,7 @@
       "file": "src/modules/build/agent-pulse/agent-pulse.controller.ts",
       "class": "AgentPulseController",
       "method": "getTopSignal",
-      "line": 27,
+      "line": 39,
       "verb": "GET",
       "path": "/build/agent-pulse/top-signal",
       "routeParams": [],
@@ -41,18 +41,18 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:32",
+      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:37",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:32",
+      "projectEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:37",
       "leads": [
         "project relationship: NOT-ENFORCED"
       ],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "project relationship: NOT-ENFORCED",
-      "evidence": "src/modules/build/agent-pulse/agent-pulse.controller.ts:27",
+      "evidence": "src/modules/build/agent-pulse/agent-pulse.controller.ts:39",
       "reviewedEvidence": null
     },
     {
@@ -60,7 +60,7 @@
       "file": "src/modules/build/agent-pulse/agent-pulse.controller.ts",
       "class": "AgentPulseController",
       "method": "badge",
-      "line": 36,
+      "line": 51,
       "verb": "GET",
       "path": "/build/agent-pulse/badge",
       "routeParams": [],
@@ -84,7 +84,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:256",
+      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:246",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "N/A (no project-owned resource)",
@@ -93,7 +93,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/agent-pulse/agent-pulse.controller.ts:36",
+      "evidence": "src/modules/build/agent-pulse/agent-pulse.controller.ts:51",
       "reviewedEvidence": null
     },
     {
@@ -101,7 +101,7 @@
       "file": "src/modules/build/agent-pulse/agent-pulse.controller.ts",
       "class": "AgentPulseController",
       "method": "applyDraft",
-      "line": 44,
+      "line": 62,
       "verb": "POST",
       "path": "/build/agent-pulse/proposals/:draftId/apply",
       "routeParams": [
@@ -123,24 +123,24 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.svc.applyDraft(u.orgId, u.userId, actingMembershipId(u.principal), draftId)",
+        "call": "this.svc.applyDraft(u, draftId)",
         "type": "AgentPulseService",
         "file": "src/modules/build/agent-pulse/agent-pulse.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:209",
+      "orgEvidence": "src/modules/build/agent-pulse/agent-pulse.service.ts:214",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "N/A (no project-owned resource)",
-      "projectEvidence": null,
+      "projectRelationship": "ENFORCED (resolveProjectReach)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:374",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/agent-pulse/agent-pulse.controller.ts:44",
+      "evidence": "src/modules/build/agent-pulse/agent-pulse.controller.ts:62",
       "reviewedEvidence": null
     },
     {
@@ -618,9 +618,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:62",
+      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:65",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:62",
+      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:65",
       "projectRelationship": "ENFORCED (assertProjectAccess)",
       "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:158",
       "leads": [],
@@ -631,7 +631,7 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
-          "line": 68,
+          "line": 71,
           "note": "binds the change request to id+orgId+projectId; 404 on mismatch"
         },
         {
@@ -676,9 +676,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:111",
+      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:114",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:111",
+      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:114",
       "projectRelationship": "ENFORCED (assertProjectAccess)",
       "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:158",
       "leads": [],
@@ -689,12 +689,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
-          "line": 118,
+          "line": 121,
           "note": "binds the change request to id+orgId+projectId; 404 on mismatch"
         },
         {
           "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
-          "line": 125,
+          "line": 129,
           "note": "explicit compare: the body-supplied ticketId must belong to this exact project too"
         }
       ]
@@ -736,9 +736,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:163",
+      "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:167",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:163",
+      "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:167",
       "projectRelationship": "ENFORCED (assertProjectAccess)",
       "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:158",
       "leads": [],
@@ -751,12 +751,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
-          "line": 170,
+          "line": 174,
           "note": "binds the change request to id+orgId+projectId; 404 on mismatch"
         },
         {
           "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
-          "line": 179,
+          "line": 183,
           "note": "the affected-item lookup re-binds changeRequestId, itself already proven project-scoped"
         }
       ]
@@ -1216,11 +1216,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:177",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:180",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:178",
+      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:181",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -1302,11 +1302,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:155",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:172",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:156",
+      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:173",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -1347,11 +1347,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:200",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:189",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (client portal grant)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:207",
+      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:196",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -1750,11 +1750,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:27",
+      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:50",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:27",
+      "projectEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:50",
       "leads": [
         "project relationship: NOT-ENFORCED"
       ],
@@ -1791,17 +1791,17 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.svc.upsert(u.orgId, actingMembershipId(u.principal), u.userId, ticketId, body)",
+        "call": "this.svc.upsert(u, ticketId, body)",
         "type": "CommentDraftsService",
         "file": "src/modules/build/comment-drafts/comment-drafts.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:100",
+      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:123",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "N/A (no project-owned resource)",
-      "projectEvidence": null,
+      "projectRelationship": "ENFORCED (assertTicketReadAccess)",
+      "projectEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:41",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1838,17 +1838,17 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.generator.generate(u.orgId, actingMembershipId(u.principal), u.userId, ticketId)",
+        "call": "this.generator.generate(u, ticketId)",
         "type": "CommentDraftGeneratorService",
         "file": "src/modules/build/comment-drafts/comment-draft-generator.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/comment-drafts/comment-draft-generator.service.ts:37",
+      "orgEvidence": "src/modules/build/comment-drafts/comment-draft-generator.service.ts:39",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "N/A (no project-owned resource)",
-      "projectEvidence": null,
+      "projectRelationship": "ENFORCED (assertTicketReadAccess)",
+      "projectEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:41",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1863,7 +1863,7 @@
       "file": "src/modules/build/comment-drafts/comment-drafts.controller.ts",
       "class": "CommentDraftsController",
       "method": "recordFailure",
-      "line": 90,
+      "line": 85,
       "verb": "POST",
       "path": "/build/comment-drafts/:draftId/failures",
       "routeParams": [
@@ -1891,7 +1891,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:256",
+      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:266",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "N/A (no project-owned resource)",
@@ -1902,7 +1902,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:90",
+      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:85",
       "reviewedEvidence": null
     },
     {
@@ -1910,7 +1910,7 @@
       "file": "src/modules/build/comment-drafts/comment-drafts.controller.ts",
       "class": "CommentDraftsController",
       "method": "deleteAll",
-      "line": 108,
+      "line": 103,
       "verb": "DELETE",
       "path": "/build/comment-drafts/mine",
       "routeParams": [],
@@ -1934,7 +1934,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:190",
+      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:200",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "N/A (no project-owned resource)",
@@ -1945,7 +1945,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:108",
+      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:103",
       "reviewedEvidence": null
     },
     {
@@ -1953,7 +1953,7 @@
       "file": "src/modules/build/comment-drafts/comment-drafts.controller.ts",
       "class": "CommentDraftsController",
       "method": "deleteByTicket",
-      "line": 116,
+      "line": 111,
       "verb": "DELETE",
       "path": "/build/comment-drafts/tickets/:ticketId",
       "routeParams": [
@@ -1981,7 +1981,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:172",
+      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:182",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "N/A (no project-owned resource)",
@@ -1992,7 +1992,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:116",
+      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:111",
       "reviewedEvidence": null
     },
     {
@@ -2000,7 +2000,7 @@
       "file": "src/modules/build/comment-drafts/comment-drafts.controller.ts",
       "class": "CommentDraftsController",
       "method": "deleteOne",
-      "line": 128,
+      "line": 123,
       "verb": "DELETE",
       "path": "/build/comment-drafts/:draftId",
       "routeParams": [
@@ -2028,7 +2028,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:139",
+      "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:149",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "N/A (no project-owned resource)",
@@ -2039,7 +2039,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:128",
+      "evidence": "src/modules/build/comment-drafts/comment-drafts.controller.ts:123",
       "reviewedEvidence": null
     },
     {
@@ -2075,17 +2075,15 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/activity/projects-activity-feed.service.ts:46",
+      "orgEvidence": "src/modules/build/core/activity/projects-activity-feed.service.ts:51",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/core/activity/projects-activity-feed.service.ts:52",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/core/activity/projects-activity-feed.controller.ts:31",
       "reviewedEvidence": null
     },
@@ -4210,19 +4208,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/project-crud/projects-restore.service.ts:30",
+      "orgEvidence": "src/modules/build/core/project-crud/projects-restore.service.ts:33",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/core/project-crud/projects-restore.service.ts:30",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "projectRelationship": "ENFORCED (assertCanDeleteProject)",
+      "projectEvidence": "src/modules/build/core/project-crud/projects-restore.service.ts:37",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/core/project-crud/projects-by-id.controller.ts:79",
       "reviewedEvidence": null
     },
@@ -4452,7 +4448,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/project-crud/projects-restore.service.ts:124",
+      "orgEvidence": "src/modules/build/core/project-crud/projects-restore.service.ts:128",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "N/A (no project-owned resource)",
@@ -6263,17 +6259,15 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:68",
+      "orgEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:73",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:68",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/core/settings/projects-retention-settings.controller.ts:37",
       "reviewedEvidence": null
     },
@@ -6310,19 +6304,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:109",
+      "orgEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:108",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:109",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/core/settings/projects-retention-settings.controller.ts:48",
       "reviewedEvidence": null
     },
@@ -6359,19 +6351,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:178",
+      "orgEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:171",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/core/settings/projects-retention-settings.service.ts:178",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/core/settings/projects-retention-settings.controller.ts:60",
       "reviewedEvidence": null
     },
@@ -6402,23 +6392,21 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.service.getSettings(u.orgId, projectId)",
+        "call": "this.service.getSettings(u, projectId)",
         "type": "ProjectsSettingsIterationsService",
         "file": "src/modules/build/core/settings/projects-settings-iterations.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/settings/projects-settings-iterations.service.ts:23",
+      "orgEvidence": "src/modules/build/core/settings/projects-settings-iterations.service.ts:28",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/core/settings/projects-settings-iterations.service.ts:24",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/core/settings/projects-settings-iterations.controller.ts:36",
       "reviewedEvidence": null
     },
@@ -6449,25 +6437,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.service.updateSettings(u.orgId, projectId, body)",
+        "call": "this.service.updateSettings(u, projectId, body)",
         "type": "ProjectsSettingsIterationsService",
         "file": "src/modules/build/core/settings/projects-settings-iterations.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/settings/projects-settings-iterations.service.ts:38",
+      "orgEvidence": "src/modules/build/core/settings/projects-settings-iterations.service.ts:44",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/core/settings/projects-settings-iterations.service.ts:43",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/core/settings/projects-settings-iterations.controller.ts:47",
       "reviewedEvidence": null
     },
@@ -9155,17 +9141,17 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/tickets/apply-ticket-change.ts",
-          "line": 238,
+          "line": 239,
           "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/tickets/apply-ticket-change.ts",
-          "line": 308,
+          "line": 309,
           "note": "decideTicketChange in project-access decides the lock-only arm; only a system-job principal covering build:tickets:update receives rowScoped=false"
         },
         {
           "file": "src/modules/build/core/tickets/apply-ticket-change.ts",
-          "line": 311,
+          "line": 312,
           "note": "for every human actor, canonical record-level mutation authorization runs inside the transaction"
         }
       ]
@@ -10005,23 +9991,21 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.cycles.listCycles(u.orgId, projectId, query)",
+        "call": "this.cycles.listCycles(u, projectId, query)",
         "type": "CyclesService",
         "file": "src/modules/build/execution/cycles.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/cycles.service.ts:41",
+      "orgEvidence": "src/modules/build/execution/cycles.service.ts:47",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/cycles.service.ts:42",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/iterations.controller.ts:158",
       "reviewedEvidence": null
     },
@@ -10052,23 +10036,21 @@
       "idempotent": "@Idempotent(\"build.cycle.create\")",
       "mutating": true,
       "service": {
-        "call": "this.cycles.createCycle(u.orgId, u.userId, projectId, body)",
+        "call": "this.cycles.createCycle(u, projectId, body)",
         "type": "CyclesService",
         "file": "src/modules/build/execution/cycles.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/cycles.service.ts:138",
+      "orgEvidence": "src/modules/build/execution/cycles.service.ts:145",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/cycles.service.ts:144",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/execution/cycles.service.ts:150",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/iterations.controller.ts:170",
       "reviewedEvidence": null
     },
@@ -10101,25 +10083,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.cycles.updateCycle(u.orgId, projectId, cycleId, body)",
+        "call": "this.cycles.updateCycle(u, projectId, cycleId, body)",
         "type": "CyclesService",
         "file": "src/modules/build/execution/cycles.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/cycles.service.ts:202",
+      "orgEvidence": "src/modules/build/execution/cycles.service.ts:209",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/cycles.service.ts:202",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/cycles.service.ts:208",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "parentEvidence": "src/modules/build/execution/cycles.service.ts:209",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/execution/cycles.service.ts:215",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/cycles/:cycleId. CyclesService.updateCycle(orgId, projectId, cycleId, input) confirms the project exists in this org, then the actual UPDATE's WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly — the mutation itself, not just a pre-check, requires the cycle to belong to the named project.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:184",
       "reviewedEvidence": [
         {
@@ -10129,12 +10109,12 @@
         },
         {
           "file": "src/modules/build/execution/cycles.service.ts",
-          "line": 202,
+          "line": 209,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/cycles.service.ts",
-          "line": 247,
+          "line": 255,
           "note": "UPDATE's own WHERE binds id+projectId+orgId"
         }
       ]
@@ -10168,25 +10148,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.cycles.deleteCycle(u.orgId, projectId, cycleId)",
+        "call": "this.cycles.deleteCycle(u, projectId, cycleId)",
         "type": "CyclesService",
         "file": "src/modules/build/execution/cycles.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/cycles.service.ts:281",
+      "orgEvidence": "src/modules/build/execution/cycles.service.ts:289",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/cycles.service.ts:281",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/cycles.service.ts:282",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "parentEvidence": "src/modules/build/execution/cycles.service.ts:289",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/execution/cycles.service.ts:290",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/cycles/:cycleId. Same shape as updateCycle: CyclesService.deleteCycle(orgId, projectId, cycleId) confirms the project exists in this org, then the DELETE's own WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly, 404ing if zero rows are removed.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:197",
       "reviewedEvidence": [
         {
@@ -10196,12 +10174,12 @@
         },
         {
           "file": "src/modules/build/execution/cycles.service.ts",
-          "line": 281,
+          "line": 289,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/cycles.service.ts",
-          "line": 290,
+          "line": 299,
           "note": "DELETE's own WHERE binds id+projectId+orgId"
         }
       ]
@@ -10233,23 +10211,21 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.modules.listModules(u.orgId, projectId, query)",
+        "call": "this.modules.listModules(u, projectId, query)",
         "type": "ModulesService",
         "file": "src/modules/build/execution/modules.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:30",
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:36",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/modules.service.ts:35",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/iterations.controller.ts:217",
       "reviewedEvidence": null
     },
@@ -10280,25 +10256,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.modules.createModule(u.orgId, u.userId, projectId, body)",
+        "call": "this.modules.createModule(u, projectId, body)",
         "type": "ModulesService",
         "file": "src/modules/build/execution/modules.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:120",
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:127",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/modules.service.ts:128",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/execution/modules.service.ts:134",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/iterations.controller.ts:229",
       "reviewedEvidence": null
     },
@@ -10331,30 +10305,28 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.modules.updateModule(u.orgId, projectId, moduleId, body)",
+        "call": "this.modules.updateModule(u, projectId, moduleId, body)",
         "type": "ModulesService",
         "file": "src/modules/build/execution/modules.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:173",
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:180",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/modules.service.ts:173",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/execution/modules.service.ts:173",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/execution/modules.service.ts:180",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/execution/modules.service.ts:186",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed CLOSED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "CLOSED",
+      "verdictReason": "PATCH /build/:projectId/modules/:moduleId. No @Param(\"projectId\"); the UPDATE binds (id, orgId).",
       "evidence": "src/modules/build/execution/iterations.controller.ts:242",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/modules.service.ts",
-          "line": 180,
+          "line": 189,
           "note": "bound to the URL project"
         }
       ]
@@ -10388,30 +10360,28 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.modules.deleteModule(u.orgId, projectId, moduleId)",
+        "call": "this.modules.deleteModule(u, projectId, moduleId)",
         "type": "ModulesService",
         "file": "src/modules/build/execution/modules.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:207",
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:216",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/modules.service.ts:207",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/execution/modules.service.ts:207",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/execution/modules.service.ts:216",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/execution/modules.service.ts:217",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed CLOSED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "CLOSED",
+      "verdictReason": "DELETE /build/:projectId/modules/:moduleId. No @Param(\"projectId\"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).",
       "evidence": "src/modules/build/execution/iterations.controller.ts:255",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/modules.service.ts",
-          "line": 215,
+          "line": 226,
           "note": "bound to the URL project"
         }
       ]
@@ -10443,23 +10413,21 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.epics.listEpics(u.orgId, projectId, query)",
+        "call": "this.epics.listEpics(u, projectId, query)",
         "type": "EpicsService",
         "file": "src/modules/build/execution/epics.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/epics.service.ts:30",
+      "orgEvidence": "src/modules/build/execution/epics.service.ts:39",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/epics.service.ts:31",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/iterations.controller.ts:275",
       "reviewedEvidence": null
     },
@@ -10490,26 +10458,25 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.epics.createEpic(u.orgId, u.userId, projectId, body)",
+        "call": "this.epics.createEpic(u, projectId, body)",
         "type": "EpicsService",
         "file": "src/modules/build/execution/epics.service.ts",
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/execution/epics.service.ts:107",
+      "orgEvidence": "src/modules/build/execution/epics.service.ts:117",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/epics.service.ts:108",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/execution/epics.service.ts:118",
       "leads": [
-        "org scoping: PASSED-UNBOUND",
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
+        "org scoping: PASSED-UNBOUND"
       ],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/epics. Assert-enforced with the weaker assert. The INSERT stamps orgId as a value; the predicate form lives in assertProjectInOrg, which binds project id AND org id on one row and 404s a soft-deleted or foreign project before any write. reporterId is taken from the authenticated actor, so authorship cannot be forged. Tenant isolation holds. What does NOT hold is intra-org project scope: assertProjectInOrg checks that the project belongs to the caller's org, not that the caller belongs to the project, so any holder of build:tickets:create in the org can create an epic in any project in that org.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:287",
       "reviewedEvidence": [
         {
@@ -10519,12 +10486,12 @@
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 107,
+          "line": 117,
           "note": "the service takes orgId and projectId, never a client-supplied tenant"
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 110,
+          "line": 121,
           "note": "the INSERT writes the tenant as a value, which constrains nothing on its own"
         },
         {
@@ -10568,25 +10535,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.epics.updateEpic(u.orgId, projectId, epicId, body)",
+        "call": "this.epics.updateEpic(u, projectId, epicId, body)",
         "type": "EpicsService",
         "file": "src/modules/build/execution/epics.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/epics.service.ts:129",
+      "orgEvidence": "src/modules/build/execution/epics.service.ts:140",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/epics.service.ts:129",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/execution/epics.service.ts:129",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/execution/epics.service.ts:140",
+      "projectRelationship": "ENFORCED (resolveProjectAccess)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:317",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/epics/:epicId. EpicsService.updateEpic(orgId, projectId, epicId, input) runs the UPDATE directly with WHERE `eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, \"EPIC\")` — the mutation itself binds the epic to the named project, no separate pre-check needed.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:300",
       "reviewedEvidence": [
         {
@@ -10596,12 +10561,12 @@
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 129,
+          "line": 140,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 131,
+          "line": 142,
           "note": "UPDATE's own WHERE binds id+orgId+projectId+type"
         }
       ]
@@ -10635,25 +10600,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.epics.deleteEpic(u.orgId, projectId, epicId)",
+        "call": "this.epics.deleteEpic(u, projectId, epicId)",
         "type": "EpicsService",
         "file": "src/modules/build/execution/epics.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/epics.service.ts:159",
+      "orgEvidence": "src/modules/build/execution/epics.service.ts:174",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/epics.service.ts:159",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/execution/epics.service.ts:159",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/execution/epics.service.ts:174",
+      "projectRelationship": "ENFORCED (authorizeTicketMutation)",
+      "projectEvidence": "src/modules/build/execution/epics.service.ts:196",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).",
       "evidence": "src/modules/build/execution/iterations.controller.ts:313",
       "reviewedEvidence": [
         {
@@ -10663,12 +10626,12 @@
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 159,
+          "line": 174,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 131,
+          "line": 142,
           "note": "existence check binds id+orgId+projectId+type; 404 on mismatch"
         }
       ]
@@ -11150,16 +11113,14 @@
       "orgEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts:40",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts:40",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboard-board-helpers.ts:47",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/whiteboards/:whiteboardId/sharing. WhiteboardSharingService.updateSharing(u, projectId, whiteboardId, input) opens with requireWhiteboardManageAccess(db, access, u, projectId, whiteboardId), whose SELECT WHERE binds `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)` together and 404s on mismatch, before the sharing settings are updated by the already-verified id+orgId.",
       "evidence": "src/modules/build/execution/whiteboard-sharing.controller.ts:57",
       "reviewedEvidence": [
         {
@@ -11217,16 +11178,14 @@
       "orgEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts:79",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts:79",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboard-board-helpers.ts:47",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token. Same requireWhiteboardManageAccess binding as updateSharing (id+projectId+orgId, 404 on mismatch) before the share token is rotated by the already-verified id+orgId.",
       "evidence": "src/modules/build/execution/whiteboard-sharing.controller.ts:70",
       "reviewedEvidence": [
         {
@@ -11279,16 +11238,14 @@
       "orgEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts:102",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts:102",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboard-board-helpers.ts:47",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "PUT /build/:projectId/whiteboards/:whiteboardId/shares. Same requireWhiteboardManageAccess binding (id+projectId+orgId, 404 on mismatch) before the whiteboard's share rows are replaced; the replace transaction itself is scoped to the already-verified whiteboardId.",
       "evidence": "src/modules/build/execution/whiteboard-sharing.controller.ts:84",
       "reviewedEvidence": [
         {
@@ -11343,16 +11300,14 @@
       "orgEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts:168",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts:168",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboard-board-helpers.ts:47",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId. Same requireWhiteboardManageAccess binding (id+projectId+orgId, 404 on mismatch) before the share row for targetUserId is removed; the DELETE itself is scoped to the already-verified whiteboardId and to a membership subquery scoped to u.orgId.",
       "evidence": "src/modules/build/execution/whiteboard-sharing.controller.ts:97",
       "reviewedEvidence": [
         {
@@ -11502,23 +11457,21 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.capacityService.capacity(u.orgId, projectId, start, end, query.teamId)",
+        "call": "this.capacityService.capacity(u, projectId, start, end, query.teamId)",
         "type": "WorkloadCapacityService",
         "file": "src/modules/build/execution/workload-capacity.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/workload-capacity.service.ts:23",
+      "orgEvidence": "src/modules/build/execution/workload-capacity.service.ts:28",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/workload-capacity.service.ts:24",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/workload-capacity.controller.ts:40",
       "reviewedEvidence": null
     },
@@ -12430,17 +12383,15 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:196",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:207",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:196",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "projectRelationship": "ENFORCED (resolveProjectsScope)",
+      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:208",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/workspace.controller.ts:306",
       "reviewedEvidence": null
     },
@@ -12477,17 +12428,15 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:116",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:126",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:117",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/workspace.controller.ts:320",
       "reviewedEvidence": null
     },
@@ -12524,19 +12473,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:250",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:271",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:255",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg)",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/execution/workspace.controller.ts:332",
       "reviewedEvidence": null
     },
@@ -12575,17 +12522,15 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:242",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:264",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:242",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:243",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:264",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/whiteboards/:whiteboardId. WhiteboardsService.getWhiteboard(u, projectId, whiteboardId) confirms the project exists in this org, then loadBoardWithAccess's SELECT WHERE binds `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)` together and throws NotFoundException on mismatch, before the DTO is built.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:345",
       "reviewedEvidence": [
         {
@@ -12595,12 +12540,12 @@
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 242,
+          "line": 264,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 74,
+          "line": 82,
           "note": "private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch"
         }
       ]
@@ -12640,19 +12585,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:269",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:290",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:269",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:275",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:290",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/whiteboards/:whiteboardId. WhiteboardsService.updateWhiteboard(u, projectId, whiteboardId, input) calls loadBoardWithAccess (id+projectId+orgId, 404 on mismatch) for the access-level check, and the subsequent UPDATE independently repeats the identical binding in its own WHERE: `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)`.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:357",
       "reviewedEvidence": [
         {
@@ -12662,12 +12605,12 @@
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 269,
+          "line": 290,
           "note": "signature"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 293,
+          "line": 313,
           "note": "the UPDATE's own WHERE re-binds id+projectId+orgId"
         }
       ]
@@ -12707,19 +12650,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:306",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:326",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:306",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:307",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:326",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/whiteboards/:whiteboardId. Same shape as updateWhiteboard: deleteWhiteboard(u, projectId, whiteboardId) calls loadBoardWithAccess (id+projectId+orgId, 404 on mismatch), and the soft-delete UPDATE independently repeats the identical id+projectId+orgId binding in its own WHERE.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:370",
       "reviewedEvidence": [
         {
@@ -12729,12 +12670,12 @@
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 306,
+          "line": 326,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 320,
+          "line": 313,
           "note": "the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId"
         }
       ]
@@ -12774,19 +12715,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:337",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:356",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:337",
-      "projectRelationship": "TENANT-ONLY (assertProjectInOrg)",
-      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:338",
-      "leads": [
-        "project relationship: TENANT-ONLY (assertProjectInOrg)"
-      ],
+      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:356",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/whiteboards/:whiteboardId/restore. restoreWhiteboard resolves the project under the caller's org, binds the board to id+projectId+orgId, and requires manage access on the board before the restoring UPDATE, which binds the same three columns.",
       "evidence": "src/modules/build/execution/workspace.controller.ts:383",
       "reviewedEvidence": [
         {
@@ -12796,17 +12735,17 @@
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 338,
-          "note": "the URL project is resolved under the caller's org"
+          "line": 357,
+          "note": "the URL project is resolved through the project-access decision, which 404s a project outside the caller's org"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 342,
+          "line": 340,
           "note": "the board lookup binds the URL project"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 355,
+          "line": 375,
           "note": "board manage access is required"
         }
       ]
@@ -15343,25 +15282,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.svc.createItem(u.orgId, u.userId, projectId, meetingId, body)",
+        "call": "this.svc.createItem(u, projectId, meetingId, body)",
         "type": "ActionItemsService",
         "file": "src/modules/build/meetings/action-items.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/action-items.service.ts:55",
+      "orgEvidence": "src/modules/build/meetings/action-items.service.ts:61",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/action-items.service.ts:55",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:55",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/meetings/action-items.service.ts:61",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:34",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/meetings/:meetingId/action-items. createItem calls assertMeeting(orgId, projectId, meetingId), whose WHERE binds id=meetingId AND orgId AND projectId, before inserting the action item. A meetingId belonging to another project 404s before any row is written.",
       "evidence": "src/modules/build/meetings/action-items.controller.ts:39",
       "reviewedEvidence": [
         {
@@ -15371,12 +15308,12 @@
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 62,
+          "line": 67,
           "note": "createItem binds via assertMeeting before inserting"
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 34,
+          "line": 40,
           "note": "assertMeeting's WHERE binds meetingId to projectId and orgId together"
         }
       ]
@@ -15412,25 +15349,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.svc.updateItem(u.orgId, u.userId, projectId, meetingId, itemId, body)",
+        "call": "this.svc.updateItem(u, projectId, meetingId, itemId, body)",
         "type": "ActionItemsService",
         "file": "src/modules/build/meetings/action-items.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/action-items.service.ts:88",
+      "orgEvidence": "src/modules/build/meetings/action-items.service.ts:94",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/action-items.service.ts:88",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:88",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/meetings/action-items.service.ts:94",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:34",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/meetings/:meetingId/action-items/:itemId — three route params. updateItem binds all three: assertMeeting(orgId, projectId, meetingId) confirms the meeting belongs to the project, then loadItem(orgId, meetingId, itemId) confirms the item belongs to that meeting and org (404 otherwise). The final UPDATE's WHERE only re-checks id+orgId (not meetingId), but that is safe: loadItem already proved this exact primary-key row belongs to the named meeting, meetingId is never reassigned by any other endpoint in this file, and the UPDATE targets the row by its immutable primary key — so it can only ever touch the row already confirmed to be under the right parent.",
       "evidence": "src/modules/build/meetings/action-items.controller.ts:53",
       "reviewedEvidence": [
         {
@@ -15440,17 +15375,17 @@
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 96,
+          "line": 101,
           "note": "binds meetingId to projectId via assertMeeting"
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 97,
+          "line": 103,
           "note": "binds itemId to meetingId via loadItem before patching"
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 107,
+          "line": 113,
           "note": "UPDATE targets the already-verified row by primary key id + orgId"
         }
       ]
@@ -15486,25 +15421,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.svc.deleteItem(u.orgId, u.userId, projectId, meetingId, itemId)",
+        "call": "this.svc.deleteItem(u, projectId, meetingId, itemId)",
         "type": "ActionItemsService",
         "file": "src/modules/build/meetings/action-items.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/action-items.service.ts:121",
+      "orgEvidence": "src/modules/build/meetings/action-items.service.ts:127",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/action-items.service.ts:121",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:121",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/meetings/action-items.service.ts:127",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:34",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/meetings/:meetingId/action-items/:itemId. Same binding shape as updateItem: assertMeeting(orgId, projectId, meetingId) then loadItem(orgId, meetingId, itemId) 404s a foreign itemId or meetingId before the soft-delete UPDATE runs, which targets the already-verified row by primary key.",
       "evidence": "src/modules/build/meetings/action-items.controller.ts:67",
       "reviewedEvidence": [
         {
@@ -15514,17 +15447,17 @@
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 122,
+          "line": 128,
           "note": "binds meetingId to projectId via assertMeeting"
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 123,
+          "line": 130,
           "note": "binds itemId to meetingId via loadItem before deleting"
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 127,
+          "line": 134,
           "note": "soft-delete UPDATE targets the already-verified row by primary key id + orgId"
         }
       ]
@@ -15560,25 +15493,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.svc.convertToTask(u.orgId, u.userId, projectId, meetingId, itemId)",
+        "call": "this.svc.convertToTask(u, projectId, meetingId, itemId)",
         "type": "ActionItemsService",
         "file": "src/modules/build/meetings/action-items.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/action-items.service.ts:138",
+      "orgEvidence": "src/modules/build/meetings/action-items.service.ts:145",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/action-items.service.ts:138",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:138",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/meetings/action-items.service.ts:145",
+      "projectRelationship": "ENFORCED (assertProjectAccess)",
+      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:146",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task. convertToTask does its own inline binding inside one transaction: it looks up the meeting by id/org/project (404 otherwise), then the action item by id/org/meetingId (404 otherwise), and only then creates the ticket and updates the action item row (WHERE id=itemId AND orgId, targeting the row already proven to belong to the right meeting/project in the same transaction).",
       "evidence": "src/modules/build/meetings/action-items.controller.ts:81",
       "reviewedEvidence": [
         {
@@ -15588,17 +15519,17 @@
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 145,
+          "line": 156,
           "note": "inline meeting lookup binds meetingId to projectId and orgId"
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 156,
+          "line": 167,
           "note": "inline item lookup binds itemId to meetingId and orgId"
         },
         {
           "file": "src/modules/build/meetings/action-items.service.ts",
-          "line": 185,
+          "line": 196,
           "note": "final UPDATE targets the already-verified row by primary key id + orgId, inside the same transaction"
         }
       ]
@@ -15744,11 +15675,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:235",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:250",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:236",
+      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:251",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15793,11 +15724,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:311",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:326",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:311",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:326",
       "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:311",
+      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:326",
       "leads": [
         "project relationship: NOT-ENFORCED"
       ],
@@ -15815,12 +15746,12 @@
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 318,
+          "line": 333,
           "note": "binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it"
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 334,
+          "line": 349,
           "note": "UPDATE targets the already-verified row by primary key id + orgId"
         }
       ]
@@ -15860,11 +15791,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:348",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:363",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:348",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:363",
       "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:348",
+      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:363",
       "leads": [
         "project relationship: NOT-ENFORCED"
       ],
@@ -15882,12 +15813,12 @@
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 349,
+          "line": 364,
           "note": "binds meetingId to projectId via loadMeeting; no assertProjectAccess call precedes it"
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 353,
+          "line": 368,
           "note": "soft-delete UPDATE targets the already-verified row by primary key id + orgId"
         }
       ]
@@ -15927,11 +15858,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:364",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:379",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:364",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:379",
       "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:364",
+      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:379",
       "leads": [
         "project relationship: NOT-ENFORCED"
       ],
@@ -15949,12 +15880,12 @@
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 365,
+          "line": 364,
           "note": "binds meetingId to projectId via loadMeeting"
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 369,
+          "line": 384,
           "note": "resolves the attendee to a member of this exact projectId, scoped by orgId, before inserting"
         }
       ]
@@ -15996,11 +15927,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:383",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:398",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:383",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:398",
       "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:383",
+      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:398",
       "leads": [
         "project relationship: NOT-ENFORCED"
       ],
@@ -16018,12 +15949,12 @@
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 384,
+          "line": 380,
           "note": "binds meetingId to projectId via loadMeeting"
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 391,
+          "line": 406,
           "note": "DELETE WHERE clause re-binds orgId alongside meetingId"
         }
       ]
@@ -16063,11 +15994,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:396",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:411",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:396",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:411",
       "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:396",
+      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:411",
       "leads": [
         "project relationship: NOT-ENFORCED"
       ],
@@ -16085,7 +16016,7 @@
         },
         {
           "file": "src/modules/build/meetings/meetings.service.ts",
-          "line": 397,
+          "line": 399,
           "note": "binds meetingId to projectId via loadMeeting before the upsert"
         }
       ]
@@ -16996,7 +16927,7 @@
         },
         {
           "file": "src/modules/build/qa/bugs.service.ts",
-          "line": 351,
+          "line": 341,
           "note": "tickets UPDATE targets the already-verified row by primary key id + orgId"
         }
       ]
@@ -17036,11 +16967,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/bugs.service.ts:335",
+      "orgEvidence": "src/modules/build/qa/bugs.service.ts:325",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/bugs.service.ts:335",
+      "parentEvidence": "src/modules/build/qa/bugs.service.ts:325",
       "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:336",
+      "projectEvidence": "src/modules/build/qa/bugs.service.ts:326",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17056,12 +16987,12 @@
         },
         {
           "file": "src/modules/build/qa/bugs.service.ts",
-          "line": 341,
+          "line": 331,
           "note": "existence check binds bugId to projectId and orgId before deleting"
         },
         {
           "file": "src/modules/build/qa/bugs.service.ts",
-          "line": 351,
+          "line": 341,
           "note": "soft-delete UPDATE targets the already-verified row by primary key id + orgId"
         }
       ]
@@ -18804,11 +18735,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/team-projects.service.ts:24",
+      "orgEvidence": "src/modules/build/teams/team-projects.service.ts:23",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/teams/team-projects.service.ts:24",
+      "projectEvidence": "src/modules/build/teams/team-projects.service.ts:23",
       "leads": [
         "project relationship: NOT-ENFORCED"
       ],
@@ -18845,25 +18776,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.teamProjects.addProject(u.orgId, u.userId, teamId, body.projectId)",
+        "call": "this.teamProjects.addProject(u, teamId, body.projectId)",
         "type": "TeamProjectsService",
         "file": "src/modules/build/teams/team-projects.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/team-projects.service.ts:47",
+      "orgEvidence": "src/modules/build/teams/team-projects.service.ts:46",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/teams/team-projects.service.ts:47",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "projectRelationship": "ENFORCED (assertCanManageProject)",
+      "projectEvidence": "src/modules/build/teams/team-projects.service.ts:49",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED",
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
       "evidence": "src/modules/build/teams/teams.controller.ts:194",
       "reviewedEvidence": null
     },
@@ -18896,25 +18825,23 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.teamProjects.removeProject(u.orgId, u.userId, teamId, projectId)",
+        "call": "this.teamProjects.removeProject(u, teamId, projectId)",
         "type": "TeamProjectsService",
         "file": "src/modules/build/teams/team-projects.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/teams/team-projects.service.ts:85",
+      "orgEvidence": "src/modules/build/teams/team-projects.service.ts:75",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/teams/team-projects.service.ts:85",
-      "projectRelationship": "NOT-ENFORCED",
-      "projectEvidence": "src/modules/build/teams/team-projects.service.ts:85",
-      "leads": [
-        "project relationship: NOT-ENFORCED"
-      ],
+      "parentEvidence": "src/modules/build/teams/team-projects.service.ts:75",
+      "projectRelationship": "ENFORCED (assertCanManageProject)",
+      "projectEvidence": "src/modules/build/teams/team-projects.service.ts:78",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/teams/:teamId/projects/:projectId. removeProject calls teams.loadTeam(orgId, teamId), whose WHERE binds id=teamId AND orgId (404 on a foreign teamId), then deletes the assignment row scoped by teamId+projectId+orgId. Because teamId is already proven to belong to this org and orgId is repeated on the delete, a projectId belonging to another team/org simply matches zero rows.",
       "evidence": "src/modules/build/teams/teams.controller.ts:207",
       "reviewedEvidence": [
         {
@@ -18924,12 +18851,12 @@
         },
         {
           "file": "src/modules/build/teams/team-projects.service.ts",
-          "line": 91,
+          "line": 77,
           "note": "binds teamId to orgId via loadTeam before deleting"
         },
         {
           "file": "src/modules/build/teams/team-projects.service.ts",
-          "line": 97,
+          "line": 84,
           "note": "DELETE WHERE clause scopes to teamId + projectId + orgId together"
         }
       ]

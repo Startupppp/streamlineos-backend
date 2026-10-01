@@ -10,9 +10,9 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 53 controller files, 
 | --- | --- |
 | VULNERABLE | 0 |
 | CLOSED-IN-FLIGHT | 0 |
-| NEEDS-REVIEW | 81 |
-| CLOSED | 35 |
-| VERIFIED | 238 |
+| NEEDS-REVIEW | 44 |
+| CLOSED | 37 |
+| VERIFIED | 273 |
 | **total** | **354** |
 
 ## How to read a verdict
@@ -476,9 +476,9 @@ Blast radius: None: tenant, route binding, project membership, and ticket record
 
 Evidence:
 
-- `src/modules/build/core/tickets/apply-ticket-change.ts:238` — bound to the URL project
-- `src/modules/build/core/tickets/apply-ticket-change.ts:308` — decideTicketChange in project-access decides the lock-only arm; only a system-job principal covering build:tickets:update receives rowScoped=false
-- `src/modules/build/core/tickets/apply-ticket-change.ts:311` — for every human actor, canonical record-level mutation authorization runs inside the transaction
+- `src/modules/build/core/tickets/apply-ticket-change.ts:239` — bound to the URL project
+- `src/modules/build/core/tickets/apply-ticket-change.ts:309` — decideTicketChange in project-access decides the lock-only arm; only a system-job principal covering build:tickets:update receives rowScoped=false
+- `src/modules/build/core/tickets/apply-ticket-change.ts:312` — for every human actor, canonical record-level mutation authorization runs inside the transaction
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId`
 
@@ -496,6 +496,34 @@ Evidence:
 - `src/modules/build/core/tickets/projects-tickets-delete.service.ts:40` — the terminal service accepts CurrentUserContext
 - `src/modules/build/core/tickets/projects-tickets-delete.service.ts:47` — canonical ticket authorization runs before the pre-read and delete path
 - `src/modules/build/core/project-crud/project-access.ts:416` — project membership and ticket DataScope are both enforced
+
+### CLOSED — `PATCH /build/:projectId/modules/:moduleId`
+
+`ModulesController.updateModule` — `src/modules/build/execution/iterations.controller.ts:242`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/modules/:moduleId. No @Param("projectId"); the UPDATE binds (id, orgId).
+
+Blast radius: Intra-tenant cross-project write.
+
+Evidence:
+
+- `src/modules/build/execution/modules.service.ts:189` — bound to the URL project
+
+### CLOSED — `DELETE /build/:projectId/modules/:moduleId`
+
+`ModulesController.deleteModule` — `src/modules/build/execution/iterations.controller.ts:255`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/modules/:moduleId. No @Param("projectId"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).
+
+Blast radius: Intra-tenant cross-project delete, with a side effect on every ticket referencing the module.
+
+Evidence:
+
+- `src/modules/build/execution/modules.service.ts:226` — bound to the URL project
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/time-entries`
 
@@ -640,7 +668,7 @@ DELETE /build/:projectId/approvals/:approvalId. ApprovalsService.softDeleteAppro
 
 GET /build/:projectId/change-requests/:changeRequestId/affected-tickets. ChangeRequestAffectedItemsService.listAffectedTickets opens with ChangeRequestsService.getChangeRequest(u, projectId, changeRequestId), which asserts project access and binds the change request row to id+orgId+projectId, 404 otherwise. Only after that does it query changeRequestAffectedItems, itself filtered by orgId+changeRequestId — a changeRequestId already proven to belong to this exact project.
 
-- `src/modules/build/client-portal/change-request-affected-items.service.ts:68` — binds the change request to id+orgId+projectId; 404 on mismatch
+- `src/modules/build/client-portal/change-request-affected-items.service.ts:71` — binds the change request to id+orgId+projectId; 404 on mismatch
 - `src/modules/build/client-portal/change-requests.service.ts:166` — getChangeRequest's own WHERE re-binds projectId
 
 ### VERIFIED — `POST /build/:projectId/change-requests/:changeRequestId/affected-tickets`
@@ -649,8 +677,8 @@ GET /build/:projectId/change-requests/:changeRequestId/affected-tickets. ChangeR
 
 POST /build/:projectId/change-requests/:changeRequestId/affected-tickets. Same getChangeRequest binding as listAffectedTickets, plus a second parent check: the target ticket (from the body, not the URL) is looked up by id+orgId and its own projectId is compared against the URL's projectId (`ticket.projectId !== projectId`), 404 on mismatch — so a caller cannot link a ticket from a different project into this change request either.
 
-- `src/modules/build/client-portal/change-request-affected-items.service.ts:118` — binds the change request to id+orgId+projectId; 404 on mismatch
-- `src/modules/build/client-portal/change-request-affected-items.service.ts:125` — explicit compare: the body-supplied ticketId must belong to this exact project too
+- `src/modules/build/client-portal/change-request-affected-items.service.ts:121` — binds the change request to id+orgId+projectId; 404 on mismatch
+- `src/modules/build/client-portal/change-request-affected-items.service.ts:129` — explicit compare: the body-supplied ticketId must belong to this exact project too
 
 ### VERIFIED — `DELETE /build/:projectId/change-requests/:changeRequestId/affected-tickets/:affectedItemId`
 
@@ -658,8 +686,8 @@ POST /build/:projectId/change-requests/:changeRequestId/affected-tickets. Same g
 
 DELETE /build/:projectId/change-requests/:changeRequestId/affected-tickets/:affectedItemId. Same getChangeRequest binding as the other two handlers, then the affected-item row itself is looked up bound to id+orgId+changeRequestId — a changeRequestId already proven to belong to this exact project — before the delete proceeds.
 
-- `src/modules/build/client-portal/change-request-affected-items.service.ts:170` — binds the change request to id+orgId+projectId; 404 on mismatch
-- `src/modules/build/client-portal/change-request-affected-items.service.ts:179` — the affected-item lookup re-binds changeRequestId, itself already proven project-scoped
+- `src/modules/build/client-portal/change-request-affected-items.service.ts:174` — binds the change request to id+orgId+projectId; 404 on mismatch
+- `src/modules/build/client-portal/change-request-affected-items.service.ts:183` — the affected-item lookup re-binds changeRequestId, itself already proven project-scoped
 
 ### VERIFIED — `GET /build/:projectId/change-requests/:changeRequestId`
 
@@ -992,6 +1020,95 @@ POST /build/:projectId/tickets/:ticketId/restore. restoreTicket runs assertTicke
 - `src/modules/build/core/tickets/projects-tickets-restore.service.ts:36` — canonical ticket decision, including deleted rows
 - `src/modules/build/core/tickets/projects-tickets-restore.service.ts:43` — the ticket re-read binds the URL project
 
+### VERIFIED — `PATCH /build/:projectId/cycles/:cycleId`
+
+`CyclesController.updateCycle` — `src/modules/build/execution/iterations.controller.ts:184`
+
+PATCH /build/:projectId/cycles/:cycleId. CyclesService.updateCycle(orgId, projectId, cycleId, input) confirms the project exists in this org, then the actual UPDATE's WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly — the mutation itself, not just a pre-check, requires the cycle to belong to the named project.
+
+- `src/modules/build/execution/iterations.controller.ts:188` — handler binds both projectId and cycleId and forwards both
+- `src/modules/build/execution/cycles.service.ts:209` — signature takes projectId
+- `src/modules/build/execution/cycles.service.ts:255` — UPDATE's own WHERE binds id+projectId+orgId
+
+### VERIFIED — `DELETE /build/:projectId/cycles/:cycleId`
+
+`CyclesController.deleteCycle` — `src/modules/build/execution/iterations.controller.ts:197`
+
+DELETE /build/:projectId/cycles/:cycleId. Same shape as updateCycle: CyclesService.deleteCycle(orgId, projectId, cycleId) confirms the project exists in this org, then the DELETE's own WHERE binds `eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)` directly, 404ing if zero rows are removed.
+
+- `src/modules/build/execution/iterations.controller.ts:202` — handler binds both projectId and cycleId and forwards both
+- `src/modules/build/execution/cycles.service.ts:289` — signature takes projectId
+- `src/modules/build/execution/cycles.service.ts:299` — DELETE's own WHERE binds id+projectId+orgId
+
+### VERIFIED — `POST /build/:projectId/epics`
+
+`EpicsController.createEpic` — `src/modules/build/execution/iterations.controller.ts:287`
+
+POST /build/:projectId/epics. Assert-enforced with the weaker assert. The INSERT stamps orgId as a value; the predicate form lives in assertProjectInOrg, which binds project id AND org id on one row and 404s a soft-deleted or foreign project before any write. reporterId is taken from the authenticated actor, so authorship cannot be forged. Tenant isolation holds. What does NOT hold is intra-org project scope: assertProjectInOrg checks that the project belongs to the caller's org, not that the caller belongs to the project, so any holder of build:tickets:create in the org can create an epic in any project in that org.
+
+- `src/modules/build/execution/iterations.controller.ts:297` — the tenant and actor come from the authenticated context
+- `src/modules/build/execution/epics.service.ts:117` — the service takes orgId and projectId, never a client-supplied tenant
+- `src/modules/build/execution/epics.service.ts:121` — the INSERT writes the tenant as a value, which constrains nothing on its own
+- `src/modules/build/core/project-crud/project-access.ts:30` — assertProjectInOrg binds the project id
+- `src/modules/build/core/project-crud/project-access.ts:31` — and the tenant, in the same conjunction — this is the decisive predicate
+
+### VERIFIED — `PATCH /build/:projectId/epics/:epicId`
+
+`EpicsController.updateEpic` — `src/modules/build/execution/iterations.controller.ts:300`
+
+PATCH /build/:projectId/epics/:epicId. EpicsService.updateEpic(orgId, projectId, epicId, input) runs the UPDATE directly with WHERE `eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, "EPIC")` — the mutation itself binds the epic to the named project, no separate pre-check needed.
+
+- `src/modules/build/execution/iterations.controller.ts:304` — handler binds both projectId and epicId and forwards both
+- `src/modules/build/execution/epics.service.ts:140` — signature takes projectId
+- `src/modules/build/execution/epics.service.ts:142` — UPDATE's own WHERE binds id+orgId+projectId+type
+
+### VERIFIED — `DELETE /build/:projectId/epics/:epicId`
+
+`EpicsController.deleteEpic` — `src/modules/build/execution/iterations.controller.ts:313`
+
+DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).
+
+- `src/modules/build/execution/iterations.controller.ts:318` — handler binds both projectId and epicId and forwards both
+- `src/modules/build/execution/epics.service.ts:174` — signature takes projectId
+- `src/modules/build/execution/epics.service.ts:142` — existence check binds id+orgId+projectId+type; 404 on mismatch
+
+### VERIFIED — `PATCH /build/:projectId/whiteboards/:whiteboardId/sharing`
+
+`WhiteboardSharingController.updateSharing` — `src/modules/build/execution/whiteboard-sharing.controller.ts:57`
+
+PATCH /build/:projectId/whiteboards/:whiteboardId/sharing. WhiteboardSharingService.updateSharing(u, projectId, whiteboardId, input) opens with requireWhiteboardManageAccess(db, access, u, projectId, whiteboardId), whose SELECT WHERE binds `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)` together and 404s on mismatch, before the sharing settings are updated by the already-verified id+orgId.
+
+- `src/modules/build/execution/whiteboard-sharing.controller.ts:61` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboard-sharing.service.ts:46` — binds whiteboardId to this projectId+orgId before any mutation
+- `src/modules/build/execution/whiteboard-board-helpers.ts:40` — signature takes projectId; its WHERE (a few lines below) binds id+projectId+orgId, 404 on mismatch
+
+### VERIFIED — `POST /build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token`
+
+`WhiteboardSharingController.rotateShareToken` — `src/modules/build/execution/whiteboard-sharing.controller.ts:70`
+
+POST /build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token. Same requireWhiteboardManageAccess binding as updateSharing (id+projectId+orgId, 404 on mismatch) before the share token is rotated by the already-verified id+orgId.
+
+- `src/modules/build/execution/whiteboard-sharing.controller.ts:76` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboard-sharing.service.ts:84` — binds whiteboardId to this projectId+orgId before rotating the token
+
+### VERIFIED — `PUT /build/:projectId/whiteboards/:whiteboardId/shares`
+
+`WhiteboardSharingController.setShares` — `src/modules/build/execution/whiteboard-sharing.controller.ts:84`
+
+PUT /build/:projectId/whiteboards/:whiteboardId/shares. Same requireWhiteboardManageAccess binding (id+projectId+orgId, 404 on mismatch) before the whiteboard's share rows are replaced; the replace transaction itself is scoped to the already-verified whiteboardId.
+
+- `src/modules/build/execution/whiteboard-sharing.controller.ts:88` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboard-sharing.service.ts:108` — binds whiteboardId to this projectId+orgId before the share rows are replaced
+
+### VERIFIED — `DELETE /build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId`
+
+`WhiteboardSharingController.removeShare` — `src/modules/build/execution/whiteboard-sharing.controller.ts:97`
+
+DELETE /build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId. Same requireWhiteboardManageAccess binding (id+projectId+orgId, 404 on mismatch) before the share row for targetUserId is removed; the DELETE itself is scoped to the already-verified whiteboardId and to a membership subquery scoped to u.orgId.
+
+- `src/modules/build/execution/whiteboard-sharing.controller.ts:102` — handler binds projectId, whiteboardId and targetUserId and forwards all three
+- `src/modules/build/execution/whiteboard-sharing.service.ts:174` — binds whiteboardId to this projectId+orgId before the delete
+
 ### VERIFIED — `GET /public/whiteboard-links/:token`
 
 `PublicWhiteboardLinksController.getByToken` — `src/modules/build/execution/whiteboard-sharing.controller.ts:120`
@@ -1039,6 +1156,47 @@ POST /build/:projectId/views. The handler forwards the authenticated actor and c
 - `src/modules/build/execution/workspace.controller.ts:220` — the actor reaches the service
 - `src/modules/build/execution/workspace.service.ts:421` — project membership is enforced before the INSERT
 - `src/db/schema/build/members.ts:66` — a composite tenant foreign key backstops the row
+
+### VERIFIED — `GET /build/:projectId/whiteboards/:whiteboardId`
+
+`WhiteboardsController.getWhiteboard` — `src/modules/build/execution/workspace.controller.ts:345`
+
+GET /build/:projectId/whiteboards/:whiteboardId. WhiteboardsService.getWhiteboard(u, projectId, whiteboardId) confirms the project exists in this org, then loadBoardWithAccess's SELECT WHERE binds `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)` together and throws NotFoundException on mismatch, before the DTO is built.
+
+- `src/modules/build/execution/workspace.controller.ts:349` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboards.service.ts:264` — signature takes projectId
+- `src/modules/build/execution/whiteboards.service.ts:82` — private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch
+
+### VERIFIED — `PATCH /build/:projectId/whiteboards/:whiteboardId`
+
+`WhiteboardsController.updateWhiteboard` — `src/modules/build/execution/workspace.controller.ts:357`
+
+PATCH /build/:projectId/whiteboards/:whiteboardId. WhiteboardsService.updateWhiteboard(u, projectId, whiteboardId, input) calls loadBoardWithAccess (id+projectId+orgId, 404 on mismatch) for the access-level check, and the subsequent UPDATE independently repeats the identical binding in its own WHERE: `eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.projectId, projectId), eq(projectWhiteboards.orgId, u.orgId)`.
+
+- `src/modules/build/execution/workspace.controller.ts:367` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboards.service.ts:290` — signature
+- `src/modules/build/execution/whiteboards.service.ts:313` — the UPDATE's own WHERE re-binds id+projectId+orgId
+
+### VERIFIED — `DELETE /build/:projectId/whiteboards/:whiteboardId`
+
+`WhiteboardsController.deleteWhiteboard` — `src/modules/build/execution/workspace.controller.ts:370`
+
+DELETE /build/:projectId/whiteboards/:whiteboardId. Same shape as updateWhiteboard: deleteWhiteboard(u, projectId, whiteboardId) calls loadBoardWithAccess (id+projectId+orgId, 404 on mismatch), and the soft-delete UPDATE independently repeats the identical id+projectId+orgId binding in its own WHERE.
+
+- `src/modules/build/execution/workspace.controller.ts:375` — handler binds both projectId and whiteboardId and forwards both
+- `src/modules/build/execution/whiteboards.service.ts:326` — signature takes projectId
+- `src/modules/build/execution/whiteboards.service.ts:313` — the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId
+
+### VERIFIED — `POST /build/:projectId/whiteboards/:whiteboardId/restore`
+
+`WhiteboardsController.restoreWhiteboard` — `src/modules/build/execution/workspace.controller.ts:383`
+
+POST /build/:projectId/whiteboards/:whiteboardId/restore. restoreWhiteboard resolves the project under the caller's org, binds the board to id+projectId+orgId, and requires manage access on the board before the restoring UPDATE, which binds the same three columns.
+
+- `src/modules/build/execution/workspace.controller.ts:393` — actor and both route ids reach the service
+- `src/modules/build/execution/whiteboards.service.ts:357` — the URL project is resolved through the project-access decision, which 404s a project outside the caller's org
+- `src/modules/build/execution/whiteboards.service.ts:340` — the board lookup binds the URL project
+- `src/modules/build/execution/whiteboards.service.ts:375` — board manage access is required
 
 ### VERIFIED — `POST /build/:projectId/files`
 
@@ -1299,6 +1457,49 @@ POST /build/managed-products. An org-level route with no path parameters, so no 
 - `src/modules/build/managed-products/managed-products.service.ts:190` — an INSERT — no WHERE clause exists to carry a predicate
 - `src/modules/build/managed-products/managed-products.service.ts:192` — org bound as an ES6 shorthand column in .values()
 
+### VERIFIED — `POST /build/:projectId/meetings/:meetingId/action-items`
+
+`ActionItemsController.createItem` — `src/modules/build/meetings/action-items.controller.ts:39`
+
+POST /build/:projectId/meetings/:meetingId/action-items. createItem calls assertMeeting(orgId, projectId, meetingId), whose WHERE binds id=meetingId AND orgId AND projectId, before inserting the action item. A meetingId belonging to another project 404s before any row is written.
+
+- `src/modules/build/meetings/action-items.controller.ts:50` — route handler passes raw path params straight to the service
+- `src/modules/build/meetings/action-items.service.ts:67` — createItem binds via assertMeeting before inserting
+- `src/modules/build/meetings/action-items.service.ts:40` — assertMeeting's WHERE binds meetingId to projectId and orgId together
+
+### VERIFIED — `PATCH /build/:projectId/meetings/:meetingId/action-items/:itemId`
+
+`ActionItemsController.updateItem` — `src/modules/build/meetings/action-items.controller.ts:53`
+
+PATCH /build/:projectId/meetings/:meetingId/action-items/:itemId — three route params. updateItem binds all three: assertMeeting(orgId, projectId, meetingId) confirms the meeting belongs to the project, then loadItem(orgId, meetingId, itemId) confirms the item belongs to that meeting and org (404 otherwise). The final UPDATE's WHERE only re-checks id+orgId (not meetingId), but that is safe: loadItem already proved this exact primary-key row belongs to the named meeting, meetingId is never reassigned by any other endpoint in this file, and the UPDATE targets the row by its immutable primary key — so it can only ever touch the row already confirmed to be under the right parent.
+
+- `src/modules/build/meetings/action-items.controller.ts:64` — route handler passes all three raw path params straight to the service
+- `src/modules/build/meetings/action-items.service.ts:101` — binds meetingId to projectId via assertMeeting
+- `src/modules/build/meetings/action-items.service.ts:103` — binds itemId to meetingId via loadItem before patching
+- `src/modules/build/meetings/action-items.service.ts:113` — UPDATE targets the already-verified row by primary key id + orgId
+
+### VERIFIED — `DELETE /build/:projectId/meetings/:meetingId/action-items/:itemId`
+
+`ActionItemsController.deleteItem` — `src/modules/build/meetings/action-items.controller.ts:67`
+
+DELETE /build/:projectId/meetings/:meetingId/action-items/:itemId. Same binding shape as updateItem: assertMeeting(orgId, projectId, meetingId) then loadItem(orgId, meetingId, itemId) 404s a foreign itemId or meetingId before the soft-delete UPDATE runs, which targets the already-verified row by primary key.
+
+- `src/modules/build/meetings/action-items.controller.ts:78` — route handler passes all three raw path params straight to the service
+- `src/modules/build/meetings/action-items.service.ts:128` — binds meetingId to projectId via assertMeeting
+- `src/modules/build/meetings/action-items.service.ts:130` — binds itemId to meetingId via loadItem before deleting
+- `src/modules/build/meetings/action-items.service.ts:134` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
+
+### VERIFIED — `POST /build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task`
+
+`ActionItemsController.convertToTask` — `src/modules/build/meetings/action-items.controller.ts:81`
+
+POST /build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task. convertToTask does its own inline binding inside one transaction: it looks up the meeting by id/org/project (404 otherwise), then the action item by id/org/meetingId (404 otherwise), and only then creates the ticket and updates the action item row (WHERE id=itemId AND orgId, targeting the row already proven to belong to the right meeting/project in the same transaction).
+
+- `src/modules/build/meetings/action-items.controller.ts:93` — route handler passes all three raw path params straight to the service
+- `src/modules/build/meetings/action-items.service.ts:156` — inline meeting lookup binds meetingId to projectId and orgId
+- `src/modules/build/meetings/action-items.service.ts:167` — inline item lookup binds itemId to meetingId and orgId
+- `src/modules/build/meetings/action-items.service.ts:196` — final UPDATE targets the already-verified row by primary key id + orgId, inside the same transaction
+
 ### VERIFIED — `GET /build/:projectId/meetings/:meetingId`
 
 `MeetingsController.getMeeting` — `src/modules/build/meetings/meetings.controller.ts:67`
@@ -1335,7 +1536,7 @@ PATCH /build/:projectId/bugs/:bugId. updateBug calls assertProjectAccess(project
 
 - `src/modules/build/qa/bugs.controller.ts:94` — route handler passes raw path params straight to the service
 - `src/modules/build/qa/bugs.service.ts:227` — existence check binds bugId to projectId and orgId before patching
-- `src/modules/build/qa/bugs.service.ts:351` — tickets UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/qa/bugs.service.ts:341` — tickets UPDATE targets the already-verified row by primary key id + orgId
 
 ### VERIFIED — `DELETE /build/:projectId/bugs/:bugId`
 
@@ -1344,8 +1545,8 @@ PATCH /build/:projectId/bugs/:bugId. updateBug calls assertProjectAccess(project
 DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before the soft-delete UPDATE, which targets the row by primary key id + orgId.
 
 - `src/modules/build/qa/bugs.controller.ts:107` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/bugs.service.ts:341` — existence check binds bugId to projectId and orgId before deleting
-- `src/modules/build/qa/bugs.service.ts:351` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/qa/bugs.service.ts:331` — existence check binds bugId to projectId and orgId before deleting
+- `src/modules/build/qa/bugs.service.ts:341` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
 
 ### VERIFIED — `GET /build/:projectId/test-cases/:caseId`
 
@@ -1513,6 +1714,16 @@ DELETE /build/teams/:teamId/members/:memberId. Same binding shape as updateMembe
 - `src/modules/build/teams/team-members.service.ts:154` — binds teamId to orgId via loadTeam before deleting
 - `src/modules/build/teams/team-members.service.ts:162` — memberId is resolved to a membership scoped to this exact orgId via assertOrganizationActor
 
+### VERIFIED — `DELETE /build/teams/:teamId/projects/:projectId`
+
+`TeamsController.removeProject` — `src/modules/build/teams/teams.controller.ts:207`
+
+DELETE /build/teams/:teamId/projects/:projectId. removeProject calls teams.loadTeam(orgId, teamId), whose WHERE binds id=teamId AND orgId (404 on a foreign teamId), then deletes the assignment row scoped by teamId+projectId+orgId. Because teamId is already proven to belong to this org and orgId is repeated on the delete, a projectId belonging to another team/org simply matches zero rows.
+
+- `src/modules/build/teams/teams.controller.ts:217` — route handler passes teamId and projectId straight to the service
+- `src/modules/build/teams/team-projects.service.ts:77` — binds teamId to orgId via loadTeam before deleting
+- `src/modules/build/teams/team-projects.service.ts:84` — DELETE WHERE clause scopes to teamId + projectId + orgId together
+
 ### VERIFIED — `PATCH /build/:projectId/updates/:updateId`
 
 `UpdatesController.editUpdate` — `src/modules/build/updates/updates.controller.ts:71`
@@ -1576,27 +1787,20 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 
 | verdict | verb | route | controller:line | method | classification | module | guard chain | org scoping | parent scoping | project relationship | @Validate params | @Idempotent |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| NEEDS-REVIEW | GET | `/build/agent-pulse/top-signal` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:27` | `getTopSignal` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | unresolved | n/a |
+| NEEDS-REVIEW | GET | `/build/agent-pulse/top-signal` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:39` | `getTopSignal` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | unresolved | n/a |
 | NEEDS-REVIEW | GET | `/build/approvals/inbox` | `src/modules/build/approvals/approvals.controller.ts:68` | `getInbox` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | unresolved | n/a |
 | NEEDS-REVIEW | GET | `/build/comment-drafts/mine` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:52` | `listMine` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | absent (no params) | n/a |
-| NEEDS-REVIEW | GET | `/build/:projectId/activity` | `src/modules/build/core/activity/projects-activity-feed.controller.ts:31` | `getProjectActivity` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
 | NEEDS-REVIEW | GET | `/build/:projectId/analytics` | `src/modules/build/core/analytics/projects-reports.controller.ts:59` | `getAnalytics` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
 | NEEDS-REVIEW | GET | `/build/:projectId/custom-fields` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:36` | `listFields` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
 | NEEDS-REVIEW | POST | `/build/:projectId/custom-fields` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:47` | `createField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:60` | `updateField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, fieldId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:73` | `deleteField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, fieldId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/org-custom-states` | `src/modules/build/core/project-crud/project-resources.controller.ts:66` | `listOrgCustomStates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | absent (no params) | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/restore` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:79` | `restoreProject` | @RequirePermission("build:restore") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [projectId] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/managed-product` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:92` | `linkManagedProduct` | @RequirePermission("build:managed-products:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [projectId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/roadmap` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:77` | `listRoadmap` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | unresolved | n/a |
 | NEEDS-REVIEW | GET | `/build/roadmap/:itemId/signals` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:88` | `getRoadmapSignals` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [itemId] | n/a |
 | NEEDS-REVIEW | POST | `/build/roadmap` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:99` | `createRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | unresolved | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/roadmap/:itemId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:111` | `updateRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [itemId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/settings/retention` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:37` | `getSettings` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [projectId] | n/a |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/settings/retention` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:48` | `updatePolicy` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [projectId] | NO (mutating) |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/settings/retention/legal-hold` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:60` | `setLegalHold` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [projectId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/settings/iterations` | `src/modules/build/core/settings/projects-settings-iterations.controller.ts:36` | `getSettings` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/settings/iterations` | `src/modules/build/core/settings/projects-settings-iterations.controller.ts:47` | `updateSettings` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/webhooks` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:41` | `listWebhooks` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
 | NEEDS-REVIEW | POST | `/build/:projectId/webhooks` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:53` | `createWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | yes |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/webhooks/projects-webhooks.controller.ts:67` | `updateWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, webhookId] | NO (mutating) |
@@ -1608,40 +1812,12 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | NEEDS-REVIEW | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:107` | `getSprint` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | NOT-ENFORCED | complete [projectId, sprintId] | n/a |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:119` | `updateSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | NOT-ENFORCED | complete [projectId, sprintId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:138` | `deleteSprint` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | NOT-ENFORCED | complete [projectId, sprintId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:158` | `listCycles` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:170` | `createCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | yes |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:184` | `updateCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, cycleId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:197` | `deleteCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, cycleId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:217` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:229` | `createModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | NO (mutating) |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:242` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, moduleId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:255` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, moduleId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:275` | `listEpics` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:287` | `createEpic` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | NO (mutating) |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:300` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, epicId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:313` | `deleteEpic` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, epicId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/time-entries` | `src/modules/build/execution/timesheets.controller.ts:61` | `listTimeEntries` | @RequirePermission("build:timesheets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | unresolved | n/a |
 | NEEDS-REVIEW | GET | `/build/time-entries/team` | `src/modules/build/execution/timesheets.controller.ts:72` | `teamTimesheets` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | unresolved | n/a |
 | NEEDS-REVIEW | GET | `/build/billing-summary` | `src/modules/build/execution/timesheets.controller.ts:140` | `billingSummary` | @RequirePermission("build:timesheets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | unresolved | n/a |
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/time-entries` | `src/modules/build/execution/timesheets.controller.ts:158` | `listTicketTimeEntries` | @RequirePermission("build:timesheets:view") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, ticketId] | n/a |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/whiteboards/:whiteboardId/sharing` | `src/modules/build/execution/whiteboard-sharing.controller.ts:57` | `updateSharing` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, whiteboardId] | NO (mutating) |
-| NEEDS-REVIEW | POST | `/build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token` | `src/modules/build/execution/whiteboard-sharing.controller.ts:70` | `rotateShareToken` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, whiteboardId] | NO (mutating) |
-| NEEDS-REVIEW | PUT | `/build/:projectId/whiteboards/:whiteboardId/shares` | `src/modules/build/execution/whiteboard-sharing.controller.ts:84` | `setShares` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, whiteboardId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId` | `src/modules/build/execution/whiteboard-sharing.controller.ts:97` | `removeShare` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, whiteboardId, targetUserId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/workload/capacity` | `src/modules/build/execution/workload-capacity.controller.ts:40` | `capacity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
 | NEEDS-REVIEW | POST | `/build/views` | `src/modules/build/execution/workspace.controller.ts:263` | `createWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | NOT-ENFORCED | unresolved | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/whiteboards` | `src/modules/build/execution/workspace.controller.ts:306` | `listAllWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | absent (no params) | n/a |
-| NEEDS-REVIEW | GET | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:320` | `listWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:332` | `createWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [projectId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:345` | `getWhiteboard` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, whiteboardId] | n/a |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:357` | `updateWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, whiteboardId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:370` | `deleteWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, whiteboardId] | NO (mutating) |
-| NEEDS-REVIEW | POST | `/build/:projectId/whiteboards/:whiteboardId/restore` | `src/modules/build/execution/workspace.controller.ts:383` | `restoreWhiteboard` | @RequirePermission("build:whiteboards:restore") | @RequireModule("build") | OK | BOUND | BOUND | TENANT-ONLY (assertProjectInOrg) | complete [projectId, whiteboardId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/managed-products/:managedProductId/insights` | `src/modules/build/managed-products/managed-products.controller.ts:105` | `getProductInsights` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [managedProductId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/meetings/:meetingId/action-items` | `src/modules/build/meetings/action-items.controller.ts:39` | `createItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, meetingId] | NO (mutating) |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/meetings/:meetingId/action-items/:itemId` | `src/modules/build/meetings/action-items.controller.ts:53` | `updateItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, meetingId, itemId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/meetings/:meetingId/action-items/:itemId` | `src/modules/build/meetings/action-items.controller.ts:67` | `deleteItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, meetingId, itemId] | NO (mutating) |
-| NEEDS-REVIEW | POST | `/build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task` | `src/modules/build/meetings/action-items.controller.ts:81` | `convertToTask` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, meetingId, itemId] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/meetings/:meetingId` | `src/modules/build/meetings/meetings.controller.ts:92` | `updateMeeting` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, meetingId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/meetings/:meetingId` | `src/modules/build/meetings/meetings.controller.ts:105` | `deleteMeeting` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, meetingId] | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/:projectId/meetings/:meetingId/attendees` | `src/modules/build/meetings/meetings.controller.ts:118` | `addAttendee` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [projectId, meetingId] | NO (mutating) |
@@ -1655,8 +1831,6 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | NEEDS-REVIEW | POST | `/build/programs/:programId/projects` | `src/modules/build/portfolios/programs.controller.ts:111` | `linkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | TENANT-ONLY (assertProjectInOrg) | complete [programId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/programs/:programId/projects/:projectId` | `src/modules/build/portfolios/programs.controller.ts:124` | `unlinkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [programId, projectId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/teams/:teamId/projects` | `src/modules/build/teams/teams.controller.ts:183` | `listTeamProjects` | @RequirePermission("build:teams:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [teamId] | n/a |
-| NEEDS-REVIEW | POST | `/build/teams/:teamId/projects` | `src/modules/build/teams/teams.controller.ts:194` | `addProject` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | NOT-ENFORCED | complete [teamId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/teams/:teamId/projects/:projectId` | `src/modules/build/teams/teams.controller.ts:207` | `removeProject` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | BOUND | NOT-ENFORCED | complete [teamId, projectId] | NO (mutating) |
 | CLOSED | PATCH | `/build/:projectId/automations/:automationId` | `src/modules/build/core/automation/projects-automations.controller.ts:100` | `update` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, automationId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/automations/:automationId` | `src/modules/build/core/automation/projects-automations.controller.ts:116` | `delete` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, automationId] | NO (mutating) |
 | CLOSED | GET | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:86` | `getTicketValues` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | ENFORCED (assertTicketReadAccess) | complete [projectId, ticketId] | n/a |
@@ -1686,14 +1860,16 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | CLOSED | GET | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/tickets/projects-tickets.controller.ts:235` | `getTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (resolveProjectsScope) | complete [projectId, ticketId] | n/a |
 | CLOSED | PATCH | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/tickets/projects-tickets.controller.ts:247` | `updateTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, ticketId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/tickets/projects-tickets.controller.ts:260` | `deleteTicket` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (resolveProjectsScope) | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:242` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, moduleId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:255` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, moduleId] | NO (mutating) |
 | CLOSED | POST | `/build/:projectId/tickets/:ticketId/time-entries` | `src/modules/build/execution/timesheets.controller.ts:183` | `logTicketTime` | @RequirePermission("build:timesheets:create") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, ticketId] | NO (mutating) |
 | CLOSED | PATCH | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:107` | `updateMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, milestoneId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:120` | `deleteMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, milestoneId] | NO (mutating) |
 | CLOSED | PATCH | `/build/:projectId/intake/:requestId` | `src/modules/build/execution/workspace.controller.ts:178` | `updateIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, requestId] | NO (mutating) |
 | CLOSED | PATCH | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:223` | `updateView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, viewId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:236` | `deleteView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, viewId] | NO (mutating) |
-| VERIFIED | GET | `/build/agent-pulse/badge` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:36` | `badge` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | absent (no params) | n/a |
-| VERIFIED | POST | `/build/agent-pulse/proposals/:draftId/apply` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:44` | `applyDraft` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [draftId] | NO (mutating) |
+| VERIFIED | GET | `/build/agent-pulse/badge` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:51` | `badge` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | absent (no params) | n/a |
+| VERIFIED | POST | `/build/agent-pulse/proposals/:draftId/apply` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:62` | `applyDraft` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (resolveProjectReach) | complete [draftId] | NO (mutating) |
 | VERIFIED | GET | `/build/approvals/inbox/count` | `src/modules/build/approvals/approvals.controller.ts:59` | `getInboxCount` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | absent (no params) | n/a |
 | VERIFIED | GET | `/build/:projectId/approvals` | `src/modules/build/approvals/approvals.controller.ts:88` | `listApprovals` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:100` | `getApproval` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, approvalId] | n/a |
@@ -1722,12 +1898,13 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | PATCH | `/build/:projectId/client-visibility/milestones/:milestoneId` | `src/modules/build/client-portal/client-visibility.controller.ts:64` | `toggleMilestoneVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, milestoneId] | NO (mutating) |
 | VERIFIED | PATCH | `/build/:projectId/client-visibility/comments/:commentId` | `src/modules/build/client-portal/client-visibility.controller.ts:77` | `toggleCommentVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, commentId] | NO (mutating) |
 | VERIFIED | PATCH | `/build/:projectId/client-visibility/attachments/:attachmentId` | `src/modules/build/client-portal/client-visibility.controller.ts:90` | `toggleAttachmentVisibility` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, attachmentId] | NO (mutating) |
-| VERIFIED | PUT | `/build/comment-drafts/tickets/:ticketId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:59` | `upsert` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [ticketId] | NO (mutating) |
-| VERIFIED | POST | `/build/comment-drafts/tickets/:ticketId/generate-draft` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:71` | `generateDraft` | @RequirePermission("build:ai:use") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [ticketId] | NO (mutating) |
-| VERIFIED | POST | `/build/comment-drafts/:draftId/failures` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:90` | `recordFailure` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [draftId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/comment-drafts/mine` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:108` | `deleteAll` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | absent (no params) | NO (mutating) |
-| VERIFIED | DELETE | `/build/comment-drafts/tickets/:ticketId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:116` | `deleteByTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [ticketId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/comment-drafts/:draftId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:128` | `deleteOne` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [draftId] | NO (mutating) |
+| VERIFIED | PUT | `/build/comment-drafts/tickets/:ticketId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:59` | `upsert` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertTicketReadAccess) | complete [ticketId] | NO (mutating) |
+| VERIFIED | POST | `/build/comment-drafts/tickets/:ticketId/generate-draft` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:71` | `generateDraft` | @RequirePermission("build:ai:use") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertTicketReadAccess) | complete [ticketId] | NO (mutating) |
+| VERIFIED | POST | `/build/comment-drafts/:draftId/failures` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:85` | `recordFailure` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [draftId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/comment-drafts/mine` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:103` | `deleteAll` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | absent (no params) | NO (mutating) |
+| VERIFIED | DELETE | `/build/comment-drafts/tickets/:ticketId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:111` | `deleteByTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [ticketId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/comment-drafts/:draftId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:123` | `deleteOne` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [draftId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/activity` | `src/modules/build/core/activity/projects-activity-feed.controller.ts:31` | `getProjectActivity` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/reports/burnup` | `src/modules/build/core/analytics/projects-reports.controller.ts:72` | `burnup` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (resolveProjectAccess) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/reports/cfd` | `src/modules/build/core/analytics/projects-reports.controller.ts:84` | `cfd` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (resolveProjectAccess) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/reports/critical-path` | `src/modules/build/core/analytics/projects-reports.controller.ts:96` | `criticalPath` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (resolveProjectAccess) | complete [projectId] | n/a |
@@ -1757,6 +1934,7 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | GET | `/build/:projectId` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:44` | `getProject` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
 | VERIFIED | PATCH | `/build/:projectId` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:55` | `updateProject` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/:projectId` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:67` | `deleteProject` | @RequirePermission("build:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertCanDeleteProject) | complete [projectId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/restore` | `src/modules/build/core/project-crud/projects-by-id.controller.ts:79` | `restoreProject` | @RequirePermission("build:restore") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertCanDeleteProject) | complete [projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/templates` | `src/modules/build/core/project-crud/projects-templates.controller.ts:49` | `listTemplates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | unresolved | n/a |
 | VERIFIED | POST | `/build/templates` | `src/modules/build/core/project-crud/projects-templates.controller.ts:60` | `createTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | N/A (no project-owned resource) | unresolved | NO (mutating) |
 | VERIFIED | DELETE | `/build/templates/:templateId` | `src/modules/build/core/project-crud/projects-templates.controller.ts:72` | `deleteTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [templateId] | NO (mutating) |
@@ -1790,6 +1968,11 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/changelog` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:262` | `createChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | unresolved | NO (mutating) |
 | VERIFIED | PATCH | `/build/changelog/:entryId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:274` | `updateChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [entryId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/changelog/:entryId` | `src/modules/build/core/roadmap/projects-roadmap.controller.ts:286` | `deleteChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [entryId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/settings/retention` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:37` | `getSettings` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/settings/retention` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:48` | `updatePolicy` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/settings/retention/legal-hold` | `src/modules/build/core/settings/projects-retention-settings.controller.ts:60` | `setLegalHold` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/settings/iterations` | `src/modules/build/core/settings/projects-settings-iterations.controller.ts:36` | `getSettings` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/settings/iterations` | `src/modules/build/core/settings/projects-settings-iterations.controller.ts:47` | `updateSettings` | @RequirePermission("build:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:85` | `listRelations` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | ENFORCED (resolveProjectsScope) | complete [projectId, ticketId] | n/a |
 | VERIFIED | POST | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:97` | `addRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (resolveProjectsScope) | complete [projectId, ticketId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:111` | `removeRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | ENFORCED (resolveProjectsScope) | complete [projectId, ticketId] | NO (mutating) |
@@ -1815,12 +1998,27 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | GET | `/build/:projectId/tickets/:ticketId/activity` | `src/modules/build/core/tickets/projects-tickets.controller.ts:207` | `getActivity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | ENFORCED (resolveProjectsScope) | complete [projectId, ticketId] | n/a |
 | VERIFIED | GET | `/build/:projectId/tickets/key/:ticketNumber` | `src/modules/build/core/tickets/projects-tickets.controller.ts:223` | `getTicketByKey` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (resolveProjectsScope) | complete [projectId, ticketNumber] | n/a |
 | VERIFIED | POST | `/build/:projectId/tickets/:ticketId/restore` | `src/modules/build/core/tickets/projects-tickets.controller.ts:274` | `restoreTicket` | @RequirePermission("build:tickets:restore") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (resolveProjectsScope) | complete [projectId, ticketId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:158` | `listCycles` | @RequirePermission("build:cycles:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:170` | `createCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | complete [projectId] | yes |
+| VERIFIED | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:184` | `updateCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, cycleId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:197` | `deleteCycle` | @RequirePermission("build:cycles:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, cycleId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:217` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:229` | `createModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:275` | `listEpics` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:287` | `createEpic` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | complete [projectId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:300` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (resolveProjectAccess) | complete [projectId, epicId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:313` | `deleteEpic` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (authorizeTicketMutation) | complete [projectId, epicId] | NO (mutating) |
 | VERIFIED | PATCH | `/build/time-entries/:entryId/approve` | `src/modules/build/execution/timesheets.controller.ts:83` | `approveEntry` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [entryId] | yes |
 | VERIFIED | PATCH | `/build/time-entries/:entryId/reject` | `src/modules/build/execution/timesheets.controller.ts:96` | `rejectEntry` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [entryId] | yes |
 | VERIFIED | PATCH | `/build/time-entries/:entryId` | `src/modules/build/execution/timesheets.controller.ts:109` | `updateEntry` | @RequirePermission("build:timesheets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [entryId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/time-entries/:entryId` | `src/modules/build/execution/timesheets.controller.ts:121` | `deleteEntry` | @RequirePermission("build:timesheets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [entryId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/whiteboards/:whiteboardId/sharing` | `src/modules/build/execution/whiteboard-sharing.controller.ts:57` | `updateSharing` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, whiteboardId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token` | `src/modules/build/execution/whiteboard-sharing.controller.ts:70` | `rotateShareToken` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, whiteboardId] | NO (mutating) |
+| VERIFIED | PUT | `/build/:projectId/whiteboards/:whiteboardId/shares` | `src/modules/build/execution/whiteboard-sharing.controller.ts:84` | `setShares` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, whiteboardId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId` | `src/modules/build/execution/whiteboard-sharing.controller.ts:97` | `removeShare` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, whiteboardId, targetUserId] | NO (mutating) |
 | VERIFIED | GET | `/public/whiteboard-links/:token` | `src/modules/build/execution/whiteboard-sharing.controller.ts:120` | `getByToken` | @Public | — | OK | N/A (@Public) | N/A (not nested) | N/A (@Public) | complete [token] | n/a |
 | VERIFIED | PATCH | `/public/whiteboard-links/:token` | `src/modules/build/execution/whiteboard-sharing.controller.ts:134` | `updateByToken` | @Public | — | OK | N/A (@Public) | N/A (not nested) | N/A (@Public) | complete [token] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/workload/capacity` | `src/modules/build/execution/workload-capacity.controller.ts:40` | `capacity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/milestones` | `src/modules/build/execution/workspace.controller.ts:82` | `listMilestones` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/milestones` | `src/modules/build/execution/workspace.controller.ts:94` | `createMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectWriteAccess) | complete [projectId] | NO (mutating) |
 | VERIFIED | POST | `/build/:projectId/milestones/:milestoneId/restore` | `src/modules/build/execution/workspace.controller.ts:133` | `restoreMilestone` | @RequirePermission("build:workspace:restore") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, milestoneId] | NO (mutating) |
@@ -1831,6 +2029,13 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | GET | `/build/views` | `src/modules/build/execution/workspace.controller.ts:256` | `listWorkspaceViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | absent (no params) | n/a |
 | VERIFIED | PATCH | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:275` | `updateWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [viewId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:287` | `deleteWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [viewId] | NO (mutating) |
+| VERIFIED | GET | `/build/whiteboards` | `src/modules/build/execution/workspace.controller.ts:306` | `listAllWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (resolveProjectsScope) | absent (no params) | n/a |
+| VERIFIED | GET | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:320` | `listWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:332` | `createWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (projectRelationship) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:345` | `getWhiteboard` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, whiteboardId] | n/a |
+| VERIFIED | PATCH | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:357` | `updateWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, whiteboardId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:370` | `deleteWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, whiteboardId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/whiteboards/:whiteboardId/restore` | `src/modules/build/execution/workspace.controller.ts:383` | `restoreWhiteboard` | @RequirePermission("build:whiteboards:restore") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (projectRelationship) | complete [projectId, whiteboardId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/files` | `src/modules/build/files/files.controller.ts:48` | `listFiles` | @RequirePermission("build:files:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | unresolved | n/a |
 | VERIFIED | POST | `/build/:projectId/files` | `src/modules/build/files/files.controller.ts:60` | `uploadFile` | @RequirePermission("build:files:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | ENFORCED (assertProjectWriteAccess) | unresolved | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/files/:fileId/url` | `src/modules/build/files/files.controller.ts:73` | `getSignedUrl` | @RequirePermission("build:files:view") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, fileId] | n/a |
@@ -1874,6 +2079,10 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:81` | `createManagedProduct` | @RequirePermission("build:managed-products:create") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | N/A (no project-owned resource) | unresolved | NO (mutating) |
 | VERIFIED | PATCH | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:93` | `updateManagedProduct` | @RequirePermission("build:managed-products:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [managedProductId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/managed-products/:managedProductId` | `src/modules/build/managed-products/managed-products.controller.ts:117` | `deleteManagedProduct` | @RequirePermission("build:managed-products:delete") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [managedProductId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/meetings/:meetingId/action-items` | `src/modules/build/meetings/action-items.controller.ts:39` | `createItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, meetingId] | NO (mutating) |
+| VERIFIED | PATCH | `/build/:projectId/meetings/:meetingId/action-items/:itemId` | `src/modules/build/meetings/action-items.controller.ts:53` | `updateItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, meetingId, itemId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/:projectId/meetings/:meetingId/action-items/:itemId` | `src/modules/build/meetings/action-items.controller.ts:67` | `deleteItem` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, meetingId, itemId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task` | `src/modules/build/meetings/action-items.controller.ts:81` | `convertToTask` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, meetingId, itemId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/meetings` | `src/modules/build/meetings/meetings.controller.ts:55` | `listMeetings` | @RequirePermission("build:meetings:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/meetings/:meetingId` | `src/modules/build/meetings/meetings.controller.ts:67` | `getMeeting` | @RequirePermission("build:meetings:view") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, meetingId] | n/a |
 | VERIFIED | POST | `/build/:projectId/meetings` | `src/modules/build/meetings/meetings.controller.ts:79` | `createMeeting` | @RequirePermission("build:meetings:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectWriteAccess) | complete [projectId] | NO (mutating) |
@@ -1920,6 +2129,8 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/teams/:teamId/members` | `src/modules/build/teams/teams.controller.ts:138` | `addMember` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [teamId] | NO (mutating) |
 | VERIFIED | PATCH | `/build/teams/:teamId/members/:memberUserId` | `src/modules/build/teams/teams.controller.ts:151` | `updateMemberRole` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | BOUND | N/A (no project-owned resource) | complete [teamId, memberUserId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/teams/:teamId/members/:memberId` | `src/modules/build/teams/teams.controller.ts:170` | `removeMember` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | BOUND | N/A (no project-owned resource) | complete [teamId, memberId] | NO (mutating) |
+| VERIFIED | POST | `/build/teams/:teamId/projects` | `src/modules/build/teams/teams.controller.ts:194` | `addProject` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertCanManageProject) | complete [teamId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/teams/:teamId/projects/:projectId` | `src/modules/build/teams/teams.controller.ts:207` | `removeProject` | @RequirePermission("build:teams:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertCanManageProject) | complete [teamId, projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/updates` | `src/modules/build/updates/updates.controller.ts:45` | `listUpdates` | @RequirePermission("build:updates:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | unresolved | n/a |
 | VERIFIED | POST | `/build/:projectId/updates` | `src/modules/build/updates/updates.controller.ts:57` | `createUpdate` | @RequirePermission("build:updates:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectWriteAccess) | unresolved | yes |
 | VERIFIED | PATCH | `/build/:projectId/updates/:updateId` | `src/modules/build/updates/updates.controller.ts:71` | `editUpdate` | @RequirePermission("build:updates:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectWriteAccess) | complete [projectId, updateId] | NO (mutating) |
@@ -1933,27 +2144,20 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 
 ## NEEDS-REVIEW — open leads
 
-- `GET /build/agent-pulse/top-signal` — `src/modules/build/agent-pulse/agent-pulse.controller.ts:27` (`getTopSignal`): project relationship: NOT-ENFORCED
+- `GET /build/agent-pulse/top-signal` — `src/modules/build/agent-pulse/agent-pulse.controller.ts:39` (`getTopSignal`): project relationship: NOT-ENFORCED
 - `GET /build/approvals/inbox` — `src/modules/build/approvals/approvals.controller.ts:68` (`getInbox`): project relationship: NOT-ENFORCED
 - `GET /build/comment-drafts/mine` — `src/modules/build/comment-drafts/comment-drafts.controller.ts:52` (`listMine`): project relationship: NOT-ENFORCED
-- `GET /build/:projectId/activity` — `src/modules/build/core/activity/projects-activity-feed.controller.ts:31` (`getProjectActivity`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `GET /build/:projectId/analytics` — `src/modules/build/core/analytics/projects-reports.controller.ts:59` (`getAnalytics`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `GET /build/:projectId/custom-fields` — `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:36` (`listFields`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `POST /build/:projectId/custom-fields` — `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:47` (`createField`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `PATCH /build/:projectId/custom-fields/:fieldId` — `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:60` (`updateField`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed CLOSED verdict predates the project-relationship dimension and cannot certify it
 - `DELETE /build/:projectId/custom-fields/:fieldId` — `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:73` (`deleteField`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed CLOSED verdict predates the project-relationship dimension and cannot certify it
 - `GET /build/org-custom-states` — `src/modules/build/core/project-crud/project-resources.controller.ts:66` (`listOrgCustomStates`): project relationship: NOT-ENFORCED
-- `POST /build/:projectId/restore` — `src/modules/build/core/project-crud/projects-by-id.controller.ts:79` (`restoreProject`): project relationship: NOT-ENFORCED
 - `PATCH /build/:projectId/managed-product` — `src/modules/build/core/project-crud/projects-by-id.controller.ts:92` (`linkManagedProduct`): project relationship: NOT-ENFORCED
 - `GET /build/roadmap` — `src/modules/build/core/roadmap/projects-roadmap.controller.ts:77` (`listRoadmap`): project relationship: NOT-ENFORCED
 - `GET /build/roadmap/:itemId/signals` — `src/modules/build/core/roadmap/projects-roadmap.controller.ts:88` (`getRoadmapSignals`): project relationship: NOT-ENFORCED
 - `POST /build/roadmap` — `src/modules/build/core/roadmap/projects-roadmap.controller.ts:99` (`createRoadmap`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `PATCH /build/roadmap/:itemId` — `src/modules/build/core/roadmap/projects-roadmap.controller.ts:111` (`updateRoadmap`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `GET /build/:projectId/settings/retention` — `src/modules/build/core/settings/projects-retention-settings.controller.ts:37` (`getSettings`): project relationship: NOT-ENFORCED
-- `PATCH /build/:projectId/settings/retention` — `src/modules/build/core/settings/projects-retention-settings.controller.ts:48` (`updatePolicy`): project relationship: NOT-ENFORCED
-- `PATCH /build/:projectId/settings/retention/legal-hold` — `src/modules/build/core/settings/projects-retention-settings.controller.ts:60` (`setLegalHold`): project relationship: NOT-ENFORCED
-- `GET /build/:projectId/settings/iterations` — `src/modules/build/core/settings/projects-settings-iterations.controller.ts:36` (`getSettings`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `PATCH /build/:projectId/settings/iterations` — `src/modules/build/core/settings/projects-settings-iterations.controller.ts:47` (`updateSettings`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `GET /build/:projectId/webhooks` — `src/modules/build/core/webhooks/projects-webhooks.controller.ts:41` (`listWebhooks`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `POST /build/:projectId/webhooks` — `src/modules/build/core/webhooks/projects-webhooks.controller.ts:53` (`createWebhook`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `PATCH /build/:projectId/webhooks/:webhookId` — `src/modules/build/core/webhooks/projects-webhooks.controller.ts:67` (`updateWebhook`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
@@ -1965,40 +2169,12 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 - `GET /build/:projectId/sprints/:sprintId` — `src/modules/build/execution/iterations.controller.ts:107` (`getSprint`): project relationship: NOT-ENFORCED; the reviewed CLOSED verdict predates the project-relationship dimension and cannot certify it
 - `PATCH /build/:projectId/sprints/:sprintId` — `src/modules/build/execution/iterations.controller.ts:119` (`updateSprint`): project relationship: NOT-ENFORCED; the reviewed CLOSED verdict predates the project-relationship dimension and cannot certify it
 - `DELETE /build/:projectId/sprints/:sprintId` — `src/modules/build/execution/iterations.controller.ts:138` (`deleteSprint`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `GET /build/:projectId/cycles` — `src/modules/build/execution/iterations.controller.ts:158` (`listCycles`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `POST /build/:projectId/cycles` — `src/modules/build/execution/iterations.controller.ts:170` (`createCycle`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `PATCH /build/:projectId/cycles/:cycleId` — `src/modules/build/execution/iterations.controller.ts:184` (`updateCycle`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `DELETE /build/:projectId/cycles/:cycleId` — `src/modules/build/execution/iterations.controller.ts:197` (`deleteCycle`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `GET /build/:projectId/modules` — `src/modules/build/execution/iterations.controller.ts:217` (`listModules`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `POST /build/:projectId/modules` — `src/modules/build/execution/iterations.controller.ts:229` (`createModule`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `PATCH /build/:projectId/modules/:moduleId` — `src/modules/build/execution/iterations.controller.ts:242` (`updateModule`): project relationship: NOT-ENFORCED; the reviewed CLOSED verdict predates the project-relationship dimension and cannot certify it
-- `DELETE /build/:projectId/modules/:moduleId` — `src/modules/build/execution/iterations.controller.ts:255` (`deleteModule`): project relationship: NOT-ENFORCED; the reviewed CLOSED verdict predates the project-relationship dimension and cannot certify it
-- `GET /build/:projectId/epics` — `src/modules/build/execution/iterations.controller.ts:275` (`listEpics`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `POST /build/:projectId/epics` — `src/modules/build/execution/iterations.controller.ts:287` (`createEpic`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `PATCH /build/:projectId/epics/:epicId` — `src/modules/build/execution/iterations.controller.ts:300` (`updateEpic`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `DELETE /build/:projectId/epics/:epicId` — `src/modules/build/execution/iterations.controller.ts:313` (`deleteEpic`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
 - `GET /build/time-entries` — `src/modules/build/execution/timesheets.controller.ts:61` (`listTimeEntries`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `GET /build/time-entries/team` — `src/modules/build/execution/timesheets.controller.ts:72` (`teamTimesheets`): project relationship: NOT-ENFORCED
 - `GET /build/billing-summary` — `src/modules/build/execution/timesheets.controller.ts:140` (`billingSummary`): project relationship: NOT-ENFORCED
 - `GET /build/:projectId/tickets/:ticketId/time-entries` — `src/modules/build/execution/timesheets.controller.ts:158` (`listTicketTimeEntries`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `PATCH /build/:projectId/whiteboards/:whiteboardId/sharing` — `src/modules/build/execution/whiteboard-sharing.controller.ts:57` (`updateSharing`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `POST /build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token` — `src/modules/build/execution/whiteboard-sharing.controller.ts:70` (`rotateShareToken`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `PUT /build/:projectId/whiteboards/:whiteboardId/shares` — `src/modules/build/execution/whiteboard-sharing.controller.ts:84` (`setShares`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `DELETE /build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId` — `src/modules/build/execution/whiteboard-sharing.controller.ts:97` (`removeShare`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `GET /build/:projectId/workload/capacity` — `src/modules/build/execution/workload-capacity.controller.ts:40` (`capacity`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `POST /build/views` — `src/modules/build/execution/workspace.controller.ts:263` (`createWorkspaceView`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `GET /build/whiteboards` — `src/modules/build/execution/workspace.controller.ts:306` (`listAllWhiteboards`): project relationship: NOT-ENFORCED
-- `GET /build/:projectId/whiteboards` — `src/modules/build/execution/workspace.controller.ts:320` (`listWhiteboards`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `POST /build/:projectId/whiteboards` — `src/modules/build/execution/workspace.controller.ts:332` (`createWhiteboard`): project relationship: TENANT-ONLY (assertProjectInOrg)
-- `GET /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:345` (`getWhiteboard`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `PATCH /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:357` (`updateWhiteboard`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `DELETE /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:370` (`deleteWhiteboard`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `POST /build/:projectId/whiteboards/:whiteboardId/restore` — `src/modules/build/execution/workspace.controller.ts:383` (`restoreWhiteboard`): project relationship: TENANT-ONLY (assertProjectInOrg); the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
 - `GET /build/managed-products/:managedProductId/insights` — `src/modules/build/managed-products/managed-products.controller.ts:105` (`getProductInsights`): project relationship: NOT-ENFORCED
-- `POST /build/:projectId/meetings/:meetingId/action-items` — `src/modules/build/meetings/action-items.controller.ts:39` (`createItem`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `PATCH /build/:projectId/meetings/:meetingId/action-items/:itemId` — `src/modules/build/meetings/action-items.controller.ts:53` (`updateItem`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `DELETE /build/:projectId/meetings/:meetingId/action-items/:itemId` — `src/modules/build/meetings/action-items.controller.ts:67` (`deleteItem`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
-- `POST /build/:projectId/meetings/:meetingId/action-items/:itemId/convert-to-task` — `src/modules/build/meetings/action-items.controller.ts:81` (`convertToTask`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
 - `PATCH /build/:projectId/meetings/:meetingId` — `src/modules/build/meetings/meetings.controller.ts:92` (`updateMeeting`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
 - `DELETE /build/:projectId/meetings/:meetingId` — `src/modules/build/meetings/meetings.controller.ts:105` (`deleteMeeting`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
 - `POST /build/:projectId/meetings/:meetingId/attendees` — `src/modules/build/meetings/meetings.controller.ts:118` (`addAttendee`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
@@ -2012,8 +2188,6 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 - `POST /build/programs/:programId/projects` — `src/modules/build/portfolios/programs.controller.ts:111` (`linkProject`): project relationship: TENANT-ONLY (assertProjectInOrg)
 - `DELETE /build/programs/:programId/projects/:projectId` — `src/modules/build/portfolios/programs.controller.ts:124` (`unlinkProject`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
 - `GET /build/teams/:teamId/projects` — `src/modules/build/teams/teams.controller.ts:183` (`listTeamProjects`): project relationship: NOT-ENFORCED
-- `POST /build/teams/:teamId/projects` — `src/modules/build/teams/teams.controller.ts:194` (`addProject`): project relationship: NOT-ENFORCED
-- `DELETE /build/teams/:teamId/projects/:projectId` — `src/modules/build/teams/teams.controller.ts:207` (`removeProject`): project relationship: NOT-ENFORCED; the reviewed VERIFIED verdict predates the project-relationship dimension and cannot certify it
 
 ## Recorded notes (non-blocking)
 
