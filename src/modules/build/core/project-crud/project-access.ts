@@ -192,8 +192,18 @@ export async function authorizeProjectTicketRead(
     cache ? cache.get(actor.orgId, actor.userId, projectId, resolve) : resolve(),
     resolveTicketsScope(access, actor),
   ]);
-  if (!hasAccess) throw new ForbiddenException("You do not have access to this project");
+  if (!hasAccess) throw new NotFoundException("Not found");
   return read;
+}
+
+export async function assertProjectVisible(
+  db: Db,
+  access: Pick<AccessService, "resolveUserPermissions">,
+  actor: CurrentUserContext,
+  projectId: number,
+): Promise<void> {
+  const { hasAccess } = await resolveProjectAccess(db, access, actor, projectId);
+  if (!hasAccess) throw new NotFoundException("Not found");
 }
 
 export async function assertCanDeleteProject(

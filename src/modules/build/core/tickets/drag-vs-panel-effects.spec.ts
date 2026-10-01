@@ -23,6 +23,7 @@ jest.mock("../project-crud/project-access", () => ({
         })),
       ),
   ),
+  resolveProjectAssignableMemberships: jest.fn().mockResolvedValue(new Map()),
 }));
 
 jest.mock("./build-ticket-batch-workflow", () => ({
@@ -32,10 +33,6 @@ jest.mock("./build-ticket-batch-workflow", () => ({
 
 jest.mock("./tickets-helpers", () => ({
   resolveAssigneeId: jest.fn().mockReturnValue(undefined),
-}));
-
-jest.mock("../project-crud/project-access", () => ({
-  resolveProjectAssignableMemberships: jest.fn().mockResolvedValue(new Map()),
 }));
 
 const ORG = "org-drag-panel-test";

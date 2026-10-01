@@ -8,7 +8,8 @@ jest.mock("./tickets/ticket-status.util", () => ({
 
 jest.mock("./project-crud/project-access", () => ({
   ...jest.requireActual("./project-crud/project-access"),
-  resolveProjectAccess: jest.fn(),
+  authorizeProjectTicketRead: jest.fn(),
+  assertProjectVisible: jest.fn(),
 }));
 
 import { NotFoundException } from "@nestjs/common";
@@ -27,7 +28,8 @@ import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { resolveValidTicketStatuses } from "./tickets/ticket-status.util";
-import { resolveProjectAccess } from "./project-crud/project-access";
+import { assertProjectVisible, authorizeProjectTicketRead } from "./project-crud/project-access";
+import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -47,9 +49,7 @@ const OWNER_ORG = "org-owner";
 const mockResolveValidTicketStatuses = resolveValidTicketStatuses as jest.MockedFunction<
   typeof resolveValidTicketStatuses
 >;
-const mockResolveProjectAccess = resolveProjectAccess as jest.MockedFunction<
-  typeof resolveProjectAccess
->;
+const mockAuthorizeProjectTicketRead = jest.mocked(authorizeProjectTicketRead);
 
 beforeEach(() => {
   jest.resetAllMocks();
@@ -78,7 +78,7 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
   }
 
   it("rejects import assignment without build:tickets:assign", async () => {
-    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: null });
+    jest.mocked(assertProjectVisible).mockResolvedValue(undefined);
     const holds = jest.fn().mockResolvedValue(false);
     const svc = makeTransferSvc({} as Partial<ProjectsTicketsReadService>, {} as Db, undefined, holds);
     await expect(
@@ -93,7 +93,7 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
 
   describe("exportTickets", () => {
     it("throws NotFoundException when project is inaccessible to the caller (DENY)", async () => {
-      mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
+      mockAuthorizeProjectTicketRead.mockRejectedValue(new NotFoundException("Not found"));
       const db = {} as unknown as Db;
       const svc = makeTransferSvc({} as Partial<ProjectsTicketsReadService>, db);
       await expect(
@@ -101,14 +101,14 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it("passes the caller orgId to resolveProjectAccess (predicate check — DENY)", async () => {
-      mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
+    it("passes the caller orgId to authorizeProjectTicketRead (predicate check — DENY)", async () => {
+      mockAuthorizeProjectTicketRead.mockRejectedValue(new NotFoundException("Not found"));
       const db = {} as unknown as Db;
       const svc = makeTransferSvc({} as Partial<ProjectsTicketsReadService>, db);
       await expect(
         svc.exportTickets({ orgId: ATTACKER_ORG, userId: "u-attacker" } as Parameters<typeof svc.exportTickets>[0], 42),
       ).rejects.toThrow(NotFoundException);
-      expect(mockResolveProjectAccess).toHaveBeenCalledWith(
+      expect(mockAuthorizeProjectTicketRead).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
         expect.objectContaining({ orgId: ATTACKER_ORG, userId: "u-attacker" }),
@@ -117,7 +117,7 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
     });
 
     it("returns ticket rows scoped to the owning org (CONTROL)", async () => {
-      mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "OWNER" });
+      mockAuthorizeProjectTicketRead.mockResolvedValue(ScopedRead.of(OWNER_ORG, "u-owner", "all"));
       const read = {};
       const ticketRow = {
         number: 1,

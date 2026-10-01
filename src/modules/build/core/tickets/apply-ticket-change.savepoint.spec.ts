@@ -56,7 +56,7 @@ function makeDeps(
   const tx = makeTx();
   const deps: ApplyTicketChangeDeps = {
     db: {
-      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } },
+      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }),

@@ -14,11 +14,8 @@ import { ProjectsTicketNotFoundException } from "../../../../common/http/api-exc
 import { assertTicketReadAccess } from "../project-crud/project-access";
 
 jest.mock("../project-crud/project-access", () => ({
-  assertTicketReadAccess: jest.fn(),
-}));
-
-jest.mock("../project-crud/project-access", () => ({
   ...jest.requireActual("../project-crud/project-access"),
+  assertTicketReadAccess: jest.fn(),
   resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }),
 }));
 

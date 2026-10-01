@@ -5,10 +5,14 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { Db } from "../../../../db/drizzle.types";
 import type { AccessService } from "../../../access/access.service";
 import {
+  assertCanDeleteProject,
+  assertCanModifyAuthoredRecord,
   assertProjectAccess,
   assertProjectAggregateAccess,
   assertProjectInOrg,
+  assertProjectVisible,
   assertTicketReadAccess,
+  authorizeProjectTicketRead,
   authorizeTicketMutation,
   readMutationTickets,
   resolveProjectAccess,
@@ -190,9 +194,9 @@ describe("assertProjectAggregateAccess — human actor path", () => {
     await expect(assertProjectAggregateAccess(db, access, makeActor(), PROJECT_ID)).resolves.toBeUndefined();
   });
 
-  it("denies a project manager with restricted own-only scope", async () => {
+  it.each(["own", "team", "none"])("denies a project manager with restricted %s scope", async (scope) => {
     const db = makeDb({ projectRow: { managerMembershipId: MEMBER_MID }, selectRows: [] });
-    const access = makeAccess({ permsMap: new Map(), scope: "own" });
+    const access = makeAccess({ permsMap: new Map(), scope });
     await expect(assertProjectAggregateAccess(db, access, makeActor(), PROJECT_ID)).rejects.toThrow(ForbiddenException);
   });
 
@@ -316,5 +320,100 @@ describe("readMutationTickets", () => {
     const err = await readMutationTickets(db, makeActor(), PROJECT_ID, [TICKET_ID], policy).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ForbiddenException);
     expect(err).not.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe("authorizeProjectTicketRead", () => {
+  it("returns the tickets read scope for a project member", async () => {
+    const db = makeDb({ projectRow: { managerMembershipId: MEMBER_MID } });
+    const read = await authorizeProjectTicketRead(db, makeAccess({ scope: "own" }), makeActor(), PROJECT_ID);
+    expect(read.unrestricted).toBe(false);
+    expect(read.denied).toBe(false);
+  });
+
+  it("conceals the project from a same-tenant non-member as 404", async () => {
+    const db = makeDb({ projectRow: { managerMembershipId: 999 }, selectRows: [] });
+    await expect(authorizeProjectTicketRead(db, makeAccess(), makeActor(), PROJECT_ID)).rejects.toThrow(NotFoundException);
+  });
+
+  it("throws 404 for a cross-tenant project", async () => {
+    const db = makeDb({ projectRow: undefined });
+    await expect(authorizeProjectTicketRead(db, makeAccess(), makeActor(), PROJECT_ID)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("assertProjectVisible", () => {
+  it("resolves for a project member", async () => {
+    const db = makeDb({ projectRow: { managerMembershipId: MEMBER_MID } });
+    await expect(assertProjectVisible(db, makeAccess(), makeActor(), PROJECT_ID)).resolves.toBeUndefined();
+  });
+
+  it("conceals the project from a same-tenant non-member as 404", async () => {
+    const db = makeDb({ projectRow: { managerMembershipId: 999 }, selectRows: [] });
+    await expect(assertProjectVisible(db, makeAccess(), makeActor(), PROJECT_ID)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("assertCanDeleteProject", () => {
+  it("allows the org owner without a permission lookup", async () => {
+    const access = makeAccess();
+    await expect(assertCanDeleteProject(access, makeActor({ isOrgOwner: true }))).resolves.toBeUndefined();
+    expect(access.resolveUserPermissions).not.toHaveBeenCalled();
+  });
+
+  it("allows a holder of build:delete", async () => {
+    const access = makeAccess({ permsMap: new Map([["build:delete", "all"]]) });
+    await expect(assertCanDeleteProject(access, makeActor())).resolves.toBeUndefined();
+  });
+
+  it("throws 403 for a member without build:delete", async () => {
+    await expect(assertCanDeleteProject(makeAccess(), makeActor())).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe("assertCanModifyAuthoredRecord", () => {
+  it("allows the author by membership", async () => {
+    await expect(
+      assertCanModifyAuthoredRecord(makeAccess(), makeActor(), { membershipId: MEMBER_MID }, "build:files:manage", "denied"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("allows the author by user id", async () => {
+    await expect(
+      assertCanModifyAuthoredRecord(makeAccess(), makeActor(), { userId: USER_ID }, null, "denied"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("allows the org owner over another author", async () => {
+    await expect(
+      assertCanModifyAuthoredRecord(makeAccess(), makeActor({ isOrgOwner: true }), { userId: "someone-else" }, null, "denied"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("allows a holder of the manage permission over another author", async () => {
+    const access = makeAccess({ permsMap: new Map([["build:files:manage", "all"]]) });
+    await expect(
+      assertCanModifyAuthoredRecord(access, makeActor(), { membershipId: 7 }, "build:files:manage", "denied"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("denies a non-author without the manage permission", async () => {
+    await expect(
+      assertCanModifyAuthoredRecord(makeAccess(), makeActor(), { membershipId: 7 }, "build:files:manage", "denied"),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it("denies a non-author when no manage permission applies", async () => {
+    const access = makeAccess({ permsMap: new Map([["build:files:manage", "all"]]) });
+    await expect(
+      assertCanModifyAuthoredRecord(access, makeActor(), { userId: "someone-else" }, null, "denied"),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it("never treats a null author membership as the actor", async () => {
+    const actor = makeActor({ principal: systemJobPrincipal("build.daily-snapshots") });
+    await expect(
+      assertCanModifyAuthoredRecord(makeAccess(), actor, { membershipId: null }, "build:files:manage", "denied"),
+    ).rejects.toThrow(ForbiddenException);
   });
 });
