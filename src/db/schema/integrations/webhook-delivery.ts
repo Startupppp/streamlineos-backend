@@ -9,10 +9,36 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations } from "../common/auth";
+import { gitConnections } from "../build/git";
+
+export const integrationGitConnectionCredentials = pgTable(
+  "integration_git_connection_credentials",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    gitConnectionId: integer("git_connection_id").notNull(),
+    signingSecret: text("signing_secret").notNull(),
+    secretSetAt: timestamp("secret_set_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "fk_int_git_conn_cred_org_conn",
+      columns: [t.orgId, t.gitConnectionId],
+      foreignColumns: [gitConnections.orgId, gitConnections.id],
+    }).onDelete("cascade"),
+    index("idx_integration_git_conn_cred_org").on(t.orgId),
+    uniqueIndex("uniq_integration_git_conn_cred_org_id").on(t.orgId, t.id),
+    uniqueIndex("uniq_integration_git_conn_cred_org_conn").on(t.orgId, t.gitConnectionId),
+  ],
+);
 
 export const integrationWebhookEndpointCredentials = pgTable(
   "integration_webhook_endpoint_credentials",
