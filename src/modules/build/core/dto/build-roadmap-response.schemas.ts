@@ -153,6 +153,18 @@ export const changelogEntrySchema = z.object({
   updatedAt: wireDate(),
 });
 
+const projectTemplateTicketSchema = z.object({
+  id: z.number().int(),
+  templateId: z.number().int(),
+  title: z.string(),
+  description: z.string().nullable(),
+  type: z.string(),
+  priority: z.string(),
+  estimatedHours: z.string().nullable(),
+  order: z.number().int(),
+  phase: z.string().nullable(),
+});
+
 const projectTemplateSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -162,14 +174,16 @@ const projectTemplateSchema = z.object({
   createdBy: z.string().nullable(),
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
+  tickets: z.array(projectTemplateTicketSchema),
 });
 
 export const templateListSchema = cursorPageSchema(projectTemplateSchema);
 export const templateRowSchema = projectTemplateSchema;
 
 export const applyTemplateResultSchema = z.object({
-  project: z.object({ id: z.number().int(), name: z.string(), key: z.string() }),
-  tickets: z.array(z.object({ id: z.number().int(), title: z.string() })),
+  projectId: z.number().int(),
+  key: z.string(),
+  ticketsCreated: z.number().int(),
 });
 
 

@@ -62,5 +62,6 @@ export const projectRowSchema = z.object({
 export const projectDetailSchema = projectRowSchema.extend({
   statuses: z.array(projectStatusSchema),
   members: z.array(projectMemberDetailSchema),
+  crmClient: z.object({ id: z.number().int(), name: z.string() }).nullable(),
 });
 

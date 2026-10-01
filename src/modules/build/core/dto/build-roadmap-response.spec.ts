@@ -1,4 +1,10 @@
-import { roadmapItemSchema, feedbackPostSchema, roadmapPageSchema } from "./build-roadmap-response.schemas";
+import {
+  roadmapItemSchema,
+  feedbackPostSchema,
+  roadmapPageSchema,
+  templateRowSchema,
+  applyTemplateResultSchema,
+} from "./build-roadmap-response.schemas";
 import { roadmapStatusEnum, feedbackStatusEnum } from "../../../../db/schema";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 import { roadmapListQuerySchema, feedbackListQuerySchema } from "./roadmap.schemas";
@@ -146,6 +152,65 @@ describe("cursorPageSchema(feedbackPostSchema) — status passes through the dat
       feedbackPageSchema.parse({
         data: [feedbackBase({ status: "spam" })],
         pagination: { limit: 5, hasMore: false, nextCursor: null },
+      })
+    ).toThrow();
+  });
+});
+
+describe("templateRowSchema accepts the shape createTemplate returns including tickets", () => {
+  const base = {
+    id: 1,
+    orgId: "org-1",
+    name: "Sprint template",
+    description: null,
+    category: "general",
+    createdBy: null,
+    deletedAt: null,
+    createdAt: NOW,
+  };
+
+  it("accepts a template with an empty tickets array so a newly created template with no ticket stubs parses", () => {
+    expect(() => templateRowSchema.parse({ ...base, tickets: [] })).not.toThrow();
+  });
+
+  it("accepts a template with ticket stubs so createTemplate responses are fully declared", () => {
+    const ticket = {
+      id: 10,
+      templateId: 1,
+      title: "Write tests",
+      description: null,
+      type: "TASK",
+      priority: "MEDIUM",
+      estimatedHours: null,
+      order: 0,
+      phase: null,
+    };
+    expect(() => templateRowSchema.parse({ ...base, tickets: [ticket] })).not.toThrow();
+  });
+
+  it("preserves tickets in the parsed value so the FE receives the template stubs in one response", () => {
+    const parsed = templateRowSchema.parse({ ...base, tickets: [] });
+    expect(Array.isArray(parsed.tickets)).toBe(true);
+  });
+});
+
+describe("applyTemplateResultSchema accepts the shape applyTemplate returns", () => {
+  it("accepts projectId, key, ticketsCreated so the response contract matches the service output", () => {
+    expect(() =>
+      applyTemplateResultSchema.parse({ projectId: 1, key: "PRJ-001", ticketsCreated: 5 })
+    ).not.toThrow();
+  });
+
+  it("preserves all three fields so the FE can redirect to the new project without a second request", () => {
+    const parsed = applyTemplateResultSchema.parse({ projectId: 2, key: "PROJ-123", ticketsCreated: 0 });
+    expect(parsed).toEqual({ projectId: 2, key: "PROJ-123", ticketsCreated: 0 });
+  });
+
+  it("rejects the old project+tickets envelope because the service no longer returns it", () => {
+    expect(() =>
+      applyTemplateResultSchema.parse({
+        project: { id: 1, name: "P", key: "K" },
+        tickets: [{ id: 1, title: "T" }],
       })
     ).toThrow();
   });

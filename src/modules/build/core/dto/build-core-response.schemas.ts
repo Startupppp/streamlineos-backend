@@ -161,6 +161,7 @@ export const projectReleaseRowSchema = z.object({
   deletedAt: wireDate().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+  ticketCount: z.number().int(),
 });
 
 export const projectWebhookSchema = z.object({
