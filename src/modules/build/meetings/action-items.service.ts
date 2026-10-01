@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   meetingActionItems,
@@ -10,6 +10,9 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateActionItemInput, UpdateActionItemInput } from "./dto/meetings.schemas";
 import { BuildTicketCreationService } from "../core/tickets";
+import { assertProjectAccess } from "../core";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 type ActionItemPatch = Partial<
   Pick<
@@ -24,9 +27,12 @@ export class ActionItemsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly ticketCreation: BuildTicketCreationService,
+    private readonly access: AccessService,
   ) {}
 
-  private async assertMeeting(orgId: string, projectId: number, meetingId: number): Promise<void> {
+  private async assertMeetingAccess(actor: CurrentUserContext, projectId: number, meetingId: number): Promise<void> {
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const orgId = actor.orgId;
     const m = await this.db.query.projectMeetings.findFirst({
       where: and(
         eq(projectMeetings.id, meetingId),
@@ -53,13 +59,13 @@ export class ActionItemsService {
   }
 
   async createItem(
-    orgId: string,
-    userId: string,
+    actor: CurrentUserContext,
     projectId: number,
     meetingId: number,
     input: CreateActionItemInput,
   ) {
-    await this.assertMeeting(orgId, projectId, meetingId);
+    await this.assertMeetingAccess(actor, projectId, meetingId);
+    const { orgId, userId } = actor;
     const [item] = await this.db
       .insert(meetingActionItems)
       .values({
@@ -86,14 +92,14 @@ export class ActionItemsService {
   }
 
   async updateItem(
-    orgId: string,
-    userId: string,
+    actor: CurrentUserContext,
     projectId: number,
     meetingId: number,
     itemId: number,
     input: UpdateActionItemInput,
   ) {
-    await this.assertMeeting(orgId, projectId, meetingId);
+    await this.assertMeetingAccess(actor, projectId, meetingId);
+    const { orgId, userId } = actor;
     await this.loadItem(orgId, meetingId, itemId);
     const patch: ActionItemPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -118,8 +124,9 @@ export class ActionItemsService {
     return updated;
   }
 
-  async deleteItem(orgId: string, userId: string, projectId: number, meetingId: number, itemId: number) {
-    await this.assertMeeting(orgId, projectId, meetingId);
+  async deleteItem(actor: CurrentUserContext, projectId: number, meetingId: number, itemId: number) {
+    await this.assertMeetingAccess(actor, projectId, meetingId);
+    const { orgId, userId } = actor;
     await this.loadItem(orgId, meetingId, itemId);
     await this.db
       .update(meetingActionItems)
@@ -135,7 +142,11 @@ export class ActionItemsService {
     });
   }
 
-  async convertToTask(orgId: string, userId: string, projectId: number, meetingId: number, itemId: number) {
+  async convertToTask(actor: CurrentUserContext, projectId: number, meetingId: number, itemId: number) {
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    if (!(await this.access.holds(actor, "build:tickets:create")))
+      throw new ForbiddenException("Not authorized to create tickets");
+    const { orgId, userId } = actor;
     let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
     const result = await this.db.transaction(async (tx) => {
       const meeting = await tx.query.projectMeetings.findFirst({
