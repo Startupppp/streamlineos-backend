@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const CLIENT_PORTAL_PERMISSIONS: Permission[] = [
+export const CLIENT_PORTAL_PERMISSIONS = definePermissions([
   {
     name: "build:portal:view",
     resource: "build:portal",
@@ -31,9 +31,9 @@ export const CLIENT_PORTAL_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Toggle client-visibility of project items",
   },
-];
+]);
 
-export const QA_BUGS_PERMISSIONS: Permission[] = [
+export const QA_BUGS_PERMISSIONS = definePermissions([
   {
     name: "build:qa:view",
     resource: "build:qa",
@@ -82,9 +82,9 @@ export const QA_BUGS_PERMISSIONS: Permission[] = [
     action: "delete",
     description: "Delete bugs",
   },
-];
+]);
 
-export const PROJECT_APPROVALS_PERMISSIONS: Permission[] = [
+export const PROJECT_APPROVALS_PERMISSIONS = definePermissions([
   {
     name: "build:approvals:view",
     resource: "build:approvals",
@@ -111,9 +111,9 @@ export const PROJECT_APPROVALS_PERMISSIONS: Permission[] = [
     description:
       "Cancel/escalate/delegate/reassign approvals (privileged)",
   },
-];
+]);
 
-export const PROJECTS_AI_PERMISSIONS: Permission[] = [
+export const PROJECTS_AI_PERMISSIONS = definePermissions([
   {
     name: "build:ai:use",
     resource: "build:ai",
@@ -121,9 +121,9 @@ export const PROJECTS_AI_PERMISSIONS: Permission[] = [
     description:
       "Use AI features on projects (summary, risks, client update, plan, task extraction, Q&A)",
   },
-];
+]);
 
-export const PROJECT_MEETINGS_PERMISSIONS: Permission[] = [
+export const PROJECT_MEETINGS_PERMISSIONS = definePermissions([
   {
     name: "build:meetings:view",
     resource: "build:meetings",
@@ -137,9 +137,9 @@ export const PROJECT_MEETINGS_PERMISSIONS: Permission[] = [
     description:
       "Create, update, and delete project meetings and action items",
   },
-];
+]);
 
-export const PROJECT_INCIDENTS_PERMISSIONS: Permission[] = [
+export const PROJECT_INCIDENTS_PERMISSIONS = definePermissions([
   {
     name: "build:incidents:view",
     resource: "build:incidents",
@@ -152,9 +152,9 @@ export const PROJECT_INCIDENTS_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create, update, and resolve project incidents",
   },
-];
+]);
 
-export const PROJECT_FORMS_PERMISSIONS: Permission[] = [
+export const PROJECT_FORMS_PERMISSIONS = definePermissions([
   {
     name: "build:forms:view",
     resource: "build:forms",
@@ -167,9 +167,9 @@ export const PROJECT_FORMS_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create, update, and delete project forms and submissions",
   },
-];
+]);
 
-export const PROJECT_TEAMS_PERMISSIONS: Permission[] = [
+export const PROJECT_TEAMS_PERMISSIONS = definePermissions([
   {
     name: "build:teams:view",
     resource: "build:teams",
@@ -200,9 +200,9 @@ export const PROJECT_TEAMS_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Add or remove team members",
   },
-];
+]);
 
-export const PROJECT_MEMBERS_PERMISSIONS: Permission[] = [
+export const PROJECT_MEMBERS_PERMISSIONS = definePermissions([
   {
     name: "build:members:view",
     resource: "build:members",
@@ -217,9 +217,9 @@ export const PROJECT_MEMBERS_PERMISSIONS: Permission[] = [
     description: "Manage workspace members on projects",
     scopable: false,
   },
-];
+]);
 
-export const PROJECT_CUSTOMERS_PERMISSIONS: Permission[] = [
+export const PROJECT_CUSTOMERS_PERMISSIONS = definePermissions([
   {
     name: "build:customers:view",
     resource: "build:customers",
@@ -234,9 +234,9 @@ export const PROJECT_CUSTOMERS_PERMISSIONS: Permission[] = [
     description: "Manage CRM organization links on projects",
     scopable: false,
   },
-];
+]);
 
-export const PROJECT_PORTFOLIO_PERMISSIONS: Permission[] = [
+export const PROJECT_PORTFOLIO_PERMISSIONS = definePermissions([
   {
     name: "build:portfolios:view",
     resource: "build:portfolios",
@@ -261,9 +261,9 @@ export const PROJECT_PORTFOLIO_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create, update, and delete programs",
   },
-];
+]);
 
-export const PROJECT_MANAGED_PRODUCTS_PERMISSIONS: Permission[] = [
+export const PROJECT_MANAGED_PRODUCTS_PERMISSIONS = definePermissions([
   {
     name: "build:managed-products:view",
     resource: "build:managed-products",
@@ -288,9 +288,9 @@ export const PROJECT_MANAGED_PRODUCTS_PERMISSIONS: Permission[] = [
     action: "delete",
     description: "Delete managed products",
   },
-];
+]);
 
-export const PROJECT_WORKFLOW_PERMISSIONS: Permission[] = [
+export const PROJECT_WORKFLOW_PERMISSIONS = definePermissions([
   {
     name: "build:workflow:view",
     resource: "build:workflow",
@@ -304,9 +304,9 @@ export const PROJECT_WORKFLOW_PERMISSIONS: Permission[] = [
     description:
       "Create, update, and delete workflow transition rules and WIP limits",
   },
-];
+]);
 
-export const PROJECT_GOVERNANCE_PERMISSIONS: Permission[] = [
+export const PROJECT_GOVERNANCE_PERMISSIONS = definePermissions([
   {
     name: "build:risks:view",
     resource: "build:risks",
@@ -331,9 +331,9 @@ export const PROJECT_GOVERNANCE_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create, update, and delete project decisions",
   },
-];
+]);
 
-export const PROJECT_UPDATES_PERMISSIONS: Permission[] = [
+export const PROJECT_UPDATES_PERMISSIONS = definePermissions([
   {
     name: "build:updates:view",
     resource: "build:updates",
@@ -346,9 +346,9 @@ export const PROJECT_UPDATES_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Post and delete project status updates",
   },
-];
+]);
 
-export const PROJECT_FILES_PERMISSIONS: Permission[] = [
+export const PROJECT_FILES_PERMISSIONS = definePermissions([
   {
     name: "build:files:view",
     resource: "build:files",
@@ -361,9 +361,9 @@ export const PROJECT_FILES_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Upload and delete project files",
   },
-];
+]);
 
-export const PROJECT_LIFECYCLE_PERMISSIONS: Permission[] = [
+export const PROJECT_LIFECYCLE_PERMISSIONS = definePermissions([
   {
     name: "build:restore",
     resource: "projects",
@@ -376,4 +376,4 @@ export const PROJECT_LIFECYCLE_PERMISSIONS: Permission[] = [
     action: "restore",
     description: "Restore a soft-deleted ticket or ticket comment",
   },
-];
+]);

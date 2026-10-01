@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const SIGN_PERMISSIONS: Permission[] = [
+export const SIGN_PERMISSIONS = definePermissions([
   {
     name: "sign:documents:upload",
     resource: "sign:documents",
@@ -76,4 +76,4 @@ export const SIGN_PERMISSIONS: Permission[] = [
     action: "download",
     description: "Download SignOS certificates and final signed PDFs",
   },
-];
+]);

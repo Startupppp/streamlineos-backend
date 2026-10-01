@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const PAYMENTS_PERMISSIONS: Permission[] = [
+export const PAYMENTS_PERMISSIONS = definePermissions([
   {
     name: "payments:providers:view",
     resource: "payments:providers",
@@ -64,4 +64,4 @@ export const PAYMENTS_PERMISSIONS: Permission[] = [
     description: "View payment provider audit log",
     scopable: false,
   },
-];
+]);

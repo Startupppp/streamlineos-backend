@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const NOTIFICATIONS_PERMISSIONS: Permission[] = [
+export const NOTIFICATIONS_PERMISSIONS = definePermissions([
   {
     name: "notifications:events:view",
     resource: "notifications:events",
@@ -61,4 +61,4 @@ export const NOTIFICATIONS_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create, schedule, send, and cancel broadcasts",
   },
-];
+]);

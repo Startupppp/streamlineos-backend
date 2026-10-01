@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const HR_ENTERPRISE_PERMISSIONS: Permission[] = [
+export const HR_ENTERPRISE_PERMISSIONS = definePermissions([
   {
     name: "hr:forms:view",
     resource: "hr:forms",
@@ -275,4 +275,4 @@ export const HR_ENTERPRISE_PERMISSIONS: Permission[] = [
     description:
       "Export HR entity data (employees, attendance, assets, leave balances, documents)",
   },
-];
+]);

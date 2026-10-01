@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const INVENTORY_PERMISSIONS: Permission[] = [
+export const INVENTORY_PERMISSIONS = definePermissions([
   {
     name: "inventory:products:read",
     resource: "inventory:products",
@@ -406,4 +406,4 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Dismiss or update AI-generated inventory insights",
   },
-];
+]);

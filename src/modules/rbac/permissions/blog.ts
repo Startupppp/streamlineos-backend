@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const BLOG_PERMISSIONS: Permission[] = [
+export const BLOG_PERMISSIONS = definePermissions([
   {
     name: "blog:ai:use",
     resource: "blog:ai",
@@ -19,4 +19,4 @@ export const BLOG_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Create, edit and delete blog categories",
   },
-];
+]);

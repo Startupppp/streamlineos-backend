@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const TIMESHEETS_PERMISSIONS: Permission[] = [
+export const TIMESHEETS_PERMISSIONS = definePermissions([
   {
     name: "timesheets:payroll:view",
     resource: "timesheets:payroll",
@@ -140,4 +140,4 @@ export const TIMESHEETS_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Resolve, dismiss, and run timesheet exception detection",
   },
-];
+]);

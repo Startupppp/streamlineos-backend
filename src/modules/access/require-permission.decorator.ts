@@ -1,5 +1,6 @@
 import { SetMetadata } from "@nestjs/common";
 import { REQUIRE_PERMISSION } from "../../common/rbac/require-permission-key";
+import type { PermissionKey } from "../rbac/permissions/catalog";
 
 export { REQUIRE_PERMISSION };
 
@@ -16,5 +17,5 @@ export { REQUIRE_PERMISSION };
  * The tuple makes a zero-key call a compile error; the guard denies an empty
  * list at runtime as well, because metadata can also be set by hand.
  */
-export const RequirePermission = (...keys: [string, ...string[]]) =>
+export const RequirePermission = (...keys: [PermissionKey, ...PermissionKey[]]) =>
   SetMetadata(REQUIRE_PERMISSION, keys.length === 1 ? keys[0] : keys);

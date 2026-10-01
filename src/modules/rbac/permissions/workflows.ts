@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const WORKFLOW_PERMISSIONS: Permission[] = [
+export const WORKFLOW_PERMISSIONS = definePermissions([
   {
     name: "workflows:workflows:view",
     resource: "workflows:workflows",
@@ -85,4 +85,4 @@ export const WORKFLOW_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage workflow variables",
   },
-];
+]);

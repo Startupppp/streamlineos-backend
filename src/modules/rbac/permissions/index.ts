@@ -1,4 +1,5 @@
 export type { Permission } from "./types";
+export type { PermissionKey } from "./catalog";
 export {
   ACCESS_MANAGED_MODULES,
   MODULE_ACCESS_PERMISSIONS,

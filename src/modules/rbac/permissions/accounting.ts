@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const ACCOUNTING_PERMISSIONS: Permission[] = [
+export const ACCOUNTING_PERMISSIONS = definePermissions([
   {
     name: "accounting:read",
     resource: "accounting",
@@ -482,4 +482,4 @@ export const ACCOUNTING_PERMISSIONS: Permission[] = [
     description:
       "Use AI features in the accounting module (variance narration, reconciliation explanation, document extraction)",
   },
-];
+]);

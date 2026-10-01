@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const PAYROLL_PERMISSIONS: Permission[] = [
+export const PAYROLL_PERMISSIONS = definePermissions([
   {
     name: "payroll:runs:view",
     resource: "payroll:runs",
@@ -163,4 +163,4 @@ export const PAYROLL_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage final settlements",
   },
-];
+]);

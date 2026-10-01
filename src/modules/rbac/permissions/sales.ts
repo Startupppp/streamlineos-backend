@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const SALES_PERMISSIONS: Permission[] = [
+export const SALES_PERMISSIONS = definePermissions([
   {
     name: "sales:view",
     resource: "sales",
@@ -13,4 +13,4 @@ export const SALES_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage sales module",
   },
-];
+]);

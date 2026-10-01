@@ -1,4 +1,4 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
 /**
  * CRM catalog: contacts, quotes, client management, the CRM configuration surfaces,
@@ -7,7 +7,7 @@ import type { Permission } from "./types";
  * One slice of `CRM_PERMISSIONS`. `crm.ts` spreads the slices in a fixed
  * order and that order is the catalog order; nothing imports a slice directly.
  */
-export const CRM_RECORDS_PERMISSIONS: Permission[] = [
+export const CRM_RECORDS_PERMISSIONS = definePermissions([
   {
     /*
       NOT scopable, where the neighbouring CRM read keys are — because a contact
@@ -186,4 +186,4 @@ export const CRM_RECORDS_PERMISSIONS: Permission[] = [
     action: "submit",
     description: "Deliver a normalised inbound communication event into the CRM",
   },
-];
+]);

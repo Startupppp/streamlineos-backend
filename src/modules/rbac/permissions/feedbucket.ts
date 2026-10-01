@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const FEEDBUCKET_PERMISSIONS: Permission[] = [
+export const FEEDBUCKET_PERMISSIONS = definePermissions([
   {
     name: "feedbucket:widgets:view",
     resource: "feedbucket:widgets",
@@ -67,4 +67,4 @@ export const FEEDBUCKET_PERMISSIONS: Permission[] = [
     action: "ai",
     description: "Run AI triage analysis on feedback submissions",
   },
-];
+]);
