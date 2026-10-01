@@ -86,9 +86,19 @@ export const timesheets = pgTable("timesheets", {
   index("idx_timesheets_org_billing").on(table.orgId, table.isBillable, table.invoicingStatus),
   index("idx_timesheets_period").on(table.timesheetPeriodId),
   index("idx_timesheets_timer_session").on(table.timerSessionId),
-  // One live work-log entry per person per day. Voided rows are excluded, or a
-  // void would keep holding its day against the next entry (BUG-TS-BE-006).
-  uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userMembershipId, table.date).where(sql`ticket_id IS NULL AND voided_at IS NULL`),
+  // One live PROJECT-LESS work-log entry per person per day, and one live entry
+  // per person, day and project. Both halves come from 0300 and were restored by
+  // 1706 after 0824's `DROP COLUMN user_id` auto-dropped them and rebuilt only a
+  // single over-broad index in their place.
+  //
+  // Voided rows are excluded from both, or a void would keep holding its day
+  // against the next entry (BUG-TS-BE-006). `project_id IS NULL` belongs in the
+  // blank index for two reasons: without it, a person logging the same day against
+  // two different projects gets 23505, and it is the predicate the only upsert onto
+  // this index repeats verbatim (hr/time/work-logs.service.ts), which is what makes
+  // PostgreSQL infer a partial index at all.
+  uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userMembershipId, table.date).where(sql`ticket_id IS NULL AND project_id IS NULL AND voided_at IS NULL`),
+  uniqueIndex("uniq_timesheets_day_project").on(table.orgId, table.userMembershipId, table.date, table.projectId).where(sql`ticket_id IS NULL AND project_id IS NOT NULL AND voided_at IS NULL`),
   index("idx_timesheets_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
   index("idx_timesheets_org_locked_by_membership").on(table.orgId, table.lockedByMembershipId),
   foreignKey({
