@@ -54,6 +54,7 @@ export interface AuthzHarness {
   denyAll(): void;
   /** Hold everything — the control fixture. */
   allowAll(): void;
+  holdScopes(scopes: Readonly<Record<string, DataScope>>): void;
   /** Attach no AuthContext, so the guard's UNAUTHENTICATED branch is reached. */
   withoutAuthContext(): void;
   /** Act as a different tenant/user. */
@@ -145,13 +146,6 @@ export async function createAuthzHarness(
     getModuleState: async (): Promise<boolean> => true,
   };
 
-  /*
-   * `PermissionGuard.onApplicationBootstrap` sweeps all registered controllers
-   * via `DiscoveryService.getControllers()` to assert every @RequirePermission
-   * handler is also guarded.  The auto-mocker leaves `getControllers` returning
-   * undefined, which is not iterable.  An explicit stub that returns an empty
-   * iterable satisfies the sweep without registering real controller metadata.
-   */
   const discoveryStub = {
     getControllers: (): Iterable<{ instance: unknown }> => [],
     getProviders: (): Iterable<{ instance: unknown }> => [],
@@ -201,6 +195,9 @@ export async function createAuthzHarness(
     },
     allowAll() {
       state.scopeOf = () => "all";
+    },
+    holdScopes(scopes: Readonly<Record<string, DataScope>>) {
+      state.scopeOf = (key) => scopes[key] ?? "none";
     },
     withoutAuthContext() {
       state.attachContext = false;
