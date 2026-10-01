@@ -10,17 +10,29 @@ export function resolveMapping(raw: unknown): PayrollMapping {
   return parsed.success ? parsed.data : DEFAULT_PAYROLL_MAPPING;
 }
 
+/**
+ * Leave days inside a pay period, counted inclusively.
+ *
+ * Every date here is a date-only YYYY-MM-DD string: leave_requests.start_date
+ * and end_date are `date` columns, and the period bounds come from the payroll
+ * query. The millisecond division below assumes 24-hour days, which only holds
+ * if both ends are parsed at the same offset, so they are parsed explicitly at
+ * UTC midnight — the convention isWeekend and isoWeekMonday already follow in
+ * this file. Parsing them in local time would make a DST transition inside the
+ * range shift the count (BUG-TS-BE-008).
+ */
 export function computeLeaveDays(
   leaves: Array<{ userId: string; startDate: string; endDate: string; isHalfDay: boolean }>,
   periodStart: string,
   periodEnd: string,
 ): Map<string, number> {
   const result = new Map<string, number>();
+  const utcMidnight = (dateOnly: string) => Date.parse(`${dateOnly.slice(0, 10)}T00:00:00Z`);
   for (const lr of leaves) {
     const start = lr.startDate > periodStart ? lr.startDate : periodStart;
     const end = lr.endDate < periodEnd ? lr.endDate : periodEnd;
     if (end < start) continue;
-    const days = (new Date(end).getTime() - new Date(start).getTime()) / 86400000 + 1;
+    const days = (utcMidnight(end) - utcMidnight(start)) / 86400000 + 1;
     result.set(lr.userId, (result.get(lr.userId) ?? 0) + (lr.isHalfDay ? days * 0.5 : days));
   }
   return result;
