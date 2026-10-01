@@ -27,6 +27,7 @@ function makeDb(existingCandidate: { id: number } | null = null): Db {
     query: {
       candidates: { findFirst: jest.fn().mockResolvedValue(existingCandidate) },
       jobPostings: { findFirst: jest.fn().mockResolvedValue(null) },
+      candidateReferrals: { findFirst: jest.fn().mockResolvedValue({ id: 99, orgId: ORG, candidateId: 42 }) },
     },
     insert: jest
       .fn()
@@ -40,6 +41,7 @@ function makeDbExisting(): Db {
     query: {
       candidates: { findFirst: jest.fn().mockResolvedValue({ id: 10 }) },
       jobPostings: { findFirst: jest.fn().mockResolvedValue(null) },
+      candidateReferrals: { findFirst: jest.fn().mockResolvedValue({ id: 99, orgId: ORG, candidateId: 10 }) },
     },
     insert: jest.fn().mockReturnValue(makeReferralInsert()),
   } as unknown as Db;

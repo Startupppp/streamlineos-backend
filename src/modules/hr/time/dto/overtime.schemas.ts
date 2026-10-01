@@ -39,4 +39,8 @@ export type CreateOvertimeInput = z.infer<typeof createOvertimeSchema>;
 export const listQuerySchema = z.object({
   cursor: z.string().optional(),
   pageSize: pageSizeField(20, 100),
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "month must be YYYY-MM")
+    .optional(),
 });

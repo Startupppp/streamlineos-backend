@@ -29,7 +29,6 @@ import {
   type CreateReferralSubmissionInput,
 } from "./dto/sourcing.schemas";
 import {
-  candidateReferralRowSchema,
   candidateReferralWithRelationsSchema,
   internalJobSchema,
   jobApplicationSchema,
@@ -81,7 +80,7 @@ export class RecruitmentSelfController {
   @Post("referrals")
   @Idempotent("hr.recruitment.self-referral-create")
   @HttpCode(201)
-  @ResponseSchema(candidateReferralRowSchema)
+  @ResponseSchema(candidateReferralWithRelationsSchema)
   @RequirePermission("self:referrals")
   @Validate({ body: createReferralSubmissionSchema })
   createOwnReferral(

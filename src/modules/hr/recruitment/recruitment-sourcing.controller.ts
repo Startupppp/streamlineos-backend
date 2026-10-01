@@ -46,14 +46,12 @@ import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../comm
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   candidateReferralWithRelationsSchema,
-  candidateReferralRowSchema,
   vendorListItemSchema,
   vendorRowSchema,
   vendorPortalLinkSchema,
   vendorSubmissionItemSchema,
   vendorSubmissionRawSchema,
   externalReferralWithRelationsSchema,
-  externalReferralRawSchema,
   externalReferrerListItemSchema,
   externalReferrerRowSchema,
 } from "./dto/recruitment-response.schemas";
@@ -83,7 +81,7 @@ export class RecruitmentSourcingController {
   @Post("referrals")
   @Idempotent("hr.sourcing.referral-create")
   @HttpCode(201)
-  @ResponseSchema(candidateReferralRowSchema)
+  @ResponseSchema(candidateReferralWithRelationsSchema)
   @RequirePermission("hr:requisitions:view")
   @Validate({ body: createReferralSubmissionSchema })
   createReferral(
@@ -94,7 +92,7 @@ export class RecruitmentSourcingController {
   }
 
   @Patch("referrals/:referralId")
-  @ResponseSchema(candidateReferralRowSchema)
+  @ResponseSchema(candidateReferralWithRelationsSchema)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: referralIdParams, body: updateReferralStatusSchema })
   updateReferral(
@@ -202,7 +200,7 @@ export class RecruitmentSourcingController {
   }
 
   @Patch("external-referrals/:referralId")
-  @ResponseSchema(externalReferralRawSchema)
+  @ResponseSchema(externalReferralWithRelationsSchema)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: referralIdParams, body: updateExternalReferralSchema })
   updateExternalReferral(

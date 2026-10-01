@@ -79,6 +79,32 @@ export class RecruitmentSourcingService {
     });
   }
 
+  private async referralWithRelations(orgId: string, referralId: number) {
+    const row = await this.db.query.candidateReferrals.findFirst({
+      where: and(eq(candidateReferrals.id, referralId), eq(candidateReferrals.orgId, orgId)),
+      with: {
+        candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
+        referrer: { columns: { id: true, name: true, email: true } },
+        jobPosting: { columns: { id: true, title: true } },
+      },
+    });
+    if (!row) throw new NotFoundException("Referral not found");
+    return row;
+  }
+
+  private async externalReferralWithRelations(orgId: string, referralId: number) {
+    const row = await this.db.query.externalReferrals.findFirst({
+      where: and(eq(externalReferrals.id, referralId), eq(externalReferrals.orgId, orgId)),
+      with: {
+        candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
+        referrer: { columns: { id: true, name: true, email: true } },
+        jobPosting: { columns: { id: true, title: true } },
+      },
+    });
+    if (!row) throw new NotFoundException("Referral not found");
+    return row;
+  }
+
   async createReferral(orgId: string, userId: string, input: CreateReferralSubmissionInput, membershipId?: number | null) {
     const actorMembershipId = await this.actorMembershipId(orgId, userId, membershipId);
     const existing = await this.db.query.candidates.findFirst({
@@ -126,8 +152,9 @@ export class RecruitmentSourcingService {
         notes: input.notes,
         status: "SUBMITTED",
       })
-      .returning();
-    return referral;
+      .returning({ id: candidateReferrals.id });
+    if (!referral) throw new InternalServerErrorException("Failed to create referral.");
+    return this.referralWithRelations(orgId, referral.id);
   }
 
   async updateReferralStatus(orgId: string, referralId: number, input: UpdateReferralStatusInput) {
@@ -160,7 +187,8 @@ export class RecruitmentSourcingService {
       return updated;
     };
 
-    return this.db.transaction(write);
+    await this.db.transaction(write);
+    return this.referralWithRelations(orgId, referralId);
   }
 
   /**
@@ -442,9 +470,9 @@ export class RecruitmentSourcingService {
       .update(externalReferrals)
       .set(updates)
       .where(and(eq(externalReferrals.id, referralId), eq(externalReferrals.orgId, orgId)))
-      .returning();
+      .returning({ id: externalReferrals.id });
     if (!updated) throw new NotFoundException("Referral not found");
-    return updated;
+    return this.externalReferralWithRelations(orgId, updated.id);
   }
 
   listExternalReferrers(orgId: string) {
