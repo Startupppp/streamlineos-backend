@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   OnModuleInit,
@@ -10,6 +9,7 @@ import { moduleOwnerships, modulesCatalog, orgModules, organizationMembers, orga
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { ModuleDisabledException } from "../../common/http/api-exceptions";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { CacheService } from "../../common/cache/cache.service";
 import { PLAN_LOCKED_MODULES } from "../billing/core/plan-entitlements.constants";
@@ -201,12 +201,8 @@ export class EntitlementsService implements OnModuleInit {
     }
     if (enabled) {
       const { tier } = await this.planLimits.resolveTier(orgId);
-      if (PLAN_LOCKED_MODULES[tier].includes(moduleKey)) {
-        const label = moduleKey.charAt(0).toUpperCase() + moduleKey.slice(1);
-        throw new ForbiddenException(
-          `The ${label} module requires a paid plan. Upgrade to enable it.`,
-        );
-      }
+      if (PLAN_LOCKED_MODULES[tier].includes(moduleKey))
+        throw new ModuleDisabledException(moduleKey, "not-in-plan");
     }
     await runInTenantTransaction(this.db, async (tx) => {
       await tx

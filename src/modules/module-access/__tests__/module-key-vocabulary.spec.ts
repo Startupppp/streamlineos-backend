@@ -6,6 +6,7 @@ import {
   type ModuleAccessPolicyDeps,
 } from "../module-access.helpers";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
@@ -78,11 +79,24 @@ describe("module-key vocabulary — case normalisation", () => {
       expect(deps.isModuleEnabled).toHaveBeenCalledWith("org-1", "hr");
     });
 
-    it("throws ForbiddenException when the module is disabled", async () => {
+    it("answers a disabled module with 402 MODULE_NOT_ENABLED, not an in-tenant 403 (BE-22/BE-23)", async () => {
       const deps = makeDeps(false);
-      await expect(assertModuleEnabled(deps, "org-1", "hr")).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const refusal = assertModuleEnabled(deps, "org-1", "hr");
+      await expect(refusal).rejects.toBeInstanceOf(ModuleDisabledException);
+      await expect(refusal).rejects.not.toBeInstanceOf(ForbiddenException);
+      const error = await refusal.catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ModuleDisabledException);
+      if (!(error instanceof ModuleDisabledException)) return;
+      expect(error.getStatus()).toBe(402);
+      expect(error.getResponse()).toMatchObject({
+        code: "MODULE_NOT_ENABLED",
+        details: { moduleKey: "hr", reason: "org-disabled", upgradePath: null },
+      });
+    });
+
+    it("lets an enabled module through so the 402 is not a blanket refusal", async () => {
+      const deps = makeDeps(true);
+      await expect(assertModuleEnabled(deps, "org-1", "hr")).resolves.toBeUndefined();
     });
   });
 
@@ -113,11 +127,11 @@ describe("module-key vocabulary — case normalisation", () => {
       ).resolves.toBeUndefined();
     });
 
-    it("throws ForbiddenException when module is disabled even for org owner bypass path via assertModuleEnabled", async () => {
+    it("refuses a disabled module with 402 even for the org owner, whose bypass is permissions not plan", async () => {
       const deps = makeDeps(false);
       await expect(
         assertModuleAccessPolicy(deps, makeActor({ isOrgOwner: true }), "hr", "view"),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(ModuleDisabledException);
     });
   });
 

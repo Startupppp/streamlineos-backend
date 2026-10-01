@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { EntitlementsService } from "./entitlements.service";
+import { ModuleDisabledException } from "../../common/http/api-exceptions";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -247,19 +248,23 @@ describe("EntitlementsService", () => {
 
   describe("setModuleEnabled — plan gate", () => {
     it.each(PLAN_LOCKED_MODULES.FREE)(
-      "refuses to enable %s on FREE and writes nothing",
+      "refuses to enable %s on FREE with 402 not-in-plan pointing at billing, and writes nothing",
       async (moduleKey) => {
         const { db, mocks } = buildMockDb();
         const { cache } = buildMockCache();
 
-        await expect(
-          buildService(db, cache, "FREE").setModuleEnabled(
-            "org-1",
-            moduleKey,
-            true,
-            "user-1",
-          ),
-        ).rejects.toBeInstanceOf(ForbiddenException);
+        const refusal = buildService(db, cache, "FREE")
+          .setModuleEnabled("org-1", moduleKey, true, "user-1")
+          .catch((caught: unknown) => caught);
+        const error = await refusal;
+        expect(error).toBeInstanceOf(ModuleDisabledException);
+        expect(error).not.toBeInstanceOf(ForbiddenException);
+        if (!(error instanceof ModuleDisabledException)) return;
+        expect(error.getStatus()).toBe(402);
+        expect(error.getResponse()).toMatchObject({
+          code: "MODULE_NOT_ENABLED",
+          details: { moduleKey, reason: "not-in-plan", upgradePath: "/settings/billing" },
+        });
 
         expect(mocks.transaction).not.toHaveBeenCalled();
         expect(mocks.insert).not.toHaveBeenCalled();
@@ -316,7 +321,7 @@ describe("EntitlementsService", () => {
       await expect(service.isModuleEnabled("org-1", "payroll")).resolves.toBe(true);
       await expect(
         service.setModuleEnabled("org-1", "payroll", true, "user-1"),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(ModuleDisabledException);
     });
   });
 
