@@ -146,7 +146,7 @@ export class EmployeesService {
     isActive: EmployeeActiveFilter,
   ): Promise<(SQL | undefined)[]> {
     const conditions: (SQL | undefined)[] = [];
-    if (isActive === "true") conditions.push(eq(users.isActive, true));
+    if (isActive === "true") conditions.push(acceptedCondition());
     else if (isActive === "false") conditions.push(eq(users.isActive, false));
     else if (isActive === "pending") conditions.push(pendingCondition());
     if (filters.departmentId != null) conditions.push(eq(hrEmployments.departmentId, filters.departmentId));
