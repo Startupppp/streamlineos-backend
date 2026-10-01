@@ -32,20 +32,35 @@ function sqlStateOf(error: unknown): string | undefined {
   return undefined;
 }
 
-describeDb("1706 — uniq_timesheets_work_log excludes voided rows", () => {
+describeDb("1706 — the work-log grain: live, project-less, per-project", () => {
   const sql = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 1 });
 
   afterAll(async () => {
     await sql.end({ timeout: 5 });
   });
 
-  it("carries the predicate the migration wrote, read back from the catalog", async () => {
+  async function indexdef(name: string): Promise<string> {
     const [row] = await sql`
       SELECT pg_get_indexdef(i.oid) AS def
         FROM pg_class i
         JOIN pg_namespace n ON n.oid = i.relnamespace
-       WHERE n.nspname = 'public' AND i.relname = 'uniq_timesheets_work_log'`;
-    expect(String(row?.def)).toContain("(ticket_id IS NULL) AND (voided_at IS NULL)");
+       WHERE n.nspname = 'public' AND i.relname = ${name}`;
+    return String(row?.def ?? "");
+  }
+
+  it("carries the predicate the migration wrote, read back from the catalog", async () => {
+    // `project_id IS NULL` is the half 1706 originally omitted while its own comment
+    // cited it. Read from pg_get_indexdef, not from the .sql, so a migration that
+    // never ran cannot assert its own intent.
+    expect(await indexdef("uniq_timesheets_work_log")).toContain(
+      "(ticket_id IS NULL) AND (project_id IS NULL) AND (voided_at IS NULL)",
+    );
+  });
+
+  it("carries a per-project index keyed on project_id beside it", async () => {
+    const def = await indexdef("uniq_timesheets_day_project");
+    expect(def).toContain("(org_id, user_membership_id, date, project_id)");
+    expect(def).toContain("(ticket_id IS NULL) AND (project_id IS NOT NULL) AND (voided_at IS NULL)");
   });
 
   it("lets a new entry take a day whose only existing entry is voided — BUG-TS-BE-006", async () => {
@@ -69,6 +84,61 @@ describeDb("1706 — uniq_timesheets_work_log excludes voided rows", () => {
     // row and a live one at once. A 23505 here is the defect BUG-TS-BE-006 describes.
     expect(sqlStateOf(result)).toBeUndefined();
     expect(result.n).toBe(2);
+  });
+
+  it("accepts two live ticketless entries for the same person and day on different projects", async () => {
+    const day = "2026-07-11";
+    const result = await sql
+      .begin(async (tx) => {
+        await tx`SET CONSTRAINTS ALL DEFERRED`;
+        // build.projects.id is GENERATED ALWAYS (BE-37), so the ids come back from
+        // the insert rather than being chosen here.
+        const projects = await tx`
+          INSERT INTO build.projects (org_id, name, key)
+          VALUES (${ORG}, 'Project One', 'P901'), (${ORG}, 'Project Two', 'P902')
+          RETURNING id`;
+        const [one, two] = projects.map((r) => Number(r.id));
+        await tx`
+          INSERT INTO timesheets (org_id, user_membership_id, date, hours, project_id)
+          VALUES (${ORG}, ${OWNER}, ${day}, 4, ${one})`;
+        await tx`
+          INSERT INTO timesheets (org_id, user_membership_id, date, hours, project_id)
+          VALUES (${ORG}, ${OWNER}, ${day}, 4, ${two})`;
+        const rows = await tx`
+          SELECT count(*)::int AS n FROM timesheets
+           WHERE org_id = ${ORG} AND user_membership_id = ${OWNER} AND date = ${day}`;
+        throw Object.assign(new Error("rollback"), { n: rows[0]?.n });
+      })
+      .catch((e: Error & { n?: number }) => e);
+
+    // Positive half (BE-141): both rows landed. A 23505 here against
+    // Key (org_id, user_membership_id, date) is the defect 1706 left behind — the
+    // index omitted project_id from both its key and its predicate, so multi-project
+    // day logging was impossible.
+    expect(sqlStateOf(result)).toBeUndefined();
+    expect(result.n).toBe(2);
+  });
+
+  it("still rejects a second live entry for the same day and the SAME project", async () => {
+    const day = "2026-07-12";
+    const outcome = await sql
+      .begin(async (tx) => {
+        await tx`SET CONSTRAINTS ALL DEFERRED`;
+        const [project] = await tx`
+          INSERT INTO build.projects (org_id, name, key)
+          VALUES (${ORG}, 'Project Three', 'P903') RETURNING id`;
+        const only = Number(project?.id);
+        await tx`
+          INSERT INTO timesheets (org_id, user_membership_id, date, hours, project_id)
+          VALUES (${ORG}, ${OWNER}, ${day}, 4, ${only})`;
+        await tx`
+          INSERT INTO timesheets (org_id, user_membership_id, date, hours, project_id)
+          VALUES (${ORG}, ${OWNER}, ${day}, 4, ${only})`;
+      })
+      .then(() => "accepted")
+      .catch((e) => sqlStateOf(e));
+    // Widening the grain to per-project must not widen it to unlimited.
+    expect(outcome).toBe("23505");
   });
 
   it("rejects two live ticketless entries for the same day, before and after voiding one", async () => {
