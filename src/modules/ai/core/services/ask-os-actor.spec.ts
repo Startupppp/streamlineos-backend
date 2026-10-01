@@ -1,5 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
 import {
+  usableTimezone,
   displayNameFrom,
   resolveAskOsActor,
   zonedCalendarFacts,
@@ -263,5 +264,29 @@ describe("the prompt makes the caller's identity unmistakable", () => {
   it("no longer instructs the model to echo a CONNECT_INTEGRATION sentinel — directives are typed stream parts now", () => {
     expect(prompt).not.toContain("CONNECT_INTEGRATION:");
     expect(prompt).toContain("connection_required");
+  });
+});
+
+describe("an unusable organizations.timezone degrades to UTC instead of aborting the turn", () => {
+  it("falls back when the column is NULL, which is what resolveAskOsActor reads on an org that never set one", () => {
+    expect(usableTimezone(null)).toBe("UTC");
+    expect(usableTimezone(undefined)).toBe("UTC");
+    expect(usableTimezone("")).toBe("UTC");
+  });
+
+  it("falls back on a non-null but unrecognised zone, because Intl throws a RangeError rather than ignoring it", () => {
+    expect(() => new Intl.DateTimeFormat("en-CA", { timeZone: "Not/AZone" })).toThrow(RangeError);
+    expect(usableTimezone("Not/AZone")).toBe("UTC");
+  });
+
+  it("passes a real zone through unchanged, so the fallback is not swallowing every value", () => {
+    expect(usableTimezone("Asia/Kolkata")).toBe("Asia/Kolkata");
+  });
+
+  it("produces calendar facts for an unusable zone rather than throwing, since these feed the prompt inside a transaction", () => {
+    const facts = zonedCalendarFacts("Not/AZone", new Date("2026-09-19T12:00:00Z"));
+
+    expect(facts.today).toBe("2026-09-19");
+    expect(facts.currentYear).toBe(2026);
   });
 });

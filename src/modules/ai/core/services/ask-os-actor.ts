@@ -41,9 +41,19 @@ export function displayNameFrom(row: {
   return row.email;
 }
 
+export function usableTimezone(timezone: string | null | undefined): string {
+  if (!timezone) return FALLBACK_TIMEZONE;
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
+    return timezone;
+  } catch {
+    return FALLBACK_TIMEZONE;
+  }
+}
+
 export function zonedCalendarFacts(timezone: string, now: Date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
+    timeZone: usableTimezone(timezone),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -65,7 +75,7 @@ export async function resolveOrgTimezone(db: Db, orgId: string): Promise<string>
     .from(organizations)
     .where(eq(organizations.id, orgId))
     .limit(1);
-  return rows[0]?.timezone ?? FALLBACK_TIMEZONE;
+  return usableTimezone(rows[0]?.timezone);
 }
 
 export async function resolveAskOsActor(
@@ -104,7 +114,7 @@ export async function resolveAskOsActor(
   const row = rows[0];
   if (!row) throw new ForbiddenException(INACTIVE_MEMBERSHIP_REFUSAL);
 
-  const timezone = row.timezone;
+  const timezone = usableTimezone(row.timezone);
   const calendar = zonedCalendarFacts(timezone, now);
 
   return {
