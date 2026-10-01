@@ -3,7 +3,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, like } from "drizzle-orm";
 import { apiKeys, auditLogs, organizations, users } from "../../db/schema";
@@ -13,6 +12,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isStructuralOrgAdminContext } from "../../common/rbac/is-structural-org-admin";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { ApiTokensService } from "../api-tokens/core/api-tokens.service";
 import {
   VALID_API_KEY_SCOPES,
   generateApiKey,
@@ -39,6 +39,7 @@ export class SettingsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly orgMembership: OrgMembershipService,
     private readonly cache: CacheService,
+    private readonly apiTokens: ApiTokensService,
   ) {}
 
   /**
@@ -145,17 +146,17 @@ export class SettingsService {
 
     const { id, rawKey, keyHash, keyPrefix } = generateApiKey();
 
-    await this.db.insert(apiKeys).values({
-      id,
-      orgId: u.orgId,
-      name: input.name,
-      description: input.description,
-      keyHash,
-      keyPrefix,
-      scopes: input.scopes,
-      expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-      createdBy: u.userId,
-    });
+    await this.apiTokens.issue(
+      u.orgId,
+      u.userId,
+      {
+        name: input.name,
+        description: input.description,
+        scopes: input.scopes,
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+      },
+      { id, keyHash, keyPrefix },
+    );
 
     return { id, key: rawKey, keyPrefix, name: input.name, scopes: input.scopes };
   }
@@ -165,16 +166,7 @@ export class SettingsService {
       throw new ForbiddenException("Only admins can revoke API keys.");
     }
 
-    const existing = await this.db.query.apiKeys.findFirst({
-      columns: { id: true },
-      where: and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, u.orgId)),
-    });
-    if (!existing) throw new NotFoundException("API key not found.");
-
-    await this.db
-      .update(apiKeys)
-      .set({ isRevoked: true })
-      .where(and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, u.orgId)));
+    await this.apiTokens.revoke(u.orgId, u.userId, keyId);
     return { success: true };
   }
 

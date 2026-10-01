@@ -76,6 +76,6 @@ export class ApiTokensController {
     @CurrentUser() u: CurrentUserContext,
     @Param("tokenId") tokenId: string,
   ) {
-    return this.apiTokensService.revokeToken(u.orgId, tokenId);
+    return this.apiTokensService.revokeToken(u.orgId, u.userId, tokenId);
   }
 }

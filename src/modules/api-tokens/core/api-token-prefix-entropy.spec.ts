@@ -14,10 +14,7 @@ const SHIPPED_KEYSPACE = 16 ** 7; // "sk_" + 7 hex characters = 268,435,456
  * no entropy floor asserted anywhere, which is precisely how `createToken` kept a
  * 7-character prefix after the sibling writer was widened.
  */
-const KNOWN_WRITERS = [
-  "modules/api-tokens/core/api-tokens.service.ts",
-  "modules/settings/settings.service.ts",
-];
+const KNOWN_WRITERS = ["modules/api-tokens/core/api-tokens.service.ts"];
 
 function sourceFilesUnder(dir: string): string[] {
   const found: string[] = [];
