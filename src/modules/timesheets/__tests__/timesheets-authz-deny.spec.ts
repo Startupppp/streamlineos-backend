@@ -1,4 +1,5 @@
 import request from "supertest";
+import { DiscoveryService } from "@nestjs/core";
 import {
   createAuthzHarness,
   ORG_B,
@@ -53,11 +54,23 @@ describe("timesheets — authorization deny", () => {
   let harness: AuthzHarness;
 
   beforeAll(async () => {
-    harness = await createAuthzHarness([
-      EntriesController,
-      TimesheetCalendarController,
-      TimesheetPeriodsController,
-    ]);
+    harness = await createAuthzHarness(
+      [EntriesController, TimesheetCalendarController, TimesheetPeriodsController],
+      {
+        /*
+         * PermissionGuard injects DiscoveryService and sweeps the discovered
+         * controllers on bootstrap. The harness builds a bare testing module
+         * with no DiscoveryModule, so that dependency is auto-mocked without
+         * `getControllers` and `app.init()` throws before a single route is
+         * exercised. Supply it explicitly: the sweep is a separate concern
+         * (permission.guard-boot-sweep.spec.ts owns it) and this spec is about
+         * what each route answers.
+         */
+        providers: [
+          { provide: DiscoveryService, useValue: { getControllers: () => [] } },
+        ],
+      },
+    );
   });
 
   afterAll(async () => {
