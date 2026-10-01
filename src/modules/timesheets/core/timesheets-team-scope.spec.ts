@@ -60,6 +60,18 @@ function access(scope: "all" | "team" | "own" | "none") {
   return { scopeFor: jest.fn().mockResolvedValue(scope), holds: jest.fn().mockResolvedValue(true) } as never;
 }
 
+/**
+ * A scope per key, because `resolveEntriesScope` asks about two of them and the
+ * single-scope double above cannot tell a manager holding only `team:view` from
+ * one holding only `entries:view` — the exact distinction FE-TS-003 turns on.
+ */
+function accessByKey(scopes: Readonly<Record<string, "all" | "team" | "own" | "none">>) {
+  return {
+    scopeFor: jest.fn(async (_u: unknown, key: string) => scopes[key] ?? "none"),
+    holds: jest.fn().mockResolvedValue(true),
+  } as never;
+}
+
 describe("timesheets team scope — per surface", () => {
   it("entries list: a team-scoped actor filters on own rows OR a current direct report's rows", async () => {
     const { db, rendered } = makeDb([[]]);
@@ -160,5 +172,73 @@ describe("PeriodsReadService.getPeriod — team scope authorization", () => {
 
     expect(result.period.userMembershipId).toBe(MANAGER_MEMBERSHIP);
     expect(wheres).toHaveLength(1);
+  });
+});
+
+describe("PeriodsReadService.getPeriod — which key carried the caller in", () => {
+  const periodRow = (userMembershipId: number) => ({
+    id: 7,
+    orgId: ORG,
+    userMembershipId,
+    periodStart: "2026-01-05",
+    periodEnd: "2026-01-11",
+    status: "OPEN",
+    totalHours: "0",
+    billableHours: "0",
+    nonBillableHours: "0",
+    submittedAt: null,
+    approvedAt: null,
+    rejectedAt: null,
+    lockedAt: null,
+    currentApproverMembershipId: null,
+    approvalRoute: null,
+    approvalDueAt: null,
+    approvalEscalatedAt: null,
+    rejectionReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    userEmail: null,
+    userName: null,
+  });
+
+  const TEAM_VIEW_ONLY = {
+    "timesheets:entries:view": "none",
+    "timesheets:team:view": "team",
+  } as const;
+
+  it("lets a manager holding ONLY timesheets:team:view open a direct report's period", async () => {
+    const { db, rendered } = makeDb([[periodRow(REPORT_MEMBERSHIP)], [{ id: 7 }]]);
+    const svc = new PeriodsReadService(db, accessByKey(TEAM_VIEW_ONLY));
+
+    const result = await svc.getPeriod(manager(), 7);
+
+    expect(result.period.id).toBe(7);
+    const probe = rendered(1);
+    expect(probe.sql).toMatch(/"user_membership_id" = \$\d+ or exists/i);
+    expect(probe.params).toContain(MANAGER_USER);
+  });
+
+  it("still refuses that same manager an unrelated member's period, so route entry did not widen the rows", async () => {
+    const { db } = makeDb([[periodRow(STRANGER_MEMBERSHIP)], []]);
+    const svc = new PeriodsReadService(db, accessByKey(TEAM_VIEW_ONLY));
+
+    await expect(svc.getPeriod(manager(), 7)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  /*
+   * Deliberate, and the residual half of FE-TS-003. `timesheets:approvals:view`
+   * now gets the caller PAST PermissionGuard, but `resolveEntriesScope` consults
+   * entries:view and team:view only, so the service still refuses a row the
+   * approval key alone would have to justify. Widening that is a row-visibility
+   * change in the service, which this branch is deliberately not making.
+   */
+  it("refuses a caller whose only grant is timesheets:approvals:view, because no row predicate derives from it", async () => {
+    const { db } = makeDb([[periodRow(REPORT_MEMBERSHIP)]]);
+    const svc = new PeriodsReadService(
+      db,
+      accessByKey({ "timesheets:approvals:view": "all" }),
+    );
+
+    await expect(svc.getPeriod(manager(), 7)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

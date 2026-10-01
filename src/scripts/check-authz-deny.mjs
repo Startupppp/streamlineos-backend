@@ -283,8 +283,9 @@ function readDecorator(trimmed, buf) {
   if (UNIVERSAL_RE.test(trimmed)) buf.isUniversal = true;
   if (OPERATOR_RE.test(trimmed)) buf.isOperator = true;
   if (IN_SERVICE_RE.test(trimmed)) buf.isInService = true;
-  for (const m of trimmed.matchAll(/@RequirePermission\s*\(\s*["'`]([^"'`]+)["'`]/g))
-    buf.permissionKeys.push(m[1]);
+  // Every argument: the decorator is variadic, and a deny case must deny all of a route's keys to refuse it.
+  for (const call of trimmed.matchAll(/@RequirePermission\s*\(([^)]*)\)/g))
+    for (const m of call[1].matchAll(/["'`]([^"'`]+)["'`]/g)) buf.permissionKeys.push(m[1]);
   if (PERMISSION_RE.test(trimmed) && buf.permissionKeys.length === 0) buf.permissionKeys.push("*");
   for (const m of trimmed.matchAll(/@RequireModule\s*\(\s*["'`]([^"'`]+)["'`]/g)) buf.moduleIds.push(m[1]);
   if (MODULE_RE.test(trimmed) && buf.moduleIds.length === 0) buf.moduleIds.push("*");

@@ -23,11 +23,30 @@ import { ALL_PERMISSION_NAMES } from "../../rbac/permissions";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
+/**
+ * The one route here that names several keys, any one of which admits.
+ *
+ * It is held out of GET_ROUTES because `denyOnly` is the wrong instrument for
+ * it: withdrawing one of three alternatives is meant NOT to refuse, and a row in
+ * the generic loop would assert the opposite — the shape that kept FE-TS-003
+ * alive, since the spec agreed with the guard that one key was required. Its own
+ * block below asserts both halves instead, and it still counts toward the 59.
+ */
+const PERIOD_DETAIL_PATH = `/timesheets/periods/${ID}`;
+const PERIOD_DETAIL_KEYS = [
+  "timesheets:entries:view",
+  "timesheets:team:view",
+  "timesheets:approvals:view",
+] as const;
+
+const MULTI_KEY_GET_ROUTES: readonly GatedRoute[] = [
+  { verb: "get", path: PERIOD_DETAIL_PATH, key: PERIOD_DETAIL_KEYS[0] },
+];
+
 const GET_ROUTES: readonly GatedRoute[] = [
   { verb: "get", path: `/timesheets/calendar/holidays`, key: "timesheets:entries:view" },
   { verb: "get", path: `/timesheets/entries`, key: "timesheets:entries:view" },
   { verb: "get", path: `/timesheets/periods`, key: "timesheets:entries:view" },
-  { verb: "get", path: `/timesheets/periods/${ID}`, key: "timesheets:entries:view" },
   { verb: "get", path: `/timesheets/periods/current`, key: "timesheets:entries:view" },
   { verb: "get", path: `/timesheets/periods/${ID}/approver`, key: "timesheets:entries:view" },
   { verb: "get", path: `/timesheets/periods/overdue`, key: "timesheets:approvals:view" },
@@ -99,6 +118,7 @@ const DELETE_ROUTES: readonly GatedRoute[] = [
 
 const ALL_ROUTES: readonly GatedRoute[] = [
   ...GET_ROUTES,
+  ...MULTI_KEY_GET_ROUTES,
   ...POST_ROUTES,
   ...PUT_ROUTES,
   ...PATCH_ROUTES,
@@ -152,7 +172,9 @@ describe("timesheets — authorization deny", () => {
 
   it("names only catalogued permission keys, so no case passes on a typo", () => {
     const catalogued = new Set<string>(ALL_PERMISSION_NAMES);
-    expect(ALL_ROUTES.map((r) => r.key).filter((k) => !catalogued.has(k))).toEqual([]);
+    expect(
+      [...ALL_ROUTES.map((r) => r.key), ...PERIOD_DETAIL_KEYS].filter((k) => !catalogued.has(k)),
+    ).toEqual([]);
   });
 
   it("covers the whole gated surface of these controllers", () => {
@@ -204,6 +226,32 @@ describe("timesheets — authorization deny", () => {
       expect(res.status).not.toBe(403);
     });
 
+  });
+
+  describe("a period detail opens to any of three standings", () => {
+    it.each(PERIOD_DETAIL_KEYS)(
+      "is NOT refused when only %s is withdrawn, because the other two still admit",
+      async (withdrawn) => {
+        harness.denyOnly(withdrawn);
+        const res = await request(harness.server()).get(PERIOD_DETAIL_PATH);
+        expect(res.status).not.toBe(403);
+        expect(harness.keysAsked()).toContain(withdrawn);
+      },
+    );
+
+    it("is 403 once all three are withdrawn, so the route is still gated", async () => {
+      harness.denyAll();
+      const res = await request(harness.server()).get(PERIOD_DETAIL_PATH);
+      expect(res.status).toBe(403);
+      for (const key of PERIOD_DETAIL_KEYS) expect(harness.keysAsked()).toContain(key);
+    });
+
+    it("asks about all three keys, so none is declared and then ignored", async () => {
+      harness.allowAll();
+      const res = await request(harness.server()).get(PERIOD_DETAIL_PATH);
+      expect(res.status).not.toBe(403);
+      for (const key of PERIOD_DETAIL_KEYS) expect(harness.keysAsked()).toContain(key);
+    });
   });
 
   describe("the refusal is the permission check, not something upstream of it", () => {

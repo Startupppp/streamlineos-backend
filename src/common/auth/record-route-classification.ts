@@ -10,7 +10,7 @@ import { DEPRECATION_KEY, type DeprecationMeta } from "../deprecation/deprecated
 export type RouteExposure =
   | { mode: "public" }
   | { mode: "universal" }
-  | { mode: "permissioned"; permission: string }
+  | { mode: "permissioned"; permission: string; alternates?: readonly string[] }
   | { mode: "in-service"; by: string }
   | { mode: "undeclared" };
 
@@ -34,6 +34,19 @@ function read(key: string, handler: object, classRef: object): unknown {
   return own === undefined ? Reflect.getMetadata(key, classRef) : own;
 }
 
+function nonEmptyStringList(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value)) return null;
+  const length: unknown = Reflect.get(value, "length");
+  if (typeof length !== "number" || length === 0) return null;
+  const keys: string[] = [];
+  for (let index = 0; index < length; index++) {
+    const entry: unknown = Reflect.get(value, index);
+    if (typeof entry !== "string") return null;
+    keys.push(entry);
+  }
+  return keys;
+}
+
 function classifyAt(target: object): RouteExposure | null {
   if (Reflect.getMetadata(IS_PUBLIC, target) === true) return { mode: "public" };
   if (Reflect.getMetadata(IS_UNIVERSAL, target) === true) return { mode: "universal" };
@@ -41,6 +54,16 @@ function classifyAt(target: object): RouteExposure | null {
   if (typeof by === "string" && by !== "") return { mode: "in-service", by };
   const permission: unknown = Reflect.getMetadata(REQUIRE_PERMISSION, target);
   if (typeof permission === "string") return { mode: "permissioned", permission };
+  /*
+   * A route may name several keys the caller can satisfy any one of, and the
+   * decorator spells that as an array. `permission` keeps naming the FIRST key,
+   * so `x-permission` stays one real catalog key for every consumer that already
+   * reads it; `alternates` carries the whole list, and the description names all
+   * of them. Dropping to `undeclared` here instead is what the AgentController
+   * incident above was: the document understating a gate that is in fact armed.
+   */
+  const keys = nonEmptyStringList(permission);
+  if (keys) return { mode: "permissioned", permission: keys[0], alternates: keys };
   return null;
 }
 
@@ -66,7 +89,9 @@ export function describeExposure(exposure: RouteExposure): string {
     case "universal":
       return "universal — any authenticated member, subject from the token";
     case "permissioned":
-      return `permission — ${exposure.permission}`;
+      return exposure.alternates && exposure.alternates.length > 1
+        ? `permission — any of ${exposure.alternates.join(", ")}`
+        : `permission — ${exposure.permission}`;
     case "in-service":
       return `authorized in service — ${exposure.by}`;
     case "undeclared":
@@ -149,7 +174,11 @@ export function recordRouteClassification(
       const { exposure, deprecation } = meta;
       const summary = describeExposure(exposure);
       operation["x-exposure"] = exposure.mode;
-      if (exposure.mode === "permissioned") operation["x-permission"] = exposure.permission;
+      if (exposure.mode === "permissioned") {
+        operation["x-permission"] = exposure.permission;
+        if (exposure.alternates && exposure.alternates.length > 1)
+          operation["x-permission-any"] = [...exposure.alternates];
+      }
       if (exposure.mode === "in-service") operation["x-authorized-in-service"] = exposure.by;
       operation.description = operation.description
         ? `${operation.description}\n\nExposure: ${summary}`
