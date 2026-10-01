@@ -310,7 +310,7 @@ export class PeriodsService {
     // Strictly LOCKED: the old compound condition only refused when the status
     // was not LOCKED *and* lockedAt was null, so an APPROVED period carrying a
     // stray lockedAt could be "unlocked" out of a state it was never in.
-    // Migration 1705 moved the rows that already had that shape onto LOCKED.
+    // Migration 1706 moved the rows that already had that shape onto LOCKED.
     if (row.status !== "LOCKED") {
       throw new ConflictException("Period is not locked");
     }

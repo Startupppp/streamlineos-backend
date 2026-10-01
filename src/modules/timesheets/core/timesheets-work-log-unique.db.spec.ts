@@ -1,11 +1,11 @@
 /**
- * The behaviour migrations 1705 and 1706 claim, asserted against a real database.
+ * The behaviour migrations 1706 and 1707 claim, asserted against a real database.
  *
- * Both were journalled (idx 1160 / 1161) and had never been executed anywhere. 1706's
+ * Both were journalled (idx 1161 / 1162) and had never been executed anywhere. 1707's
  * fix for BUG-TS-BE-006 — "a voided entry kept holding its day, so the next entry for
  * that date failed with 23505" — had only ever been asserted at declaration level, which
  * reads the migration's own text back and cannot tell a narrowed predicate from a widened
- * one. 1705's UPDATE ran against zero rows on a cold database, so applying it is not
+ * one. 1706's UPDATE ran against zero rows on a cold database, so applying it is not
  * evidence that it moves the periods it is meant to move and nothing else.
  *
  *   ALLOW_DESTRUCTIVE_DB_TESTS=1 DATABASE_URL=postgresql://…@127.0.0.1:5432/<scratch> \
@@ -32,7 +32,7 @@ function sqlStateOf(error: unknown): string | undefined {
   return undefined;
 }
 
-describeDb("1706 — the work-log grain: live, project-less, per-project", () => {
+describeDb("1707 — the work-log grain: live, project-less, per-project", () => {
   const sql = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 1 });
 
   afterAll(async () => {
@@ -49,7 +49,7 @@ describeDb("1706 — the work-log grain: live, project-less, per-project", () =>
   }
 
   it("carries the predicate the migration wrote, read back from the catalog", async () => {
-    // `project_id IS NULL` is the half 1706 originally omitted while its own comment
+    // `project_id IS NULL` is the half 1707 originally omitted while its own comment
     // cited it. Read from pg_get_indexdef, not from the .sql, so a migration that
     // never ran cannot assert its own intent.
     expect(await indexdef("uniq_timesheets_work_log")).toContain(
@@ -112,7 +112,7 @@ describeDb("1706 — the work-log grain: live, project-less, per-project", () =>
       .catch((e: Error & { n?: number }) => e);
 
     // Positive half (BE-141): both rows landed. A 23505 here against
-    // Key (org_id, user_membership_id, date) is the defect 1706 left behind — the
+    // Key (org_id, user_membership_id, date) is the defect 1707 left behind — the
     // index omitted project_id from both its key and its predicate, so multi-project
     // day logging was impossible.
     expect(sqlStateOf(result)).toBeUndefined();
@@ -154,10 +154,10 @@ describeDb("1706 — the work-log grain: live, project-less, per-project", () =>
   });
 });
 
-describeDb("1705 — APPROVED periods holding locked_at become LOCKED", () => {
+describeDb("1706 — APPROVED periods holding locked_at become LOCKED", () => {
   const sql = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 1 });
   const body = readFileSync(
-    join(__dirname, "../../../../migrations/1705_timesheet_periods_locked_status_repair.sql"),
+    join(__dirname, "../../../../migrations/1706_timesheet_periods_locked_status_repair.sql"),
     "utf8",
   );
 
