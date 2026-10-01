@@ -84,8 +84,8 @@ export class TimesheetPeriodsController {
    *
    * Row visibility belongs to the service, which answers each standing with the
    * predicate that listed the period in the first place: `resolveEntriesScope`
-   * with the `periodInScope` probe for own and team, and `approvalQueueScope`
-   * for an approver. Admission here widens who may ask, never what the answer
+   * with the `periodInScope` probe for own and team, and `approvalQueueTeamScope`
+   * - the union of what the approvals and overdue queues list - for an approver. Admission here widens who may ask, never what the answer
    * contains.
    */
   @Get(":periodId")
