@@ -17,7 +17,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
+import {
+  commitAccessChange,
+  type AccessRevocation,
+} from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   canGrantToRank,
@@ -47,6 +50,14 @@ export class ModuleStandingMutationsService {
     private readonly access: AccessService,
     private readonly cache: CacheService,
   ) {}
+
+  private standingRevocation(orgId: string, userId: string): AccessRevocation {
+    return {
+      cache: this.cache,
+      loses: [{ kind: "permissions", userIds: [userId] }],
+      listKeys: [CACHE_KEYS.rolesList(orgId)],
+    };
+  }
 
   private async assertManageAccess(
     actor: CurrentUserContext,
@@ -145,15 +156,11 @@ export class ModuleStandingMutationsService {
               targetUserId: targetMembership.userId,
             },
           },
+          revoke: this.standingRevocation(actor.orgId, targetMembership.userId),
         });
       },
       { orgId: actor.orgId },
     );
-
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId)),
-      this.cache.invalidate(CACHE_KEYS.userSession(targetMembership.userId)),
-    ]);
 
     return { success: true };
   }
@@ -210,16 +217,12 @@ export class ModuleStandingMutationsService {
               targetType: "membership",
               metadata: { moduleKey, targetUserId: targetMembership.userId },
             },
+            revoke: this.standingRevocation(actor.orgId, targetMembership.userId),
           });
         },
         { orgId: actor.orgId },
       );
     }
-
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId)),
-      this.cache.invalidate(CACHE_KEYS.userSession(targetMembership.userId)),
-    ]);
 
     return { success: true };
   }
@@ -321,18 +324,31 @@ export class ModuleStandingMutationsService {
             targetType: "membership",
             metadata: { moduleKey, toMembershipId },
           },
+          revoke: {
+            cache: this.cache,
+            loses: [
+              {
+                kind: "memberships",
+                membershipIds:
+                  prevOwnership === undefined
+                    ? [toMembershipId]
+                    : [toMembershipId, prevOwnership.ownerMembershipId],
+              },
+            ],
+            listKeys: [
+              CACHE_KEYS.rolesList(actor.orgId),
+              CACHE_KEYS.moduleOwnershipsList(actor.orgId),
+              CACHE_KEYS.moduleOwnershipDetail(actor.orgId, moduleKey),
+              CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey),
+            ],
+          },
+          afterCommit: async () => {
+            await this.cache.invalidateNamespaceForOrg(actor.orgId, "ownership:transfers");
+          },
         });
       },
       { orgId: actor.orgId },
     );
-
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId)),
-      this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(actor.orgId)),
-      this.cache.invalidate(CACHE_KEYS.moduleOwnershipDetail(actor.orgId, moduleKey)),
-      this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey)),
-      this.cache.invalidateNamespaceForOrg(actor.orgId, "ownership:transfers"),
-    ]);
 
     return { success: true };
   }

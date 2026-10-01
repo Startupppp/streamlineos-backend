@@ -1,15 +1,15 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { organizationMembers } from "../../db/schema";
 import type { CacheService } from "../cache/cache.service";
-import { commitAccessChange, type DbOrTx } from "../rbac/access-mutation-commit";
+import {
+  commitAccessChange,
+  scheduleStandingRevocation,
+  type DbOrTx,
+} from "../rbac/access-mutation-commit";
 import {
   syncStructuralRoleAssignment,
   syncStructuralRoleAssignments,
 } from "../rbac/sync-structural-role";
-import {
-  scheduleMembershipBust,
-  scheduleMembershipBustMany,
-} from "./membership-bust";
 
 // The one owner of organization_members writes: every op couples the write, its permission-version and structural-role effects, and the invalidation drained only after the caller's transaction resolves.
 
@@ -31,24 +31,15 @@ function lifecycleColumns(
 }
 
 export class MembershipMutations {
-  private readonly pending = new Map<string, string | undefined>();
+  private readonly pending = new Set<string>();
 
-  private record(userId: string, orgId?: string): void {
-    if (!this.pending.has(userId)) this.pending.set(userId, orgId);
+  private record(userId: string): void {
+    this.pending.add(userId);
   }
 
   async [DRAIN](cache: CacheService): Promise<void> {
     if (this.pending.size === 0) return;
-    const entries = [...this.pending];
-    const first = entries[0];
-    if (entries.length === 1 && first) {
-      await scheduleMembershipBust(cache, first[0], first[1]);
-      return;
-    }
-    await scheduleMembershipBustMany(
-      cache,
-      entries.map(([userId]) => userId),
-    );
+    await scheduleStandingRevocation(cache, [...this.pending]);
   }
 
   // organizations.owner_membership_id and organization_members.org_id point at each other, so a bootstrap needs the id first.
@@ -81,7 +72,7 @@ export class MembershipMutations {
       status: "ACTIVE",
       ...(input.activatedAt ? { activatedAt: input.activatedAt } : {}),
     });
-    this.record(input.userId, input.orgId);
+    this.record(input.userId);
   }
 
   async createMembership(
@@ -106,7 +97,7 @@ export class MembershipMutations {
             .values(values)
             .returning({ id: organizationMembers.id });
     const membershipId = inserted[0]?.id;
-    this.record(input.userId, input.orgId);
+    this.record(input.userId);
     if (membershipId === undefined) return null;
     await syncStructuralRoleAssignment(tx, input.orgId, membershipId, input.role);
     return membershipId;
@@ -136,7 +127,7 @@ export class MembershipMutations {
         userId: organizationMembers.userId,
       });
     for (const row of inserted) byUserId.set(row.userId, row.id);
-    for (const member of input.members) this.record(member.userId, input.orgId);
+    for (const member of input.members) this.record(member.userId);
 
     const membershipIdsByRole = new Map<string, number[]>();
     for (const member of input.members) {
@@ -167,7 +158,7 @@ export class MembershipMutations {
         ),
       )
       .returning({ id: organizationMembers.id });
-    this.record(input.userId, input.orgId);
+    this.record(input.userId);
     if (!member) return null;
     await syncStructuralRoleAssignment(tx, input.orgId, member.id, input.role);
     return member.id;
@@ -188,7 +179,7 @@ export class MembershipMutations {
         ),
       )
       .returning({ id: organizationMembers.id });
-    for (const userId of input.userIds) this.record(userId, input.orgId);
+    for (const userId of input.userIds) this.record(userId);
     const membershipIds = rows.map((row) => row.id);
     await syncStructuralRoleAssignments(tx, input.orgId, membershipIds, input.role);
     return membershipIds;
@@ -213,7 +204,7 @@ export class MembershipMutations {
         ),
       );
     await commitAccessChange(tx, input.orgId);
-    this.record(input.userId, input.orgId);
+    this.record(input.userId);
   }
 
   /**
@@ -245,7 +236,7 @@ export class MembershipMutations {
           inArray(organizationMembers.userId, [...input.userIds]),
         ),
       );
-    for (const userId of input.userIds) this.record(userId, input.orgId);
+    for (const userId of input.userIds) this.record(userId);
   }
 
   async transferOrgOwnership(
@@ -279,8 +270,8 @@ export class MembershipMutations {
       input.to.membershipId,
       input.ownerRole,
     );
-    this.record(input.from.userId, input.orgId);
-    this.record(input.to.userId, input.orgId);
+    this.record(input.from.userId);
+    this.record(input.to.userId);
   }
 
   async deleteMembership(
@@ -296,7 +287,7 @@ export class MembershipMutations {
         ),
       );
     await commitAccessChange(tx, input.orgId);
-    this.record(input.userId, input.orgId);
+    this.record(input.userId);
   }
 
   async deleteMembershipsById(
@@ -312,7 +303,7 @@ export class MembershipMutations {
           inArray(organizationMembers.id, [...input.membershipIds]),
         ),
       );
-    this.record(input.userId, input.orgId);
+    this.record(input.userId);
   }
 }
 

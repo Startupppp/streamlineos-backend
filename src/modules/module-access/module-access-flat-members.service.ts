@@ -22,7 +22,7 @@ import {
   assertGroupsBelongToModule,
   assertMayEditOwnerMemberships,
   findActiveMembershipId,
-  invalidateMemberAccessCaches,
+  memberRevocation,
   listModuleRoleIds,
   type FlatMemberWriteDeps,
 } from "./lib/flat-member-writes";
@@ -98,15 +98,10 @@ export class ModuleAccessFlatMembersService {
             targetType: "user",
             metadata: { moduleKey, groupIds: input.groupIds },
           },
+          revoke: memberRevocation(this.writeDeps, actor.orgId, input.userId),
         });
       },
       { orgId: actor.orgId },
-    );
-
-    await invalidateMemberAccessCaches(
-      this.writeDeps,
-      actor.orgId,
-      input.userId,
     );
     return { success: true };
   }
@@ -194,12 +189,11 @@ export class ModuleAccessFlatMembersService {
             targetType: "user",
             metadata: { moduleKey, groupIds: input.groupIds },
           },
+          revoke: memberRevocation(this.writeDeps, actor.orgId, userId),
         });
       },
       { orgId: actor.orgId },
     );
-
-    await invalidateMemberAccessCaches(this.writeDeps, actor.orgId, userId);
     return { success: true };
   }
 
@@ -259,12 +253,11 @@ export class ModuleAccessFlatMembersService {
             targetType: "user",
             metadata: { moduleKey },
           },
+          revoke: memberRevocation(this.writeDeps, actor.orgId, userId),
         });
       },
       { orgId: actor.orgId },
     );
-
-    await invalidateMemberAccessCaches(this.writeDeps, actor.orgId, userId);
     return { success: true };
   }
 

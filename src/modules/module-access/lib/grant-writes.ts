@@ -3,7 +3,6 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { organizationMembers, userPermissionGrants } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import {
@@ -122,10 +121,12 @@ export async function setGrants(
           permissionKeys: Array.from(requested.keys()),
         },
       },
+      revoke: {
+        cache: deps.cache,
+        loses: [{ kind: "permissions", userIds: [target.userId] }],
+      },
     });
   });
-
-  await deps.cache.invalidate(CACHE_KEYS.userSession(target.userId));
 
   return { success: true, granted: rows.length };
 }

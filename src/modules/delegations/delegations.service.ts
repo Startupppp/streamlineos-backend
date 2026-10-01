@@ -18,8 +18,6 @@ import { actingMembershipId } from "../../common/auth/principal";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { AccessService } from "../access/access.service";
 import type {
   CreateDelegationInput,
@@ -50,12 +48,6 @@ export class DelegationsService {
 
   private get listingDeps(): DelegationListingDeps {
     return { db: this.db };
-  }
-
-  private async invalidateDelegateeSession(userId: string): Promise<void> {
-    const invalidate = () => this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    await invalidate();
-    registerAfterCommit(invalidate);
   }
 
   async list(
@@ -154,6 +146,10 @@ export class DelegationsService {
               reason: body.reason ?? null,
             },
           },
+          revoke: {
+            cache: this.cache,
+            loses: [{ kind: "permissions", userIds: [body.delegateeId] }],
+          },
         });
         return {
           ...created,
@@ -164,7 +160,6 @@ export class DelegationsService {
       },
       { orgId: actor.orgId },
     );
-    await this.invalidateDelegateeSession(body.delegateeId);
     const enriched = await loadOneDelegation(this.listingDeps, actor.orgId, record.id);
     if (!enriched) throw new NotFoundException("Delegation not found after creation");
     return enriched;
@@ -250,6 +245,12 @@ export class DelegationsService {
               permissions: permissionRows.map((row) => row.permissionKey),
             },
           },
+          revoke: {
+            cache: this.cache,
+            loses: [
+              { kind: "permissions", userIds: delegateeUserId ? [delegateeUserId] : [] },
+            ],
+          },
         });
         return {
           updated: {
@@ -263,9 +264,6 @@ export class DelegationsService {
       },
       { orgId },
     );
-    if (result.delegateeUserId) {
-      await this.invalidateDelegateeSession(result.delegateeUserId);
-    }
     const { updated } = result;
     return updated;
   }

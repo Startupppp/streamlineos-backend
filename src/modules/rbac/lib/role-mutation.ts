@@ -11,6 +11,8 @@ import {
   roles,
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
+import type { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
@@ -52,6 +54,7 @@ const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
 export interface RoleMutationDeps {
   readonly db: Db;
   readonly access: AccessService;
+  readonly cache: CacheService;
 }
 
 async function assertGrantable(
@@ -153,6 +156,11 @@ export async function updateRole(
           targetType: "role",
           metadata: { name: input.name, permissionsUpdated: !!input.permissions },
         },
+        revoke: {
+          cache: deps.cache,
+          loses: [{ kind: "role-holders", roleId }],
+          listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+        },
       });
     },
     { orgId: actor.orgId },
@@ -215,6 +223,11 @@ export async function deleteRole(
           userId: actor.userId,
           targetId: String(roleId),
           targetType: "role",
+        },
+        revoke: {
+          cache: deps.cache,
+          loses: [],
+          listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
         },
       });
     },

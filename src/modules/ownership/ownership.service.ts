@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
@@ -29,8 +28,6 @@ export class OwnershipService {
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
-
-  private readonly logger = new Logger(OwnershipService.name);
 
   async listModuleOwnerships(orgId: string) {
     return this.cache.cachedForOrg(
@@ -118,7 +115,7 @@ export class OwnershipService {
       throw new BadRequestException("Target membership must be ACTIVE to receive module ownership");
     }
 
-    const previousOwnerMembershipId = await this.db.transaction(async (tx) => {
+    await this.db.transaction(async (tx) => {
       const [prevOwnership] = await tx
         .select({ ownerMembershipId: moduleOwnerships.ownerMembershipId })
         .from(moduleOwnerships)
@@ -165,6 +162,15 @@ export class OwnershipService {
       }
       await assertModuleOwnerRoleAssigned(tx, orgId, moduleKey, input.ownerMembershipId);
 
+      const previousOwnerMembershipId = prevOwnership?.ownerMembershipId ?? null;
+      const affectedUserIds = await resolveMembershipUserIds(
+        tx,
+        orgId,
+        previousOwnerMembershipId !== null
+          ? [input.ownerMembershipId, previousOwnerMembershipId]
+          : [input.ownerMembershipId],
+      );
+
       await commitAccessChange(tx, orgId, {
         audit: {
           action: "ownership.module_owner_forced",
@@ -173,56 +179,41 @@ export class OwnershipService {
           targetType: "membership",
           metadata: { moduleKey, ownerMembershipId: input.ownerMembershipId },
         },
+        revoke: {
+          cache: this.cache,
+          loses: [{ kind: "permissions", userIds: affectedUserIds }],
+        },
+        notify: {
+          via: this.dispatch,
+          events:
+            affectedUserIds.length === 0
+              ? []
+              : [
+                  {
+                    eventKey: "ownership.module_owner.changed",
+                    orgId,
+                    actorUserId,
+                    targetUserIds: affectedUserIds,
+                    entityType: "module_ownership",
+                    entityId: moduleKey,
+                    title: "Module ownership changed",
+                    message: `Lifecycle ownership of the ${moduleKey} module was reassigned. Your permissions for that module may have changed.`,
+                    link: "/settings/organization",
+                  },
+                ],
+        },
+        afterCommit: async () => {
+          await Promise.all([
+            this.cache.invalidateForOrg(orgId, "ownership:modules"),
+            this.cache.invalidateForOrg(orgId, `ownership:module:${moduleKey}`),
+            this.cache.invalidateForOrg(orgId, `module-access:ownership:${moduleKey}`),
+            this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
+          ]);
+        },
       });
-      return prevOwnership?.ownerMembershipId ?? null;
-    });
-
-    await Promise.all([
-      this.cache.invalidateForOrg(orgId, "ownership:modules"),
-      this.cache.invalidateForOrg(orgId, `ownership:module:${moduleKey}`),
-      this.cache.invalidateForOrg(orgId, `module-access:ownership:${moduleKey}`),
-      this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
-    ]);
-
-    await this.notifyModuleOwnerChanged(
-      orgId,
-      actorUserId,
-      moduleKey,
-      input.ownerMembershipId,
-      previousOwnerMembershipId,
-    ).catch((error: unknown) => {
-      this.logger.warn(
-        `module-owner-changed notification skipped for ${moduleKey}: ${error instanceof Error ? error.message : String(error)}`,
-      );
     });
 
     return { success: true as const };
   }
 
-  private async notifyModuleOwnerChanged(
-    orgId: string,
-    actorUserId: string,
-    moduleKey: string,
-    newOwnerMembershipId: number,
-    previousOwnerMembershipId: number | null,
-  ): Promise<void> {
-    const membershipIds =
-      previousOwnerMembershipId !== null && previousOwnerMembershipId !== newOwnerMembershipId
-        ? [newOwnerMembershipId, previousOwnerMembershipId]
-        : [newOwnerMembershipId];
-    const targetUserIds = await resolveMembershipUserIds(this.db, orgId, membershipIds);
-    if (targetUserIds.length === 0) return;
-
-    await this.dispatch.emit({
-      eventKey: "ownership.module_owner.changed",
-      orgId,
-      actorUserId,
-      targetUserIds,
-      entityType: "module_ownership",
-      entityId: moduleKey,
-      title: "Module ownership changed",
-      message: `Lifecycle ownership of the ${moduleKey} module was reassigned. Your permissions for that module may have changed.`,
-      link: "/settings/organization",
-    });
-  }
 }

@@ -4,13 +4,8 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, gt } from "drizzle-orm";
-import {
-  organizationMembers,
-  roleAssignments,
-  rolePermissionGrants,
-  roles,
-} from "../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { rolePermissionGrants, roles } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
@@ -32,30 +27,6 @@ import { resolveActorRankContext } from "./module-access.helpers";
 import type { SetModuleRolePermissionsInput } from "./dto/module-access.schemas";
 
 const PERM_DIFF_CAP = 50;
-const ROLE_ASSIGNEE_PAGE_SIZE = 100;
-
-interface RoleAssignee {
-  membershipId: number;
-  userId: string;
-}
-
-export async function invalidateRoleAssigneePages(
-  fetchPage: (
-    afterMembershipId: number | null,
-    limit: number,
-  ) => Promise<RoleAssignee[]>,
-  invalidateSession: (userId: string) => Promise<void>,
-): Promise<void> {
-  let afterMembershipId: number | null = null;
-  for (;;) {
-    const page = await fetchPage(afterMembershipId, ROLE_ASSIGNEE_PAGE_SIZE);
-    await Promise.all(page.map((assignee) => invalidateSession(assignee.userId)));
-    if (page.length < ROLE_ASSIGNEE_PAGE_SIZE) return;
-    const last = page[page.length - 1];
-    if (!last) return;
-    afterMembershipId = last.membershipId;
-  }
-}
 
 function normalizeModulePermissionItems(
   catalog: ReadonlySet<string>,
@@ -213,36 +184,13 @@ export async function setModuleRolePermissions(
             truncated: permDiff.truncated,
           },
         },
+        revoke: {
+          cache: deps.cache,
+          loses: [{ kind: "role-holders", roleId }],
+          listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+        },
       });
     },
-    { orgId: actor.orgId },
-  );
-  await deps.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-  await runInTenantTransaction(
-    deps.db,
-    (tx) =>
-      invalidateRoleAssigneePages(
-        (afterMembershipId, limit) => {
-          const conditions = [eq(roleAssignments.orgId, actor.orgId), eq(roleAssignments.roleId, roleId)];
-          if (afterMembershipId !== null) {
-            conditions.push(gt(roleAssignments.organizationMembershipId, afterMembershipId));
-          }
-          return tx
-            .select({ membershipId: roleAssignments.organizationMembershipId, userId: organizationMembers.userId })
-            .from(roleAssignments)
-            .innerJoin(
-              organizationMembers,
-              and(
-                eq(organizationMembers.orgId, roleAssignments.orgId),
-                eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-              ),
-            )
-            .where(and(...conditions))
-            .orderBy(asc(roleAssignments.organizationMembershipId))
-            .limit(limit);
-        },
-        (userId) => deps.cache.invalidate(CACHE_KEYS.userSession(userId)),
-      ),
     { orgId: actor.orgId },
   );
   return { success: true, version: nextVersion };

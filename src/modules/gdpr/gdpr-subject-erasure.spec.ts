@@ -457,9 +457,7 @@ describe("GdprSubjectErasureService — cache invalidation", () => {
   });
 
   it("(bite proof) skipping the transaction means commitAccessChange is never called — test catches it", async () => {
-    // Mechanism: db.transaction calls fn(tx), so commitAccessChange IS called.
     // Neuter: replace db.transaction with jest.fn().mockResolvedValue(undefined) (callback never called).
-    // Then expect(commitAccessChange).toHaveBeenCalled() → FAILS.
     // This test is the positive assertion — verify it DOES get called when transaction works:
     const { db } = makeDb({});
     const svc = buildService(db);

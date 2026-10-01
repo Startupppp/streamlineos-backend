@@ -20,10 +20,14 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
+import {
+  commitAccessChange,
+  type CommitAccessOpts,
+} from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import type { DispatchEventInput } from "../notifications/notification.types";
 import type { RoleMemberInput } from "./dto/rbac.schemas";
 import { assertMayAssignRole } from "./assert-role-assignment";
 
@@ -36,24 +40,54 @@ export class RoleMemberService {
     private readonly access: AccessService,
   ) {}
 
-  private async invalidateRoleHolderSessions(orgId: string, roleId: number): Promise<void> {
-    const assignees = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(roleAssignments)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, roleAssignments.orgId),
-          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-        ),
-      )
-      .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.roleId, roleId)))
-      .limit(500);
-    await this.cache.invalidateMany(
-      assignees.map((a) => CACHE_KEYS.userSession(a.userId)),
-    );
+  private roleMemberCommit(
+    actor: CurrentUserContext,
+    roleId: number,
+    input: RoleMemberInput,
+    change: "added" | "removed",
+  ): CommitAccessOpts<DispatchEventInput> {
+    const isUser = input.principalType === "user";
+    return {
+      audit: {
+        action: `role.member.${change}`,
+        userId: actor.userId,
+        targetId: String(roleId),
+        targetType: "role",
+        metadata: { principalType: input.principalType, principalId: input.principalId },
+      },
+      revoke: {
+        cache: this.cache,
+        loses: [
+          { kind: "role-holders", roleId },
+          isUser
+            ? { kind: "permissions", userIds: [input.principalId] }
+            : { kind: "group-members", groupId: input.principalId },
+        ],
+        listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+      },
+      notify: {
+        via: this.dispatch,
+        events: isUser
+          ? [
+              {
+                eventKey: "security.role.changed",
+                orgId: actor.orgId,
+                actorUserId: actor.userId,
+                targetUserIds: [input.principalId],
+                entityType: "role",
+                entityId: String(roleId),
+                title: "Your role or permissions were updated",
+                message:
+                  change === "added"
+                    ? "A role has been assigned to your account. Your access permissions may have changed."
+                    : "A role has been removed from your account. Your access permissions may have changed.",
+                link: "/settings/security",
+              },
+            ]
+          : [],
+      },
+    };
   }
-
 
   private async getRole(orgId: string, roleId: number) {
     const role = await this.db.query.roles.findFirst({
@@ -220,15 +254,11 @@ export class RoleMemberService {
             assignedByMembershipId: null,
           })
           .onConflictDoNothing();
-        await commitAccessChange(tx, actor.orgId, {
-          audit: {
-            action: "role.member.added",
-            userId: actor.userId,
-            targetId: String(roleId),
-            targetType: "role",
-            metadata: { principalType: input.principalType, principalId: input.principalId },
-          },
-        });
+        await commitAccessChange(
+          tx,
+          actor.orgId,
+          this.roleMemberCommit(actor, roleId, input, "added"),
+        );
       }, { orgId: actor.orgId });
     } else {
       const group = await this.db.query.principalGroups.findFirst({
@@ -252,33 +282,12 @@ export class RoleMemberService {
             roleId,
           })
           .onConflictDoNothing();
-        await commitAccessChange(tx, actor.orgId, {
-          audit: {
-            action: "role.member.added",
-            userId: actor.userId,
-            targetId: String(roleId),
-            targetType: "role",
-            metadata: { principalType: input.principalType, principalId: input.principalId },
-          },
-        });
+        await commitAccessChange(
+          tx,
+          actor.orgId,
+          this.roleMemberCommit(actor, roleId, input, "added"),
+        );
       }, { orgId: actor.orgId });
-    }
-
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await this.invalidateRoleHolderSessions(actor.orgId, roleId);
-
-    if (input.principalType === "user") {
-      await this.dispatch.emit({
-        eventKey: "security.role.changed",
-        orgId: actor.orgId,
-        actorUserId: actor.userId,
-        targetUserIds: [input.principalId],
-        entityType: "role",
-        entityId: String(roleId),
-        title: "Your role or permissions were updated",
-        message: "A role has been assigned to your account. Your access permissions may have changed.",
-        link: "/settings/security",
-      }).catch(() => undefined);
     }
 
     return { success: true };
@@ -325,33 +334,12 @@ export class RoleMemberService {
             ),
           );
       }
-      await commitAccessChange(tx, actor.orgId, {
-        audit: {
-          action: "role.member.removed",
-          userId: actor.userId,
-          targetId: String(roleId),
-          targetType: "role",
-          metadata: { principalType: input.principalType, principalId: input.principalId },
-        },
-      });
+      await commitAccessChange(
+        tx,
+        actor.orgId,
+        this.roleMemberCommit(actor, roleId, input, "removed"),
+      );
     }, { orgId: actor.orgId });
-
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await this.invalidateRoleHolderSessions(actor.orgId, roleId);
-
-    if (input.principalType === "user") {
-      await this.dispatch.emit({
-        eventKey: "security.role.changed",
-        orgId: actor.orgId,
-        actorUserId: actor.userId,
-        targetUserIds: [input.principalId],
-        entityType: "role",
-        entityId: String(roleId),
-        title: "Your role or permissions were updated",
-        message: "A role has been removed from your account. Your access permissions may have changed.",
-        link: "/settings/security",
-      }).catch(() => undefined);
-    }
 
     return { success: true };
   }

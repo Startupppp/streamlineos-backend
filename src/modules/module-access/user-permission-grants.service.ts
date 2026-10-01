@@ -8,7 +8,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { userPermissionGrants } from "../../db/schema";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { AccessService } from "../access/access.service";
@@ -125,10 +124,12 @@ export class UserPermissionGrantsService {
           resourceId: String(membershipId),
           metadata: { moduleKey, targetUserId: target.userId, permissionKey },
         },
+        revoke: {
+          cache: this.cache,
+          loses: [{ kind: "permissions", userIds: [target.userId] }],
+        },
       });
     });
-
-    await this.cache.invalidate(CACHE_KEYS.userSession(target.userId));
 
     return { success: true };
   }

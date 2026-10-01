@@ -125,13 +125,15 @@ export class ModuleAccessGroupMembersService {
             targetType: "role",
             metadata: { moduleKey, targetUserId: input.userId },
           },
+          revoke: {
+            cache: this.cache,
+            loses: [{ kind: "permissions", userIds: [input.userId] }],
+            listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+          },
         });
       },
       { orgId: actor.orgId },
     );
-
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
     return { success: true };
   }
 
@@ -185,12 +187,15 @@ export class ModuleAccessGroupMembersService {
               targetType: "role",
               metadata: { moduleKey, targetUserId: userId },
             },
+            revoke: {
+              cache: this.cache,
+              loses: [{ kind: "permissions", userIds: [userId] }],
+              listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+            },
           });
         },
         { orgId: actor.orgId },
       );
-      await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-      await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     }
 
     return { success: true };

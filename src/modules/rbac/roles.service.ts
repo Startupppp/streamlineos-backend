@@ -16,6 +16,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
@@ -55,10 +56,11 @@ export class RolesService {
     private readonly access: AccessService,
     private readonly rolePermission: RolePermissionService,
     private readonly roleMember: RoleMemberService,
+    private readonly cache: CacheService,
   ) {}
 
   private get mutationDeps(): RoleMutationDeps {
-    return { db: this.db, access: this.access };
+    return { db: this.db, access: this.access, cache: this.cache };
   }
 
   updateRole(

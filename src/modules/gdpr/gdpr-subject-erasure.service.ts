@@ -10,7 +10,6 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { bustMembershipAfterIdentityErasure } from "../../common/org/membership-bust";
 import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { SessionsService } from "../sessions/sessions.service";
@@ -233,27 +232,26 @@ export class GdprSubjectErasureService {
           });
       }
 
-      await tx.insert(auditLogs).values({
-        action: "subject.erasure.started",
-        userId: actorUserId,
-        orgId,
-        targetId: subjectUserId,
-        targetType: "user",
-        metadata: {
-          tablesAnonymised,
-          globalIdentityAnonymised,
-          subjectUserIdHash: hashSubjectId(subjectUserId),
-          storageManifestSize: storageManifest.keys.length,
-          storageManifestKeys: storageManifest.keys.map((k) => k.key),
+      await commitAccessChange(tx, orgId, {
+        audit: {
+          action: "subject.erasure.started",
+          userId: actorUserId,
+          targetId: subjectUserId,
+          targetType: "user",
+          metadata: {
+            tablesAnonymised,
+            globalIdentityAnonymised,
+            subjectUserIdHash: hashSubjectId(subjectUserId),
+            storageManifestSize: storageManifest.keys.length,
+            storageManifestKeys: storageManifest.keys.map((k) => k.key),
+          },
         },
-        isPlatformEvent: false,
+        revoke: {
+          cache: this.cache,
+          loses: [{ kind: "identity", userId: subjectUserId, sessions: this.sessionsService }],
+        },
       });
-
-      await commitAccessChange(tx, orgId);
     });
-
-    await bustMembershipAfterIdentityErasure(this.cache, subjectUserId);
-    await this.sessionsService.revokeAllForUser(subjectUserId);
 
     let purgeDeleted = 0;
     let purgeSkipped = 0;

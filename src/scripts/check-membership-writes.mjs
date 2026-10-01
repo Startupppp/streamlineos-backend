@@ -101,6 +101,7 @@ export const WRITE_EXEMPT = new Map([
 /** file -> why it may import an invalidation primitive. */
 export const PRIMITIVE_EXEMPT = new Map([
   [OWNER_WRITES, "the owner itself"],
+  ["src/common/rbac/access-mutation-commit.ts", "the access-mutation commit module schedules every revocation"],
   [OWNER_INVALIDATION, "the invalidation half of the owner"],
   [PRIMITIVE_DECLARATION, "declares bustMembershipStatusCache and bustMembershipStatusCacheMany"],
 ]);
@@ -134,6 +135,61 @@ export function findBumpImports(source) {
     });
   }
   return out;
+}
+
+export const ACCESS_SCOPES = [
+  "src/modules/rbac/",
+  "src/modules/module-access/",
+  "src/modules/ownership/",
+  "src/modules/delegations/",
+  "src/common/org/",
+  "src/common/rbac/",
+];
+
+export const ACCESS_SIDE_EFFECT_EXEMPT = new Map([
+  [BUMP_COMMIT_OWNER, "the access-mutation commit module itself"],
+  [
+    "src/common/org/membership-bust.ts",
+    "revokeMembershipAccessCaches busts now and after commit for organization/core callers outside this scope",
+  ],
+  [
+    "src/modules/ownership/lib/ownership-transfer-initiation.ts",
+    "opening a PENDING transfer changes no access; the audit records a request, not a grant",
+  ],
+  [
+    "src/modules/ownership/lib/ownership-module-transfer-initiation.ts",
+    "opening a PENDING module transfer changes no access; the audit records a request, not a grant",
+  ],
+  [
+    "src/modules/ownership/ownership-transfer-response.service.ts",
+    "decline and cancel flip a PENDING row to terminal and change no access; accept goes through the commit module",
+  ],
+  [
+    "src/modules/module-access/lib/module-ownership-transfers.ts",
+    "initiating or withdrawing a PENDING module transfer changes no access",
+  ],
+]);
+
+export function isAccessScoped(rel) {
+  return ACCESS_SCOPES.some((scope) => rel.startsWith(scope));
+}
+
+const ACCESS_AUDIT_RE =
+  /\b(?:audit|auditService)\s*\.\s*(?:log|logMany|logCritical|logCriticalOutsideTransaction)\s*\(|\.insert\(\s*auditLogs\b/g;
+const SESSION_BUST_RE = /\bCACHE_KEYS\s*\.\s*userSession\s*\(/g;
+const MEMBERSHIP_BUST_IMPORT_RE =
+  /import\s+(?:type\s+)?\{[^}]*\}\s*from\s*["'][^"']*\/membership-bust["']/g;
+
+export function findAccessAuditWrites(source) {
+  return matchesWith(source, ACCESS_AUDIT_RE);
+}
+
+export function findSessionBusts(source) {
+  return matchesWith(source, SESSION_BUST_RE);
+}
+
+export function findMembershipBustImports(source) {
+  return matchesWith(source, MEMBERSHIP_BUST_IMPORT_RE);
 }
 
 const DRIZZLE_WRITE_RE = /\.(insert|update|delete)\(\s*organizationMembers\b/g;
@@ -184,6 +240,36 @@ export function findPrimitiveImports(source) {
       });
     }
   }
+  return out;
+}
+
+export function scanAccessSideEffects(rel, source) {
+  if (!isAccessScoped(rel) || ACCESS_SIDE_EFFECT_EXEMPT.has(rel)) return [];
+  const out = [];
+  for (const hit of findAccessAuditWrites(source))
+    out.push({
+      rel,
+      line: hit.line,
+      kind: "DIRECT ACCESS AUDIT",
+      text: hit.text,
+      fix: "Pass the audit as commitAccessChange(tx, orgId, { audit }) so it commits once, inside the access change.",
+    });
+  for (const hit of findSessionBusts(source))
+    out.push({
+      rel,
+      line: hit.line,
+      kind: "DIRECT SESSION BUST",
+      text: hit.text,
+      fix: "Declare who loses access as commitAccessChange(tx, orgId, { revoke: { cache, loses } }); the module schedules the bust after commit and runs it inline when there is no context.",
+    });
+  for (const hit of findMembershipBustImports(source))
+    out.push({
+      rel,
+      line: hit.line,
+      kind: "DIRECT MEMBERSHIP BUST",
+      text: hit.text,
+      fix: "Use a standing / identity revocation intent on commitAccessChange instead of a membership-bust operation.",
+    });
   return out;
 }
 
@@ -315,6 +401,80 @@ if (RUN_DIRECTLY && process.argv.includes("--self-test")) {
     1,
   );
 
+  check(
+    "this.audit.log is an access-audit write",
+    findAccessAuditWrites("this.audit.log({ action: 'x' });").length,
+    1,
+  );
+  check(
+    "deps.audit.logCritical is an access-audit write",
+    findAccessAuditWrites("await deps.audit.logCritical({ action: 'x' });").length,
+    1,
+  );
+  check(
+    "raw auditLogs insert is an access-audit write",
+    findAccessAuditWrites("await tx.insert(auditLogs).values(row);").length,
+    1,
+  );
+  check(
+    "an auditLogs read is not a write",
+    findAccessAuditWrites("await tx.select().from(auditLogs).where(w);").length,
+    0,
+  );
+  check(
+    "a commitAccessChange audit intent is not a direct write",
+    findAccessAuditWrites("await commitAccessChange(tx, orgId, { audit: { action: 'x' } });").length,
+    0,
+  );
+  check(
+    "a direct session-cache bust is detected",
+    findSessionBusts("await this.cache.invalidate(CACHE_KEYS.userSession(userId));").length,
+    1,
+  );
+  check(
+    "a mapped session-cache key list is detected",
+    findSessionBusts("ids.map((id) => CACHE_KEYS.userSession(id))").length,
+    1,
+  );
+  check(
+    "a membership-bust operation import is detected",
+    findMembershipBustImports(
+      'import { bustMembershipAfterIdentityErasure } from "../../common/org/membership-bust";',
+    ).length,
+    1,
+  );
+  check(
+    "a commit-module import is not a membership-bust import",
+    findMembershipBustImports(
+      'import { commitAccessChange } from "../../common/rbac/access-mutation-commit";',
+    ).length,
+    0,
+  );
+  check("rbac is access-scoped", isAccessScoped("src/modules/rbac/roles.service.ts"), true);
+  check("ownership is access-scoped", isAccessScoped("src/modules/ownership/x.ts"), true);
+  check("hr is not access-scoped", isAccessScoped("src/modules/hr/x.ts"), false);
+  check(
+    "a planted module-access file collects all three side-effect violations",
+    scanAccessSideEffects(
+      "src/modules/module-access/planted.ts",
+      'import { revokeMembershipAccessCaches } from "../../common/org/membership-bust";\nthis.audit.log({ action: "a" });\nawait cache.invalidate(CACHE_KEYS.userSession(u));',
+    ).length,
+    3,
+  );
+  check(
+    "the commit module itself collects none",
+    scanAccessSideEffects(
+      "src/common/rbac/access-mutation-commit.ts",
+      "await tx.insert(auditLogs).values(r); CACHE_KEYS.userSession(u);",
+    ).length,
+    0,
+  );
+  check(
+    "an out-of-scope file collects none",
+    scanAccessSideEffects("src/modules/hr/x.ts", "this.audit.log({ action: 'a' });").length,
+    0,
+  );
+
   if (failures.length > 0) {
     console.error("SELF-TEST FAILED:");
     for (const failure of failures) console.error(`  ${failure}`);
@@ -377,6 +537,8 @@ function scanRepository() {
           fix: "Call commitAccessChange(tx, orgId, opts?) from common/rbac/access-mutation-commit instead — it is the sole authorised entry point that writes the audit row and schedules revocation atomically.",
         });
 
+    violations.push(...scanAccessSideEffects(rel, source));
+
     if (rel !== OWNER_WRITES)
       for (const hit of findConstructions(source))
         violations.push({
@@ -402,11 +564,13 @@ function scanRepository() {
     for (const [rel, why] of WRITE_EXEMPT) console.log(`  WRITE EXEMPT      ${rel} — ${why}`);
     for (const [rel, why] of PRIMITIVE_EXEMPT) console.log(`  PRIMITIVE EXEMPT  ${rel} — ${why}`);
     for (const [rel, why] of BUMP_EXEMPT) console.log(`  BUMP EXEMPT       ${rel} — ${why}`);
+    for (const [rel, why] of ACCESS_SIDE_EFFECT_EXEMPT)
+      console.log(`  SIDE-EFFECT EXEMPT ${rel} — ${why}`);
     process.exit(0);
   }
 
   console.log(
-    `exemptions                ${WRITE_EXEMPT.size} write, ${PRIMITIVE_EXEMPT.size} primitive, ${BUMP_EXEMPT.size} bump`,
+    `exemptions                ${WRITE_EXEMPT.size} write, ${PRIMITIVE_EXEMPT.size} primitive, ${BUMP_EXEMPT.size} bump, ${ACCESS_SIDE_EFFECT_EXEMPT.size} side-effect`,
   );
   for (const [rel, why] of WRITE_EXEMPT) console.log(`  SKIP  ${rel} — ${why}`);
   console.log("");

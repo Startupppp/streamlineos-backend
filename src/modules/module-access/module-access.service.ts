@@ -37,8 +37,6 @@ import {
 } from "./lib/module-audit-log";
 import { setModuleRolePermissions } from "./module-role-permissions";
 
-export { invalidateRoleAssigneePages } from "./module-role-permissions";
-
 export interface ModuleRoleView {
   roleId: number;
   name: string;
