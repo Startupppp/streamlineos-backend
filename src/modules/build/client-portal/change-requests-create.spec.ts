@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import { ChangeRequestsService } from "./change-requests.service";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -6,6 +6,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CreateChangeRequestInput } from "./dto/change-requests.schemas";
+import { projectAccessRow, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 function makeOwner(orgId: string): CurrentUserContext {
   return {
@@ -21,7 +22,7 @@ function makeOwner(orgId: string): CurrentUserContext {
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 const mockAccess = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  scopeFor: async (actor: CurrentUserContext) => (actor.isOrgOwner ? "all" : "none"),
 } as unknown as AccessService;
 
 const minimalInput: CreateChangeRequestInput = {
@@ -53,7 +54,7 @@ const crRow = {
   deletedAt: null,
 };
 
-function makeDb(projectExists: boolean, insertedRow = crRow): Db {
+function makeDb(projectExists: boolean, insertedRow = crRow, project: ProjectAccessRow = projectAccessRow()): Db {
   const fakeTx = {
     execute: jest.fn().mockResolvedValue(undefined),
     select: jest.fn().mockReturnValue({
@@ -68,17 +69,12 @@ function makeDb(projectExists: boolean, insertedRow = crRow): Db {
     }),
   };
   return {
-    query: {
-      projects: {
-        findFirst: jest.fn().mockResolvedValue(
-          projectExists ? { managerMembershipId: null } : undefined,
-        ),
-      },
-    },
     transaction: jest.fn().mockImplementation(async (cb: (tx: typeof fakeTx) => Promise<unknown>) =>
       cb(fakeTx),
     ),
-    select: jest.fn(),
+    select: jest.fn(() => ({
+      from: () => ({ where: () => ({ limit: async () => (projectExists ? [project] : []) }) }),
+    })),
     insert: jest.fn(),
     update: jest.fn(),
   } as unknown as Db;
@@ -87,7 +83,6 @@ function makeDb(projectExists: boolean, insertedRow = crRow): Db {
 beforeEach(() => {
   jest.resetAllMocks();
   (mockAudit.log as jest.Mock).mockReset();
-  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
 describe("ChangeRequestsService.createChangeRequest — access gate (B11)", () => {
@@ -109,6 +104,17 @@ describe("ChangeRequestsService.createChangeRequest — access gate (B11)", () =
     await expect(
       svc.createChangeRequest(makeOwner("org-1"), 10, minimalInput),
     ).resolves.toBeDefined();
+  });
+
+  it("refuses a change request on an archived project with 409 before opening a transaction, because a locked project takes no writes", async () => {
+    const db = makeDb(true, crRow, projectAccessRow({ state: "ARCHIVED" }));
+    const svc = new ChangeRequestsService(db, mockAccess, mockAudit);
+
+    await expect(
+      svc.createChangeRequest(makeOwner("org-1"), 10, minimalInput),
+    ).rejects.toThrow(ConflictException);
+
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });
 

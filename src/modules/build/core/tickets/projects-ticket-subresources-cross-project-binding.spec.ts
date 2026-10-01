@@ -18,10 +18,13 @@ import { ProjectsTicketWatchersService } from "./projects-ticket-watchers.servic
 import { ProjectsTicketLabelsService } from "./projects-ticket-labels.service";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { assertTicketReadAccess, assertTicketWriteAccess, decideTicketRead } from "../project-crud/project-access";
 
 jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
+  assertProjectStateAllowsWrites: jest.fn(),
+  decideTicketRead: jest.fn(),
 }));
 
 const ORG = "org-1";
@@ -285,19 +288,23 @@ function makeU(orgId = ORG): CurrentUserContext {
 
 const access = { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() };
 
+function projectOfTicket(ticketId: number, fallback: number | null): number | null {
+  return ticketId === TICKET_A ? PROJECT_A : ticketId === TICKET_B ? PROJECT_B : fallback;
+}
+
 beforeEach(() => {
-  jest.mocked(assertTicketReadAccess).mockImplementation(
-    async (_db, _access, u, projectId, ticketId) => {
-      const ticketProject =
-        ticketId === TICKET_A
-          ? PROJECT_A
-          : ticketId === TICKET_B
-            ? PROJECT_B
-            : projectId;
-      if (u.orgId !== ORG || ticketProject !== projectId)
-        throw new NotFoundException("Ticket not found");
-    },
-  );
+  const gate = async (_db: unknown, _access: unknown, u: CurrentUserContext, projectId: number, ticketId: number) => {
+    if (u.orgId !== ORG || projectOfTicket(ticketId, projectId) !== projectId)
+      throw new NotFoundException("Ticket not found");
+  };
+  jest.mocked(assertTicketReadAccess).mockImplementation(gate);
+  jest.mocked(assertTicketWriteAccess).mockImplementation(gate);
+  jest.mocked(decideTicketRead).mockImplementation(async (_db, _access, u, ticketId, options) => {
+    const ticketProject = projectOfTicket(ticketId, options.projectId);
+    if (u.orgId !== ORG) return { kind: "missing" };
+    if (options.projectId !== null && ticketProject !== options.projectId) return { kind: "missing" };
+    return { kind: "allowed", projectId: ticketProject, projectState: "ACTIVE" };
+  });
 });
 
 function makeWatchers(store: Store) {

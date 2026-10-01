@@ -7,6 +7,27 @@ import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  type ProjectAccessRow,
+} from "../core/project-crud/__tests__/project-access-doubles";
+
+function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
+  return jest.fn((fields?: Record<string, unknown>) =>
+    fields !== undefined && "manages" in fields
+      ? { from: () => ({ where: () => ({ limit: async () => rows }) }) }
+      : rest(fields),
+  );
+}
+
+
+const memberScopeAccess = {
+  scopeFor: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner ? "all" : (MEMBER_STANDING[key] ?? "none"),
+  holds: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner || (MEMBER_STANDING[key] ?? "none") !== "none",
+} as unknown as AccessService;
 
 const dialect = new PgDialect();
 
@@ -27,9 +48,7 @@ function makeU(orgId: string): CurrentUserContext {
   };
 }
 
-const mockAccess = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-} as unknown as AccessService;
+const mockAccess = memberScopeAccess;
 
 const mockAudit = { log: jest.fn(), logCritical: jest.fn() } as unknown as AuditService;
 
@@ -52,7 +71,6 @@ const MINIMAL_PROJECT = {
 
 beforeEach(() => {
   jest.resetAllMocks();
-  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set(["build:view"]));
 });
 
 describe("ClientPortalService.listPortalProjects — lifecycle gate: isNull(deletedAt) on project rows (Requirement B)", () => {
@@ -158,15 +176,12 @@ describe("ClientPortalService.getProjectOverview — source ACL gate: clientVisi
 
     return {
       query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue(MINIMAL_PROJECT),
-        },
       },
-      select: jest.fn().mockImplementation(() => {
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockImplementation(() => {
         selectCount++;
         const ci = selectCount;
         return { from: jest.fn().mockReturnValue(stubFromChain(ci)) };
-      }),
+      })),
     } as unknown as Db;
   }
 

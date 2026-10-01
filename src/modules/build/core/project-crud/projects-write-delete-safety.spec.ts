@@ -3,6 +3,7 @@ import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import { ticketComments, tickets } from "../../../../db/schema";
 import { ProjectsWriteService } from "./projects-write.service";
+import { standingAccess } from "./__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 
@@ -39,7 +40,7 @@ describe("ProjectsWriteService.deleteProject — preserves earlier soft deletes"
     const service = new ProjectsWriteService(
       db,
       { log: jest.fn() } as never,
-      { resolveUserPermissions: jest.fn() } as never,
+      standingAccess({ "build:delete": "all" }) as never,
       {} as never,
     );
 

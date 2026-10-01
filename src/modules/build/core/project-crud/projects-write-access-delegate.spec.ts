@@ -15,10 +15,10 @@ function makeDb() {
   } as unknown as Db;
 }
 
-describe("ProjectsWriteService.updateProject delegates manage check to assertCanManageProject from project-access", () => {
-  it("calls assertCanManageProject and propagates NotFoundException when the canonical raises it", async () => {
+describe("ProjectsWriteService.updateProject delegates the manage-and-lifecycle check to authorizeProjectUpdate from project-access", () => {
+  it("calls authorizeProjectUpdate and propagates NotFoundException when the canonical raises it", async () => {
     const spy = jest
-      .spyOn(projectAccessModule, "assertCanManageProject")
+      .spyOn(projectAccessModule, "authorizeProjectUpdate")
       .mockRejectedValueOnce(new NotFoundException("Project not found"));
 
     const svc = new ProjectsWriteService(
@@ -32,14 +32,14 @@ describe("ProjectsWriteService.updateProject delegates manage check to assertCan
       svc.updateProject({ orgId: ORG, userId: "u-1", isOrgOwner: false, principal: { kind: "human-session", membershipId: 5, isOrgOwner: false } } as never, 42, { name: "x" }),
     ).rejects.toThrow(NotFoundException);
 
-    expect(spy).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ orgId: ORG }), 42);
+    expect(spy).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ orgId: ORG }), 42, false);
 
     spy.mockRestore();
   });
 
-  it("calls assertCanManageProject once per updateProject call regardless of which fields are changed", async () => {
+  it("calls authorizeProjectUpdate once per updateProject call, marking a status-free edit as no lifecycle change", async () => {
     const spy = jest
-      .spyOn(projectAccessModule, "assertCanManageProject")
+      .spyOn(projectAccessModule, "authorizeProjectUpdate")
       .mockResolvedValue(undefined);
 
     const db = {
@@ -64,6 +64,7 @@ describe("ProjectsWriteService.updateProject delegates manage check to assertCan
     );
 
     expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), 42, false);
 
     spy.mockRestore();
   });

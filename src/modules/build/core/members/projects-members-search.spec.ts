@@ -6,6 +6,8 @@ import type { ProjectsCustomStatesService } from "../custom-states/projects-cust
 import type { ProjectsLabelsService } from "../lib/projects-labels.service";
 import type { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsMembersService } from "./projects-members.service";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 
@@ -22,7 +24,7 @@ function buildDb(captured: Captured) {
       return builder;
     }),
     orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockResolvedValue([]),
+    limit: jest.fn().mockResolvedValueOnce([projectAccessRow()]).mockResolvedValue([]),
   };
   return {
     query: {
@@ -38,13 +40,14 @@ const actor = {
   orgId: "org-owner",
   userId: "owner-user",
   isOrgOwner: true,
+  principal: humanSessionPrincipal(1, true),
 } as CurrentUserContext;
 
 function makeService(captured: Captured) {
   return new ProjectsMembersService(
     buildDb(captured),
     {} as ProjectsWebhooksDispatchService,
-    {} as AccessService,
+    standingAccess(MANAGER_STANDING) as unknown as AccessService,
     {} as ProjectsCustomStatesService,
     {} as ProjectsLabelsService,
   );

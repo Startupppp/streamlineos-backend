@@ -4,10 +4,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ProjectsTicketsDeleteService } from "./tickets/projects-tickets-delete.service";
 import { ProjectsActivityService } from "./activity/projects-activity.service";
-import { assertTicketReadAccess } from "./project-crud/project-access";
+import { assertTicketWriteAccess } from "./project-crud/project-access";
 
 jest.mock("./project-crud/project-access", () => ({
-  assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
 }));
 
 /**
@@ -65,7 +65,7 @@ function makeActor(orgId = OWNER_ORG): CurrentUserContext {
 
 describe("the delete guard's blocker lookup", () => {
   beforeEach(() => {
-    jest.mocked(assertTicketReadAccess).mockResolvedValue();
+    jest.mocked(assertTicketWriteAccess).mockResolvedValue();
   });
 
   function serviceWithBlockers(blockers: { workItemId: number }[]) {

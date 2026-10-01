@@ -6,6 +6,18 @@ import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
 import { toggleVisibilitySchema } from "./dto/client-portal.schemas";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  type ProjectAccessRow,
+} from "../core/project-crud/__tests__/project-access-doubles";
+
+const memberScopeAccess = {
+  scopeFor: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner ? "all" : (MEMBER_STANDING[key] ?? "none"),
+  holds: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner || (MEMBER_STANDING[key] ?? "none") !== "none",
+} as unknown as AccessService;
 
 function makeU(orgId: string): CurrentUserContext {
   return {
@@ -21,11 +33,7 @@ function makeU(orgId: string): CurrentUserContext {
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
-const mockAccessGranted = {
-  resolveUserPermissions: jest
-    .fn()
-    .mockResolvedValue(new Set(["build:manage"])),
-} as unknown as AccessService;
+const mockAccessGranted = memberScopeAccess;
 
 function makeVersionedVisibilityDb(
   ticketVersion: number,

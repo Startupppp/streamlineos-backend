@@ -2,6 +2,7 @@ import { runWithTenantContext } from "../../../../common/tenant/tenant-context";
 import type { TenantTx } from "../../../../db/drizzle.types";
 import type { Db } from "../../../../db/drizzle.module";
 import { applyTicketChange } from "./apply-ticket-change";
+import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 import type { ApplyTicketChangeDeps } from "./apply-ticket-change";
 
 function makeTicket(overrides: Record<string, unknown> = {}) {
@@ -59,7 +60,7 @@ function makeDeps(
       query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }),
+        from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([projectAccessRow()]) }) }),
       }),
     } as unknown as Db,
     dispatch: { emit: jest.fn().mockResolvedValue(undefined) } as never,
@@ -69,7 +70,7 @@ function makeDeps(
     webhooksDispatch: { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
     automationRunner: { runForTicketEvent: jest.fn() } as never,
     cache: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
-    access: { holds: jest.fn().mockResolvedValue(true) } as never,
+    access: { holds: jest.fn().mockResolvedValue(true), scopeFor: jest.fn().mockResolvedValue("all") } as never,
   };
   return { deps, tx };
 }

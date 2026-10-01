@@ -1,15 +1,14 @@
 import { HttpException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { decideTicketRead } from "../project-crud/project-access";
 
 jest.mock("../project-crud/project-access", () => ({
+  assertProjectStateAllowsWrites: jest.fn(),
   assertTicketReadAccess: jest.fn(),
+  decideTicketRead: jest.fn(),
 }));
 
-beforeEach(() => {
-  jest.mocked(assertTicketReadAccess).mockResolvedValue();
-});
 
 const OWNER_ORG = "org-owner";
 const PROJECT_ID = 10;
@@ -55,6 +54,7 @@ const webhooks = { dispatch: jest.fn(), enqueue: jest.fn() } as never;
 beforeEach(() => {
   jest.resetAllMocks();
   mockScopeFor.mockResolvedValue("all");
+  jest.mocked(decideTicketRead).mockResolvedValue({ kind: "allowed", projectId: 10, projectState: "ACTIVE" });
 });
 
 describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identity", () => {

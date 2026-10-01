@@ -11,12 +11,13 @@ import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service"
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 import { ProjectsTicketNotFoundException } from "../../../../common/http/api-exceptions";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { assertTicketWriteAccess } from "../project-crud/project-access";
 
 jest.mock("../project-crud/project-access", () => ({
   ...jest.requireActual("../project-crud/project-access"),
-  assertTicketReadAccess: jest.fn(),
-  resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }),
+  assertTicketWriteAccess: jest.fn(),
+  decideTicketRead: jest.fn().mockResolvedValue({ kind: "allowed", projectId: 11, projectState: "ACTIVE" }),
+  decideTicketChange: jest.fn().mockResolvedValue({ role: "OWNER", bypassesWorkflow: false, rowScoped: true }),
 }));
 
 const ORG = "org-1";
@@ -263,7 +264,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
 
 describe("deleteTicket — the delete pre-read binds to the URL project", () => {
   beforeEach(() => {
-    jest.mocked(assertTicketReadAccess).mockResolvedValue();
+    jest.mocked(assertTicketWriteAccess).mockResolvedValue();
   });
 
   function makeDelete(rows: Row[]) {
@@ -328,13 +329,13 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
     const { svc, transaction, db, access } = makeDelete(makeTickets());
     const actor = makeU();
     jest
-      .mocked(assertTicketReadAccess)
+      .mocked(assertTicketWriteAccess)
       .mockRejectedValueOnce(new ForbiddenException("Ticket is outside your access scope"));
 
     await expect(svc.deleteTicket(actor, PROJECT_A, TICKET_A, false)).rejects.toThrow(
       ForbiddenException,
     );
-    expect(assertTicketReadAccess).toHaveBeenCalledWith(
+    expect(assertTicketWriteAccess).toHaveBeenCalledWith(
       db,
       access,
       actor,

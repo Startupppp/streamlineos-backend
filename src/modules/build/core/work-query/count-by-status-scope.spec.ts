@@ -6,11 +6,17 @@ import * as schema from "../../../../db/schema";
 import { projects, tickets } from "../../../../db/schema";
 import { allCountByStatusQuery, ProjectsWorkQueryService } from "./projects-work-query.service";
 import { mineCountByStatusSql } from "./work-scope-union";
-import { reachableProjectsSql } from "../../reachability/project-reachability";
+import { projectRelationship } from "../project-crud/project-relationship";
+import { MANAGER_STANDING, MEMBER_STANDING, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import type { AccessService } from "../../../access/access.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
 const ORG_ID = "org-scope-test";
+
+function memberAccess(): AccessService {
+  return standingAccess(MEMBER_STANDING) as unknown as AccessService;
+}
 const MEMBERSHIP_ID = 42;
 const USER_ID = "user-scope-test";
 
@@ -63,8 +69,8 @@ function makeUserNoMembership(orgId: string): CurrentUserContext {
   } as unknown as CurrentUserContext;
 }
 
-describe("reachableProjectsSql — predicate structure", () => {
-  const compiled = renderSql(reachableProjectsSql(ORG_ID, MEMBERSHIP_ID));
+describe("projectRelationship — the shared reach predicate structure", () => {
+  const compiled = renderSql(projectRelationship(ORG_ID, MEMBERSHIP_ID).any);
 
   it("binds the caller org_id as a parameter rather than inlining it as a literal", () => {
     expect(compiled.params).toContain(ORG_ID);
@@ -173,7 +179,7 @@ describe("countTicketsByStatus — wiring: reachability predicate reaches the co
     it("returns empty without any DB call when principal has no membershipId (DENY)", async () => {
       const dbExecute = jest.fn();
       const db = { execute: dbExecute } as unknown as Db;
-      const svc = new ProjectsWorkQueryService(db);
+      const svc = new ProjectsWorkQueryService(db, memberAccess());
       const result = await svc.countTicketsByStatus(makeUserNoMembership(ORG_ID), { scope: "mine" });
       expect(result).toEqual({ byStatus: {}, total: 0 });
       expect(dbExecute).not.toHaveBeenCalled();
@@ -182,7 +188,7 @@ describe("countTicketsByStatus — wiring: reachability predicate reaches the co
     it("issues the count query when membershipId is non-null (CONTROL)", async () => {
       const dbExecute = jest.fn().mockResolvedValue([]);
       const db = { execute: dbExecute } as unknown as Db;
-      const svc = new ProjectsWorkQueryService(db);
+      const svc = new ProjectsWorkQueryService(db, memberAccess());
       await svc.countTicketsByStatus(makeUser(ORG_ID), { scope: "mine" });
       expect(dbExecute).toHaveBeenCalledTimes(1);
     });
@@ -194,7 +200,7 @@ describe("countTicketsByStatus — wiring: reachability predicate reaches the co
         return Promise.resolve([]);
       });
       const db = { execute: dbExecute } as unknown as Db;
-      const svc = new ProjectsWorkQueryService(db);
+      const svc = new ProjectsWorkQueryService(db, memberAccess());
       await svc.countTicketsByStatus(makeUser(ORG_ID), { scope: "mine" });
       expect(dbExecute).toHaveBeenCalledTimes(1);
       const rendered = renderSql(capturedSqlArgs[0]);
@@ -208,7 +214,7 @@ describe("countTicketsByStatus — wiring: reachability predicate reaches the co
         return Promise.resolve([]);
       });
       const db = { execute: dbExecute } as unknown as Db;
-      const svc = new ProjectsWorkQueryService(db);
+      const svc = new ProjectsWorkQueryService(db, memberAccess());
       await svc.countTicketsByStatus(makeUser(ORG_ID), { scope: "mine", projectIds: [7, 9] });
       const rendered = renderSql(capturedSqlArgs[0]);
       expect(rendered.params).toContain(7);
@@ -221,7 +227,7 @@ describe("countTicketsByStatus — wiring: reachability predicate reaches the co
       const dbExecute = jest.fn();
       const dbSelect = jest.fn();
       const db = { execute: dbExecute, select: dbSelect } as unknown as Db;
-      const svc = new ProjectsWorkQueryService(db);
+      const svc = new ProjectsWorkQueryService(db, memberAccess());
       const result = await svc.countTicketsByStatus(makeUserNoMembership(ORG_ID), { scope: "all" });
       expect(result).toEqual({ byStatus: {}, total: 0 });
       expect(dbExecute).not.toHaveBeenCalled();
@@ -239,7 +245,7 @@ describe("countTicketsByStatus — wiring: reachability predicate reaches the co
       const countFrom = jest.fn().mockReturnValue({ innerJoin: countInnerJoin });
       const dbSelect = jest.fn().mockReturnValue({ from: countFrom });
       const db = { select: dbSelect } as unknown as Db;
-      const svc = new ProjectsWorkQueryService(db);
+      const svc = new ProjectsWorkQueryService(db, memberAccess());
       await svc.countTicketsByStatus(makeUser(ORG_ID), { scope: "all" });
       expect(dbSelect).toHaveBeenCalledTimes(1);
     });
@@ -255,11 +261,27 @@ describe("countTicketsByStatus — wiring: reachability predicate reaches the co
       const countFrom = jest.fn().mockReturnValue({ innerJoin: countInnerJoin });
       const dbSelect = jest.fn().mockReturnValue({ from: countFrom });
       const db = { select: dbSelect } as unknown as Db;
-      const svc = new ProjectsWorkQueryService(db);
+      const svc = new ProjectsWorkQueryService(db, memberAccess());
       await svc.countTicketsByStatus(makeUser(ORG_ID), { scope: "all" });
       expect(capturedWhereArgs).toHaveLength(1);
       const rendered = renderSql(capturedWhereArgs[0]);
       expect(rendered.params).toContain(MEMBERSHIP_ID);
+    });
+
+    it("counts across every project for an org-wide build:manage holder, so the work view agrees with the project list", async () => {
+      const capturedWhereArgs: unknown[] = [];
+      const countWhere = jest.fn().mockImplementation((w: unknown) => {
+        capturedWhereArgs.push(w);
+        return { groupBy: jest.fn().mockResolvedValue([]) };
+      });
+      const dbSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: countWhere }) }) });
+      const db = { select: dbSelect } as unknown as Db;
+      const svc = new ProjectsWorkQueryService(db, standingAccess(MANAGER_STANDING) as unknown as AccessService);
+      await svc.countTicketsByStatus(makeUser(ORG_ID), { scope: "all" });
+      expect(dbSelect).toHaveBeenCalledTimes(1);
+      const rendered = renderSql(capturedWhereArgs[0]);
+      expect(rendered.params).not.toContain(MEMBERSHIP_ID);
+      expect(rendered.sql.toLowerCase()).not.toContain("project_members");
     });
 
     it("applies projectIds as an AND filter in the count query WHERE", async () => {
@@ -273,7 +295,7 @@ describe("countTicketsByStatus — wiring: reachability predicate reaches the co
       const countFrom = jest.fn().mockReturnValue({ innerJoin: countInnerJoin });
       const dbSelect = jest.fn().mockReturnValue({ from: countFrom });
       const db = { select: dbSelect } as unknown as Db;
-      const svc = new ProjectsWorkQueryService(db);
+      const svc = new ProjectsWorkQueryService(db, memberAccess());
       await svc.countTicketsByStatus(makeUser(ORG_ID), { scope: "all", projectIds: [7, 9] });
       const rendered = renderSql(capturedWhereArgs[0]);
       expect(rendered.params).toContain(7);

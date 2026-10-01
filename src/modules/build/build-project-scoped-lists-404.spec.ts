@@ -11,6 +11,7 @@ import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { lifecycleAuditDouble } from "./lifecycle/audit-double";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "./core/project-crud/__tests__/project-access-doubles";
 
 const EXECUTE_ROWS: Record<string, unknown>[] = [
   { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: "3", completed: "1" },
@@ -34,7 +35,11 @@ function makeDb(project: { id: number } | undefined) {
       projects: { findFirst: jest.fn().mockResolvedValue(project) },
       tickets: { findFirst: jest.fn().mockResolvedValue(project), findMany: jest.fn().mockResolvedValue(rows) },
     },
-    select: jest.fn(self),
+    select: jest.fn((fields?: Record<string, unknown>) =>
+      fields !== undefined && "manages" in fields
+        ? { from: () => ({ where: () => ({ limit: async () => (project ? [projectAccessRow()] : []) }) }) }
+        : chain,
+    ),
     execute: jest.fn().mockResolvedValue(EXECUTE_ROWS),
   } as unknown as Db;
 }
@@ -42,9 +47,7 @@ function makeDb(project: { id: number } | undefined) {
 describe("build — a project-scoped list refuses a projectId the org does not own", () => {
   const ATTACKER_ORG = "org-attacker";
 
-  const releasesAccess: AccessService = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
-  } as unknown as AccessService;
+  const releasesAccess = standingAccess(MANAGER_STANDING) as unknown as AccessService;
 
   const releasesU: CurrentUserContext = {
     userId: "u-test",

@@ -10,6 +10,25 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  type ProjectAccessRow,
+} from "../core/project-crud/__tests__/project-access-doubles";
+
+function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
+  return jest.fn((fields?: Record<string, unknown>) =>
+    fields !== undefined && "manages" in fields
+      ? { from: () => ({ where: () => ({ limit: async () => rows }) }) }
+      : rest(fields),
+  );
+}
+
+
+const memberScopeAccess = {
+  scopeFor: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner ? "all" : (MEMBER_STANDING[key] ?? "none"),
+} as unknown as AccessService;
 
 function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
   return {
@@ -26,10 +45,9 @@ function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
 function makeMockDb(changeRequestRow: unknown = undefined) {
   return {
     query: {
-      projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
       changeRequests: { findFirst: jest.fn().mockResolvedValue(changeRequestRow) },
     },
-    select: jest.fn(),
+    select: projectGateSelect([]),
     transaction: jest.fn(),
     insert: jest.fn(),
     update: jest.fn(),
@@ -37,13 +55,10 @@ function makeMockDb(changeRequestRow: unknown = undefined) {
 }
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
-const mockAccess = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-} as unknown as AccessService;
+const mockAccess = memberScopeAccess;
 
 beforeEach(() => {
   jest.resetAllMocks();
-  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
 describe("ChangeRequestsService — cross-tenant isolation (BOLA)", () => {
@@ -84,16 +99,13 @@ describe("ChangeRequestsService — cross-tenant isolation (BOLA)", () => {
       deletedAt: null,
     };
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([crRow]),
           }),
         }),
-      }),
+      })),
       transaction: jest.fn(),
       insert: jest.fn(),
       update: jest.fn(),
@@ -108,10 +120,9 @@ describe("ChangeRequestsService — cross-tenant isolation (BOLA)", () => {
   it("throws NotFoundException for project lookup with wrong org before listing change requests", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
         changeRequests: { findFirst: jest.fn() },
       },
-      select: jest.fn(),
+      select: projectGateSelect([]),
       transaction: jest.fn(),
     };
 
@@ -129,34 +140,12 @@ describe("ChangeRequestsService — cross-tenant isolation (BOLA)", () => {
 describe("ChangeRequestsService — project membership gate (BOLA fix)", () => {
   const ORG = "org-1";
   const u = makeU(ORG);
-  const gateAccess = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
+  const gateAccess = memberScopeAccess;
 
   function makeNonMemberDb() {
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
       transaction: jest.fn(),
-      select: jest
-        .fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        }),
+      select: projectGateSelect([projectAccessRow()]),
     };
   }
 
@@ -169,36 +158,12 @@ describe("ChangeRequestsService — project membership gate (BOLA fix)", () => {
       }),
     };
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest
-        .fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]),
-              }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        })
-        .mockReturnValue(postGateChain),
+      select: projectGateSelect(
+        [projectAccessRow({ memberRole: "MEMBER" })],
+        jest.fn().mockReturnValue(postGateChain),
+      ),
     } as unknown as Db;
   }
-
-  beforeEach(() => {
-    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
-  });
 
   it("rejects non-member with ForbiddenException on listChangeRequests", async () => {
     const db = makeNonMemberDb();
@@ -219,16 +184,13 @@ describe("ChangeRequestsService — project membership gate (BOLA fix)", () => {
 describe("ChangeRequestsService — state machine transitions", () => {
   function makeDbWithExisting(existingRow: { id: number; status: string; requestedById: string | null }) {
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([existingRow]),
           }),
         }),
-      }),
+      })),
       update: jest.fn(),
       transaction: jest.fn(),
     };
@@ -271,16 +233,13 @@ describe("ChangeRequestsService — state machine transitions", () => {
     const existingRow = { id: 1, status: "submitted", requestedById: "user-1" };
     const updatedRow = { ...existingRow, status: "under_review", title: "T", orgId: "org-1" };
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([existingRow]),
           }),
         }),
-      }),
+      })),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -308,16 +267,13 @@ describe("ChangeRequestsService — state machine transitions", () => {
     };
     const updatedRow = { ...existingRow, status: "approved", title: "T", orgId: "org-1" };
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([existingRow]),
           }),
         }),
-      }),
+      })),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -343,16 +299,13 @@ describe("ChangeRequestsService — state machine transitions", () => {
 describe("ChangeRequestsService — soft-delete resurrection prevention", () => {
   it("updateChangeRequest throws NotFoundException when the CR was already soft-deleted", async () => {
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([]),
           }),
         }),
-      }),
+      })),
       update: jest.fn(),
       transaction: jest.fn(),
     };
@@ -367,16 +320,13 @@ describe("ChangeRequestsService — soft-delete resurrection prevention", () => 
 
   it("deleteChangeRequest throws NotFoundException when the CR was already soft-deleted", async () => {
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([]),
           }),
         }),
-      }),
+      })),
       update: jest.fn(),
       transaction: jest.fn(),
     };
@@ -393,10 +343,7 @@ describe("ChangeRequestsService — soft-delete resurrection prevention", () => 
 describe("ChangeRequestsService — project scope on mutations", () => {
   it("updateChangeRequest rejects a cross-project request with ForbiddenException", async () => {
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
-      },
-      select: jest.fn(),
+      select: projectGateSelect([]),
       update: jest.fn(),
       transaction: jest.fn(),
     };
@@ -411,10 +358,7 @@ describe("ChangeRequestsService — project scope on mutations", () => {
 
   it("deleteChangeRequest rejects a cross-project request with NotFoundException", async () => {
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
-      },
-      select: jest.fn(),
+      select: projectGateSelect([]),
       update: jest.fn(),
       transaction: jest.fn(),
     };
@@ -437,16 +381,13 @@ describe("ChangeRequestsService — duplicate decision does not overwrite decide
     };
     const updatedRow = { ...existingRow, title: "T", orgId: "org-1" };
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([existingRow]),
           }),
         }),
-      }),
+      })),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -472,16 +413,13 @@ describe("ChangeRequestsService — duplicate decision does not overwrite decide
     };
     const updatedRow = { ...existingRow, title: "T", orgId: "org-1" };
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([existingRow]),
           }),
         }),
-      }),
+      })),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -632,40 +570,14 @@ describe("ChangeRequestsService — listChangeRequests returns cursor page envel
       }),
     };
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest
-        .fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]),
-              }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        })
-        .mockReturnValue(postGateChain),
+      select: projectGateSelect(
+        [projectAccessRow({ memberRole: "MEMBER" })],
+        jest.fn().mockReturnValue(postGateChain),
+      ),
     } as unknown as Db;
   }
 
-  const gateAccess = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
-
-  beforeEach(() => {
-    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
-  });
+  const gateAccess = memberScopeAccess;
 
   it("returns a cursor page object rather than a flat array", async () => {
     const db = makeMemberDbForPage();
@@ -690,36 +602,13 @@ describe("ChangeRequestsService — listChangeRequests returns cursor page envel
 describe("ChangeRequestsService — releaseId and clientVisible filters", () => {
   const ORG = "org-1";
   const u = makeU(ORG);
-  const gateAccess = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
+  const gateAccess = memberScopeAccess;
 
   function makeWhereCapturingDb() {
     let capturedWhere: unknown = null;
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest
+      select: projectGateSelect([projectAccessRow({ memberRole: "MEMBER" })], jest
         .fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]),
-              }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        })
         .mockReturnValue({
           from: jest.fn().mockReturnValue({
             where: jest.fn().mockImplementation((condition: unknown) => {
@@ -729,15 +618,11 @@ describe("ChangeRequestsService — releaseId and clientVisible filters", () => 
               };
             }),
           }),
-        }),
+        })),
       getWhere: () => capturedWhere,
     };
     return db as unknown as Db & { getWhere: () => unknown };
   }
-
-  beforeEach(() => {
-    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
-  });
 
   it("resolves successfully when releaseId filter is provided so the query does not blow up before hitting the DB", async () => {
     const db = makeWhereCapturingDb();

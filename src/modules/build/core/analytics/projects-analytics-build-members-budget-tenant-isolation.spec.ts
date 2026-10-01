@@ -7,6 +7,7 @@ import { ProjectsBudgetService } from "../budget/projects-budget.service";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
 function passThroughCache() {
   return {
     cachedVersioned: <T>(_namespace: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
@@ -179,8 +180,9 @@ describe("ProjectsBudgetService — cross-tenant isolation", () => {
   it("getBudget throws NotFoundException when project not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
     const db = {
       query: { projects: { findFirst: jest.fn().mockResolvedValue(undefined) } },
+      select: jest.fn(() => ({ from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([]) })) })) })),
     } as unknown as Db;
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = standingAccess() as unknown as AccessService;
     const svc = new ProjectsBudgetService(db, access);
     const u = makeCtx(ATTACKER_ORG);
 
@@ -194,14 +196,19 @@ describe("ProjectsBudgetService — cross-tenant isolation", () => {
         projects: { findFirst: jest.fn().mockResolvedValue(fakeProject) },
         projectMembers: { findMany: jest.fn().mockResolvedValue([]) },
       },
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue([]),
-          innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }),
+      select: jest
+        .fn()
+        .mockReturnValueOnce({
+          from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([projectAccessRow()]) })) })),
+        })
+        .mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue([]),
+            innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }),
+          }),
         }),
-      }),
     } as unknown as Db;
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+    const access = standingAccess(MANAGER_STANDING) as unknown as AccessService;
     const svc = new ProjectsBudgetService(db, access);
     const u = makeCtx(OWNER_ORG);
 

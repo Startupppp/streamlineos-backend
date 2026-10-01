@@ -15,6 +15,23 @@ import type { ChatMessagesService } from "../../chat/chat-messages.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  type ProjectAccessRow,
+} from "../core/project-crud/__tests__/project-access-doubles";
+
+function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
+  return jest.fn((fields?: Record<string, unknown>) =>
+    fields !== undefined && "manages" in fields
+      ? { from: () => ({ where: () => ({ limit: async () => rows }) }) }
+      : rest(fields),
+  );
+}
+
+async function memberScope(actor: CurrentUserContext, key: string): Promise<string> {
+  return actor.isOrgOwner ? "all" : (MEMBER_STANDING[key] ?? "none");
+}
 
 const dialect = new PgDialect();
 function renderSql(cond: unknown): string {
@@ -56,7 +73,7 @@ const mockDb = {
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 const mockAccess = {
   holds: jest.fn(),
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  scopeFor: jest.fn(),
 } as unknown as AccessService;
 const mockChatChannels = { getOrCreateEntityChannel: jest.fn() } as unknown as ChatChannelsService;
 const mockChatMessages = { sendSystemMessage: jest.fn() } as unknown as ChatMessagesService;
@@ -64,7 +81,8 @@ const mockChatMessages = { sendSystemMessage: jest.fn() } as unknown as ChatMess
 beforeEach(() => {
   jest.resetAllMocks();
   projectFindFirst.mockResolvedValue({ managerMembershipId: 1 });
-  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
+  (mockAccess.scopeFor as jest.Mock).mockImplementation(memberScope);
+  (mockDb as unknown as { select: jest.Mock }).select = projectGateSelect([projectAccessRow({ manages: true })]);
 });
 
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
@@ -247,7 +265,7 @@ describe("ApprovalsReadService — project membership gate (BOLA fix)", () => {
   const ORG = "org-1";
   const gateAccess = {
     holds: jest.fn(),
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+    scopeFor: jest.fn(),
   } as unknown as AccessService;
 
   const gateU: CurrentUserContext = {
@@ -261,28 +279,7 @@ describe("ApprovalsReadService — project membership gate (BOLA fix)", () => {
   };
 
   function makeNonMemberDb(): Db {
-    return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        }),
-    } as unknown as Db;
+    return { select: projectGateSelect([projectAccessRow()]) } as unknown as Db;
   }
 
   function makeMemberDb(): Db {
@@ -294,32 +291,15 @@ describe("ApprovalsReadService — project membership gate (BOLA fix)", () => {
       }),
     };
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        })
-        .mockReturnValue(postGateChain),
+      select: projectGateSelect(
+        [projectAccessRow({ memberRole: "MEMBER" })],
+        jest.fn().mockReturnValue(postGateChain),
+      ),
     } as unknown as Db;
   }
 
   beforeEach(() => {
-    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
+    (gateAccess.scopeFor as jest.Mock).mockImplementation(memberScope);
   });
 
   it("rejects non-member with ForbiddenException on listApprovals", async () => {

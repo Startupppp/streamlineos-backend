@@ -4,6 +4,16 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { projectAccessRow, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+
+function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
+  return jest.fn((fields?: Record<string, unknown>) =>
+    fields !== undefined && "manages" in fields
+      ? { from: () => ({ where: () => ({ limit: async () => rows }) }) }
+      : rest(fields),
+  );
+}
+
 
 function makeU(orgId: string): CurrentUserContext {
   return {
@@ -18,24 +28,18 @@ function makeU(orgId: string): CurrentUserContext {
 }
 
 const mockAccess = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  scopeFor: async (actor: CurrentUserContext) => (actor.isOrgOwner ? "all" : "none"),
 } as unknown as AccessService;
 
 beforeEach(() => {
   jest.resetAllMocks();
-  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
 describe("ClientPortalManagementService.getSettings — publication state gate", () => {
   it("returns portalPublishedAt=null and grantCount=0 when project has no publication state and no active grants", async () => {
     let selectCount = 0;
     const db = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
-        },
-      },
-      select: jest.fn().mockImplementation(() => {
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockImplementation(() => {
         selectCount++;
         const idx = selectCount;
         return {
@@ -48,7 +52,7 @@ describe("ClientPortalManagementService.getSettings — publication state gate",
             }),
           }),
         };
-      }),
+      })),
     } as unknown as Db;
 
     const svc = new ClientPortalManagementService(db, mockAccess);
@@ -61,12 +65,7 @@ describe("ClientPortalManagementService.getSettings — publication state gate",
     const publishedAt = new Date("2025-01-01T00:00:00Z");
     let selectCount = 0;
     const db = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
-        },
-      },
-      select: jest.fn().mockImplementation(() => {
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockImplementation(() => {
         selectCount++;
         const idx = selectCount;
         return {
@@ -79,7 +78,7 @@ describe("ClientPortalManagementService.getSettings — publication state gate",
             }),
           }),
         };
-      }),
+      })),
     } as unknown as Db;
 
     const svc = new ClientPortalManagementService(db, mockAccess);
@@ -89,18 +88,13 @@ describe("ClientPortalManagementService.getSettings — publication state gate",
 
   it("throws NotFoundException when project does not exist in tenant", async () => {
     const db = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
-        },
-      },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([]),
           }),
         }),
-      }),
+      })),
     } as unknown as Db;
 
     const svc = new ClientPortalManagementService(db, mockAccess);
@@ -115,11 +109,7 @@ describe("ClientPortalManagementService.publishPortal — lifecycle gate: sets p
     let selectCount = 0;
 
     const db = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
-        },
-      },
+      select: projectGateSelect([projectAccessRow()]),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -127,7 +117,7 @@ describe("ClientPortalManagementService.publishPortal — lifecycle gate: sets p
           }),
         }),
       }),
-      select: jest.fn().mockImplementation(() => {
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockImplementation(() => {
         selectCount++;
         return {
           from: jest.fn().mockReturnValue({
@@ -136,7 +126,7 @@ describe("ClientPortalManagementService.publishPortal — lifecycle gate: sets p
             }),
           }),
         };
-      }),
+      })),
     } as unknown as Db;
 
     (db.update as jest.Mock).mockImplementation(() => {
@@ -158,11 +148,7 @@ describe("ClientPortalManagementService.publishPortal — lifecycle gate: sets p
 
   it("throws NotFoundException when publish targets a missing project", async () => {
     const db = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
-        },
-      },
+      select: projectGateSelect([projectAccessRow()]),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -181,11 +167,7 @@ describe("ClientPortalManagementService.unpublishPortal — lifecycle gate: clea
   it("sets portalPublishedAt to null on unpublish", async () => {
     let selectCount = 0;
     const db = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
-        },
-      },
+      select: projectGateSelect([projectAccessRow()]),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -204,11 +186,7 @@ describe("ClientPortalManagementService.unpublishPortal — lifecycle gate: clea
 
   it("throws NotFoundException when unpublish targets a missing project", async () => {
     const db = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
-        },
-      },
+      select: projectGateSelect([projectAccessRow()]),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({

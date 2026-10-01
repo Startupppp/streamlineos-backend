@@ -10,6 +10,7 @@ import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 import { AuditService } from "../../../../common/audit/audit.service";
+import { MEMBER_STANDING, standingAccess } from "../project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 3;
 const TICKET_ID = 9;
@@ -31,22 +32,22 @@ function makeActor(orgId: string, membershipId: number | null): CurrentUserConte
 function makeSelectChain(rows: unknown[]) {
   const chain = {
     from: jest.fn(),
-    innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
     where: jest.fn(),
     orderBy: jest.fn(),
     limit: jest.fn().mockResolvedValue(rows),
   };
   chain.from.mockReturnValue(chain);
-  chain.innerJoin.mockReturnValue(chain);
+  chain.leftJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   chain.orderBy.mockReturnValue(chain);
   return chain;
 }
 
+const REACHABLE_TICKET = { projectId: PROJECT_ID, projectState: "ACTIVE", projectDeletedAt: null, reachable: true, inScope: true };
+
 async function buildService(options: {
-  ticketRows?: unknown[];
-  membershipRows?: unknown[];
-  teamRows?: unknown[];
+  decisionRows?: unknown[];
   comment?: { id: number };
 }) {
   const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
@@ -57,12 +58,8 @@ async function buildService(options: {
   const db = {
     query: {
       ticketComments: { findFirst: jest.fn().mockResolvedValue(options.comment) },
-      projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
     },
-    select: jest.fn()
-      .mockReturnValueOnce(makeSelectChain(options.ticketRows ?? [{ id: TICKET_ID, allowed: true }]))
-      .mockReturnValueOnce(makeSelectChain(options.membershipRows ?? [{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain(options.teamRows ?? [])),
+    select: jest.fn().mockReturnValueOnce(makeSelectChain(options.decisionRows ?? [REACHABLE_TICKET])),
     insert,
     delete: deleteReaction,
   };
@@ -73,10 +70,7 @@ async function buildService(options: {
       { provide: ProjectsActivityService, useValue: {} },
       {
         provide: AccessService,
-        useValue: {
-          scopeFor: jest.fn().mockResolvedValue("all"),
-          resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-        },
+        useValue: standingAccess(MEMBER_STANDING),
       },
       { provide: ProjectsWebhooksDispatchService, useValue: {} },
       { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
@@ -135,7 +129,7 @@ describe("ProjectsTicketCommentsService.addReaction", () => {
   });
 
   it("reports a ticket outside the URL's project as missing, before ever looking at the comment", async () => {
-    const { module, service, insert } = await buildService({ ticketRows: [], comment: { id: 42 } });
+    const { module, service, insert } = await buildService({ decisionRows: [], comment: { id: 42 } });
 
     await expect(
       service.addReaction(makeActor("org-1", 7), PROJECT_ID, TICKET_ID, 42, "👍"),
@@ -145,7 +139,7 @@ describe("ProjectsTicketCommentsService.addReaction", () => {
   });
 
   it("refuses a caller who cannot reach the URL project before writing", async () => {
-    const { module, service, insert } = await buildService({ membershipRows: [], comment: { id: 42 } });
+    const { module, service, insert } = await buildService({ decisionRows: [{ ...REACHABLE_TICKET, reachable: false }], comment: { id: 42 } });
 
     await expect(
       service.addReaction(makeActor("org-1", 7), PROJECT_ID, TICKET_ID, 42, "👍"),
@@ -157,7 +151,7 @@ describe("ProjectsTicketCommentsService.addReaction", () => {
 
 describe("ProjectsTicketCommentsService.removeReaction", () => {
   it("reports a ticket outside the URL's project as missing, before ever looking at the comment", async () => {
-    const { module, service } = await buildService({ ticketRows: [], comment: { id: 42 } });
+    const { module, service } = await buildService({ decisionRows: [], comment: { id: 42 } });
 
     await expect(
       service.removeReaction(makeActor("org-1", 7), PROJECT_ID, TICKET_ID, 42, "👍"),
@@ -166,7 +160,7 @@ describe("ProjectsTicketCommentsService.removeReaction", () => {
   });
 
   it("refuses a caller who cannot reach the URL project before deleting", async () => {
-    const { module, service, deleteReaction } = await buildService({ membershipRows: [], comment: { id: 42 } });
+    const { module, service, deleteReaction } = await buildService({ decisionRows: [{ ...REACHABLE_TICKET, reachable: false }], comment: { id: 42 } });
 
     await expect(
       service.removeReaction(makeActor("org-1", 7), PROJECT_ID, TICKET_ID, 42, "👍"),

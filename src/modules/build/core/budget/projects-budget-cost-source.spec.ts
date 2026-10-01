@@ -20,6 +20,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsBudgetService } from "./projects-budget.service";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
 
 /**
  * Every `table.column` named anywhere in a projection, predicate or raw `sql`
@@ -111,13 +112,12 @@ function makeService(
     select: (projection: unknown): unknown => {
       collectColumns(projection, recorded.columns);
       selectCount += 1;
-      return makeChain(selectCount === 1 ? rows.cost : rows.orgMembers);
+      if (selectCount === 1) return makeChain([projectAccessRow({ manages: true })]);
+      return makeChain(selectCount === 2 ? rows.cost : rows.orgMembers);
     },
   };
 
-  const access = {
-    resolveUserPermissions: (): Promise<Set<string>> => Promise.resolve(new Set(["build:manage"])),
-  };
+  const access = standingAccess(MANAGER_STANDING);
 
   return {
     // Both stand-ins implement exactly the surface `getBudget` touches; Nest

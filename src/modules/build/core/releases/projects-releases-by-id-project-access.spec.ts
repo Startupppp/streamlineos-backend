@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
 
 const MEMBERSHIP_ID = 7;
 const ORG = "org-1";
@@ -24,12 +25,10 @@ function makeU(): CurrentUserContext {
 }
 
 function makeAccessWithoutBuildManage(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-  } as unknown as AccessService;
+  return standingAccess(MEMBER_STANDING) as unknown as AccessService;
 }
 
-function membershipProbe(rows: Array<{ role: string }>) {
+function membershipProbe(rows: unknown[]) {
   const limit = jest.fn().mockResolvedValue(rows);
   const where = jest.fn().mockReturnValue({ limit });
   const innerJoin = jest
@@ -82,7 +81,7 @@ function makeNonMemberDb(): NonMemberFixture {
       projectReleases: { findFirst: rowFindFirst },
       tickets: { findFirst: rowFindFirst },
     },
-    select: jest.fn().mockImplementation(() => membershipProbe([])),
+    select: jest.fn().mockImplementation(() => membershipProbe([projectAccessRow()])),
     update,
     insert,
     delete: dbDelete,
@@ -95,7 +94,7 @@ function memberSelect(bodyChains: Array<() => unknown>) {
   let call = 0;
   return jest.fn().mockImplementation(() => {
     call += 1;
-    if (call === 1) return membershipProbe([{ role: "MEMBER" }]);
+    if (call === 1) return membershipProbe([projectAccessRow({ memberRole: "MEMBER" })]);
     const chain = bodyChains[call - 2];
     return chain ? chain() : membershipProbe([]);
   });
@@ -139,8 +138,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
         projectReleases: { findFirst: jest.fn().mockResolvedValue({ rowVersion: 1 }) },
       },
       select: jest.fn()
-        .mockImplementationOnce(() => membershipProbe([{ role: "MEMBER" }]))
-        .mockImplementationOnce(() => membershipProbe([]))
+        .mockImplementationOnce(() => membershipProbe([projectAccessRow({ memberRole: "MEMBER" })]))
         .mockImplementationOnce(countChain),
       transaction,
     } as unknown as Db;

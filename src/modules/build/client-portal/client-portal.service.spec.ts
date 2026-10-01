@@ -7,6 +7,27 @@ import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  type ProjectAccessRow,
+} from "../core/project-crud/__tests__/project-access-doubles";
+
+function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
+  return jest.fn((fields?: Record<string, unknown>) =>
+    fields !== undefined && "manages" in fields
+      ? { from: () => ({ where: () => ({ limit: async () => rows }) }) }
+      : rest(fields),
+  );
+}
+
+
+const memberScopeAccess = {
+  scopeFor: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner ? "all" : (MEMBER_STANDING[key] ?? "none"),
+  holds: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner || (MEMBER_STANDING[key] ?? "none") !== "none",
+} as unknown as AccessService;
 
 const dialect = new PgDialect();
 function renderSql(cond: unknown): string {
@@ -25,15 +46,12 @@ function makeU(orgId: string, isOrgOwner = true): CurrentUserContext {
   };
 }
 
-const mockAccess = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-} as unknown as AccessService;
+const mockAccess = memberScopeAccess;
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
 beforeEach(() => {
   jest.resetAllMocks();
-  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
 describe("ClientPortalService.listPortalProjects — membership-scoped listing", () => {
@@ -170,12 +188,11 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
     };
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
       },
-      select: jest.fn()
+      select: projectGateSelect([projectAccessRow()], jest.fn()
         .mockReturnValueOnce(projectSelectChain)
         .mockReturnValueOnce(grantSelectChain)
-        .mockReturnValue(parallelChain),
+        .mockReturnValue(parallelChain)),
     } as unknown as Db;
   }
 
@@ -229,9 +246,8 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
   it("throws ForbiddenException when employee has no project membership (right org, no access)", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
       },
-      select: jest.fn()
+      select: projectGateSelect([projectAccessRow()], jest.fn()
         .mockReturnValueOnce({
           from: jest.fn().mockReturnValue({
             innerJoin: jest.fn().mockReturnValue({
@@ -247,7 +263,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
               }),
             }),
           }),
-        }),
+        })),
     } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.getProjectOverview(makeU("org-1", false), 1)).rejects.toThrow(ForbiddenException);

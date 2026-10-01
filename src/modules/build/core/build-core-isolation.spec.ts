@@ -16,6 +16,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { standingAccess } from "./project-crud/__tests__/project-access-doubles";
 
 function makeNotFoundDb(): Db {
   return {
@@ -97,9 +98,7 @@ function makeAttackerU(): CurrentUserContext {
 }
 
 function makeNoPermAccess(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-  } as unknown as AccessService;
+  return standingAccess() as unknown as AccessService;
 }
 
 describe("ProjectsReleasesService — cross-tenant isolation (BOLA)", () => {

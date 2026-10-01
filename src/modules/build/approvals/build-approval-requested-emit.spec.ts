@@ -10,6 +10,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 jest.mock("../core", () => ({
   assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../../common/organization/organization-actor", () => ({
@@ -123,11 +124,24 @@ describe("the build.approval.requested consumer notifies the approver", () => {
     await service.handle(event);
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({
+        orgId: ORG,
         eventKey: "build.approval.requested",
         entityId: String(APPROVAL_ID),
         targetUserIds: ["approver-9"],
       }),
     );
+  });
+
+  it("dispatches nothing when the payload names a different tenant than the event row, because the tenant comes from event.organizationId", async () => {
+    const emit = jest.fn().mockResolvedValue(undefined);
+    const service = new BuildApprovalRequestedConsumerService(
+      makeConsumerDb(),
+      { emit } as never,
+      { register: jest.fn() } as never,
+    );
+    const payload = { ...(event as { payload: object }).payload, orgId: "org-someone-else" };
+    await service.handle({ ...(event as object), payload } as never);
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it("dispatches nothing for a payload missing the approver", async () => {

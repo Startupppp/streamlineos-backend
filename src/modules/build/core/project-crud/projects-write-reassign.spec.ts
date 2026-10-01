@@ -3,6 +3,8 @@ import type { SQL } from "drizzle-orm";
 import { ProjectsWriteService } from "./projects-write.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "./__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 const ORG = "org-pw-1";
@@ -59,19 +61,20 @@ describe("ProjectsWriteService.updateProject — member removal reassignment", (
     const tx = makeTx(captured);
     const db = {
       transaction: jest.fn(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) }, organizationMembers: { findFirst: jest.fn() } },
+      select: jest.fn(() => thenable([projectAccessRow()])),
+      query: { organizationMembers: { findFirst: jest.fn() } },
     } as unknown as Db;
 
     const service = new ProjectsWriteService(
       db,
       { log: jest.fn() } as never,
-      { resolveUserPermissions: jest.fn() } as never,
+      standingAccess(MANAGER_STANDING) as never,
       { getProject: jest.fn().mockResolvedValue({ id: 5 }) } as never,
     );
     return { service, tx };
   }
 
-  const user = { orgId: ORG, userId: "actor-1", isOrgOwner: true } as CurrentUserContext;
+  const user = { orgId: ORG, userId: "actor-1", isOrgOwner: true, principal: humanSessionPrincipal(9, true) } as CurrentUserContext;
 
   it("reassigns every ticket in ONE statement, not one per target assignee", async () => {
     const captured = { statements: [] as SQL[], ticketUpdates: 0 };

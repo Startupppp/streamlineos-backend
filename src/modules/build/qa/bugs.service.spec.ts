@@ -6,6 +6,12 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  standingAccess,
+  type StandingScopes,
+} from "../core/project-crud/__tests__/project-access-doubles";
 
 function makeBugsTicketCreation() {
   return {
@@ -99,7 +105,6 @@ describe("BugsService.listBugs — tenant scoping", () => {
     const mockDb = makeMockDb();
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
     const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit, makeBugsTicketCreation());
-    mockDb.query.projects.findFirst.mockResolvedValue(undefined);
 
     await expect(svc.listBugs(makeU("org-attacker"), 1, {})).rejects.toThrow(NotFoundException);
   });
@@ -108,7 +113,6 @@ describe("BugsService.listBugs — tenant scoping", () => {
     const mockDb = makeMockDb();
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
     const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit, makeBugsTicketCreation());
-    mockDb.query.projects.findFirst.mockResolvedValue(undefined);
 
     await expect(svc.listBugs(makeU("org-1"), 99, {})).rejects.toThrow(NotFoundException);
     expect(mockDb.query.projects.findFirst).toHaveBeenCalledTimes(1);
@@ -237,7 +241,6 @@ describe("BugsService.createBug — ticketNumber sequencing", () => {
     const mockDb = makeMockDb();
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
     const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit, makeBugsTicketCreation());
-    mockDb.query.projects.findFirst.mockResolvedValue(undefined);
 
     await expect(
       svc.createBug(makeU("org-attacker"), 1, { title: "Injection attempt" }),
@@ -251,7 +254,6 @@ describe("BugsService.getBug — cross-tenant isolation", () => {
     const mockDb = makeMockDb();
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
     const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit, makeBugsTicketCreation());
-    mockDb.query.projects.findFirst.mockResolvedValue(undefined);
 
     await expect(svc.getBug(makeU("org-attacker"), 1, 99)).rejects.toThrow(NotFoundException);
   });

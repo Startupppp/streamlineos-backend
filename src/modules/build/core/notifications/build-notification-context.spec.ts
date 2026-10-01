@@ -16,15 +16,23 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 
 describe("Build notification context batching", () => {
   async function harness(scope: string, active = true) {
-    const limit = jest.fn().mockResolvedValue([{
+    const row = {
       id: 11, ticketNumber: 3, priority: "HIGH", status: "TODO", type: "TASK", projectKey: "SEC",
       assigneeId: "assignee", assigneeName: "Allowed person", assigneeFirstName: null,
       assigneeLastName: null, assigneeImage: null,
-    }]);
+    };
     const captured: SQL[] = [];
+    const denies = (predicate: SQL) => /\(false and /i.test(new PgDialect().sqlToQuery(predicate).sql);
+    const limitFor = (predicate: SQL) => jest.fn().mockResolvedValue(denies(predicate) ? [] : [row]);
+    const limits: jest.Mock[] = [];
     const chain = {
       innerJoin: jest.fn((): object => chain), leftJoin: jest.fn((): object => chain),
-      where: jest.fn((predicate: SQL) => { captured.push(predicate); return { limit }; }),
+      where: jest.fn((predicate: SQL) => {
+        captured.push(predicate);
+        const limit = limitFor(predicate);
+        limits.push(limit);
+        return { limit };
+      }),
     };
     const select = jest.fn(() => ({ from: jest.fn(() => chain) }));
     const resolve = jest.fn().mockResolvedValue({ active, membershipId: active ? 7 : null, role: "MEMBER", isOwner: false });
@@ -35,7 +43,7 @@ describe("Build notification context batching", () => {
       { provide: MembershipStateService, useValue: { resolve } },
       { provide: AccessService, useValue: { scopeFor } },
     ] }).compile();
-    return { module, service: module.get(BuildNotificationContextService), select, limit, resolve, scopeFor, captured };
+    return { module, service: module.get(BuildNotificationContextService), select, limits, resolve, scopeFor, captured };
   }
 
   beforeEach(() => jest.clearAllMocks());
@@ -46,10 +54,10 @@ describe("Build notification context batching", () => {
       const result = await h.service.resolve("org-a", "user-a", [11, 11, 12]);
       expect(result.get(11)?.ticketKey).toBe("SEC-3");
       expect(h.resolve).toHaveBeenCalledTimes(1);
-      expect(h.scopeFor).toHaveBeenCalledTimes(1);
+      expect(h.scopeFor.mock.calls.map(([, key]) => key).sort()).toEqual(["build:manage", "build:tickets:view", "build:view"]);
       expect(h.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org-a", userId: "user-a" }), "build:tickets:view");
       expect(h.select).toHaveBeenCalledTimes(1);
-      expect(h.limit).toHaveBeenCalledWith(2);
+      expect(h.limits[0]).toHaveBeenCalledWith(2);
       expect(runInTenantTransaction).toHaveBeenCalledWith(expect.anything(), expect.any(Function), { orgId: "org-a" });
       const predicate = h.captured[0];
       if (!predicate) throw new Error("Ticket query must have an authorization predicate");
@@ -58,15 +66,18 @@ describe("Build notification context batching", () => {
       expect(query.sql).toContain("deleted_at");
       expect(query.sql).toContain("reporter_id");
       expect(query.sql).toContain("assignee_membership_id");
+      expect(query.sql).toContain("project_members");
+      expect(query.params).toContain(7);
     } finally { await h.module.close(); }
   });
 
-  it("does not query tickets after permission revocation", async () => {
+  it("returns no ticket context after permission revocation, because the visibility predicate denies every row", async () => {
     const h = await harness("none");
     try {
       expect((await h.service.resolve("org-a", "user-a", [11])).size).toBe(0);
-      expect(h.select).not.toHaveBeenCalled();
-      expect(runInTenantTransaction).not.toHaveBeenCalled();
+      const predicate = h.captured[0];
+      if (!predicate) throw new Error("Ticket query must carry the denying predicate");
+      expect(new PgDialect().sqlToQuery(predicate).sql.toLowerCase()).toContain("(false and ");
     } finally { await h.module.close(); }
   });
 
@@ -89,8 +100,8 @@ describe("Build notification context batching", () => {
     );
     try {
       expect((await h.service.resolve("org-a", "user-a", [11], principal)).size).toBe(0);
-      expect(h.select).not.toHaveBeenCalled();
       expect(h.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ principal }), "build:tickets:view");
+      expect(h.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ principal }), "build:manage");
     } finally { await h.module.close(); }
   });
 

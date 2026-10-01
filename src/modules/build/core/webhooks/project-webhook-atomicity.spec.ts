@@ -3,10 +3,10 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { ProjectsTicketsDeleteService } from "../tickets/projects-tickets-delete.service";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { assertTicketWriteAccess } from "../project-crud/project-access";
 
 jest.mock("../project-crud/project-access", () => ({
-  assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
 }));
 
 function makeActor(): CurrentUserContext {
@@ -79,7 +79,7 @@ function harness(enqueueFails: boolean) {
 
 describe("Build mutation and webhook intent atomicity", () => {
   beforeEach(() => {
-    jest.mocked(assertTicketReadAccess).mockResolvedValue();
+    jest.mocked(assertTicketWriteAccess).mockResolvedValue();
   });
 
   it("rolls back the domain mutation when durable webhook enqueue fails", async () => {

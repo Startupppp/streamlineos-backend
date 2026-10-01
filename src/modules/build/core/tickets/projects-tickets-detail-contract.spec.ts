@@ -5,6 +5,16 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ticketDetailSchema } from "../dto/build-tickets-response.schemas";
+
+const allowedTicketDecision = () => ({
+  from: () => ({
+    leftJoin: () => ({
+      where: () => ({
+        limit: async () => [{ projectId: 42, projectState: "ACTIVE", projectDeletedAt: null, reachable: true, inScope: true }],
+      }),
+    }),
+  }),
+});
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 
 const actor: CurrentUserContext = { userId: "user-1", orgId: "org-1", role: "OWNER", isOrgOwner: true, sessionId: "test", tokenScopes: null, principal: humanSessionPrincipal(1, true) };
@@ -38,8 +48,8 @@ it.each(["id", "key"])("returns the complete existing detail contract for %s loo
       useValue: {
         query: {
           tickets: { findFirst },
-          projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         },
+        select: allowedTicketDecision,
       },
     },
     { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all") } },
@@ -69,8 +79,8 @@ it("bounds every ticket detail collection that can grow independently", async ()
       useValue: {
         query: {
           tickets: { findFirst },
-          projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         },
+        select: allowedTicketDecision,
       },
     },
     { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all") } },

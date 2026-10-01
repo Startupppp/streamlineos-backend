@@ -1,10 +1,12 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { decideTicketRead } from "../project-crud/project-access";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 
 jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
+  assertProjectStateAllowsWrites: jest.fn(),
+  decideTicketRead: jest.fn(),
 }));
 
 describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
@@ -71,9 +73,10 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
   const webhooks = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn(), enqueue: jest.fn() } as never;
 
   beforeEach(() => {
-    jest.mocked(assertTicketReadAccess).mockImplementation(async (db) => {
-      const ticket = await db.query.tickets.findFirst();
-      if (!ticket) throw new NotFoundException("Ticket not found");
+    jest.mocked(decideTicketRead).mockImplementation(async (db) => {
+      const ticket: { projectId: number } | null = await db.query.tickets.findFirst();
+      if (!ticket) return { kind: "missing" };
+      return { kind: "allowed", projectId: ticket.projectId, projectState: "ACTIVE" };
     });
   });
 

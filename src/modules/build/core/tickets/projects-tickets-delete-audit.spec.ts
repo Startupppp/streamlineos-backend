@@ -5,7 +5,7 @@ import type { ProjectsWebhooksDispatchService } from "../webhooks/projects-webho
 import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 
 jest.mock("../project-crud/project-access", () => ({
-  assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
 }));
 
 function makeActor(): CurrentUserContext {

@@ -13,10 +13,14 @@ import { BuildAutomationRunnerService } from "../automation/build-automation-run
 import { AccessService } from "../../../access/access.service";
 import { updateTicketSchema } from "../dto/projects.schemas";
 
+const projectStateSelect = () => ({
+  from: () => ({ where: () => ({ limit: async () => [{ state: "ACTIVE" }] }) }),
+});
+
 async function createService(ticket: Record<string, unknown>) {
   const transaction = jest.fn();
   const module = await Test.createTestingModule({ providers: [ProjectsTicketsUpdateService,
-    { provide: DRIZZLE, useValue: { transaction, query: { tickets: { findFirst: async () => ticket } } } },
+    { provide: DRIZZLE, useValue: { transaction, query: { tickets: { findFirst: async () => ticket } }, select: projectStateSelect } },
     ...[CacheService, NotificationDispatchService, ProjectsActivityService, ProjectsTicketsQueryService,
       ProjectsTicketsTransferService, ProjectsWebhooksDispatchService,
       BuildAutomationRunnerService].map(provide => ({ provide, useValue: {} })),
