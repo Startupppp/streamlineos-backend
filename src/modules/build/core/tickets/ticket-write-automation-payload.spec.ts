@@ -44,7 +44,7 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
       }),
     );
     return {
-      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } },
+      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
       transaction: txFn,
     } as unknown as Db;
   }

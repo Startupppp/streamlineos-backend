@@ -23,10 +23,10 @@ import {
   type TicketsListQuery,
 } from "../build/core";
 import {
+  ProjectsTicketCommentsService,
   ProjectsTicketsCreateService,
   ProjectsTicketsReadService,
   ProjectsTicketsService,
-  ProjectsTicketCommentsService,
 } from "../build/core/tickets";
 import { agentCommentSchema, agentUpdateTicketSchema, type AgentCommentInput, type AgentUpdateTicketInput } from "./dto/agent-tokens.schemas";
 import { Validate } from "../../common/validation/validate.decorator";

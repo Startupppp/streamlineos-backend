@@ -9,6 +9,18 @@ import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 const EMPTY_MILESTONES_QUERY = listMilestonesQuerySchema.parse({});
 
+function ownerActor(orgId: string, userId: string): CurrentUserContext {
+  return {
+    userId,
+    orgId,
+    role: "OWNER",
+    isOrgOwner: true,
+    sessionId: "s1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
+  };
+}
+
 interface MilestoneSelectChain {
   from: jest.Mock;
   leftJoin: jest.Mock;
@@ -216,9 +228,9 @@ describe("IntakeService — cross-tenant isolation", () => {
       query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
-    const svc = new IntakeService(db);
+    const svc = new IntakeService(db, {} as never, {} as never);
 
-    await expect(svc.listIntake(ATTACKER_ORG, 1, { limit: 10 } as never)).rejects.toThrow(NotFoundException);
+    await expect(svc.listIntake(ownerActor(ATTACKER_ORG, "u1"), 1, { limit: 10 } as never)).rejects.toThrow(NotFoundException);
 
     expect(where).not.toHaveBeenCalled();
     const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
@@ -240,9 +252,9 @@ describe("IntakeService — cross-tenant isolation", () => {
         }),
       }),
     } as unknown as Db;
-    const svc = new IntakeService(db);
+    const svc = new IntakeService(db, {} as never, {} as never);
 
-    const result = await svc.listIntake(OWNER_ORG, 1, { limit: 10 } as never);
+    const result = await svc.listIntake(ownerActor(OWNER_ORG, "u1"), 1, { limit: 10 } as never);
     expect(result).not.toHaveProperty("items");
     expect(result.data).toHaveLength(1);
     expect(result.pagination.hasMore).toBe(false);
@@ -261,7 +273,7 @@ describe("ViewsService — listViews search predicate", () => {
 
   it("includes the search term in the WHERE condition when search is provided", async () => {
     const { db, where } = searchDb();
-    await new ViewsService(db).listViews(OWNER_ORG, "u1", 1, { limit: 25, search: "sprint" });
+    await new ViewsService(db, {} as never).listViews(ownerActor(OWNER_ORG, "u1"), 1, { limit: 25, search: "sprint" });
     expect(where).toHaveBeenCalled();
     const condition = where.mock.calls[0]?.[0];
     expect(sqlValues(condition)).toContain("sprint%");
@@ -269,7 +281,7 @@ describe("ViewsService — listViews search predicate", () => {
 
   it("omits a LIKE pattern from the WHERE condition when search is absent (no-search control)", async () => {
     const { db, where } = searchDb();
-    await new ViewsService(db).listViews(OWNER_ORG, "u1", 1, { limit: 25 });
+    await new ViewsService(db, {} as never).listViews(ownerActor(OWNER_ORG, "u1"), 1, { limit: 25 });
     expect(where).toHaveBeenCalled();
     const condition = where.mock.calls[0]?.[0];
     const vals = sqlValues(condition);
@@ -285,9 +297,9 @@ describe("ViewsService — cross-tenant isolation", () => {
       query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
-    const svc = new ViewsService(db);
+    const svc = new ViewsService(db, {} as never);
 
-    await expect(svc.listViews(ATTACKER_ORG, "u1", 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.listViews(ownerActor(ATTACKER_ORG, "u1"), 1)).rejects.toThrow(NotFoundException);
 
     expect(where).not.toHaveBeenCalled();
     const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
@@ -305,9 +317,9 @@ describe("ViewsService — cross-tenant isolation", () => {
         }),
       }),
     } as unknown as Db;
-    const svc = new ViewsService(db);
+    const svc = new ViewsService(db, {} as never);
 
-    const result = await svc.listViews(OWNER_ORG, "u1", 1);
+    const result = await svc.listViews(ownerActor(OWNER_ORG, "u1"), 1);
     expect(result.data).toHaveLength(1);
     expect(result.data[0]?.orgId).toBe(OWNER_ORG);
   });
@@ -322,7 +334,7 @@ describe("ViewsService — a private view belongs to one actor, not to the tenan
     const del = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
     const findFirst = jest.fn().mockResolvedValue(existing);
     const db = {
-      query: { projectViews: { findFirst } },
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) }, projectViews: { findFirst } },
       update,
       delete: del,
     } as unknown as Db;
@@ -340,7 +352,7 @@ describe("ViewsService — a private view belongs to one actor, not to the tenan
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
 
-    await new ViewsService(db).listViews(OWNER_ORG, "u1", 1);
+    await new ViewsService(db, {} as never).listViews(ownerActor(OWNER_ORG, "u1"), 1);
 
     const predicate = where.mock.calls[0]?.[0];
     expect(sqlValues(predicate)).toContain("u1");
@@ -350,48 +362,48 @@ describe("ViewsService — a private view belongs to one actor, not to the tenan
   it("updateView refuses another actor's private view with 403, not 404, because the caller is inside the right tenant", async () => {
     const { db, update } = mutationDb(OTHERS_PRIVATE);
 
-    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 1, 7, { name: "x" })).rejects.toThrow(ForbiddenException);
+    await expect(new ViewsService(db, {} as never).updateView(ownerActor(OWNER_ORG, "u1"), 1, 7, { name: "x" })).rejects.toThrow(ForbiddenException);
     expect(update).not.toHaveBeenCalled();
   });
 
   it("deleteView refuses another actor's private view and issues no DELETE", async () => {
     const { db, delete: del } = mutationDb(OTHERS_PRIVATE);
 
-    await expect(new ViewsService(db).deleteView(OWNER_ORG, "u1", 1, 7)).rejects.toThrow(ForbiddenException);
+    await expect(new ViewsService(db, {} as never).deleteView(ownerActor(OWNER_ORG, "u1"), 1, 7)).rejects.toThrow(ForbiddenException);
     expect(del).not.toHaveBeenCalled();
   });
 
   it("updateWorkspaceView refuses another actor's private workspace view", async () => {
     const { db, update } = mutationDb(OTHERS_PRIVATE);
 
-    await expect(new ViewsService(db).updateWorkspaceView(OWNER_ORG, "u1", 7, { name: "x" })).rejects.toThrow(ForbiddenException);
+    await expect(new ViewsService(db, {} as never).updateWorkspaceView(OWNER_ORG, "u1", 7, { name: "x" })).rejects.toThrow(ForbiddenException);
     expect(update).not.toHaveBeenCalled();
   });
 
   it("deleteWorkspaceView refuses another actor's private workspace view", async () => {
     const { db, delete: del } = mutationDb(OTHERS_PRIVATE);
 
-    await expect(new ViewsService(db).deleteWorkspaceView(OWNER_ORG, "u1", 7)).rejects.toThrow(ForbiddenException);
+    await expect(new ViewsService(db, {} as never).deleteWorkspaceView(OWNER_ORG, "u1", 7)).rejects.toThrow(ForbiddenException);
     expect(del).not.toHaveBeenCalled();
   });
 
   it("updateView still allows a SHARED view owned by someone else, so the guard gates privacy rather than authorship", async () => {
     const { db, update } = mutationDb(OTHERS_SHARED);
 
-    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 1, 7, { name: "x" })).resolves.toEqual({ id: 7 });
+    await expect(new ViewsService(db, {} as never).updateView(ownerActor(OWNER_ORG, "u1"), 1, 7, { name: "x" })).resolves.toEqual({ id: 7 });
     expect(update).toHaveBeenCalled();
   });
 
   it("updateView still allows the owner to edit their own private view", async () => {
     const { db, update } = mutationDb(OWN_PRIVATE);
 
-    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 1, 7, { name: "x" })).resolves.toEqual({ id: 7 });
+    await expect(new ViewsService(db, {} as never).updateView(ownerActor(OWNER_ORG, "u1"), 1, 7, { name: "x" })).resolves.toEqual({ id: 7 });
     expect(update).toHaveBeenCalled();
   });
 
   it("updateView reports a view absent from the tenant as 404, keeping cross-tenant ids from becoming an existence oracle", async () => {
     const { db } = mutationDb(undefined);
 
-    await expect(new ViewsService(db).updateView(ATTACKER_ORG, "u1", 1, 7, { name: "x" })).rejects.toThrow(NotFoundException);
+    await expect(new ViewsService(db, {} as never).updateView(ownerActor(ATTACKER_ORG, "u1"), 1, 7, { name: "x" })).rejects.toThrow(NotFoundException);
   });
 });

@@ -5,8 +5,8 @@ import type { Db } from "../../../db/drizzle.types";
 import { tickets } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
-import { resolveTicketsScope, ticketScope } from "../core/tickets";
+import { authorizeProjectTicketRead } from "../core";
+import { ticketScope } from "../core/tickets";
 import { EXPORT_MAX_ROWS } from "./import-export.constants";
 import { toCsv } from "./csv-source";
 import { TICKET_IMPORT_FIELDS } from "./dto/ticket-import.schemas";
@@ -50,9 +50,8 @@ export class TicketExportService {
     projectId: number,
     input: TicketExportInput,
   ): Promise<TicketExportResult> {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    const read = await authorizeProjectTicketRead(this.db, this.access, u, projectId);
     const limit = Math.min(Math.max(input.limit ?? EXPORT_MAX_ROWS, 1), EXPORT_MAX_ROWS);
-    const read = await resolveTicketsScope(this.access, u);
 
     const rows = await read.read(
       {

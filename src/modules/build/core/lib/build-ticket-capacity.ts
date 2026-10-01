@@ -1,7 +1,7 @@
 import { ConflictException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.types";
-import { lockProjectTicketMutation } from "./build-ticket-mutation-policy";
+import { lockProjectTicketMutation } from "../project-crud/project-access";
 
 export async function reserveTicketCapacity(
   tx: Db,

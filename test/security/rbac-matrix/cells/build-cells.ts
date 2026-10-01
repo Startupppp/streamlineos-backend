@@ -1,6 +1,7 @@
 import { FilesController } from "src/modules/build/files/files.controller";
 import { ProjectsTicketAssociationsController } from "src/modules/build/core/tickets/projects-ticket-associations.controller";
 import { ProjectsCustomFieldsService, ProjectsWebhooksService } from "src/modules/build/core";
+import { WebhookEndpointService } from "src/modules/integrations/core/webhook-endpoint.service";
 import { IntakeService, ViewsService } from "src/modules/build/execution/workspace.service";
 import { ModulesService } from "src/modules/build/execution/modules.service";
 import { createWebhookSchema } from "src/modules/build/core/dto/webhook.schemas";
@@ -9,11 +10,11 @@ import { createIntakeSchema, createViewSchema } from "src/modules/build/executio
 import { createModuleSchema } from "src/modules/build/execution/dto/iterations.schemas";
 import type { ExecutableCell } from "../matrix.types";
 import { probeHttp } from "../adapters/http-adapter";
-import { projectAccess, projectWrite, ticketRead } from "../adapters/service-adapter";
+import { milestoneLifecycle, projectAccess, projectWrite, ticketRead } from "../adapters/service-adapter";
 import { signedFileUrl } from "../adapters/file-adapter";
-import { accessFor, ORG_A, ORG_B, userOf } from "../standings";
+import { accessFor, actorFor, ORG_A, ORG_B, userOf } from "../standings";
 import { standIn, type WorldDb } from "../world-db";
-import { FILE_A, PROJECT_A, SIBLING_PROJECT_A, TICKET_A } from "../fixtures";
+import { DELETED_MILESTONE_A, FILE_A, MILESTONE_A, PROJECT_A, SIBLING_PROJECT_A, TICKET_A } from "../fixtures";
 
 type Writer = (world: WorldDb, orgId: string) => Promise<unknown>;
 
@@ -22,7 +23,7 @@ const WRITERS: ReadonlyArray<{ readonly id: string; readonly route: string; read
     id: "webhooks",
     route: "POST /build/:projectId/webhooks",
     write: (world, orgId) =>
-      new ProjectsWebhooksService(world.db).createWebhook(
+      new ProjectsWebhooksService(world.db, new WebhookEndpointService(world.db)).createWebhook(
         orgId,
         PROJECT_A,
         userOf("module:admin", orgId),
@@ -43,8 +44,8 @@ const WRITERS: ReadonlyArray<{ readonly id: string; readonly route: string; read
     id: "intake",
     route: "POST /build/:projectId/intake",
     write: (world, orgId) =>
-      new IntakeService(world.db, standIn({})).createIntake(
-        orgId,
+      new IntakeService(world.db, standIn({}), accessFor(world)).createIntake(
+        actorFor("module:admin", orgId),
         PROJECT_A,
         createIntakeSchema.parse({ title: "Intake", submitterEmail: "intake@example.com" }),
       ),
@@ -53,9 +54,8 @@ const WRITERS: ReadonlyArray<{ readonly id: string; readonly route: string; read
     id: "views",
     route: "POST /build/:projectId/views",
     write: (world, orgId) =>
-      new ViewsService(world.db).createView(
-        orgId,
-        userOf("module:admin", orgId),
+      new ViewsService(world.db, accessFor(world)).createView(
+        actorFor("module:admin", orgId),
         PROJECT_A,
         createViewSchema.parse({ name: "Board" }),
       ),
@@ -410,6 +410,53 @@ function fileCells(world: WorldDb): ExecutableCell[] {
   ];
 }
 
+function milestoneCells(world: WorldDb): ExecutableCell[] {
+  return (["delete", "restore"] as const).flatMap((verb): ExecutableCell[] => {
+    const milestoneId = verb === "delete" ? MILESTONE_A : DELETED_MILESTONE_A;
+    const allowed = `build-milestone-${verb}-module-member`;
+    const cell = (
+      id: string,
+      standing: ExecutableCell["standing"],
+      tenant: ExecutableCell["tenant"],
+      expected: ExecutableCell["expected"],
+      because: string,
+      orgId: string,
+    ): ExecutableCell => ({
+      kind: "executable",
+      id,
+      standing,
+      resource: "build:milestone",
+      action: verb,
+      tenant,
+      state: "normal",
+      expected,
+      adapter: "service",
+      because,
+      pairedWith: expected === "allow" ? undefined : allowed,
+      run: () => milestoneLifecycle(world, verb, standing, orgId, PROJECT_A, milestoneId),
+    });
+    return [
+      cell(allowed, "module:member", "same", "allow", `a project member may ${verb} a milestone of its own project`, ORG_A),
+      cell(
+        `build-milestone-${verb}-org-member`,
+        "org:member",
+        "same",
+        "403",
+        `an in-tenant member outside the project cannot ${verb} its milestones, exactly as it cannot list them`,
+        ORG_A,
+      ),
+      cell(
+        `build-milestone-${verb}-cross-tenant`,
+        "module:member",
+        "other",
+        "404",
+        `another organisation's project is not found, so its milestone cannot be ${verb}d`,
+        ORG_B,
+      ),
+    ];
+  });
+}
+
 export function buildCells(world: WorldDb): ExecutableCell[] {
-  return [...projectCells(world), ...writerCells(world), ...ticketCells(world), ...fileCells(world)];
+  return [...projectCells(world), ...writerCells(world), ...ticketCells(world), ...fileCells(world), ...milestoneCells(world)];
 }

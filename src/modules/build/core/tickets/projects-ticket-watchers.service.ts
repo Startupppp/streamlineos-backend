@@ -12,7 +12,7 @@ import { AccessService } from "../../../access/access.service";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
-} from "./build-ticket-read-access";
+} from "../project-crud/project-access";
 import type { AddWatcherInput } from "../dto/projects.schemas";
 import {
   resolvePersonDisplayName,

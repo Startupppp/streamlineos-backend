@@ -16,7 +16,7 @@ import {
   authorizeTicketMutation,
   lockProjectTicketMutation,
   readMutationTickets,
-} from "../lib/build-ticket-mutation-policy";
+} from "../project-crud/project-access";
 import {
   emitBatchStatusChanges,
   validateBatchTransition,

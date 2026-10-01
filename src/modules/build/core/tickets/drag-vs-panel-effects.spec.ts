@@ -3,7 +3,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { rankTicket } from "./projects-tickets-rank-utils";
 import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
 
-jest.mock("../lib/build-ticket-mutation-policy", () => ({
+jest.mock("../project-crud/project-access", () => ({
   authorizeTicketMutation: jest.fn().mockResolvedValue({ role: "MEMBER", predicate: {} }),
   lockProjectTicketMutation: jest.fn().mockResolvedValue(undefined),
   readMutationTickets: jest.fn().mockImplementation(
@@ -23,6 +23,7 @@ jest.mock("../lib/build-ticket-mutation-policy", () => ({
         })),
       ),
   ),
+  resolveProjectAssignableMemberships: jest.fn().mockResolvedValue(new Map()),
 }));
 
 jest.mock("./build-ticket-batch-workflow", () => ({
@@ -32,10 +33,6 @@ jest.mock("./build-ticket-batch-workflow", () => ({
 
 jest.mock("./tickets-helpers", () => ({
   resolveAssigneeId: jest.fn().mockReturnValue(undefined),
-}));
-
-jest.mock("../project-crud/project-access", () => ({
-  resolveProjectAssignableMemberships: jest.fn().mockResolvedValue(new Map()),
 }));
 
 const ORG = "org-drag-panel-test";

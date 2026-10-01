@@ -3,6 +3,7 @@ import {
   jobPostings,
   projectAttachments,
   projectMembers,
+  projectMilestones,
   projects,
   releaseTickets,
   supportTickets,
@@ -16,6 +17,8 @@ export const SIBLING_PROJECT_A = 22;
 export const TICKET_A = 901;
 export const SIBLING_TICKET_A = 902;
 export const FILE_A = 31;
+export const MILESTONE_A = 41;
+export const DELETED_MILESTONE_A = 42;
 export const RELEASE_A = 5;
 export const RELEASE_ASSIGNEE_A = `${ORG_A}:release-assignee`;
 export const JOB_A = 4242;
@@ -75,6 +78,13 @@ function domainRows(): Map<Table, Row[]> {
           assigneeMembershipId: membershipIdOf("module:member", ORG_A),
           userId: RELEASE_ASSIGNEE_A,
         },
+      ],
+    ],
+    [
+      projectMilestones,
+      [
+        { id: MILESTONE_A, orgId: ORG_A, projectId: PROJECT_A, deletedAt: null },
+        { id: DELETED_MILESTONE_A, orgId: ORG_A, projectId: PROJECT_A, deletedAt: new Date("2026-09-01T00:00:00Z") },
       ],
     ],
     [jobPostings, [{ id: JOB_A, orgId: ORG_A }]],

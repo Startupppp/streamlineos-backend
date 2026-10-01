@@ -2,6 +2,11 @@ import { decodeCursor } from "../../../../common/pagination/cursor";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsAutomationsService } from "./projects-automations.service";
 
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
+
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
   if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
@@ -48,7 +53,7 @@ function makeRow(id: number, createdAt: Date) {
 }
 
 const planLimits = { assertWithinLimit: jest.fn() } as never;
-const members = { assertProjectAccess: jest.fn().mockResolvedValue(undefined) } as never;
+const access = {} as never;
 const u = { orgId: "org-1", userId: "user-1" } as never;
 
 describe("ProjectsAutomationsService — cursor pagination (BE-25)", () => {
@@ -60,7 +65,7 @@ describe("ProjectsAutomationsService — cursor pagination (BE-25)", () => {
       rows.slice(0, 4),
       rows.slice(3, 4),
     ]);
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
 
     const page1 = await svc.listAutomations(u, 1, { limit: 3 });
     expect(page1.data).toHaveLength(3);
@@ -85,12 +90,12 @@ describe("ProjectsAutomationsService — cursor pagination (BE-25)", () => {
       makeRow(id, new Date(`2024-01-0${id}T00:00:00.000Z`)),
     );
     const { db: db1 } = makeDb([rows]);
-    const svc1 = new ProjectsAutomationsService(db1, planLimits, members);
+    const svc1 = new ProjectsAutomationsService(db1, planLimits, access);
     const fullPage = await svc1.listAutomations(u, 1, { limit: 1 });
     expect(fullPage.pagination.hasMore).toBe(true);
 
     const { db: db2 } = makeDb([[rows[1]]]);
-    const svc2 = new ProjectsAutomationsService(db2, planLimits, members);
+    const svc2 = new ProjectsAutomationsService(db2, planLimits, access);
     const lastPage = await svc2.listAutomations(u, 1, { limit: 1 });
     expect(lastPage.pagination.hasMore).toBe(false);
   });
@@ -100,13 +105,13 @@ describe("ProjectsAutomationsService — cursor pagination (BE-25)", () => {
       makeRow(id, new Date(`2024-01-0${id}T00:00:00.000Z`)),
     );
     const { db: db1 } = makeDb([rows]);
-    const svc1 = new ProjectsAutomationsService(db1, planLimits, members);
+    const svc1 = new ProjectsAutomationsService(db1, planLimits, access);
     const fullPage = await svc1.listAutomations(u, 1, { limit: 1 });
     expect(fullPage.pagination.hasMore).toBe(true);
     expect(fullPage.pagination.nextCursor).not.toBeNull();
 
     const { db: db2 } = makeDb([[rows[0]]]);
-    const svc2 = new ProjectsAutomationsService(db2, planLimits, members);
+    const svc2 = new ProjectsAutomationsService(db2, planLimits, access);
     const lastPage = await svc2.listAutomations(u, 1, { limit: 1 });
     expect(lastPage.pagination.hasMore).toBe(false);
     expect(lastPage.pagination.nextCursor).toBeNull();
@@ -114,7 +119,7 @@ describe("ProjectsAutomationsService — cursor pagination (BE-25)", () => {
 
   it("no total field is present in the response — keyset pages must not fake a count (BE-25)", async () => {
     const { db } = makeDb([[makeRow(1, new Date())]]);
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
     const page = await svc.listAutomations(u, 1, { limit: 50 });
     const p = page as unknown as Record<string, unknown>;
     expect(p["total"]).toBeUndefined();
@@ -126,7 +131,7 @@ describe("ProjectsAutomationsService — cursor pagination (BE-25)", () => {
   it("malformed cursor yields the first page rather than a 500 — a stale or hand-edited cursor is a client problem", async () => {
     const rows = [makeRow(1, new Date())];
     const { db } = makeDb([rows]);
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
     const page = await svc.listAutomations(u, 1, {
       limit: 50,
       cursor: "not!!valid!!base64!!cursor",
@@ -141,7 +146,7 @@ describe("ProjectsAutomationsService — cursor pagination (BE-25)", () => {
     const rowB = makeRow(3, T);
 
     const { db } = makeDb([[rowA, rowB], [rowB]]);
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
 
     const page1 = await svc.listAutomations(u, 1, { limit: 1 });
     expect(page1.data[0].id).toBe(5);
@@ -164,7 +169,7 @@ describe("ProjectsAutomationsService — cursor pagination (BE-25)", () => {
     const T = new Date("2024-01-01T12:00:00.000Z");
     const rowA = makeRow(5, T);
     const { db, capturedWhereConds } = makeDb([[rowA], []]);
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
 
     const page1 = await svc.listAutomations(u, 1, { limit: 1 });
     await svc.listAutomations(u, 1, {

@@ -11,7 +11,7 @@ import { AccessService } from "../../../access/access.service";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
-} from "./build-ticket-read-access";
+} from "../project-crud/project-access";
 import type { AddLabelInput } from "../dto/projects.schemas";
 
 @Injectable()

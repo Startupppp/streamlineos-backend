@@ -23,7 +23,7 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { AuditService } from "../../../../common/audit/audit.service";
 import type { CommentInput } from "../dto/projects.schemas";
 import { resolvePersonDisplayName } from "../../../../common/organization/person-display-name";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 import { actingMembershipId } from "../../../../common/auth/principal";
 
 @Injectable()

@@ -11,7 +11,7 @@ import { AccessService } from "../../../access/access.service";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
-} from "./build-ticket-read-access";
+} from "../project-crud/project-access";
 
 const CHECKLIST_ITEM_LIMIT = 200;
 

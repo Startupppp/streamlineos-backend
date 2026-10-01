@@ -3,9 +3,10 @@ import { NotFoundException } from "@nestjs/common";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
+  ...jest.requireActual("../project-crud/project-access"),
   assertTicketReadAccess: jest.fn(),
 }));
 

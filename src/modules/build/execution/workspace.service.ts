@@ -19,7 +19,7 @@ import {
   clearingLifecycle,
 } from "../lifecycle/lifecycle-restore";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess, escapeLike, assertProjectInOrg } from "../core";
+import { assertProjectAccess, escapeLike } from "../core";
 import { buildCursorPage, buildTupleCursorPage, decodeCursor, decodeIntegerCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId, keysetBeforeTuple, keysetBoolean, keysetTimestamp, keysetInteger } from "../../../common/pagination/keyset";
 import type {
@@ -175,7 +175,9 @@ export class MilestonesService {
     };
   }
 
-  async updateMilestone(orgId: string, projectId: number, milestoneId: number, input: UpdateMilestoneInput) {
+  async updateMilestone(u: CurrentUserContext, projectId: number, milestoneId: number, input: UpdateMilestoneInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId } = u;
     const before = await this.db.query.projectMilestones.findFirst({
       where: and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
       columns: { version: true, ownerMembershipId: true },
@@ -204,7 +206,9 @@ export class MilestonesService {
     };
   }
 
-  async deleteMilestone(orgId: string, userId: string, projectId: number, milestoneId: number) {
+  async deleteMilestone(u: CurrentUserContext, projectId: number, milestoneId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const [stamped] = await this.db
       .update(projectMilestones)
       .set({ deletedAt: new Date() })
@@ -222,8 +226,9 @@ export class MilestonesService {
     return { success: true };
   }
 
-  async restoreMilestone(orgId: string, userId: string, projectId: number, milestoneId: number) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async restoreMilestone(u: CurrentUserContext, projectId: number, milestoneId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const existing = await this.db.query.projectMilestones.findFirst({
       where: and(
         eq(projectMilestones.id, milestoneId),
@@ -265,10 +270,12 @@ export class IntakeService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ticketCreation: BuildTicketCreationService,
+    private readonly access: AccessService,
   ) {}
 
-  async listIntake(orgId: string, projectId: number, query: IntakeListQuery) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async listIntake(u: CurrentUserContext, projectId: number, query: IntakeListQuery) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId } = u;
     const { limit, cursor } = query;
     const pos = decodeCursor(cursor);
 
@@ -307,8 +314,9 @@ export class IntakeService {
     return { data: page.data, pagination: page.pagination };
   }
 
-  async createIntake(orgId: string, projectId: number, input: CreateIntakeInput) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async createIntake(u: CurrentUserContext, projectId: number, input: CreateIntakeInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId } = u;
     const [item] = await this.db
       .insert(intakeItems)
       .values({
@@ -326,7 +334,9 @@ export class IntakeService {
     return item;
   }
 
-  async updateIntake(orgId: string, userId: string, projectId: number, requestId: number, input: UpdateIntakeInput) {
+  async updateIntake(u: CurrentUserContext, projectId: number, requestId: number, input: UpdateIntakeInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const [item] = await this.db
       .select()
       .from(intakeItems)
@@ -402,10 +412,14 @@ export class IntakeService {
 
 @Injectable()
 export class ViewsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  async listViews(orgId: string, userId: string, projectId: number, query: ListViewsQuery = { limit: 25 }) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async listViews(u: CurrentUserContext, projectId: number, query: ListViewsQuery = { limit: 25 }) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const { limit, cursor, search } = query;
     const pos = decodeTupleCursor(cursor, 3);
 
@@ -441,9 +455,9 @@ export class ViewsService {
     ]);
   }
 
-  async createView(orgId: string, userId: string, projectId: number, input: CreateViewInput) {
-    // `listViews` above resolves the project; this did not — same uncaught 23503 as `createIntake`.
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async createView(u: CurrentUserContext, projectId: number, input: CreateViewInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const [view] = await this.db
       .insert(projectViews)
       .values({
@@ -464,7 +478,9 @@ export class ViewsService {
     return view;
   }
 
-  async updateView(orgId: string, userId: string, projectId: number, viewId: number, input: UpdateViewInput) {
+  async updateView(u: CurrentUserContext, projectId: number, viewId: number, input: UpdateViewInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const existing = await this.db.query.projectViews.findFirst({
       where: and(eq(projectViews.id, viewId), eq(projectViews.projectId, projectId), eq(projectViews.orgId, orgId)),
       columns: { id: true, createdBy: true, visibility: true },
@@ -481,7 +497,9 @@ export class ViewsService {
     return updated;
   }
 
-  async deleteView(orgId: string, userId: string, projectId: number, viewId: number) {
+  async deleteView(u: CurrentUserContext, projectId: number, viewId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const existing = await this.db.query.projectViews.findFirst({
       where: and(eq(projectViews.id, viewId), eq(projectViews.projectId, projectId), eq(projectViews.orgId, orgId)),
       columns: { id: true, createdBy: true, visibility: true },

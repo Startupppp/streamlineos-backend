@@ -18,9 +18,9 @@ import { ProjectsTicketWatchersService } from "./projects-ticket-watchers.servic
 import { ProjectsTicketLabelsService } from "./projects-ticket-labels.service";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

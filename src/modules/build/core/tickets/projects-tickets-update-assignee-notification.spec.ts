@@ -44,7 +44,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
       }),
     );
     return {
-      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } },
+      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
       select: jest
         .fn()
         .mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),

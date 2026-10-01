@@ -16,8 +16,8 @@ import { NotificationsService } from "../../../notifications/notifications.servi
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { AccessService } from "../../../access/access.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
-import { resolveProjectAccess } from "../project-crud/project-access";
-import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
+import { assertProjectVisible, authorizeProjectTicketRead } from "../project-crud/project-access";
+import { ticketScope } from "../lib/tickets-scope";
 import type { ScopedWhere } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { ImportTicketsInput } from "../dto/projects.schemas";
@@ -41,11 +41,7 @@ export class ProjectsTicketsTransferService {
   ) {}
 
   async exportTickets(u: CurrentUserContext, projectId: number, ticketIds?: number[]) {
-    const [{ hasAccess }, read] = await Promise.all([
-      resolveProjectAccess(this.db, this.access, u, projectId),
-      resolveTicketsScope(this.access, u),
-    ]);
-    if (!hasAccess) throw new NotFoundException("Not found");
+    const read = await authorizeProjectTicketRead(this.db, this.access, u, projectId);
     if (read.denied) return { rows: [], truncated: false };
 
     const ticketIdFilter =
@@ -105,8 +101,7 @@ export class ProjectsTicketsTransferService {
   }
 
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
-    const { hasAccess } = await resolveProjectAccess(this.db, this.access, u, projectId);
-    if (!hasAccess) throw new NotFoundException("Not found");
+    await assertProjectVisible(this.db, this.access, u, projectId);
     if (
       body.rows.some((row) => row.assigneeEmail !== undefined) &&
       !(await this.access.holds(u, "build:tickets:assign"))

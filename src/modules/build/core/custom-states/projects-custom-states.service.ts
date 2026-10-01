@@ -14,7 +14,7 @@ import {
 } from "../../../../db/schema";
 import { bulkUpdateFromValues } from "../../../../common/db/bulk-update";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { lockProjectTicketMutation } from "../lib/build-ticket-mutation-policy";
+import { lockProjectTicketMutation } from "../project-crud/project-access";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { type Db } from "../../../../db/drizzle.module";
 import { AccessService } from "../../../access/access.service";

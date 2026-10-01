@@ -2,7 +2,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
 import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
-import { ProjectsMembersService } from "../members/projects-members.service";
+import { AccessService } from "../../../access/access.service";
 import { RateLimitService } from "../../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
@@ -87,7 +87,7 @@ describe("BuildAutomationRunnerService — durable run history", () => {
         { provide: BuildAutomationActionExecutor, useValue: { execute: executeFn } },
         BuildAutomationRunHistoryService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: ProjectsMembersService, useValue: { assertProjectAccess: jest.fn() } },
+        { provide: AccessService, useValue: {} },
         { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) } },
       ],
     }).compile();

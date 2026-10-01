@@ -26,7 +26,7 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
-} from "./build-ticket-read-access";
+} from "../project-crud/project-access";
 
 const BLOCKER_PROBE_LIMIT = 50;
 

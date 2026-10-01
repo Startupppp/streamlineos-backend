@@ -13,7 +13,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertCanModifyAuthoredRecord, assertProjectAccess } from "../core";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   buildCursorPage,
@@ -174,12 +174,13 @@ export class FilesService {
   async softDeleteFile(u: CurrentUserContext, projectId: number, fileId: number) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const file = await this.loadFile(u.orgId, projectId, fileId);
-    const membershipId = actingMembershipId(u.principal);
-    if (membershipId === null || file.uploadedByMembershipId !== membershipId) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("build:files:manage") && !u.isOrgOwner)
-        throw new ForbiddenException("You can only delete files you uploaded");
-    }
+    await assertCanModifyAuthoredRecord(
+      this.access,
+      u,
+      { membershipId: file.uploadedByMembershipId },
+      "build:files:manage",
+      "You can only delete files you uploaded",
+    );
     await this.db
       .update(projectAttachments)
       .set({ deletedAt: new Date() })

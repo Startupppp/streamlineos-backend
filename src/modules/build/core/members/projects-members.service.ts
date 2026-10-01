@@ -56,10 +56,7 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { ProjectsCustomStatesService } from "../custom-states/projects-custom-states.service";
 import { ProjectsLabelsService } from "../lib/projects-labels.service";
 import { escapeLike } from "../lib/escape-like";
-import {
-  assertProjectAccess as canonicalAssertProjectAccess,
-  assertCanManageProject as canonicalAssertCanManageProject,
-} from "../project-crud/project-access";
+import { assertProjectAccess, assertCanManageProject } from "../project-crud/project-access";
 
 @Injectable()
 export class ProjectsMembersService {
@@ -71,26 +68,12 @@ export class ProjectsMembersService {
     private readonly labelsService: ProjectsLabelsService,
   ) {}
 
-  async assertCanManageProject(
-    u: CurrentUserContext,
-    projectId: number,
-  ): Promise<void> {
-    return canonicalAssertCanManageProject(this.db, this.access, u, projectId);
-  }
-
-  async assertProjectAccess(
-    u: CurrentUserContext,
-    projectId: number,
-  ): Promise<void> {
-    return canonicalAssertProjectAccess(this.db, this.access, u, projectId);
-  }
-
   async listMembers(
     u: CurrentUserContext,
     projectId: number,
     query: ListProjectMembersQuery = { limit: 25 },
   ) {
-    await this.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const { limit, cursor, search } = query;
     const pos = decodeCursor(cursor);
     const conds: SQL[] = [
@@ -161,7 +144,7 @@ export class ProjectsMembersService {
   }
 
   async getProjectRoster(u: CurrentUserContext, projectId: number) {
-    await this.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     const assignments = await this.db
       .select({
@@ -239,7 +222,7 @@ export class ProjectsMembersService {
   ) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     let actor: OrganizationActor;
     try {
@@ -297,7 +280,7 @@ export class ProjectsMembersService {
   async removeMember(projectId: number, userId: string, u: CurrentUserContext) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     const targetActor = await assertOrganizationActor(this.db, orgId, {
       kind: "user",
       userId,
@@ -363,7 +346,7 @@ export class ProjectsMembersService {
   ) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     const targetActor = await assertOrganizationActor(this.db, orgId, {
       kind: "user",
       userId: memberUserId,
@@ -406,7 +389,7 @@ export class ProjectsMembersService {
   }
 
   async listCustomStates(u: CurrentUserContext, projectId: number) {
-    await this.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.statesService.listCustomStates(u.orgId, projectId);
   }
 
@@ -419,7 +402,7 @@ export class ProjectsMembersService {
     projectId: number,
     body: CreateStateInput,
   ) {
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     return this.statesService.createCustomState(u.orgId, projectId, body);
   }
 
@@ -448,8 +431,18 @@ export class ProjectsMembersService {
     return this.labelsService.listLabels(orgId);
   }
 
+  async listProjectLabels(u: CurrentUserContext, projectId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    return this.labelsService.listLabels(u.orgId);
+  }
+
   createLabel(orgId: string, body: CreateLabelInput) {
     return this.labelsService.createLabel(orgId, body);
+  }
+
+  async createProjectLabel(u: CurrentUserContext, projectId: number, body: CreateLabelInput) {
+    await assertCanManageProject(this.db, this.access, u, projectId);
+    return this.labelsService.createLabel(u.orgId, body);
   }
 
   updateLabel(orgId: string, labelId: number, data: UpdateLabelInput) {
