@@ -158,7 +158,8 @@ describe("PeriodsReadService.getPeriod — team scope authorization", () => {
 
   it("answers own scope without a probe query, and still refuses another member's period", async () => {
     const { db, wheres } = makeDb([[periodRow(STRANGER_MEMBERSHIP)]]);
-    const svc = new PeriodsReadService(db, access("own"));
+    // Entries own and nothing else: an approvals grant would earn a probe of its own, which is a different test.
+    const svc = new PeriodsReadService(db, accessByKey({ "timesheets:entries:view": "own" }));
 
     await expect(svc.getPeriod(manager(), 7)).rejects.toBeInstanceOf(ForbiddenException);
     expect(wheres).toHaveLength(1);
@@ -260,6 +261,20 @@ describe("PeriodsReadService.getPeriod — which key carried the caller in", () 
     await expect(svc.getPeriod(manager(), 7)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it("opens any period to an org-wide approvals grant, the same rows that grant already lists in the queue", async () => {
+    const { db, rendered } = makeDb([[periodRow(STRANGER_MEMBERSHIP, STRANGER_MEMBERSHIP)], [{ id: 7 }]]);
+    const svc = new PeriodsReadService(
+      db,
+      accessByKey({ "timesheets:approvals:view": "all" }),
+    );
+
+    const result = await svc.getPeriod(manager(), 7);
+
+    expect(result.period.id).toBe(7);
+    // "all" is what the key itself says, so the probe carries no membership narrowing.
+    expect(rendered(1).params).not.toContain(MANAGER_MEMBERSHIP);
+  });
+
   it("asks the approval queue predicate exactly once, rather than a second hand-rolled ownership check", async () => {
     const { db, wheres } = makeDb([
       [periodRow(REPORT_MEMBERSHIP, MANAGER_MEMBERSHIP)],
@@ -270,13 +285,5 @@ describe("PeriodsReadService.getPeriod — which key carried the caller in", () 
     await svc.getPeriod(manager(), 7);
 
     expect(wheres).toHaveLength(2);
-  });
-
-  it("runs no approval probe for a caller who holds no approvals grant at all", async () => {
-    const { db, wheres } = makeDb([[periodRow(STRANGER_MEMBERSHIP, MANAGER_MEMBERSHIP)]]);
-    const svc = new PeriodsReadService(db, accessByKey({ "timesheets:entries:view": "own" }));
-
-    await expect(svc.getPeriod(manager(), 7)).rejects.toBeInstanceOf(ForbiddenException);
-    expect(wheres).toHaveLength(1);
   });
 });
