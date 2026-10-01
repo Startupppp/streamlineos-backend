@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
 import {
   projects,
   projectStatuses,
@@ -51,7 +51,7 @@ export class ProjectsCustomStatesService {
       .limit(100);
   }
 
-  async listOrgCustomStates(orgId: string) {
+  async listOrgCustomStates(orgId: string, reach: SQL) {
     return this.db
       .select({
         name: projectStatuses.name,
@@ -65,6 +65,7 @@ export class ProjectsCustomStatesService {
           eq(projects.id, projectStatuses.projectId),
           eq(projects.orgId, orgId),
           isNull(projects.deletedAt),
+          reach,
         ),
       )
       .where(eq(projectStatuses.orgId, orgId))
