@@ -1,14 +1,8 @@
 import { Column, Param, SQL, StringChunk, Table, getTableColumns, getTableName, is } from "drizzle-orm";
+import { UnsupportedQuery, andOf, castTo, combine, compare, likeMatch, orOf, toChar, type Truth } from "./world-db-values";
 
+export { UnsupportedQuery, type Truth };
 export type Row = Readonly<Record<string, unknown>>;
-export type Truth = boolean | null;
-
-export class UnsupportedQuery extends Error {
-  constructor(detail: string) {
-    super(`world-db: unsupported ${detail}`);
-    this.name = "UnsupportedQuery";
-  }
-}
 
 type Token =
   | { readonly kind: "column"; readonly column: Column }
@@ -27,7 +21,9 @@ const NO_SUBSELECT: Subselect = (table) => {
   throw new UnsupportedQuery(`subselect over ${table}`);
 };
 
-const LEXEME = /\s*(<>|!=|>=|<=|=|<|>|\(|\)|,|'(?:[^']|'')*'|-?\d+(?:\.\d+)?|[A-Za-z_]+)\s*/y;
+const LEXEME = /\s*(<>|!=|>=|<=|=|<|>|\(|\)|,|\|\||::|'(?:[^']|'')*'|-?\d+(?:\.\d+)?|\+|-|[A-Za-z_]+)\s*/y;
+const ARITHMETIC = new Set(["||", "+", "-"]);
+const VALUE_FUNCTIONS = new Set(["now", "case", "to_char"]);
 const KEYWORDS = new Set(["and", "or", "not", "is", "null", "in", "true", "false", "asc", "desc", "like", "ilike"]);
 const COMPARATORS = new Set(["=", "<>", "!=", ">", ">=", "<", "<="]);
 const SUBQUERY_CLAUSES = new Set(["select", "from", "inner", "left", "join", "on", "where", "limit"]);
@@ -107,53 +103,6 @@ export function tokensOf(node: unknown, out: Token[] = []): Token[] {
   throw new UnsupportedQuery(`sql chunk ${Object.prototype.toString.call(node)}`);
 }
 
-function comparable(value: unknown): unknown {
-  if (value instanceof Date) return value.getTime();
-  return value;
-}
-
-function compare(left: unknown, right: unknown): number | null {
-  if (left === null || left === undefined || right === null || right === undefined) return null;
-  let a = comparable(left);
-  let b = comparable(right);
-  if (typeof a === "number" && typeof b === "string" && b.trim() !== "" && !Number.isNaN(Number(b))) b = Number(b);
-  if (typeof b === "number" && typeof a === "string" && a.trim() !== "" && !Number.isNaN(Number(a))) a = Number(a);
-  if (typeof a === "string" && typeof b === "string") return a === b ? 0 : a < b ? -1 : 1;
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  if (typeof a === "boolean" && typeof b === "boolean") return a === b ? 0 : 1;
-  if (typeof a !== typeof b) return 1;
-  throw new UnsupportedQuery(`comparison of ${typeof a} values`);
-}
-
-function likeMatch(value: unknown, pattern: unknown, caseless: boolean): Truth {
-  if (value === null || value === undefined || pattern === null || pattern === undefined) return null;
-  if (typeof value !== "string" || typeof pattern !== "string") throw new UnsupportedQuery("like over a non-string");
-  const escape = (char: string): string => char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  let source = "";
-  for (let index = 0; index < pattern.length; index += 1) {
-    const char = pattern[index];
-    if (char === "\\" && index + 1 < pattern.length) {
-      index += 1;
-      source += escape(pattern[index]);
-    } else if (char === "%") source += "[\\s\\S]*";
-    else if (char === "_") source += "[\\s\\S]";
-    else source += escape(char);
-  }
-  return new RegExp(`^${source}$`, caseless ? "i" : "").test(value);
-}
-
-function andOf(values: readonly Truth[]): Truth {
-  if (values.includes(false)) return false;
-  if (values.includes(null)) return null;
-  return true;
-}
-
-function orOf(values: readonly Truth[]): Truth {
-  if (values.includes(true)) return true;
-  if (values.includes(null)) return null;
-  return false;
-}
-
 class Parser {
   private position = 0;
 
@@ -168,8 +117,17 @@ class Parser {
   }
 
   private peekWord(): string | undefined {
-    const token = this.tokens[this.position];
+    return this.peekWordAt(this.position);
+  }
+
+  private peekWordAt(position: number): string | undefined {
+    const token = this.tokens[position];
     return token?.kind === "word" ? token.text : undefined;
+  }
+
+  startsWithValue(): boolean {
+    const name = this.identAt(0);
+    return this.subqueryAt(0) || (name !== undefined && VALUE_FUNCTIONS.has(name));
   }
 
   private take(word: string): boolean {
@@ -393,7 +351,68 @@ class Parser {
   }
 
   operand(): unknown {
+    let value = this.casts(this.atom());
+    for (let operator = this.peekWord(); operator !== undefined && ARITHMETIC.has(operator); operator = this.peekWord()) {
+      this.position += 1;
+      value = combine(operator, value, this.casts(this.atom()));
+    }
+    return value;
+  }
+
+  private casts(value: unknown): unknown {
+    let cast = value;
+    while (this.take("::")) cast = castTo(cast, this.ident());
+    return cast;
+  }
+
+  private caseOf(): unknown {
+    this.ident("case");
+    const subject = this.operand();
+    let chosen: { readonly value: unknown } | undefined;
+    while (this.identAt(this.position) === "when") {
+      this.ident("when");
+      const candidate = this.operand();
+      this.ident("then");
+      const result = this.operand();
+      if (chosen === undefined && compare(subject, candidate) === 0) chosen = { value: result };
+    }
+    if (this.identAt(this.position) === "else") {
+      this.ident("else");
+      const fallback = this.operand();
+      chosen = chosen ?? { value: fallback };
+    }
+    this.ident("end");
+    return chosen === undefined ? null : chosen.value;
+  }
+
+  private toCharOf(): string | null {
+    this.ident("to_char");
+    this.expect("(");
+    const value = this.operand();
+    this.ident("at");
+    this.ident("time");
+    this.ident("zone");
+    const zone = this.operand();
+    this.expect(",");
+    const format = this.operand();
+    this.expect(")");
+    return toChar(value, zone, format);
+  }
+
+  private atom(): unknown {
     if (this.subqueryAt(this.position)) return this.subquery()[0] ?? null;
+    const name = this.identAt(this.position);
+    if (name === "case") return this.caseOf();
+    if (name === "to_char") return this.toCharOf();
+    if (name === "now" && this.peekWordAt(this.position + 1) === "(" && this.peekWordAt(this.position + 2) === ")") {
+      this.position += 3;
+      return new Date();
+    }
+    if (this.take("(")) {
+      const inner = this.operand();
+      this.expect(")");
+      return inner;
+    }
     const token = this.tokens[this.position];
     if (token === undefined) throw new UnsupportedQuery("predicate ended early");
     this.position += 1;
@@ -418,7 +437,7 @@ export function scalar(node: unknown, lookup: Lookup, subselect: Subselect = NO_
   if (tokens.length === 1 && tokens[0].kind === "column") return lookup(tokens[0].column);
   if (tokens.length === 1 && tokens[0].kind === "value") return tokens[0].value;
   const parser = new Parser(tokens, lookup, subselect);
-  if (parser.subqueryAt(0)) {
+  if (parser.startsWithValue()) {
     const value = parser.operand();
     if (parser.done()) return value;
   }
