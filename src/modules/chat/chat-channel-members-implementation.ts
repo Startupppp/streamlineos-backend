@@ -363,7 +363,11 @@ export class ChatChannelMembersImplementation {
         id: chatAttachments.id,
         messageId: chatAttachments.messageId,
         fileName: chatAttachments.fileName,
-        fileUrl: chatAttachments.fileUrl,
+        // No `fileUrl`. The column is written empty on every insert
+        // (`chat-messages.service.ts`) because a chat attachment is read through the
+        // signed-URL route, not a stored public URL — projecting it put a field on the
+        // wire that is always "" and that no client renders. The shared-files panel
+        // takes `fileKey`/`id` and asks `GET .../attachments/:id/url` for a URL.
         fileKey: chatAttachments.fileKey,
         fileSize: chatAttachments.fileSize,
         mimeType: chatAttachments.mimeType,
