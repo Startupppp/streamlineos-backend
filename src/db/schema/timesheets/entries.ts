@@ -67,6 +67,12 @@ export const timesheets = pgTable("timesheets", {
   foreignKey({ columns: [table.orgId, table.timesheetPeriodId], foreignColumns: [timesheetPeriods.orgId, timesheetPeriods.id], name: "fk_timesheets_timesheet_period_id_org" }),
   foreignKey({ columns: [table.orgId, table.timerSessionId], foreignColumns: [timerSessions.orgId, timerSessions.id], name: "fk_timesheets_timer_session_id_org" }),
   foreignKey({ columns: [table.orgId, table.payrollExportId], foreignColumns: [timesheetExports.orgId, timesheetExports.id], name: "fk_timesheets_payroll_export_id_org" }).onDelete("set null"),
+  // Kept deliberately (BUG-TS-BE-007). uniq_timesheets_work_log leads on the
+  // same three columns but is partial, so the planner can only use it for rows
+  // satisfying its predicate. Every ticket-linked entry — the whole
+  // Build-sourced half of the table — and every voided row fall outside it, and
+  // the per-person-per-day range reads (entries list, period totals, the daily
+  // cap check, the exception sweeps) must still find those. Not redundant.
   index("idx_timesheets_org_user_membership_date").on(table.orgId, table.userMembershipId, table.date),
   index("idx_timesheets_org_user_membership").on(table.orgId, table.userMembershipId),
   foreignKey({
