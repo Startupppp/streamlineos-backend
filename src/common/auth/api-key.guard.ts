@@ -15,6 +15,7 @@ import { apiKeys } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { RateLimitService } from "../ratelimit/rate-limit.service";
+import { ModuleDisabledException } from "../http/api-exceptions";
 import { withPublicToken } from "../tenant/with-public-token";
 import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import type { ApiKeyContext } from "./api-key.decorator";
@@ -56,7 +57,7 @@ export class ApiKeyGuard implements CanActivate {
       );
 
     if (!(await this.entitlements.isModuleEnabled(apiKey.orgId, "crm")))
-      throw new ForbiddenException("CRM module is not enabled");
+      throw new ModuleDisabledException("crm", "org-disabled");
 
     const rl = await this.rateLimit.check("api-key-ingest", apiKey.id);
     if (!rl.allowed)
