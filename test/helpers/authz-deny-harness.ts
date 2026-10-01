@@ -5,7 +5,7 @@ import type {
   INestApplication,
   Type,
 } from "@nestjs/common";
-import { APP_GUARD, Reflector } from "@nestjs/core";
+import { APP_GUARD, DiscoveryModule, Reflector } from "@nestjs/core";
 import { AccessService } from "src/modules/access/access.service";
 import { PermissionGuard } from "src/modules/access/permission.guard";
 import { ModuleGuard } from "src/common/rbac/module.guard";
@@ -146,6 +146,14 @@ export async function createAuthzHarness(
   };
 
   const moduleRef: TestingModule = await Test.createTestingModule({
+    /*
+     * `PermissionGuard` injects `DiscoveryService` and `MetadataScanner` to run
+     * the BE-29 sweep in `onApplicationBootstrap`. Without `DiscoveryModule`
+     * both are auto-mocked, `getControllers()` is not a function, and
+     * `app.init()` throws before a single request is made. Importing the real
+     * module also keeps the sweep itself live over the controllers under test.
+     */
+    imports: [DiscoveryModule],
     controllers: [...controllers] as Type<unknown>[],
     providers: [
       Reflector,

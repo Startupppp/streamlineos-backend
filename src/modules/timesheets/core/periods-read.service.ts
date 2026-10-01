@@ -17,8 +17,9 @@ import {
   users,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
+import type { ScopedRead } from "../../access/scoped-read";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveEntriesScope, membershipScope } from "./timesheets-core-scope";
+import { resolveEntriesScope, membershipTeamScope } from "./timesheets-core-scope";
 import type { PeriodsQuery } from "./dto/periods.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -169,7 +170,7 @@ export class PeriodsReadService {
     return read.read(
       {
         tenant: timesheetPeriods.orgId,
-        scope: membershipScope(membershipId, timesheetPeriods.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, membershipId, timesheetPeriods.userMembershipId),
         and: [
           requestedMembershipId !== undefined ? eq(timesheetPeriods.userMembershipId, requestedMembershipId) : undefined,
           query.status ? eq(timesheetPeriods.status, query.status) : undefined,
@@ -219,16 +220,36 @@ export class PeriodsReadService {
     if (!row) throw new NotFoundException("Period not found");
 
     const read = await resolveEntriesScope(this.access, u);
-    const scope = read.rawScope("in-process authorization of an already-fetched single row, not a row predicate");
-    const canSeeOthers = u.isOrgOwner || scope === "all";
+    const scope = read.rawScope("decides whether this already-fetched row needs the team predicate re-probed; all/own/none are answerable without a query");
+    const ownRow = row.userMembershipId === actingMembershipId(u.principal);
+    const allowed =
+      u.isOrgOwner ||
+      scope === "all" ||
+      ownRow ||
+      (scope === "team" && (await this.periodInScope(read, u, periodId)));
 
-    if (row.userMembershipId !== actingMembershipId(u.principal) && !canSeeOthers) {
+    if (!allowed) {
       throw new ForbiddenException("You do not have access to this period");
     }
 
     const periodEntries = await this.listPeriodEntries(u.orgId, periodId);
 
     return { period: this.mapPeriod(row), entries: periodEntries };
+  }
+
+  /** Re-asks the list predicate about one period id, so the authorization answer and the row predicate cannot disagree. */
+  private periodInScope(read: ScopedRead, u: CurrentUserContext, periodId: number): Promise<boolean> {
+    const membershipId = actingMembershipId(u.principal);
+    return read.read(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: membershipTeamScope(u.orgId, u.userId, membershipId, timesheetPeriods.userMembershipId),
+        and: [eq(timesheetPeriods.id, periodId)],
+      },
+      async ({ sql: where }) =>
+        (await this.db.select({ id: timesheetPeriods.id }).from(timesheetPeriods).where(where).limit(1)).length > 0,
+      () => false,
+    );
   }
 
   listPeriodEntries(orgId: string, periodId: number) {

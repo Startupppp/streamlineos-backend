@@ -8,7 +8,7 @@ import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveEntriesScope, membershipScope } from "./timesheets-core-scope";
+import { resolveEntriesScope, membershipTeamScope } from "./timesheets-core-scope";
 import { buildEntryShape } from "./lib/entry-shape";
 import type { EntriesQuery } from "./dto/entries.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -50,7 +50,7 @@ export class EntriesReadService {
     return read.read(
       {
         tenant: timesheets.orgId,
-        scope: membershipScope(membershipId, timesheets.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, membershipId, timesheets.userMembershipId),
         and: [
           isNull(timesheets.voidedAt),
           requestedMembershipId !== undefined ? eq(timesheets.userMembershipId, requestedMembershipId) : undefined,

@@ -5,7 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetPeriods, organizationMembers, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveTeamScope, membershipScope } from "./timesheets-core-scope";
+import { resolveTeamScope, membershipTeamScope } from "./timesheets-core-scope";
 import type { TeamWeekSummaryQuery } from "./dto/team.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -28,7 +28,7 @@ export class TeamService {
     const memberWhere = read.compose(
       {
         tenant: organizationMembers.orgId,
-        scope: membershipScope(actorMembId, organizationMembers.id),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, organizationMembers.id),
         and: requested.length > 0 ? [inArray(organizationMembers.userId, requested)] : [],
       },
       ({ sql: w }) => w,
@@ -73,7 +73,7 @@ export class TeamService {
     const periodsWhere = read.compose(
       {
         tenant: timesheetPeriods.orgId,
-        scope: membershipScope(actorMembId, timesheetPeriods.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheetPeriods.userMembershipId),
         and: [
           inArray(timesheetPeriods.userMembershipId, membershipIds),
           lte(timesheetPeriods.periodStart, query.endDate),
@@ -86,7 +86,7 @@ export class TeamService {
     const timesheetsWhere = read.compose(
       {
         tenant: timesheets.orgId,
-        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheets.userMembershipId),
         and: [
           inArray(timesheets.userMembershipId, membershipIds),
           isNull(timesheets.voidedAt),

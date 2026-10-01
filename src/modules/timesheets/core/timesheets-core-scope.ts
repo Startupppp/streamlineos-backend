@@ -1,6 +1,13 @@
 import { eq, or, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
-import { timesheetPeriods } from "../../../db/schema";
+import {
+  hrEmployments,
+  hrPeople,
+  hrReportingLines,
+  organizationMembers,
+  timesheetPeriods,
+} from "../../../db/schema";
+import { orgBusinessDateSql } from "../../directory/employment-query";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ScopedRead, type OwnershipScope } from "../../access/scoped-read";
 import { AccessService } from "../../access/access.service";
@@ -69,6 +76,54 @@ export async function resolveRatePreviewSubject(
 
 export function membershipScope(membershipId: number | null, ownerColumn: PgColumn): OwnershipScope {
   return { own: membershipId !== null ? eq(ownerColumn, membershipId) : sql`false` };
+}
+
+/**
+ * Own rows plus the rows of everyone who currently reports to the actor.
+ *
+ * Timesheet tables key ownership on an `organization_members.id`, while the HR
+ * reporting graph keys on `hr_people.user_id`, so the subquery bridges the two
+ * through `organization_members` (`rm`) before it can compare an owner column to
+ * a reporting line.
+ *
+ * Deliberately a separate helper rather than a `team` arm on `membershipScope`:
+ * `membershipScope` is also imported by `modules/build`, whose resolver can hand
+ * it a `team` scope from `build:timesheets:manage`. Widening the shared helper
+ * would change that module's rows as a side effect, so a team arm is opted into
+ * per call site instead.
+ *
+ * Raw aliases are written into the template on purpose. Drizzle's `alias()`
+ * renders only the alias inside a `sql` fragment, never the table it stands for.
+ */
+export function membershipTeamScope(
+  orgId: string,
+  actorUserId: string,
+  membershipId: number | null,
+  ownerColumn: PgColumn,
+): OwnershipScope {
+  const base = membershipScope(membershipId, ownerColumn);
+  if (membershipId === null) return base;
+
+  const directReportRow = sql`EXISTS (
+    SELECT 1
+    FROM ${hrReportingLines} rl
+    INNER JOIN ${hrEmployments} me ON me.id = rl.manager_employment_id
+      AND me.org_id = ${orgId} AND me.is_primary = true AND me.deleted_at IS NULL
+    INNER JOIN ${hrPeople} mp ON mp.id = me.person_id
+      AND mp.org_id = ${orgId} AND mp.deleted_at IS NULL AND mp.user_id = ${actorUserId}
+    INNER JOIN ${hrEmployments} ee ON ee.id = rl.employment_id
+      AND ee.org_id = ${orgId} AND ee.is_primary = true AND ee.deleted_at IS NULL
+    INNER JOIN ${hrPeople} ep ON ep.id = ee.person_id
+      AND ep.org_id = ${orgId} AND ep.deleted_at IS NULL
+    INNER JOIN ${organizationMembers} rm ON rm.org_id = ${orgId}
+      AND rm.user_id = ep.user_id AND rm.id = ${ownerColumn}
+    WHERE rl.org_id = ${orgId}
+      AND rl.line_type = 'primary'
+      AND rl.effective_from <= ${orgBusinessDateSql(orgId)}
+      AND rl.effective_to >= ${orgBusinessDateSql(orgId)}
+  )`;
+
+  return { own: base.own, team: or(base.own, directReportRow) ?? base.own };
 }
 
 export function approvalQueueScope(membershipId: number | null): OwnershipScope {

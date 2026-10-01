@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetPeriods, timesheetSettings, projects, users, organizationMembers, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
+import { resolveReportsScope, membershipTeamScope } from "./timesheets-core-scope";
 import type { ReportRangeQuery } from "./dto/reports.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
@@ -47,7 +47,7 @@ export class TimesheetAnalyticsService {
     const where = read.compose(
       {
         tenant: timesheets.orgId,
-        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheets.userMembershipId),
         and: [
           isNull(timesheets.voidedAt),
           eq(timesheets.status, "APPROVED"),
@@ -133,7 +133,7 @@ export class TimesheetAnalyticsService {
     const entryWhere = read.compose(
       {
         tenant: timesheets.orgId,
-        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheets.userMembershipId),
         and: [isNull(timesheets.voidedAt), gte(timesheets.date, startDate), lte(timesheets.date, endDate)],
       },
       ({ sql: w }) => w,
@@ -143,7 +143,7 @@ export class TimesheetAnalyticsService {
     const periodWhere = read.compose(
       {
         tenant: timesheetPeriods.orgId,
-        scope: membershipScope(actorMembId, timesheetPeriods.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheetPeriods.userMembershipId),
         and: [lte(timesheetPeriods.periodStart, endDate), gte(timesheetPeriods.periodEnd, startDate)],
       },
       ({ sql: w }) => w,
@@ -264,7 +264,7 @@ export class TimesheetAnalyticsService {
     const where = read.compose(
       {
         tenant: timesheetPeriods.orgId,
-        scope: membershipScope(actorMembId, timesheetPeriods.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheetPeriods.userMembershipId),
         and: [
           sql`${timesheetPeriods.submittedAt} IS NOT NULL`,
           sql`${timesheetPeriods.submittedAt} >= ${startDate}::timestamp`,
@@ -364,7 +364,7 @@ export class TimesheetAnalyticsService {
     const rangeWhere = read.compose(
       {
         tenant: timesheets.orgId,
-        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheets.userMembershipId),
         and: [gte(timesheets.date, startDate), lte(timesheets.date, endDate)],
       },
       ({ sql: w }) => w,
