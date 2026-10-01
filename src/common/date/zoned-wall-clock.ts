@@ -36,6 +36,16 @@ function zoneFormatter(timeZone: string): Intl.DateTimeFormat {
   return created;
 }
 
+export function isKnownTimeZone(timeZone: string): boolean {
+  if (zoneFormatters.has(timeZone)) return true;
+  try {
+    zoneFormatter(timeZone);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function toWallClockUtc(instant: Date, timeZone: string): Date {
   const parts = zoneFormatter(timeZone).formatToParts(instant);
   const field = (type: string): number =>

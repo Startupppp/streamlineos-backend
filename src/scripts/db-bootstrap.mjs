@@ -4,6 +4,7 @@ import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { driftedEntries, planMigrations, sha256 } from "./migration-plan.mjs";
 import { assertProductionSafeTarget, runTargetGuardSelfTest } from "./lib/production-host-guard.mjs";
+import { requiresAutocommit } from "./lib/concurrent-migration.mjs";
 
 
 
@@ -61,11 +62,6 @@ function splitStatements(content) {
 // migrations issue their own BEGIN/COMMIT. Everything else is applied atomically so a
 // transaction-scoped temp table (`ON COMMIT DROP`, migrations 0921/0924/0927) survives
 // across statement-breakpoints and an interrupted run leaves no half-applied migration.
-function requiresAutocommit(content) {
-  if (/\bCONCURRENTLY\b/i.test(content)) return true;
-  return /^[ \t]*(BEGIN|START[ \t]+TRANSACTION|COMMIT|ROLLBACK)[ \t]*;/im.test(content);
-}
-
 async function applyMigrationStatements(url, statements, autocommit, ledger) {
   const sql = postgres(url, { max: 1, onnotice: () => {} });
   try {

@@ -27,6 +27,7 @@
 import fs from "node:fs";
 import process from "node:process";
 import postgres from "postgres";
+import { usesConcurrentIndex } from "./lib/concurrent-migration.mjs";
 
 // See db-bootstrap.mjs: migration 0431 pins search_path on the role `neondb_owner`, so the
 // unqualified `current_org_id()` calls in 0619 and its siblings resolve only under that name.
@@ -75,9 +76,7 @@ try {
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
       .filter(Boolean);
-    const concurrent = parts.some((stmt) =>
-      /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(stmt),
-    );
+    const concurrent = parts.some((stmt) => usesConcurrentIndex(stmt));
     try {
       if (concurrent) {
         await sql.unsafe("SET statement_timeout = 0");

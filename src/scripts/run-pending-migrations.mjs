@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import postgres from "postgres";
 import { assertProductionSafeTarget, runTargetGuardSelfTest } from "./lib/production-host-guard.mjs";
+import { usesConcurrentIndex } from "./lib/concurrent-migration.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const MIGRATIONS = path.join(ROOT, "migrations");
@@ -80,7 +81,7 @@ async function applyOne(entry, when) {
     console.log(`  = ${entry.tag} already recorded, skipping`);
     return "skipped";
   }
-  const concurrent = /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(text);
+  const concurrent = usesConcurrentIndex(text);
   if (dryRun) {
     console.log(`  ~ ${entry.tag} would apply (${statementsOf(text).length} stmts${concurrent ? ", CONCURRENTLY -> no txn" : ""})`);
     return "dry";

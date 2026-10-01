@@ -16,7 +16,7 @@ import type {
 import type { AskOsDirective } from "../streaming/ask-os-directive";
 import { isRecord } from "../../../../common/types/is-record";
 
-const askOsToolLogger = new Logger("AskOsTool");
+const logger = new Logger("AskOsTool");
 
 export const ACTION_LABELS: Record<string, { title: string; confirmLabel: string }> = {
   "email.send": { title: "Send email", confirmLabel: "Send" },
@@ -232,7 +232,7 @@ export function buildAskOsToolset(input: AskOsToolsetInput): ToolSet {
             }),
           );
         } catch (error) {
-          askOsToolLogger.error(
+          logger.error(
             `tool ${definition.key} failed for org ${actor.orgId}`,
             error instanceof Error ? error.stack : String(error),
           );

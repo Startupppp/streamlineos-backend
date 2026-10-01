@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { organizationMembers, organizations, users } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { isKnownTimeZone } from "../../../../common/date/zoned-wall-clock";
 
 export const FALLBACK_TIMEZONE = "UTC";
 
@@ -42,13 +43,7 @@ export function displayNameFrom(row: {
 }
 
 export function usableTimezone(timezone: string | null | undefined): string {
-  if (!timezone) return FALLBACK_TIMEZONE;
-  try {
-    new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
-    return timezone;
-  } catch {
-    return FALLBACK_TIMEZONE;
-  }
+  return timezone && isKnownTimeZone(timezone) ? timezone : FALLBACK_TIMEZONE;
 }
 
 export function zonedCalendarFacts(timezone: string, now: Date = new Date()) {

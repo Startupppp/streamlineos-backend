@@ -66,6 +66,12 @@ describe("a confirmation token is withheld from the model whether or not a direc
       summary: "Send an email to a@b.c",
     });
     expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      kind: "confirm-action",
+      proposalId: 3,
+      token: SECRET_TOKEN,
+      action: "mail.send",
+    });
   });
 
   it("still withholds the token when no sink is supplied, because the decision to withhold must not depend on the caller wiring one up", async () => {
