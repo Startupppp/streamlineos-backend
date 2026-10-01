@@ -7,8 +7,7 @@ import { assertModuleAccessPolicy, moduleAccessPolicyDeps } from "src/modules/mo
 import { ModuleStandingMutationsService } from "src/modules/module-access/module-standing-mutations.service";
 import { RoleMemberService } from "src/modules/rbac/role-member.service";
 import { RecruitmentJobsService } from "src/modules/hr/recruitment/recruitment-jobs.service";
-import { ProjectsMembersService } from "src/modules/build/core";
-import { assertTicketReadAccess } from "src/modules/build/core/tickets/build-ticket-read-access";
+import { assertProjectAccess, assertTicketReadAccess } from "src/modules/build/core/project-crud/project-access";
 import { settle } from "../matrix-runner";
 import type { Observation } from "../matrix.types";
 import { MATRIX_MODULE, accessFor, actorFor, type Standing } from "../standings";
@@ -79,10 +78,9 @@ export async function roleMemberAdd(
 }
 
 export async function projectAccess(world: WorldDb, standing: Standing, orgId: string, projectId: number): Promise<Observation> {
-  const service = new ProjectsMembersService(world.db, standIn({}), accessFor(world), standIn({}), standIn({}));
   const mark = world.reads.length;
   return settle(
-    () => service.assertProjectAccess(actorFor(standing, orgId), projectId),
+    () => assertProjectAccess(world.db, accessFor(world), actorFor(standing, orgId), projectId),
     () => ({ projectLookupRan: world.reads.slice(mark).some((read) => read.table === "projects") }),
   );
 }
