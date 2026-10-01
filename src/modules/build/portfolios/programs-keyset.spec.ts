@@ -1,3 +1,4 @@
+import { actorIn, programsService } from "./__tests__/portfolio-spec-fixtures";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ProgramsService } from "./programs.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -58,8 +59,8 @@ async function capture(
     projection: {},
     limit: undefined,
   };
-  const svc = new ProgramsService(buildDb(captured, rows), {} as AuditService);
-  const page = await svc.listPrograms("org-1", {
+  const svc = (await programsService(buildDb(captured, rows), {} as AuditService));
+  const page = await svc.listPrograms(actorIn("org-1"), {
     cursor,
     limit,
     status: undefined,
@@ -122,8 +123,8 @@ describe("ProgramsService.listPrograms — the page is keyset-bounded, not a sil
       projection: {},
       limit: undefined,
     };
-    const svc = new ProgramsService(buildDb(captured, rows), {} as AuditService);
-    const page = await svc.listPrograms("org-1", {
+    const svc = (await programsService(buildDb(captured, rows), {} as AuditService));
+    const page = await svc.listPrograms(actorIn("org-1"), {
       cursor: undefined,
       limit: 2,
       status: undefined,

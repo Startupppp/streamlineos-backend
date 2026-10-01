@@ -1,3 +1,4 @@
+import { actorIn, portfoliosService, programsService } from "./__tests__/portfolio-spec-fixtures";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import type { PgSelectBase, SelectedFields } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
@@ -50,7 +51,7 @@ function renderingDb(): RenderedDb {
 it("counts portfolio projects from a relation that exists in the statement", async () => {
   const { db, render } = renderingDb();
 
-  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+  await (await portfoliosService(db, {} as AuditService)).listPortfolios(actorIn("org-1"), { limit: 20 });
 
   const sql = render();
   expect(sql).toContain('"build"."portfolio_projects"');
@@ -61,7 +62,7 @@ it("counts portfolio projects from a relation that exists in the statement", asy
 it("correlates the portfolio project count to the outer portfolio row", async () => {
   const { db, render } = renderingDb();
 
-  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+  await (await portfoliosService(db, {} as AuditService)).listPortfolios(actorIn("org-1"), { limit: 20 });
 
   const sql = render();
   expect(sql).toMatch(/portfolio_id\s*=\s*"?portfolio"?\."?id"?/);
@@ -73,7 +74,7 @@ it("correlates the portfolio project count to the outer portfolio row", async ()
 it("counts program projects from a relation that exists in the statement", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
+  await (await programsService(db, {} as AuditService)).listPrograms(actorIn("org-1"), PROGRAM_LIST_QUERY);
 
   const sql = render();
   expect(sql).toContain('"build"."program_projects"');
@@ -84,7 +85,7 @@ it("counts program projects from a relation that exists in the statement", async
 it("correlates the program project count to the outer program row", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
+  await (await programsService(db, {} as AuditService)).listPrograms(actorIn("org-1"), PROGRAM_LIST_QUERY);
 
   const sql = render();
   expect(sql).toMatch(/program_id\s*=\s*"?program"?\."?id"?/);
@@ -96,7 +97,7 @@ it("correlates the program project count to the outer program row", async () => 
 it("declares the outer portfolio alias that the project count correlates against", async () => {
   const { db, render } = renderingDb();
 
-  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+  await (await portfoliosService(db, {} as AuditService)).listPortfolios(actorIn("org-1"), { limit: 20 });
 
   expect(render()).toMatch(/"project_portfolios"\s+"portfolio"/);
 });
@@ -104,7 +105,7 @@ it("declares the outer portfolio alias that the project count correlates against
 it("declares the outer program alias that the project count correlates against", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
+  await (await programsService(db, {} as AuditService)).listPrograms(actorIn("org-1"), PROGRAM_LIST_QUERY);
 
   expect(render()).toMatch(/"project_programs"\s+"program"/);
 });
@@ -112,7 +113,7 @@ it("declares the outer program alias that the project count correlates against",
 it("joins the schema-qualified projects relation when counting portfolio projects", async () => {
   const { db, render } = renderingDb();
 
-  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+  await (await portfoliosService(db, {} as AuditService)).listPortfolios(actorIn("org-1"), { limit: 20 });
 
   expect(render()).toContain('"build"."projects"');
 });
@@ -120,7 +121,7 @@ it("joins the schema-qualified projects relation when counting portfolio project
 it("joins the schema-qualified projects relation when counting program projects", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
+  await (await programsService(db, {} as AuditService)).listPrograms(actorIn("org-1"), PROGRAM_LIST_QUERY);
 
   expect(render()).toContain('"build"."projects"');
 });
@@ -128,7 +129,7 @@ it("joins the schema-qualified projects relation when counting program projects"
 it("qualifies both portfolio correlation columns with their own relation", async () => {
   const { db, render } = renderingDb();
 
-  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+  await (await portfoliosService(db, {} as AuditService)).listPortfolios(actorIn("org-1"), { limit: 20 });
 
   const sql = render();
   expect(sql).toContain("link.portfolio_id = portfolio.id");
@@ -139,7 +140,7 @@ it("qualifies both portfolio correlation columns with their own relation", async
 it("qualifies both program correlation columns with their own relation", async () => {
   const { db, render } = renderingDb();
 
-  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
+  await (await programsService(db, {} as AuditService)).listPrograms(actorIn("org-1"), PROGRAM_LIST_QUERY);
 
   const sql = render();
   expect(sql).toContain("link.program_id = program.id");
@@ -151,10 +152,10 @@ it("keeps the soft-delete fence qualified in both project count subqueries", asy
   const portfolios = renderingDb();
   const programs = renderingDb();
 
-  await new PortfoliosService(portfolios.db, {} as AuditService).listPortfolios("org-1", {
+  await (await portfoliosService(portfolios.db, {} as AuditService)).listPortfolios(actorIn("org-1"), {
     limit: 20,
   });
-  await new ProgramsService(programs.db, {} as AuditService).listPrograms("org-1", PROGRAM_LIST_QUERY);
+  await (await programsService(programs.db, {} as AuditService)).listPrograms(actorIn("org-1"), PROGRAM_LIST_QUERY);
 
   for (const sql of [portfolios.render(), programs.render()]) {
     expect(sql).toContain("linked_project.id = link.project_id");

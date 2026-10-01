@@ -1,3 +1,4 @@
+import { actorIn, portfoliosService, programsService } from "./__tests__/portfolio-spec-fixtures";
 import { PortfoliosService } from "./portfolios.service";
 import { ProgramsService } from "./programs.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -82,20 +83,20 @@ describe("listPortfoliosQuerySchema — BUG-056: sort param is accepted so the f
 
 describe("the portfolio and program lists return the page their contracts promise", () => {
   it("satisfies portfolioPageSchema once a single portfolio exists, so creating the first one does not break the page", async () => {
-    const svc = new PortfoliosService(dbProjecting(STORED_PORTFOLIO), {} as AuditService);
-    const page = await svc.listPortfolios("org-1", { cursor: undefined, limit: 50, status: undefined });
+    const svc = (await portfoliosService(dbProjecting(STORED_PORTFOLIO), {} as AuditService));
+    const page = await svc.listPortfolios(actorIn("org-1"), { cursor: undefined, limit: 50, status: undefined });
     expect(checkResponseAgainstContract(portfolioPageSchema, page)).toBeNull();
   });
 
   it("satisfies programPageSchema once a single program exists, so the program list is a cursor page like the portfolio list", async () => {
-    const svc = new ProgramsService(dbProjecting(STORED_PROGRAM), {} as AuditService);
-    const page = await svc.listPrograms("org-1", PROGRAM_LIST_QUERY);
+    const svc = (await programsService(dbProjecting(STORED_PROGRAM), {} as AuditService));
+    const page = await svc.listPrograms(actorIn("org-1"), PROGRAM_LIST_QUERY);
     expect(checkResponseAgainstContract(programPageSchema, page)).toBeNull();
   });
 
   it("carries the project count each list renders in its own column, rather than dropping it at the contract", async () => {
-    const svc = new ProgramsService(dbProjecting(STORED_PROGRAM), {} as AuditService);
-    const page = await svc.listPrograms("org-1", PROGRAM_LIST_QUERY);
+    const svc = (await programsService(dbProjecting(STORED_PROGRAM), {} as AuditService));
+    const page = await svc.listPrograms(actorIn("org-1"), PROGRAM_LIST_QUERY);
     expect(programPageSchema.parse(page).data[0]).toHaveProperty("projectCount", 4);
   });
 

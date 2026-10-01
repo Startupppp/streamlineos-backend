@@ -1,3 +1,4 @@
+import { actorIn, programsService } from "./__tests__/portfolio-spec-fixtures";
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { ProgramsService } from "./programs.service";
@@ -47,22 +48,22 @@ describe("ProgramsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for getProgram on a different org (cross-tenant isolation)", async () => {
     const { db } = makeDb([]);
-    const svc = new ProgramsService(db, audit);
-    await expect(svc.getProgram(ATTACKER_ORG, 99, DETAIL_QUERY)).rejects.toThrow(NotFoundException);
+    const svc = (await programsService(db, audit));
+    await expect(svc.getProgram(actorIn(ATTACKER_ORG), 99, DETAIL_QUERY)).rejects.toThrow(NotFoundException);
   });
 
   it("returns program for the owning org (same-tenant control)", async () => {
     const program = { id: 10, orgId: OWNER_ORG, name: "P1" };
     const { db } = makeDb([program], []);
-    const svc = new ProgramsService(db, audit);
-    const result = await svc.getProgram(OWNER_ORG, 10, DETAIL_QUERY);
+    const svc = (await programsService(db, audit));
+    const result = await svc.getProgram(actorIn(OWNER_ORG), 10, DETAIL_QUERY);
     expect(result).toMatchObject({ id: 10 });
   });
 
   describe("createProgram — portfolio ownership validation", () => {
     it("throws NotFoundException when portfolioId does not belong to the caller org (cross-tenant link prevention)", async () => {
       const db = makeFullDb([[]]);
-      const svc = new ProgramsService(db, audit);
+      const svc = (await programsService(db, audit));
       await expect(
         svc.createProgram(OWNER_ORG, "user-1", { name: "P1", portfolioId: 999 }),
       ).rejects.toThrow(NotFoundException);
@@ -71,14 +72,14 @@ describe("ProgramsService — cross-tenant isolation", () => {
     it("succeeds when portfolioId belongs to the caller org", async () => {
       const portfolioRow = { id: 999, orgId: OWNER_ORG };
       const db = makeFullDb([[portfolioRow]]);
-      const svc = new ProgramsService(db, audit);
+      const svc = (await programsService(db, audit));
       const result = await svc.createProgram(OWNER_ORG, "user-1", { name: "P1", portfolioId: 999 });
       expect(result).toMatchObject({ id: 1 });
     });
 
     it("does not call assertPortfolio when portfolioId is omitted", async () => {
       const db = makeFullDb([]);
-      const svc = new ProgramsService(db, audit);
+      const svc = (await programsService(db, audit));
       await expect(
         svc.createProgram(OWNER_ORG, "user-1", { name: "P1" }),
       ).resolves.toMatchObject({ id: 1 });
@@ -89,7 +90,7 @@ describe("ProgramsService — cross-tenant isolation", () => {
     it("throws NotFoundException when updating portfolioId to one from a different org", async () => {
       const program = { id: 10, orgId: OWNER_ORG, name: "P1", portfolioId: null };
       const db = makeFullDb([[program], []]);
-      const svc = new ProgramsService(db, audit);
+      const svc = (await programsService(db, audit));
       await expect(
         svc.updateProgram(OWNER_ORG, "user-1", 10, { portfolioId: 888 }),
       ).rejects.toThrow(NotFoundException);
@@ -99,7 +100,7 @@ describe("ProgramsService — cross-tenant isolation", () => {
       const program = { id: 10, orgId: OWNER_ORG, name: "P1", portfolioId: null };
       const portfolio = { id: 888, orgId: OWNER_ORG };
       const db = makeFullDb([[program], [portfolio]]);
-      const svc = new ProgramsService(db, audit);
+      const svc = (await programsService(db, audit));
       const result = await svc.updateProgram(OWNER_ORG, "user-1", 10, { portfolioId: 888 });
       expect(result).toMatchObject({ id: 1 });
     });

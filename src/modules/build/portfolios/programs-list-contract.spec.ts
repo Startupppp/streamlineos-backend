@@ -1,3 +1,4 @@
+import { actorIn, programsService } from "./__tests__/portfolio-spec-fixtures";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
@@ -45,8 +46,8 @@ function renderListSql(query: Parameters<ProgramsService["listPrograms"]>[1]): P
     },
   } as unknown as Db;
 
-  return new ProgramsService(db, {} as AuditService)
-    .listPrograms("org-1", query)
+  return programsService(db, {} as AuditService)
+    .then((svc) => svc.listPrograms(actorIn("org-1"), query))
     .then(() => rendered);
 }
 
