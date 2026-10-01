@@ -24,7 +24,6 @@ import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 import { ProjectsTicketsRestoreService } from "./projects-tickets-restore.service";
-import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import { ProjectsSearchService } from "../project-crud/projects-search.service";
 import { ProjectsWorkQueryService } from "../work-query/projects-work-query.service";
 import {
@@ -88,7 +87,6 @@ export class ProjectsTicketsController {
     private readonly transfer: ProjectsTicketsTransferService,
     private readonly del: ProjectsTicketsDeleteService,
     private readonly restore: ProjectsTicketsRestoreService,
-    private readonly subresources: ProjectsTicketSubresourcesService,
     private readonly search: ProjectsSearchService,
     private readonly workQuery: ProjectsWorkQueryService,
   ) {}
@@ -216,7 +214,7 @@ export class ProjectsTicketsController {
     @Query() query: TicketActivityQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getActivity(u, projectId, ticketId, {
+    return this.query.getTicketActivity(u, projectId, ticketId, {
       limit: query.limit,
       cursor: query.cursor,
     });

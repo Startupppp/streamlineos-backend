@@ -2,7 +2,7 @@ jest.mock("../../../../common/organization/organization-actor", () => ({
   resolveOrganizationActorsByUserIds: jest.fn(),
 }));
 jest.mock("../project-crud/project-access", () => ({
-  resolveProjectAccess: jest.fn(),
+  assertProjectVisible: jest.fn(),
   resolveProjectAssignableMemberships: jest.fn(),
 }));
 jest.mock("../lib/allocate-ticket-number", () => ({
@@ -14,7 +14,7 @@ jest.mock("../lib/build-ticket-capacity", () => ({
 
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import { resolveOrganizationActorsByUserIds } from "../../../../common/organization/organization-actor";
-import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
+import { assertProjectVisible, resolveProjectAssignableMemberships } from "../project-crud/project-access";
 import { allocateTicketNumbers } from "../lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { runWithTenantContext } from "../../../../common/tenant/tenant-context";
@@ -40,7 +40,7 @@ const TICKET_ROW = {
 
 beforeEach(() => {
   jest.resetAllMocks();
-  (resolveProjectAccess as jest.Mock).mockResolvedValue({ hasAccess: true, role: "OWNER" });
+  (assertProjectVisible as jest.Mock).mockResolvedValue(undefined);
   (resolveProjectAssignableMemberships as jest.Mock).mockResolvedValue(new Map([[ASSIGNEE, 2]]));
   (resolveOrganizationActorsByUserIds as jest.Mock).mockResolvedValue(
     new Map([[CREATOR, { membershipId: 1, orgId: ORG, userId: CREATOR, role: "MEMBER", isOwner: false, resolvedVia: "user", organizationPersonId: null }]]),

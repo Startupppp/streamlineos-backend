@@ -4,19 +4,20 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { projectAutomations, projectStatuses, users } from "../../../../db/schema";
 import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
-import { ProjectsMembersService } from "../members/projects-members.service";
+import { AccessService } from "../../../access/access.service";
+import { assertCanManageProject, assertProjectAccess } from "../project-crud/project-access";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { CreateAutomationInput, UpdateAutomationInput, ListAutomationsQuery } from "../dto/automation.schemas";
 import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
-import { escapeLike } from "../";
+import { escapeLike } from "../lib/escape-like";
 
 @Injectable()
 export class ProjectsAutomationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
-    private readonly members: ProjectsMembersService,
+    private readonly access: AccessService,
   ) {}
 
   private async assertSetStatusActionsValid(
@@ -49,7 +50,7 @@ export class ProjectsAutomationsService {
   }
 
   async listAutomations(u: CurrentUserContext, projectId: number, query: ListAutomationsQuery = { limit: 50 }) {
-    await this.members.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     const { limit, cursor } = query;
     const pos = decodeCursor(cursor);
@@ -112,7 +113,7 @@ export class ProjectsAutomationsService {
   }
 
   async createAutomation(u: CurrentUserContext, projectId: number, data: CreateAutomationInput) {
-    await this.members.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     await this.planLimits.assertWithinLimit(u.orgId, "automations");
     await this.assertSetStatusActionsValid(u.orgId, projectId, data.actions);
 
@@ -124,7 +125,7 @@ export class ProjectsAutomationsService {
   }
 
   async updateAutomation(u: CurrentUserContext, projectId: number, automationId: number, data: UpdateAutomationInput) {
-    await this.members.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     if (data.actions !== undefined)
       await this.assertSetStatusActionsValid(u.orgId, projectId, data.actions);
 
@@ -144,7 +145,7 @@ export class ProjectsAutomationsService {
   }
 
   async deleteAutomation(u: CurrentUserContext, projectId: number, automationId: number) {
-    await this.members.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     const [deleted] = await this.db
       .delete(projectAutomations)
       .where(

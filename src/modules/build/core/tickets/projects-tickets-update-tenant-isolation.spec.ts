@@ -19,7 +19,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
 
   function makeDb(ticketRow: unknown | null) {
     return {
-      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticketRow) } },
+      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticketRow) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
     } as unknown as Db;
   }
 
@@ -47,7 +47,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     }));
-    const db = { query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } }, transaction: txFn } as unknown as Db;
+    const db = { query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } }, transaction: txFn } as unknown as Db;
     const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, transfer, webhooksDispatch, automationRunner, cache, access);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
     await expect(svc.updateTicket(u, 1, 1, { version: 1 })).resolves.not.toThrow();

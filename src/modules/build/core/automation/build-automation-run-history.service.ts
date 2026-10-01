@@ -6,7 +6,8 @@ import type { Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import { withSavepoint } from "../../../data-quality/savepoint";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ProjectsMembersService } from "../members/projects-members.service";
+import { AccessService } from "../../../access/access.service";
+import { assertProjectAccess } from "../project-crud/project-access";
 import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
 
@@ -45,7 +46,7 @@ export interface ListAutomationRunsQuery {
 export class BuildAutomationRunHistoryService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly members: ProjectsMembersService,
+    private readonly access: AccessService,
   ) {}
 
   /**
@@ -151,7 +152,7 @@ export class BuildAutomationRunHistoryService {
 
   /** Cursor-paginated read of run history for a project, optionally narrowed to one automation. BE-24/25. */
   async listRuns(u: CurrentUserContext, projectId: number, query: ListAutomationRunsQuery) {
-    await this.members.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const { limit, cursor, automationId } = query;
     const pos = decodeCursor(cursor);
 

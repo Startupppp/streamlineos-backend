@@ -18,7 +18,7 @@ import type { BuildRestoreResult } from "../dto/build-core-response.schemas";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
-} from "./build-ticket-read-access";
+} from "../project-crud/project-access";
 import { restoreTicketRows } from "./apply-ticket-change";
 
 @Injectable()

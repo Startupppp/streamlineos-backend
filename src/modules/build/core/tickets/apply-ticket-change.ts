@@ -19,7 +19,7 @@ import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../pr
 import type { UpdateTicketInput } from "../dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
 import { computeNextRunAt } from "../lib/projects-recurrence.util";
-import { lockProjectTicketMutation } from "../lib/build-ticket-mutation-policy";
+import { lockProjectTicketMutation } from "../project-crud/project-access";
 import { assertTransitionAllowed } from "./projects-tickets-workflow-utils";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
@@ -277,10 +277,9 @@ export async function applyTicketChange(
   const nextDueDate = input.dueDate === undefined ? before.dueDate : input.dueDate;
   if (nextStartDate && nextDueDate && nextDueDate < nextStartDate)
     throw new BadRequestException("Due date must be on or after start date");
-  const accessResult: { hasAccess: boolean; role: string | null } =
-    u.isOrgOwner || systemJobCovers(u.principal, "build:tickets:update")
-      ? { hasAccess: true, role: "OWNER" }
-      : await resolveProjectAccess(deps.db, deps.access, u, ticketProjectId);
+  const accessResult = systemJobCovers(u.principal, "build:tickets:update")
+    ? { hasAccess: true as const, role: "OWNER" as const }
+    : await resolveProjectAccess(deps.db, deps.access, u, ticketProjectId);
   if (!accessResult.hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
   const newAssignee = resolveAssigneeId(input.assigneeId);
   const effectRow: TicketChangeEffectRow = {

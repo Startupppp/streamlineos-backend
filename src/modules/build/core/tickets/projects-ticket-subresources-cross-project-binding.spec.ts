@@ -12,12 +12,15 @@ import {
   ticketLabelMappings,
   ticketWatchers,
 } from "../../../../db/schema";
-import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { ProjectsTicketWatchersService } from "./projects-ticket-watchers.service";
+import { ProjectsTicketLabelsService } from "./projects-ticket-labels.service";
+import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
+import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 
@@ -280,6 +283,8 @@ function makeU(orgId = ORG): CurrentUserContext {
   };
 }
 
+const access = { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() };
+
 beforeEach(() => {
   jest.mocked(assertTicketReadAccess).mockImplementation(
     async (_db, _access, u, projectId, ticketId) => {
@@ -295,9 +300,48 @@ beforeEach(() => {
   );
 });
 
-function makeSubresources(store: Store) {
+function makeWatchers(store: Store) {
   const fixture = makeDb(store);
-  const checklists = new ProjectsTicketChecklistsService(fixture.db);
+  return { ...fixture, svc: new ProjectsTicketWatchersService(fixture.db, access) };
+}
+
+function makeChecklists(store: Store) {
+  const fixture = makeDb(store);
+  return { ...fixture, svc: new ProjectsTicketChecklistsService(fixture.db, access) };
+}
+
+function makeLabels(store: Store) {
+  const fixture = makeDb(store);
+  return {
+    ...fixture,
+    svc: new ProjectsTicketLabelsService(fixture.db, access, { logTicketActivity: jest.fn() } as never),
+  };
+}
+
+function makeLinks(store: Store) {
+  const fixture = makeDb(store);
+  return { ...fixture, svc: new ProjectsTicketLinksService(fixture.db, access) };
+}
+
+function makeQuery(store: Store) {
+  const fixture = makeDb(store);
+  return {
+    ...fixture,
+    svc: new ProjectsTicketsQueryService(
+      fixture.db,
+      {} as never,
+      access as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    ),
+  };
+}
+
+function makeComments(store: Store) {
+  const fixture = makeDb(store);
   const comments = new ProjectsTicketCommentsService(
     fixture.db,
     { logTicketActivity: jest.fn(), processCommentMentions: jest.fn() } as never,
@@ -305,41 +349,32 @@ function makeSubresources(store: Store) {
     { enqueue: jest.fn() } as never,
     { log: jest.fn(), logCritical: jest.fn() } as never,
   );
-  const svc = new ProjectsTicketSubresourcesService(
-    fixture.db,
-    { logTicketActivity: jest.fn() } as never,
-    comments,
-    checklists,
-    {} as never,
-    {} as never,
-    { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() } as never,
-  );
-  return { ...fixture, svc, checklists };
+  return { ...fixture, svc: comments };
 }
 
 describe("ticket subresources — a nested lookup binds to the URL project, not just the organisation", () => {
   it("getSubtasks answers 404 for a same-org ticket that belongs to another project", async () => {
-    const { svc } = makeSubresources(makeStore());
+    const { svc } = makeQuery(makeStore());
 
     await expect(svc.getSubtasks(makeU(), PROJECT_A, TICKET_B)).rejects.toThrow(NotFoundException);
   });
 
   it("getSubtasks returns the subtask that belongs to the URL project (control)", async () => {
-    const { svc } = makeSubresources(makeStore());
+    const { svc } = makeQuery(makeStore());
 
     const rows = await svc.getSubtasks(makeU(), PROJECT_A, TICKET_A);
     expect(rows.map((row) => row.id)).toEqual([SUBTASK_IN_PROJECT]);
   });
 
   it("getSubtasks omits a child row that names this parent but sits in another project", async () => {
-    const { svc } = makeSubresources(makeStore());
+    const { svc } = makeQuery(makeStore());
 
     const rows = await svc.getSubtasks(makeU(), PROJECT_A, TICKET_A);
     expect(rows.map((row) => row.id)).not.toContain(SUBTASK_OUT_OF_PROJECT);
   });
 
   it("getWatchers answers 404 for a same-org ticket that belongs to another project", async () => {
-    const { svc } = makeSubresources(makeStore());
+    const { svc } = makeWatchers(makeStore());
 
     await expect(svc.getWatchers(makeU(), PROJECT_A, TICKET_B)).rejects.toThrow(NotFoundException);
   });
@@ -347,7 +382,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
   it("getWatchers reads the ticket that belongs to the URL project (control)", async () => {
     const store = makeStore();
     store.watchers.push({ id: 1, orgId: ORG, ticketId: TICKET_A, membershipId: MEMBERSHIP_ID, createdAt: new Date(0) });
-    const { svc } = makeSubresources(store);
+    const { svc } = makeWatchers(store);
 
     await expect(svc.getWatchers(makeU(), PROJECT_A, TICKET_A)).resolves.toHaveLength(1);
   });
@@ -355,14 +390,14 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
   it("getWatchers does not return another organisation's watcher row for the same ticket id", async () => {
     const store = makeStore();
     store.watchers.push({ id: 1, orgId: OTHER_ORG, ticketId: TICKET_A, membershipId: MEMBERSHIP_ID, createdAt: new Date(0) });
-    const { svc } = makeSubresources(store);
+    const { svc } = makeWatchers(store);
 
     await expect(svc.getWatchers(makeU(), PROJECT_A, TICKET_A)).resolves.toEqual([]);
   });
 
   it("addWatcher does not attach a watcher to a same-org ticket owned by another project", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeWatchers(store);
 
     await expect(svc.addWatcher(makeU(), PROJECT_A, TICKET_B, {})).rejects.toThrow(NotFoundException);
     expect(store.watchers).toHaveLength(0);
@@ -370,7 +405,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
 
   it("addWatcher attaches a watcher to the ticket that belongs to the URL project (control)", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeWatchers(store);
 
     await expect(svc.addWatcher(makeU(), PROJECT_A, TICKET_A, {})).resolves.toMatchObject({
       membershipId: MEMBERSHIP_ID,
@@ -381,7 +416,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
   it("removeWatcher does not detach from a same-org ticket owned by another project", async () => {
     const store = makeStore();
     store.watchers.push({ id: 1, orgId: ORG, ticketId: TICKET_B, membershipId: MEMBERSHIP_ID });
-    const { svc } = makeSubresources(store);
+    const { svc } = makeWatchers(store);
 
     await expect(svc.removeWatcher(makeU(), PROJECT_A, TICKET_B)).rejects.toThrow(NotFoundException);
     expect(store.watchers).toHaveLength(1);
@@ -390,35 +425,35 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
   it("removeWatcher detaches from the ticket that belongs to the URL project (control)", async () => {
     const store = makeStore();
     store.watchers.push({ id: 1, orgId: ORG, ticketId: TICKET_A, membershipId: MEMBERSHIP_ID });
-    const { svc } = makeSubresources(store);
+    const { svc } = makeWatchers(store);
 
     await expect(svc.removeWatcher(makeU(), PROJECT_A, TICKET_A)).resolves.toEqual({ success: true });
     expect(store.watchers).toHaveLength(0);
   });
 
-  it("addLabel does not label a same-org ticket owned by another project", async () => {
+  it("addTicketLabel does not label a same-org ticket owned by another project", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeLabels(store);
 
     await expect(
-      svc.addLabel(makeU(), PROJECT_A, TICKET_B, { labelId: LABEL_ID }),
+      svc.addTicketLabel(makeU(), PROJECT_A, TICKET_B, { labelId: LABEL_ID }),
     ).rejects.toThrow(NotFoundException);
     expect(store.labelMappings).toHaveLength(0);
   });
 
-  it("addLabel labels the ticket that belongs to the URL project (control)", async () => {
+  it("addTicketLabel labels the ticket that belongs to the URL project (control)", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeLabels(store);
 
     await expect(
-      svc.addLabel(makeU(), PROJECT_A, TICKET_A, { labelId: LABEL_ID }),
+      svc.addTicketLabel(makeU(), PROJECT_A, TICKET_A, { labelId: LABEL_ID }),
     ).resolves.toEqual({ success: true });
     expect(store.labelMappings).toHaveLength(1);
   });
 
   it("addAttachment does not attach to a same-org ticket owned by another project", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeLinks(store);
 
     await expect(
       svc.addAttachment(makeU(), PROJECT_A, TICKET_B, {
@@ -430,7 +465,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
 
   it("addAttachment attaches to the ticket that belongs to the URL project (control)", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeLinks(store);
 
     await expect(
       svc.addAttachment(makeU(), PROJECT_A, TICKET_A, {
@@ -444,7 +479,7 @@ describe("ticket subresources — a nested lookup binds to the URL project, not 
 describe("ticket checklists — the whole project/ticket/checklist/item chain is bound", () => {
   it("updateChecklist leaves a same-org checklist on another project's ticket untouched", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.updateChecklist(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B, { title: "hijacked" }),
@@ -454,7 +489,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("updateChecklist renames the checklist that belongs to the URL ticket (control)", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.updateChecklist(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, { title: "checklist-a-v2" }),
@@ -463,7 +498,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("updateChecklist answers 404 when the URL ticket is in another project", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.updateChecklist(makeU(), PROJECT_A, TICKET_B, CHECKLIST_B, { title: "hijacked" }),
@@ -473,7 +508,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("deleteChecklist does not delete a same-org checklist on another project's ticket", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(svc.deleteChecklist(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B)).rejects.toThrow(
       NotFoundException,
@@ -483,7 +518,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("deleteChecklist deletes the checklist that belongs to the URL ticket (control)", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(svc.deleteChecklist(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A)).resolves.toEqual({
       success: true,
@@ -493,7 +528,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("createChecklistItem does not add an item to a checklist on another project's ticket", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.createChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B, { text: "x", order: 0 }),
@@ -503,7 +538,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("createChecklistItem adds an item to the checklist on the URL ticket (control)", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.createChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, { text: "x", order: 0 }),
@@ -513,7 +548,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("updateChecklistItem leaves an item under another project's checklist untouched", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.updateChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B, ITEM_B, { text: "hijacked" }),
@@ -523,7 +558,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("updateChecklistItem leaves an item whose own checklist is not the URL checklist untouched", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.updateChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_B, { text: "hijacked" }),
@@ -533,7 +568,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("updateChecklistItem edits the item on the URL checklist (control)", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.updateChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A, { text: "item-a-v2" }),
@@ -542,7 +577,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("updateChecklistItem answers 404 for another organisation's item", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.updateChecklistItem(makeU(OTHER_ORG), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A, { text: "hijacked" }),
@@ -552,7 +587,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("deleteChecklistItem does not delete an item under another project's checklist", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.deleteChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_B, ITEM_B),
@@ -562,7 +597,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("deleteChecklistItem does not delete an item whose own checklist is not the URL checklist", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.deleteChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_B),
@@ -572,7 +607,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
   it("deleteChecklistItem deletes the item on the URL checklist (control)", async () => {
     const store = makeStore();
-    const { svc } = makeSubresources(store);
+    const { svc } = makeChecklists(store);
 
     await expect(
       svc.deleteChecklistItem(makeU(), PROJECT_A, TICKET_A, CHECKLIST_A, ITEM_A),
@@ -583,7 +618,7 @@ describe("ticket checklists — the whole project/ticket/checklist/item chain is
 
 describe("addComment — the URL project is bound when the route carries one", () => {
   it("answers 404 for a same-org ticket that belongs to another project", async () => {
-    const { svc, transaction } = makeSubresources(makeStore());
+    const { svc, transaction } = makeComments(makeStore());
 
     await expect(
       svc.addComment(makeU(), PROJECT_A, TICKET_B, { content: "hi" } as never),
@@ -592,7 +627,7 @@ describe("addComment — the URL project is bound when the route carries one", (
   });
 
   it("comments on the ticket that belongs to the URL project (control)", async () => {
-    const { svc, transaction } = makeSubresources(makeStore());
+    const { svc, transaction } = makeComments(makeStore());
 
     await expect(
       svc.addComment(makeU(), PROJECT_A, TICKET_A, { content: "hi" } as never),
@@ -601,7 +636,7 @@ describe("addComment — the URL project is bound when the route carries one", (
   });
 
   it("a project-less caller still cannot reach another organisation's ticket", async () => {
-    const { svc, transaction } = makeSubresources(makeStore());
+    const { svc, transaction } = makeComments(makeStore());
 
     await expect(
       svc.addComment(makeU(OTHER_ORG), null, TICKET_A, { content: "hi" } as never),
@@ -610,7 +645,7 @@ describe("addComment — the URL project is bound when the route carries one", (
   });
 
   it("a project-less caller still reaches its own organisation's ticket (control)", async () => {
-    const { svc, transaction } = makeSubresources(makeStore());
+    const { svc, transaction } = makeComments(makeStore());
 
     await expect(
       svc.addComment(makeU(), null, TICKET_B, { content: "hi" } as never),

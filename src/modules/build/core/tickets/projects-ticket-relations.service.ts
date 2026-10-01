@@ -14,7 +14,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { AccessService } from "../../../access/access.service";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { BUILD_BLOCKER_CREATED_EVENT } from "./build-blocker-created-consumer.service";
-import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess, type TicketReadAccess } from "../project-crud/project-access";
 import type { AddRelationInput } from "../dto/projects.schemas";
 
 @Injectable()

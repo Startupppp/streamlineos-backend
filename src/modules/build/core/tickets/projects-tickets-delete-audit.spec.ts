@@ -4,7 +4,7 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

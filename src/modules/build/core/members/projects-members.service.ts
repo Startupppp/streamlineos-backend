@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -44,7 +43,6 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../../common/auth/principal";
 import type {
   AddMemberInput,
   BulkReorderStatesInput,
@@ -58,22 +56,7 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { ProjectsCustomStatesService } from "../custom-states/projects-custom-states.service";
 import { ProjectsLabelsService } from "../lib/projects-labels.service";
 import { escapeLike } from "../lib/escape-like";
-
-async function assertProjectOwnership(
-  db: Db,
-  orgId: string,
-  projectId: number,
-): Promise<void> {
-  const project = await db.query.projects.findFirst({
-    where: and(
-      eq(projects.id, projectId),
-      eq(projects.orgId, orgId),
-      isNull(projects.deletedAt),
-    ),
-    columns: { id: true },
-  });
-  if (!project) throw new NotFoundException("Project not found");
-}
+import { assertProjectAccess, assertCanManageProject } from "../project-crud/project-access";
 
 @Injectable()
 export class ProjectsMembersService {
@@ -85,98 +68,12 @@ export class ProjectsMembersService {
     private readonly labelsService: ProjectsLabelsService,
   ) {}
 
-  async assertCanManageProject(
-    u: CurrentUserContext,
-    projectId: number,
-  ): Promise<void> {
-    const project = await this.db.query.projects.findFirst({
-      where: and(
-        eq(projects.id, projectId),
-        eq(projects.orgId, u.orgId),
-        isNull(projects.deletedAt),
-      ),
-      columns: { managerMembershipId: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-    if (u.isOrgOwner) return;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (perms.has("build:manage")) return;
-    const callerMid = actingMembershipId(u.principal);
-    if (callerMid !== null && project.managerMembershipId === callerMid) return;
-    const membership = await this.db
-      .select({ role: projectMembers.role })
-      .from(projectMembers)
-      .where(
-        and(
-          eq(projectMembers.orgId, u.orgId),
-          eq(projectMembers.projectId, projectId),
-          eq(projectMembers.membershipId, callerMid ?? -1),
-        ),
-      )
-      .limit(1);
-    if (membership[0]?.role === "ADMIN") return;
-    throw new ForbiddenException(
-      "You do not have permission to manage this project",
-    );
-  }
-
-  async assertProjectAccess(
-    u: CurrentUserContext,
-    projectId: number,
-  ): Promise<void> {
-    const project = await this.db.query.projects.findFirst({
-      where: and(
-        eq(projects.id, projectId),
-        eq(projects.orgId, u.orgId),
-        isNull(projects.deletedAt),
-      ),
-      columns: { managerMembershipId: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-    if (u.isOrgOwner) return;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (perms.has("build:manage")) return;
-    const callerMid = actingMembershipId(u.principal);
-    if (callerMid !== null && project.managerMembershipId === callerMid) return;
-    const membership = await this.db
-      .select({ id: projectMembers.id })
-      .from(projectMembers)
-      .where(
-        and(
-          eq(projectMembers.orgId, u.orgId),
-          eq(projectMembers.projectId, projectId),
-          eq(projectMembers.membershipId, callerMid ?? -1),
-        ),
-      )
-      .limit(1);
-    if (membership.length > 0) return;
-
-    const teamAccess = await this.db
-      .select({ id: projectTeamMembers.id })
-      .from(projectTeamAssignments)
-      .innerJoin(
-        projectTeamMembers,
-        eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
-      )
-      .where(
-        and(
-          eq(projectTeamAssignments.projectId, projectId),
-          eq(projectTeamAssignments.orgId, u.orgId),
-          eq(projectTeamMembers.membershipId, callerMid ?? -1),
-        ),
-      )
-      .limit(1);
-    if (teamAccess.length > 0) return;
-
-    throw new ForbiddenException("You do not have access to this project");
-  }
-
   async listMembers(
     u: CurrentUserContext,
     projectId: number,
     query: ListProjectMembersQuery = { limit: 25 },
   ) {
-    await this.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const { limit, cursor, search } = query;
     const pos = decodeCursor(cursor);
     const conds: SQL[] = [
@@ -247,7 +144,7 @@ export class ProjectsMembersService {
   }
 
   async getProjectRoster(u: CurrentUserContext, projectId: number) {
-    await this.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     const assignments = await this.db
       .select({
@@ -325,8 +222,7 @@ export class ProjectsMembersService {
   ) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await assertProjectOwnership(this.db, orgId, projectId);
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     let actor: OrganizationActor;
     try {
@@ -384,8 +280,7 @@ export class ProjectsMembersService {
   async removeMember(projectId: number, userId: string, u: CurrentUserContext) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await assertProjectOwnership(this.db, orgId, projectId);
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     const targetActor = await assertOrganizationActor(this.db, orgId, {
       kind: "user",
       userId,
@@ -451,8 +346,7 @@ export class ProjectsMembersService {
   ) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await assertProjectOwnership(this.db, orgId, projectId);
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     const targetActor = await assertOrganizationActor(this.db, orgId, {
       kind: "user",
       userId: memberUserId,
@@ -495,7 +389,7 @@ export class ProjectsMembersService {
   }
 
   async listCustomStates(u: CurrentUserContext, projectId: number) {
-    await this.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.statesService.listCustomStates(u.orgId, projectId);
   }
 
@@ -508,7 +402,7 @@ export class ProjectsMembersService {
     projectId: number,
     body: CreateStateInput,
   ) {
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     return this.statesService.createCustomState(u.orgId, projectId, body);
   }
 
@@ -537,8 +431,18 @@ export class ProjectsMembersService {
     return this.labelsService.listLabels(orgId);
   }
 
+  async listProjectLabels(u: CurrentUserContext, projectId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    return this.labelsService.listLabels(u.orgId);
+  }
+
   createLabel(orgId: string, body: CreateLabelInput) {
     return this.labelsService.createLabel(orgId, body);
+  }
+
+  async createProjectLabel(u: CurrentUserContext, projectId: number, body: CreateLabelInput) {
+    await assertCanManageProject(this.db, this.access, u, projectId);
+    return this.labelsService.createLabel(u.orgId, body);
   }
 
   updateLabel(orgId: string, labelId: number, data: UpdateLabelInput) {

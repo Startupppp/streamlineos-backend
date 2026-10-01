@@ -19,7 +19,7 @@
  * them down afterwards. NEVER point it at a shared database: it writes, and its
  * teardown lifts the append-only trigger on `audit_logs` to remove its own rows.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { SignJWT } from "jose";
 import postgresFactory from "postgres";
 import { readFileSync } from "node:fs";
@@ -52,6 +52,35 @@ function check(name, ok, detail = "") {
   process.stdout.write(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}\n`);
 }
 
+// Accepting requires the emailed one-time code (d08d62130). The smoke cannot read
+// the email, so after the real request-otp call it plants a code it knows. The
+// request-otp status is what matters: in production the frontend shipped this call
+// ahead of the backend route and every accept answered
+// `Cannot POST /organization/invitations/request-otp` (BUG-HRMS-010). A stack with
+// no email transport answers 503 (the route ran, the send did not), so the planted
+// code is inserted rather than rewritten — the service burns its own on a failed send.
+const ROUTED = new Set([200, 503]);
+const KNOWN_OTP = "424242";
+const sha256 = (raw) => createHash("sha256").update(raw).digest("hex");
+async function acceptInvitation(joinUrl, names) {
+  const token = tokenOf(joinUrl);
+  const otp = await fetch(`${API}/organization/invitations/request-otp`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (ROUTED.has(otp.status)) {
+    await sql`
+      insert into invitation_email_otps (invitation_id, code_hash, expires_at)
+      select id, ${sha256(KNOWN_OTP)}, now() + interval '10 minutes'
+      from invitations where token_hash = ${sha256(token)}`;
+  }
+  const res = await fetch(`${API}/organization/invitations/accept`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, ...names, emailOtp: KNOWN_OTP }),
+  });
+  return { otpStatus: otp.status, res };
+}
+
 async function seedOrg(org, owner) {
   await sql.begin(async (tx) => {
     await tx`insert into users (id, email, name, is_active, email_verified) values (${owner}, ${`${owner}@example.test`}, ${"QA Owner"}, true, now())`;
@@ -65,6 +94,9 @@ async function seedOrg(org, owner) {
       values (${org}, ${"primary"}, ${"legacy-1"}, ${"primary"}, ${"auto"}, ${"primary"}, ${randomUUID()}, ${new Date(Date.now() + 86400_000)}, ${"ACTIVE"})
     `;
     await tx`insert into org_modules (org_id, module_key, enabled) values (${org}, ${"hr"}, true)`;
+    // The per-org ladder role a module standing resolves to; boot seeding runs for
+    // real organisations, not for rows inserted behind its back.
+    await tx`insert into roles (name, slug, org_id, is_system, module_key, rank) values (${"HR Module Member"}, ${"HR_MODULE_MEMBER"}, ${org}, true, ${"hr"}, 40)`;
   });
 }
 
@@ -142,17 +174,13 @@ try {
   const linkB = await api(tokenB, "POST", `/users/invitations/${idB}/join-link`);
   check("a copied join link is reissued for both organisations", Boolean(linkA.body?.joinUrl && linkB.body?.joinUrl), `A=${linkA.status} B=${linkB.status}`);
 
-  const acceptA = await fetch(`${API}/organization/invitations/accept`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: tokenOf(linkA.body.joinUrl), firstName: "Joiner", lastName: "QA" }),
-  });
+  const { otpStatus: otpA, res: acceptA } = await acceptInvitation(linkA.body.joinUrl, { firstName: "Joiner", lastName: "QA" });
+  check("request-otp is routed for a pending invitation (BUG-HRMS-010)", ROUTED.has(otpA), `status=${otpA}`);
   const acceptABody = await acceptA.json().catch(() => ({}));
   check("the first organisation accepts the invitation", acceptA.status < 300, `status=${acceptA.status} ${JSON.stringify(acceptABody).slice(0, 200)}`);
 
-  const acceptB = await fetch(`${API}/organization/invitations/accept`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: tokenOf(linkB.body.joinUrl), firstName: "Joiner", lastName: "QA" }),
-  });
+  const { otpStatus: otpB, res: acceptB } = await acceptInvitation(linkB.body.joinUrl, { firstName: "Joiner", lastName: "QA" });
+  check("an existing account is asked for a code too", ROUTED.has(otpB), `status=${otpB}`);
   const acceptBBody = await acceptB.json().catch(() => ({}));
   check("an existing account joins the second organisation", acceptB.status < 300, `status=${acceptB.status} ${JSON.stringify(acceptBBody).slice(0, 200)}`);
 
@@ -167,10 +195,7 @@ try {
     memberships.length === 2 && memberships.every((m) => m.status === "ACTIVE"),
     JSON.stringify(memberships));
 
-  const replay = await fetch(`${API}/organization/invitations/accept`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: tokenOf(linkB.body.joinUrl), firstName: "Joiner", lastName: "QA" }),
-  });
+  const { res: replay } = await acceptInvitation(linkB.body.joinUrl, { firstName: "Joiner", lastName: "QA" });
   check("replaying an accepted invitation does not create a second membership", replay.status >= 400, `status=${replay.status}`);
 
   const joiner = accounts[0]?.id;
@@ -234,6 +259,19 @@ try {
       (await sql`select id from users where email = ${declineEmail}`).length === 0,
     JSON.stringify(declinedRows));
 
+  // BUG-HRMS-003: a bulk invite carries module standings to every row it creates.
+  const bulkEmails = [`bulk1.${RUN}@allowed.test`, `bulk2.${RUN}@allowed.test`];
+  const bulk = await api(tokenB, "POST", "/users/bulk-invite", {
+    emails: bulkEmails, role: "MEMBER", moduleAccess: [{ moduleKey: "hr", standing: "MEMBER" }],
+  });
+  const bulkAccess = await sql`
+    select i.email, a.module_key, a.standing from invitation_module_access a
+    join invitations i on i.id = a.invitation_id
+    where i.email in ${sql(bulkEmails)} order by i.email`;
+  check("a bulk invite stores the module standing on every invitation",
+    bulk.status < 300 && bulkAccess.length === 2 && bulkAccess.every((r) => r.module_key === "hr" && r.standing === "MEMBER"),
+    `status=${bulk.status} ${JSON.stringify(bulk.body).slice(0, 200)} rows=${JSON.stringify(bulkAccess)}`);
+
   const resendEmail = `resend.${RUN}@allowed.test`;
   const resendInvite = await api(tokenB, "POST", "/users/invite", { email: resendEmail, role: "MEMBER" });
   const resendId = resendInvite.body?.invitationId ?? resendInvite.body?.id;
@@ -245,10 +283,8 @@ try {
   // Expire it behind the product's back and prove the link stops working.
   const expiredLink = await api(tokenB, "POST", `/users/invitations/${resendId}/join-link`);
   await sql`update invitations set expires_at = now() - interval '1 day' where id = ${resendId}`;
-  const expiredAccept = await fetch(`${API}/organization/invitations/accept`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: tokenOf(expiredLink.body.joinUrl), firstName: "Late", lastName: "QA" }),
-  });
+  const { otpStatus: expiredOtp, res: expiredAccept } = await acceptInvitation(expiredLink.body.joinUrl, { firstName: "Late", lastName: "QA" });
+  check("an expired invitation is sent no code", expiredOtp === 404, `status=${expiredOtp}`);
   check("an expired invitation is refused", expiredAccept.status >= 400, `status=${expiredAccept.status}`);
   check("and creates no account", (await sql`select id from users where email = ${resendEmail}`).length === 0);
 

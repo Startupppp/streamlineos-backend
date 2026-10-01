@@ -4,10 +4,12 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 import { PortalClientService } from "./portal-client.service";
+import { PortalProjectionService } from "../../build/client-portal/portal-projection.service";
 
 const dialect = new PgDialect();
 
 const makeAudit = () => ({ log: jest.fn(), logCritical: jest.fn() }) as unknown as AuditService;
+const makeProjection = (db: Db) => new PortalProjectionService(db as never);
 
 function renderSql(predicate: unknown): string {
   if (!is(predicate, SQL)) return "";
@@ -61,7 +63,7 @@ describe("PortalClientService — lifecycle gate: isNull(deletedAt) on project r
         }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await svc.listGrantedProjects("org-1", "mem-1");
 
     expect(capturedWheres).toHaveLength(2);
@@ -92,7 +94,7 @@ describe("PortalClientService — lifecycle gate: isNull(deletedAt) on project r
         }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await expect(svc.getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
 
     expect(capturedWheres).toHaveLength(2);
@@ -116,7 +118,7 @@ describe("PortalClientService — lifecycle gate: isNull(deletedAt) on project r
         }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await expect(svc.getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
   });
 });
@@ -213,7 +215,7 @@ describe("PortalClientService — source ACL gate: clientVisible=true on sub-res
       }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await svc.getProjectOverview("org-1", "mem-1", 42);
 
     const milestoneEntry = capturedPredicates.find((e) => e.callIndex === 3);
@@ -258,7 +260,7 @@ describe("PortalClientService — source ACL gate: clientVisible=true on sub-res
       }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await svc.getProjectOverview("org-1", "mem-1", 42);
 
     const taskEntry = capturedPredicates.find((e) => e.callIndex === 4);
@@ -279,7 +281,7 @@ describe("PortalClientService — source ACL gate: clientVisible=true on sub-res
         }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     const result = await svc.getProjectOverview("org-1", "mem-1", 42);
 
     expect(result.milestones).toHaveLength(0);
@@ -336,7 +338,7 @@ describe("PortalClientService — table-driven visibility matrix: parent × chil
 
   it("attachment join ON clause requires both parent clientVisible and child-table join fields (parent × child matrix: both must be present)", async () => {
     const { db, joinPredicates } = buildPredicateCapturingDb();
-    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+    await new PortalClientService(db, makeAudit(), makeProjection(db)).getProjectOverview("org-1", "mem-1", 42);
 
     const attachmentJoin = joinPredicates.find((p) => {
       const sql = renderSql(p);
@@ -351,7 +353,7 @@ describe("PortalClientService — table-driven visibility matrix: parent × chil
 
   it("comment join ON clause requires both parent clientVisible and child-table join fields", async () => {
     const { db, joinPredicates } = buildPredicateCapturingDb();
-    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+    await new PortalClientService(db, makeAudit(), makeProjection(db)).getProjectOverview("org-1", "mem-1", 42);
 
     expect(joinPredicates.length).toBeGreaterThanOrEqual(2);
     for (const pred of joinPredicates) {
@@ -363,7 +365,7 @@ describe("PortalClientService — table-driven visibility matrix: parent × chil
 
   it("child WHERE predicate still requires clientVisible on the child row — internal child of visible parent excluded", async () => {
     const { db, wherePredicates } = buildPredicateCapturingDb();
-    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+    await new PortalClientService(db, makeAudit(), makeProjection(db)).getProjectOverview("org-1", "mem-1", 42);
 
     const childPredicates = wherePredicates.filter(({ callIndex }: { callIndex: number; pred: unknown }) => callIndex > 2) as Array<{ callIndex: number; pred: unknown }>;
     const childClientVisiblePreds = childPredicates.filter(({ pred }) => renderSql(pred).includes("client_visible"));
@@ -382,7 +384,7 @@ describe("PortalClientService — table-driven visibility matrix: parent × chil
         }),
       }),
     } as unknown as Db;
-    await expect(new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
+    await expect(new PortalClientService(db, makeAudit(), makeProjection(db)).getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
     expect(renderSql(capturedGrantWhere[0])).toContain("status");
   });
 
@@ -398,13 +400,13 @@ describe("PortalClientService — table-driven visibility matrix: parent × chil
         }),
       }),
     } as unknown as Db;
-    await expect(new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
+    await expect(new PortalClientService(db, makeAudit(), makeProjection(db)).getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
     expect(renderSql(capturedGrantWhere[0])).toContain("expires_at");
   });
 
   it("cross-project isolation — attachment join predicate includes projectId equality so another project's child rows are excluded at the DB", async () => {
     const { db, joinPredicates } = buildPredicateCapturingDb();
-    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+    await new PortalClientService(db, makeAudit(), makeProjection(db)).getProjectOverview("org-1", "mem-1", 42);
 
     for (const pred of joinPredicates) {
       expect(renderSql(pred)).toContain("project_id");
@@ -413,7 +415,7 @@ describe("PortalClientService — table-driven visibility matrix: parent × chil
 
   it("cross-tenant isolation — attachment join predicate includes orgId equality so another org's rows are excluded at the DB", async () => {
     const { db, joinPredicates } = buildPredicateCapturingDb();
-    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+    await new PortalClientService(db, makeAudit(), makeProjection(db)).getProjectOverview("org-1", "mem-1", 42);
 
     for (const pred of joinPredicates) {
       expect(renderSql(pred)).toContain("org_id");
@@ -422,7 +424,7 @@ describe("PortalClientService — table-driven visibility matrix: parent × chil
 
   it("deleted parent ticket rows are excluded — join ON clause contains deleted_at IS NULL", async () => {
     const { db, joinPredicates } = buildPredicateCapturingDb();
-    await new PortalClientService(db, makeAudit()).getProjectOverview("org-1", "mem-1", 42);
+    await new PortalClientService(db, makeAudit(), makeProjection(db)).getProjectOverview("org-1", "mem-1", 42);
 
     for (const pred of joinPredicates) {
       expect(renderSql(pred)).toContain("deleted_at");
@@ -467,7 +469,7 @@ describe("PortalClientService — parent ticket clientVisible required on attach
 
   it("every innerJoin on a ticket child table includes 'client_visible' in the ON clause so a child of an internal-only ticket is excluded at the DB", async () => {
     const { db, capturedJoinPredicates } = buildCapturingDb();
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await svc.getProjectOverview("org-1", "mem-1", 42);
 
     expect(capturedJoinPredicates.length).toBeGreaterThanOrEqual(2);
@@ -507,7 +509,7 @@ describe("PortalClientService — parent ticket clientVisible required on attach
       }),
     } as unknown as Db;
 
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await svc.getProjectOverview("org-1", "mem-1", 42);
 
     expect(capturedJoinPredicates.length).toBeGreaterThanOrEqual(2);

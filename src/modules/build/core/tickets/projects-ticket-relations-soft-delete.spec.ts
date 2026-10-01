@@ -4,7 +4,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn().mockResolvedValue(undefined),
 }));
 

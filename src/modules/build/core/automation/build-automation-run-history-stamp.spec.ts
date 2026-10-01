@@ -2,6 +2,11 @@ import { BuildAutomationRunHistoryService } from "./build-automation-run-history
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock("../../../../common/logger/logger.service", () => ({
   logger: { warn: jest.fn(), error: jest.fn() },
 }));
@@ -33,8 +38,8 @@ const BASE_PARAMS = {
 };
 
 function makeService(db: Db) {
-  const members = { assertProjectAccess: jest.fn() } as never;
-  return new BuildAutomationRunHistoryService(db as never, members);
+  const access = {} as never;
+  return new BuildAutomationRunHistoryService(db as never, access);
 }
 
 describe("BuildAutomationRunHistoryService — run timestamp stamping", () => {

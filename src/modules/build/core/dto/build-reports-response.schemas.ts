@@ -56,6 +56,7 @@ export const analyticsSchema = z.object({
     velocityScore: z.number().int(),
     overdueTickets: z.number().int(),
     totalTickets: z.number().int(),
+    openTickets: z.number().int(),
   }),
 });
 

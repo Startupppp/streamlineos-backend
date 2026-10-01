@@ -66,6 +66,7 @@ export class BugsService {
         linkedTestCaseId: workItemQaDetails.linkedTestCaseId,
         reopenCount: workItemQaDetails.reopenCount,
         createdByUserId: workItemQaDetails.createdByUserId,
+        version: tickets.version,
       })
       .from(tickets)
       .leftJoin(
@@ -109,6 +110,7 @@ export class BugsService {
         linkedTestCaseId: workItemQaDetails.linkedTestCaseId,
         reopenCount: workItemQaDetails.reopenCount,
         createdByUserId: workItemQaDetails.createdByUserId,
+        version: tickets.version,
       })
       .from(tickets)
       .leftJoin(

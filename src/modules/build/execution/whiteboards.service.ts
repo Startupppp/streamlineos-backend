@@ -25,7 +25,8 @@ import type {
   ListWhiteboardsQuery,
   UpdateWhiteboardInput,
 } from "./dto/workspace.schemas";
-import { assertProject, loadShares, type BoardRow, type ShareEntry } from "./whiteboard-board-helpers";
+import { loadShares, type BoardRow, type ShareEntry } from "./whiteboard-board-helpers";
+import { assertProjectInOrg } from "../core/project-crud/project-access";
 import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
 import { keysetInteger, keysetTimestamp } from "../../../common/pagination/keyset";
 
@@ -113,7 +114,7 @@ export class WhiteboardsService {
   }
 
   async listWhiteboards(u: CurrentUserContext, projectId: number, query: ListWhiteboardsQuery) {
-    await assertProject(this.db, u.orgId, projectId);
+    await assertProjectInOrg(this.db, u.orgId, projectId);
 
     const { limit, cursor } = query;
     const pos = cursor ? decodeCursor(cursor) : null;
@@ -239,7 +240,7 @@ export class WhiteboardsService {
   }
 
   async getWhiteboard(u: CurrentUserContext, projectId: number, whiteboardId: number) {
-    await assertProject(this.db, u.orgId, projectId);
+    await assertProjectInOrg(this.db, u.orgId, projectId);
     const { board, access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
     if (access === "none") throw new NotFoundException("Whiteboard not found");
     const shares = access === "manage" ? await loadShares(this.db, whiteboardId) : null;
@@ -251,7 +252,7 @@ export class WhiteboardsService {
     projectId: number,
     input: CreateWhiteboardInput,
   ) {
-    await assertProject(this.db, u.orgId, projectId);
+    await assertProjectInOrg(this.db, u.orgId, projectId);
     const [board] = await this.db
       .insert(projectWhiteboards)
       .values({
@@ -271,7 +272,7 @@ export class WhiteboardsService {
     whiteboardId: number,
     input: UpdateWhiteboardInput,
   ) {
-    await assertProject(this.db, u.orgId, projectId);
+    await assertProjectInOrg(this.db, u.orgId, projectId);
     const { board: _, access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
 
     if (access === "none") throw new NotFoundException("Whiteboard not found");
@@ -303,7 +304,7 @@ export class WhiteboardsService {
   }
 
   async deleteWhiteboard(u: CurrentUserContext, projectId: number, whiteboardId: number) {
-    await assertProject(this.db, u.orgId, projectId);
+    await assertProjectInOrg(this.db, u.orgId, projectId);
     const { access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
 
     if (access === "none") throw new NotFoundException("Whiteboard not found");
@@ -334,7 +335,7 @@ export class WhiteboardsService {
   }
 
   async restoreWhiteboard(u: CurrentUserContext, projectId: number, whiteboardId: number) {
-    await assertProject(this.db, u.orgId, projectId);
+    await assertProjectInOrg(this.db, u.orgId, projectId);
     const existing = await this.db.query.projectWhiteboards.findFirst({
       where: and(
         eq(projectWhiteboards.id, whiteboardId),

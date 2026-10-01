@@ -2,8 +2,10 @@ import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 import { PortalClientService } from "./portal-client.service";
+import { PortalProjectionService } from "../../build/client-portal/portal-projection.service";
 
 const makeAudit = () => ({ log: jest.fn() }) as unknown as AuditService;
+const makeProjection = (db: Db) => new PortalProjectionService(db as never);
 
 function makeChainableDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   const limit = jest.fn().mockResolvedValue(rows);
@@ -22,20 +24,20 @@ describe("PortalClientService — cross-tenant isolation", () => {
 
   it("returns empty list for a different org's grants (cross-tenant isolation)", async () => {
     const { db } = makeChainableDb([]);
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     const result = await svc.listGrantedProjects(ATTACKER, MEMBERSHIP_ID);
     expect(result).toHaveLength(0);
   });
 
   it("throws NotFoundException when loading a project from a different org (cross-tenant isolation)", async () => {
     const { db } = makeChainableDb([]);
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await expect(svc.getProjectOverview(ATTACKER, MEMBERSHIP_ID, PROJECT_ID)).rejects.toThrow(NotFoundException);
   });
 
   it("returns granted projects for the owning org (control — same-tenant)", async () => {
     const { db } = makeChainableDb([{ projectId: PROJECT_ID }]);
-    const svc = new PortalClientService(db, makeAudit());
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     const result = await svc.listGrantedProjects(OWNER, MEMBERSHIP_ID);
     expect(result).toHaveLength(1);
   });

@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { PortfoliosService } from "./portfolios.service";
@@ -59,7 +59,9 @@ describe("PortfoliosService", () => {
       insert: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
-      query: {},
+      query: {
+        projects: { findFirst: jest.fn() },
+      },
     };
 
     const module = await Test.createTestingModule({
@@ -73,36 +75,23 @@ describe("PortfoliosService", () => {
   });
 
   describe("linkProject — org validation", () => {
-    it("throws 400 when project belongs to a different org", async () => {
-      const portfolio = makePortfolio();
-      const { selectChain: portChain } = makeSelectChain([portfolio]);
-      const { selectChain: projChain } = makeSelectChain([]);
+    function mockPortfolioLoad(portfolio: unknown) {
+      const { selectChain } = makeSelectChain([portfolio]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+    }
 
-      let selectCount = 0;
-      (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
-        selectCount++;
-        if (selectCount === 1) return portChain;
-        return projChain;
-      });
+    it("throws 404 when project belongs to a different org or does not exist", async () => {
+      mockPortfolioLoad(makePortfolio());
+      (mockDb as { query: { projects: { findFirst: jest.Mock } } }).query.projects.findFirst.mockResolvedValue(undefined);
 
       await expect(
         svc.linkProject(ORG_ID, USER_ID, 1, { projectId: 99 }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("resolves when project belongs to the same org", async () => {
-      const portfolio = makePortfolio();
-      const project = { id: 5 };
-
-      const { selectChain: portChain } = makeSelectChain([portfolio]);
-      const { selectChain: projChain } = makeSelectChain([project]);
-
-      let selectCount = 0;
-      (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
-        selectCount++;
-        if (selectCount === 1) return portChain;
-        return projChain;
-      });
+      mockPortfolioLoad(makePortfolio());
+      (mockDb as { query: { projects: { findFirst: jest.Mock } } }).query.projects.findFirst.mockResolvedValue({ id: 5 });
 
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({

@@ -207,12 +207,11 @@ export class ProjectResourcesController {
   @RequirePermission("build:view")
   @ResponseSchema(z.array(ticketLabelSchema))
   @Validate({ params: projectIdParams_ })
-  async listProjectLabels(
+  listProjectLabels(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertProjectAccess(u, projectId);
-    return this.members.listLabels(u.orgId);
+    return this.members.listProjectLabels(u, projectId);
   }
 
   @Post(":projectId/labels")
@@ -220,12 +219,11 @@ export class ProjectResourcesController {
   @HttpCode(201)
   @ResponseSchema(ticketLabelSchema)
   @Validate({ params: projectIdParams_, body: createLabelSchema })
-  async createProjectLabel(
+  createProjectLabel(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertCanManageProject(u, projectId);
-    return this.members.createLabel(u.orgId, body);
+    return this.members.createProjectLabel(u, projectId, body);
   }
 }

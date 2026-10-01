@@ -1,20 +1,17 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
-import { and, eq, desc, ilike, inArray, lt, gte, lte, sql } from "drizzle-orm";
+import { and, eq, desc, ilike, lt, gte, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
-import {
-  projectWebhooks,
-  webhookDeliveries,
-} from "../../../../db/schema/build/tasks";
+import { projectWebhooks } from "../../../../db/schema/build/tasks";
 import type {
   CreateWebhookInput,
   ListWebhooksQuery,
   UpdateWebhookInput,
 } from "../dto/webhook.schemas";
-import { generateWebhookSecret } from "./projects-webhooks-dispatch.service";
 import { assertProjectInOrg } from "../project-crud/project-access";
 import { buildIdCursorPage } from "../../../../common/pagination/cursor";
 import { TicketVersionConflictException } from "../tickets";
+import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
 
 const PAGE_SIZE = 50;
 
@@ -25,7 +22,7 @@ const webhookProjection = {
   url: projectWebhooks.url,
   events: projectWebhooks.events,
   isActive: projectWebhooks.isActive,
-  hasSecret: sql<boolean>`${projectWebhooks.secret} IS NOT NULL`,
+  hasSecret: sql<boolean>`${projectWebhooks.integrationsEndpointId} IS NOT NULL`,
   secretSetAt: projectWebhooks.secretSetAt,
   version: projectWebhooks.version,
   createdAt: projectWebhooks.createdAt,
@@ -34,7 +31,10 @@ const webhookProjection = {
 
 @Injectable()
 export class ProjectsWebhooksService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly webhookEndpoint: WebhookEndpointService,
+  ) {}
 
   async listWebhooks(
     orgId: string,
@@ -71,7 +71,7 @@ export class ProjectsWebhooksService {
         url: projectWebhooks.url,
         events: projectWebhooks.events,
         isActive: projectWebhooks.isActive,
-        hasSecret: sql<boolean>`${projectWebhooks.secret} IS NOT NULL`,
+        hasSecret: sql<boolean>`${projectWebhooks.integrationsEndpointId} IS NOT NULL`,
         secretSetAt: projectWebhooks.secretSetAt,
         version: projectWebhooks.version,
         createdAt: projectWebhooks.createdAt,
@@ -97,49 +97,7 @@ export class ProjectsWebhooksService {
     }
 
     const webhookIds = page.data.map((r) => r.id);
-
-    const statsRows = await this.db.execute<{
-      webhookId: number;
-      lastDeliveryAt: Date | null;
-      lastDeliveryStatus: string | null;
-      failureRate: number | null;
-    }>(sql`
-      WITH ranked AS (
-        SELECT
-          webhook_id,
-          delivered_at,
-          status,
-          ROW_NUMBER() OVER (PARTITION BY webhook_id ORDER BY delivered_at DESC) AS rn,
-          COUNT(CASE WHEN status = 'failed' THEN 1 END) OVER (PARTITION BY webhook_id)::float
-            / NULLIF(COUNT(*) OVER (PARTITION BY webhook_id), 0) AS failure_rate
-        FROM build.webhook_deliveries
-        WHERE org_id = ${orgId}
-          AND webhook_id = ANY(${webhookIds})
-      )
-      SELECT
-        webhook_id::int AS "webhookId",
-        delivered_at AS "lastDeliveryAt",
-        status AS "lastDeliveryStatus",
-        failure_rate AS "failureRate"
-      FROM ranked
-      WHERE rn = 1
-    `);
-
-    const statsMap = new Map<
-      number,
-      {
-        lastDeliveryAt: Date | null;
-        lastDeliveryStatus: string | null;
-        failureRate: number | null;
-      }
-    >();
-    for (const row of statsRows) {
-      statsMap.set(row.webhookId, {
-        lastDeliveryAt: row.lastDeliveryAt,
-        lastDeliveryStatus: row.lastDeliveryStatus,
-        failureRate: row.failureRate,
-      });
-    }
+    const statsMap = await this.webhookEndpoint.deliveryStats(orgId, webhookIds);
 
     return {
       ...page,
@@ -162,25 +120,35 @@ export class ProjectsWebhooksService {
     data: CreateWebhookInput,
   ) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    const secret = data.secret ?? generateWebhookSecret();
-    const [webhook] = await this.db
-      .insert(projectWebhooks)
-      .values({
+
+    return this.db.transaction(async (tx) => {
+      const { id: credId, secretSetAt } = await this.webhookEndpoint.createCredential(
+        tx,
         orgId,
-        projectId,
-        createdBy,
-        url: data.url,
-        events: data.events,
-        secret,
-        secretSetAt: new Date(),
-      })
-      .returning(webhookProjection);
-    return {
-      ...webhook,
-      lastDeliveryAt: null,
-      lastDeliveryStatus: null,
-      failureRate: null,
-    };
+        data.secret,
+      );
+
+      const [webhook] = await tx
+        .insert(projectWebhooks)
+        .values({
+          orgId,
+          projectId,
+          createdBy,
+          url: data.url,
+          events: data.events,
+          secretSetAt,
+          integrationsEndpointId: credId,
+        })
+        .returning(webhookProjection);
+      if (!webhook) throw new Error("Failed to create webhook row");
+
+      return {
+        ...webhook,
+        lastDeliveryAt: null,
+        lastDeliveryStatus: null,
+        failureRate: null,
+      };
+    });
   }
 
   async updateWebhook(
@@ -241,18 +209,34 @@ export class ProjectsWebhooksService {
   }
 
   async deleteWebhook(orgId: string, projectId: number, webhookId: number) {
-    await this.assertWebhookOwnership(orgId, projectId, webhookId);
-    const [deleted] = await this.db
-      .delete(projectWebhooks)
-      .where(
-        and(
-          eq(projectWebhooks.id, webhookId),
-          eq(projectWebhooks.projectId, projectId),
-          eq(projectWebhooks.orgId, orgId),
-        ),
-      )
-      .returning();
-    if (!deleted) throw new NotFoundException("Webhook not found");
+    await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ integrationsEndpointId: projectWebhooks.integrationsEndpointId })
+        .from(projectWebhooks)
+        .where(
+          and(
+            eq(projectWebhooks.id, webhookId),
+            eq(projectWebhooks.orgId, orgId),
+            eq(projectWebhooks.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!row) throw new NotFoundException("Webhook not found");
+
+      await tx
+        .delete(projectWebhooks)
+        .where(
+          and(
+            eq(projectWebhooks.id, webhookId),
+            eq(projectWebhooks.projectId, projectId),
+            eq(projectWebhooks.orgId, orgId),
+          ),
+        );
+
+      if (row.integrationsEndpointId) {
+        await this.webhookEndpoint.deleteCredential(tx, orgId, row.integrationsEndpointId);
+      }
+    });
   }
 
   async assertWebhookOwnership(
@@ -276,25 +260,6 @@ export class ProjectsWebhooksService {
 
   async listDeliveries(orgId: string, projectId: number, webhookId: number) {
     await this.assertWebhookOwnership(orgId, projectId, webhookId);
-    return this.db
-      .select({
-        id: webhookDeliveries.id,
-        webhookId: webhookDeliveries.webhookId,
-        event: webhookDeliveries.event,
-        status: webhookDeliveries.status,
-        responseCode: webhookDeliveries.responseCode,
-        attempts: webhookDeliveries.attempts,
-        lastError: webhookDeliveries.lastError,
-        deliveredAt: webhookDeliveries.deliveredAt,
-      })
-      .from(webhookDeliveries)
-      .where(
-        and(
-          eq(webhookDeliveries.orgId, orgId),
-          eq(webhookDeliveries.webhookId, webhookId),
-        ),
-      )
-      .orderBy(desc(webhookDeliveries.deliveredAt))
-      .limit(20);
+    return this.webhookEndpoint.listDeliveries(orgId, webhookId);
   }
 }

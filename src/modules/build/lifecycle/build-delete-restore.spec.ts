@@ -152,7 +152,7 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
     const written = updateDouble([{ id: 8 }]);
     const { audit, log } = auditDouble();
     const svc = new MilestonesService(makeDb({}, written), accessDouble(), audit);
-    await expect(svc.deleteMilestone(ORG, USER, PROJECT, 8)).resolves.toEqual({ success: true });
+    await expect(svc.deleteMilestone(makeU(), PROJECT, 8)).resolves.toEqual({ success: true });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: "build.milestone.deleted", resourceId: "8" }),
     );
@@ -274,7 +274,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
       accessDouble(),
       audit,
     );
-    await expect(svc.restoreMilestone(ORG, USER, PROJECT, 8)).resolves.toEqual({ success: true });
+    await expect(svc.restoreMilestone(makeU(), PROJECT, 8)).resolves.toEqual({ success: true });
     expect(written.set).toHaveBeenCalledWith({ deletedAt: null });
     expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: "build.milestone.restored" }));
   });
@@ -305,7 +305,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
       update: written.update,
     } as unknown as Db;
     const svc = new MilestonesService(db, accessDouble(), audit);
-    await expect(svc.restoreMilestone(ORG, USER, PROJECT, 8)).rejects.toThrow("Project not found");
+    await expect(svc.restoreMilestone(makeU(), PROJECT, 8)).rejects.toThrow("Project not found");
     expect(written.update).not.toHaveBeenCalled();
     expect(log).not.toHaveBeenCalled();
   });

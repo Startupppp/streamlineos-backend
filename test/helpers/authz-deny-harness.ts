@@ -5,7 +5,7 @@ import type {
   INestApplication,
   Type,
 } from "@nestjs/common";
-import { APP_GUARD, Reflector } from "@nestjs/core";
+import { APP_GUARD, DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
 import { AccessService } from "src/modules/access/access.service";
 import { PermissionGuard } from "src/modules/access/permission.guard";
 import { ModuleGuard } from "src/common/rbac/module.guard";
@@ -54,6 +54,7 @@ export interface AuthzHarness {
   denyAll(): void;
   /** Hold everything — the control fixture. */
   allowAll(): void;
+  holdScopes(scopes: Readonly<Record<string, DataScope>>): void;
   /** Attach no AuthContext, so the guard's UNAUTHENTICATED branch is reached. */
   withoutAuthContext(): void;
   /** Act as a different tenant/user. */
@@ -145,6 +146,14 @@ export async function createAuthzHarness(
     getModuleState: async (): Promise<boolean> => true,
   };
 
+  const discoveryStub = {
+    getControllers: (): Iterable<{ instance: unknown }> => [],
+    getProviders: (): Iterable<{ instance: unknown }> => [],
+  };
+  const scannerStub = {
+    getAllMethodNames: (_proto: object): Iterable<string> => [],
+  };
+
   const moduleRef: TestingModule = await Test.createTestingModule({
     controllers: [...controllers] as Type<unknown>[],
     providers: [
@@ -160,6 +169,8 @@ export async function createAuthzHarness(
        */
       { provide: APP_GUARD, useValue: authGuard },
       { provide: AccessService, useValue: access },
+      { provide: DiscoveryService, useValue: discoveryStub },
+      { provide: MetadataScanner, useValue: scannerStub },
       ...((options.providers ?? []) as never[]),
     ],
   })
@@ -184,6 +195,9 @@ export async function createAuthzHarness(
     },
     allowAll() {
       state.scopeOf = () => "all";
+    },
+    holdScopes(scopes: Readonly<Record<string, DataScope>>) {
+      state.scopeOf = (key) => scopes[key] ?? "none";
     },
     withoutAuthContext() {
       state.attachContext = false;

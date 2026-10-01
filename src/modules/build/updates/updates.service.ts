@@ -7,7 +7,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertCanModifyAuthoredRecord, assertProjectAccess } from "../core";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   buildCursorPage,
@@ -186,12 +186,13 @@ export class UpdatesService {
   async editUpdate(u: CurrentUserContext, projectId: number, updateId: number, input: EditUpdateInput) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const update = await this.loadUpdate(u.orgId, projectId, updateId);
-    const membershipId = actingMembershipId(u.principal);
-    if (membershipId === null || update.authorMembershipId !== membershipId) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("build:updates:manage") && !u.isOrgOwner)
-        throw new ForbiddenException("You can only edit your own updates");
-    }
+    await assertCanModifyAuthoredRecord(
+      this.access,
+      u,
+      { membershipId: update.authorMembershipId },
+      "build:updates:manage",
+      "You can only edit your own updates",
+    );
     const [updated] = await this.db
       .update(projectUpdates)
       .set({
@@ -225,12 +226,13 @@ export class UpdatesService {
   async softDeleteUpdate(u: CurrentUserContext, projectId: number, updateId: number) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const update = await this.loadUpdate(u.orgId, projectId, updateId);
-    const membershipId = actingMembershipId(u.principal);
-    if (membershipId === null || update.authorMembershipId !== membershipId) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("build:updates:manage") && !u.isOrgOwner)
-        throw new ForbiddenException("You can only delete your own updates");
-    }
+    await assertCanModifyAuthoredRecord(
+      this.access,
+      u,
+      { membershipId: update.authorMembershipId },
+      "build:updates:manage",
+      "You can only delete your own updates",
+    );
     await this.db
       .update(projectUpdates)
       .set({ deletedAt: new Date() })

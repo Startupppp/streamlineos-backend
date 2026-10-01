@@ -1,5 +1,4 @@
 import {
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -26,7 +25,7 @@ import type {
   UpdateProjectInput,
 } from "../dto/projects.schemas";
 import { ProjectsQueryService } from "./projects-query.service";
-import { assertProjectAccess } from "./project-access";
+import { assertProjectAccess, assertCanDeleteProject, assertCanManageProject } from "./project-access";
 
 @Injectable()
 export class ProjectsWriteService {
@@ -44,41 +43,7 @@ export class ProjectsWriteService {
   ) {
     const orgId = u.orgId;
 
-    if (!u.isOrgOwner) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      const hasManage = perms.has("build:manage");
-
-      if (!hasManage) {
-        const project = await this.db.query.projects.findFirst({
-          where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-          columns: { managerMembershipId: true },
-        });
-        if (!project) {
-          throw new NotFoundException("Project not found");
-        }
-        const callerMembershipId = u.principal.kind === "human-session" || u.principal.kind === "personal-token"
-          ? u.principal.membershipId
-          : null;
-        if (project.managerMembershipId !== callerMembershipId) {
-          const membership = await this.db
-            .select({ role: projectMembers.role })
-            .from(projectMembers)
-            .where(
-              and(
-                eq(projectMembers.orgId, orgId),
-                eq(projectMembers.projectId, projectId),
-                eq(projectMembers.membershipId, callerMembershipId ?? -1),
-              ),
-            )
-            .limit(1);
-          if (membership[0]?.role !== "ADMIN") {
-            throw new ForbiddenException(
-              "Only project managers or admins can update project settings.",
-            );
-          }
-        }
-      }
-    }
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     const managerMembershipId = body.managerId === undefined
       ? undefined
@@ -267,14 +232,7 @@ export class ProjectsWriteService {
   }
 
   async deleteProject(u: CurrentUserContext, projectId: number) {
-    if (!u.isOrgOwner) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("build:delete")) {
-        throw new ForbiddenException(
-          "Only organization owners can delete projects",
-        );
-      }
-    }
+    await assertCanDeleteProject(this.access, u);
     const orgId = u.orgId;
 
     const project = await this.db.query.projects.findFirst({

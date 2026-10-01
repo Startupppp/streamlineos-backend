@@ -5,4 +5,5 @@ export interface Permission {
   description: string;
   scopable?: boolean;
   baselineScope?: "own" | "all";
+  sensitive?: true;
 }

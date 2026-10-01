@@ -2,7 +2,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
 import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
-import { ProjectsMembersService } from "../members/projects-members.service";
+import { AccessService } from "../../../access/access.service";
 import { RateLimitService } from "../../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
@@ -36,34 +36,21 @@ function flush(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 20));
 }
 
-/**
- * These tests exercise `BuildAutomationRunnerService` wired to the REAL
- * `BuildAutomationRunHistoryService` (only its `DRIZZLE` and
- * `ProjectsMembersService` dependencies are mocked), so what's asserted is
- * exactly what `db.insert(projectAutomationRuns)`/`projectAutomationRunActions`
- * were called with — the actual persistence shape, not a stubbed call.
- */
 describe("BuildAutomationRunnerService — durable run history", () => {
   let service: BuildAutomationRunnerService;
+  let executeFn: jest.Mock;
   let insertedRuns: Record<string, unknown>[];
   let insertedActions: Record<string, unknown>[];
   let nextRunId: number;
 
   const dbSelect = { from: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue([]) };
-  const updateWhere = jest.fn().mockResolvedValue(undefined);
+  const updateWhere = jest.fn().mockResolvedValue([]);
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
 
   const mockDb = {
-    transaction: jest.fn(),
-    execute: jest.fn(),
     select: jest.fn(),
-    update: jest.fn(),
     insert: jest.fn(),
-    query: {
-      ticketLabels: { findFirst: jest.fn().mockResolvedValue(null) },
-      projectStatuses: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
-      organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
-    },
+    update: jest.fn().mockReturnValue({ set: updateSet }),
   } as unknown as Db;
 
   beforeEach(async () => {
@@ -71,19 +58,15 @@ describe("BuildAutomationRunnerService — durable run history", () => {
     insertedRuns = [];
     insertedActions = [];
     nextRunId = 100;
+    executeFn = jest.fn().mockResolvedValue(undefined);
 
-    (mockDb.transaction as jest.Mock).mockImplementation(async (work: (tx: typeof mockDb) => Promise<unknown>) => work(mockDb));
-    (mockDb.execute as jest.Mock).mockResolvedValue([]);
     (mockDb.select as jest.Mock).mockReturnValue(dbSelect);
-    dbSelect.from.mockReturnThis();
-    dbSelect.where.mockResolvedValue([]);
     (mockDb.update as jest.Mock).mockReturnValue({ set: updateSet });
     updateSet.mockReturnValue({ where: updateWhere });
-    updateWhere.mockResolvedValue(undefined);
-    (mockDb.query.projectStatuses.findFirst as jest.Mock).mockResolvedValue({ id: 7 });
-    (mockDb.query.organizationMembers.findFirst as jest.Mock).mockResolvedValue(null);
+    updateWhere.mockResolvedValue([]);
+    dbSelect.from.mockReturnThis();
+    dbSelect.where.mockResolvedValue([]);
 
-    // Routes by shape: a run-action row carries `runId`, a run row does not.
     (mockDb.insert as jest.Mock).mockImplementation(() => ({
       values: (values: Record<string, unknown> | Record<string, unknown>[]) => {
         const rows = Array.isArray(values) ? values : [values];
@@ -101,10 +84,10 @@ describe("BuildAutomationRunnerService — durable run history", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BuildAutomationRunnerService,
-        BuildAutomationActionExecutor,
+        { provide: BuildAutomationActionExecutor, useValue: { execute: executeFn } },
         BuildAutomationRunHistoryService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: ProjectsMembersService, useValue: { assertProjectAccess: jest.fn() } },
+        { provide: AccessService, useValue: {} },
         { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) } },
       ],
     }).compile();
@@ -139,7 +122,7 @@ describe("BuildAutomationRunnerService — durable run history", () => {
   });
 
   it("records a matched_failed run and a failure action row when the only action throws", async () => {
-    updateWhere.mockRejectedValueOnce(new Error("boom"));
+    executeFn.mockRejectedValueOnce(new Error("boom"));
     dbSelect.where.mockResolvedValue([makeRule()]);
 
     service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
@@ -152,7 +135,7 @@ describe("BuildAutomationRunnerService — durable run history", () => {
   });
 
   it("records matched_partial_failure when some actions succeed and some fail", async () => {
-    updateWhere.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("second action failed"));
+    executeFn.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("second action failed"));
     dbSelect.where.mockResolvedValue([
       makeRule({ actions: [{ type: "set_status", value: "IN_PROGRESS" }, { type: "set_status", value: "DONE" }] }),
     ]);

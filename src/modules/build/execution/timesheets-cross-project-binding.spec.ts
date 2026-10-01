@@ -110,14 +110,12 @@ function makeService(store: Store) {
   const findTicket = jest.fn(async (args: { where?: unknown }) => {
     const ticket = store.tickets.find((row) => matches(args.where, row));
     if (!ticket) return undefined;
-    const project = store.projects.find((row) => row.id === ticket.projectId);
-    return {
-      projectId: ticket.projectId,
-      project: project
-        ? { managerMembershipId: project.managerMembershipId, id: project.id }
-        : undefined,
-    };
+    return { projectId: ticket.projectId };
   });
+
+  const findProject = jest.fn(async (args: { where?: unknown }) =>
+    store.projects.find((row) => matches(args.where, row)) ?? undefined,
+  );
 
   const insertBuilder = (table: unknown) => ({
     values: (values: Row) => ({
@@ -143,7 +141,7 @@ function makeService(store: Store) {
   );
 
   const db = {
-    query: { tickets: { findFirst: findTicket } },
+    query: { tickets: { findFirst: findTicket }, projects: { findFirst: findProject } },
     select: jest.fn(() => ({
       from: (table: unknown) => ({
         where: async (where: unknown) =>
@@ -164,7 +162,10 @@ function makeService(store: Store) {
   } as unknown as Db;
 
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService;
-  const access = { holds: jest.fn().mockResolvedValue(true) } as unknown as AccessService;
+  const access = {
+    holds: jest.fn().mockResolvedValue(true),
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
+  } as unknown as AccessService;
   const periodService = {
     loadSettings: jest.fn().mockResolvedValue({ workWeekStart: 1 }),
     getOrCreatePeriod: jest.fn().mockResolvedValue(PERIOD_ID),
