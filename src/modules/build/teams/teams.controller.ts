@@ -188,7 +188,7 @@ export class TeamsController {
     @Param("teamId", ParseIntPipe) teamId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.teamProjects.listTeamProjects(u.orgId, teamId);
+    return this.teamProjects.listTeamProjects(u, teamId);
   }
 
   @Post(":teamId/projects")

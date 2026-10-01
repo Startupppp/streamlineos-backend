@@ -1,27 +1,13 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { roadmapItems, tickets } from "../../../../db/schema";
+import { roadmapItems } from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.types";
-import { assertProjectInOrg } from "../project-crud/project-access";
-
-export async function assertTicketInOrg(
-  db: Db,
-  orgId: string,
-  ticketId: number,
-): Promise<void> {
-  const [row] = await db
-    .select({ id: tickets.id })
-    .from(tickets)
-    .where(
-      and(
-        eq(tickets.id, ticketId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!row) throw new NotFoundException("Ticket not found");
-}
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import {
+  assertProjectAccess,
+  decideTicketRead,
+  type TicketReadAccess,
+} from "../project-crud/project-access";
 
 export async function assertRoadmapItemInOrg(
   db: Db,
@@ -42,15 +28,18 @@ export async function assertRoadmapItemInOrg(
   if (!row) throw new NotFoundException("Roadmap item not found");
 }
 
-export async function assertRoadmapTargetsInOrg(
+export async function assertRoadmapTargetsReachable(
   db: Db,
-  orgId: string,
+  access: TicketReadAccess,
+  actor: CurrentUserContext,
   input: { projectId?: number | null; epicTicketId?: number | null },
 ): Promise<void> {
   if (input.projectId !== undefined && input.projectId !== null)
-    await assertProjectInOrg(db, orgId, input.projectId);
-  if (input.epicTicketId !== undefined && input.epicTicketId !== null)
-    await assertTicketInOrg(db, orgId, input.epicTicketId);
+    await assertProjectAccess(db, access, actor, input.projectId);
+  if (input.epicTicketId === undefined || input.epicTicketId === null) return;
+  const epic = await decideTicketRead(db, access, actor, input.epicTicketId, { projectId: null });
+  if (epic.kind === "missing") throw new NotFoundException("Ticket not found");
+  if (epic.kind === "denied") throw new ForbiddenException("Ticket is outside your access scope");
 }
 
 export async function assertLinkedRoadmapItemInOrg(

@@ -535,13 +535,13 @@ export default [
     verdict: "VERIFIED",
     finding: "parent-binding-verified",
     summary:
-      "GET /build/:projectId/webhooks/:webhookId/deliveries. ProjectsWebhooksService.listDeliveries(orgId, projectId, webhookId) opens with assertWebhookOwnership(orgId, projectId, webhookId), whose WHERE binds id=webhookId AND orgId=orgId AND projectId=projectId together and 404s on mismatch, before querying webhookDeliveries filtered by the already-verified webhookId.",
+      "GET /build/:projectId/webhooks/:webhookId/deliveries. ProjectsWebhooksService.listDeliveries(actor, projectId, webhookId) runs assertProjectVisible (404 when the caller does not reach the project) and then assertWebhookOwnership(orgId, projectId, webhookId), whose WHERE binds id=webhookId AND orgId=orgId AND projectId=projectId together and 404s on mismatch, before querying webhookDeliveries filtered by the already-verified webhookId.",
     blastRadius:
       "None: a webhookId belonging to a different project 404s at assertWebhookOwnership before any delivery row is read.",
     evidence: [
       { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 97, anchor: /listDeliveries\(/, note: "handler binds both projectId and webhookId and forwards both" },
-      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 314, anchor: /async listDeliveries\(orgId: string, projectId: number, webhookId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 295, anchor: /async assertWebhookOwnership\(orgId: string, projectId: number, webhookId: number\): Promise<void> \{/, note: "ownership check binds id+orgId+projectId; 404 on mismatch" },
+      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 314, anchor: /async listDeliveries\(actor: CurrentUserContext, projectId: number, webhookId: number\) \{/, note: "signature takes the actor and projectId" },
+      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 252, anchor: /private async assertWebhookOwnership\(/, note: "ownership check binds id+orgId+projectId; 404 on mismatch" },
     ],
   },
   {
@@ -549,12 +549,12 @@ export default [
     verdict: "VERIFIED",
     finding: "parent-binding-verified",
     summary:
-      "POST /build/:projectId/webhooks/:webhookId/test. The controller itself calls `await this.webhooks.assertWebhookOwnership(u.orgId, projectId, webhookId)` (id+orgId+projectId bound, 404 on mismatch) BEFORE calling `this.dispatch.sendTest(u.orgId, projectId, webhookId)`. Belt-and-suspenders: sendTest's own SELECT independently re-binds id=webhookId AND orgId=orgId AND projectId=projectId and returns a no-op failure result if the row is absent.",
+      "POST /build/:projectId/webhooks/:webhookId/test. ProjectsWebhooksService.sendTest(actor, projectId, webhookId) runs assertCanManageProject, then assertWebhookOwnership(orgId, projectId, webhookId) (id+orgId+projectId bound, 404 on mismatch) BEFORE calling `this.dispatch.sendTest(orgId, projectId, webhookId)`. Belt-and-suspenders: sendTest's own SELECT independently re-binds id=webhookId AND orgId=orgId AND projectId=projectId and returns a no-op failure result if the row is absent.",
     blastRadius:
       "None: a webhookId belonging to a different project 404s at the controller-level assertWebhookOwnership call before dispatch.sendTest is even invoked, and sendTest's own query independently re-verifies the same binding.",
     evidence: [
-      { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 111, anchor: /async sendTest\(/, note: "handler binds both projectId and webhookId" },
-      { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 116, anchor: /await this\.webhooks\.assertWebhookOwnership\(u\.orgId, projectId, webhookId\);/, note: "controller-level ownership check runs before dispatch.sendTest" },
+      { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 112, anchor: /return this\.webhooks\.sendTest\(u, projectId, webhookId\);/, note: "handler binds both projectId and webhookId and forwards the actor" },
+      { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 279, anchor: /await this\.assertWebhookOwnership\(actor\.orgId, projectId, webhookId\);/, note: "ownership check runs after the manage decision and before dispatch.sendTest" },
       { file: "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts", line: 133, anchor: /async sendTest\(/, note: "signature" },
     ],
   },

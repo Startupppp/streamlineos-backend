@@ -3,6 +3,25 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
 import { listWebhooksQuerySchema } from "../dto/webhook.schemas";
+import { AccessService } from "../../../access/access.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
+
+const ACTOR: CurrentUserContext = {
+  userId: "user-1",
+  orgId: "org-1",
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
+};
 
 const endpointStub = { deliveryStats: jest.fn().mockResolvedValue(new Map()) } as unknown as WebhookEndpointService;
 
@@ -107,10 +126,10 @@ describe("ProjectsWebhooksService.listWebhooks — from/to narrows results", () 
     let capturedWhere: unknown;
     const db = makeDb((c) => { capturedWhere = c; });
     const module = await Test.createTestingModule({
-      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }, { provide: WebhookEndpointService, useValue: endpointStub }],
+      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }, { provide: WebhookEndpointService, useValue: endpointStub }, { provide: AccessService, useValue: {} }, { provide: ProjectsWebhooksDispatchService, useValue: {} }],
     }).compile();
     const from = new Date("2026-06-01T00:00:00.000Z");
-    await module.get(ProjectsWebhooksService).listWebhooks("org-1", 1, { from });
+    await module.get(ProjectsWebhooksService).listWebhooks(ACTOR, 1, { from });
     const values = sqlValues(capturedWhere);
     expect(values).toContainEqual(from);
     await module.close();
@@ -120,10 +139,10 @@ describe("ProjectsWebhooksService.listWebhooks — from/to narrows results", () 
     let capturedWhere: unknown;
     const db = makeDb((c) => { capturedWhere = c; });
     const module = await Test.createTestingModule({
-      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }, { provide: WebhookEndpointService, useValue: endpointStub }],
+      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }, { provide: WebhookEndpointService, useValue: endpointStub }, { provide: AccessService, useValue: {} }, { provide: ProjectsWebhooksDispatchService, useValue: {} }],
     }).compile();
     const to = new Date("2026-12-31T00:00:00.000Z");
-    await module.get(ProjectsWebhooksService).listWebhooks("org-1", 1, { to });
+    await module.get(ProjectsWebhooksService).listWebhooks(ACTOR, 1, { to });
     const values = sqlValues(capturedWhere);
     expect(values).toContainEqual(to);
     await module.close();
@@ -133,9 +152,9 @@ describe("ProjectsWebhooksService.listWebhooks — from/to narrows results", () 
     let capturedWhere: unknown;
     const db = makeDb((c) => { capturedWhere = c; });
     const module = await Test.createTestingModule({
-      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }, { provide: WebhookEndpointService, useValue: endpointStub }],
+      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }, { provide: WebhookEndpointService, useValue: endpointStub }, { provide: AccessService, useValue: {} }, { provide: ProjectsWebhooksDispatchService, useValue: {} }],
     }).compile();
-    await module.get(ProjectsWebhooksService).listWebhooks("org-1", 1, {
+    await module.get(ProjectsWebhooksService).listWebhooks(ACTOR, 1, {
       from: new Date("2026-06-01T00:00:00.000Z"),
       to: new Date("2026-06-30T00:00:00.000Z"),
     });
@@ -149,10 +168,10 @@ describe("ProjectsWebhooksService.listWebhooks — from/to narrows results", () 
     let capturedWhere: unknown;
     const db = makeDb((c) => { capturedWhere = c; });
     const module = await Test.createTestingModule({
-      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }, { provide: WebhookEndpointService, useValue: endpointStub }],
+      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }, { provide: WebhookEndpointService, useValue: endpointStub }, { provide: AccessService, useValue: {} }, { provide: ProjectsWebhooksDispatchService, useValue: {} }],
     }).compile();
     const sentinelDate = new Date("2026-06-01T00:00:00.000Z");
-    await module.get(ProjectsWebhooksService).listWebhooks("org-1", 1, {});
+    await module.get(ProjectsWebhooksService).listWebhooks(ACTOR, 1, {});
     const values = sqlValues(capturedWhere);
     expect(values).not.toContainEqual(sentinelDate);
     await module.close();

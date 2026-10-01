@@ -17,6 +17,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { assertTicketReadAccess } from "../core";
+import { resolveTicketVisibility } from "../core/project-crud/project-access";
 
 @Injectable()
 export class CommentDraftsService {
@@ -47,7 +48,10 @@ export class CommentDraftsService {
     return eq(commentDrafts.membershipId, membershipId);
   }
 
-  async listMine(orgId: string, membershipId: number | null, _userId: string) {
+  async listMine(actor: CurrentUserContext) {
+    const { orgId } = actor;
+    const ownedByCaller = this.draftOwnerFilter(actingMembershipId(actor.principal));
+    const visible = await resolveTicketVisibility(this.access, actor);
     const rows = await this.db
       .select({
         id: commentDrafts.id,
@@ -82,8 +86,9 @@ export class CommentDraftsService {
       .where(
         and(
           eq(commentDrafts.orgId, orgId),
-          this.draftOwnerFilter(membershipId),
+          ownedByCaller,
           isNull(tickets.deletedAt),
+          visible,
         ),
       )
       .orderBy(commentDrafts.updatedAt)

@@ -464,6 +464,7 @@ const REVIEWED_INLINE = [
     key: "modules/build/execution/iterations.controller.ts#getSprint",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
+    projectRelationshipExempt: "frozen tombstone: SprintsService throws 410 GONE before any read, the sprints table is dropped, so no project-owned row is reachable and a project lookup would only add an existence oracle",
     summary:
       "GET /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any read, so no sprint row is resolved by any key. The route and its @RequirePermission are retained on purpose; only the query body is gone.",
     blastRadius: "None — the handler reads nothing.",
@@ -476,6 +477,7 @@ const REVIEWED_INLINE = [
     key: "modules/build/execution/iterations.controller.ts#updateSprint",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
+    projectRelationshipExempt: "frozen tombstone: SprintsService throws 410 GONE before any read, the sprints table is dropped, so no project-owned row is reachable and a project lookup would only add an existence oracle",
     summary: "PATCH /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any pre-read or UPDATE, so no sprint row is written by any key.",
     blastRadius: "None — the handler writes nothing.",
     evidence: [

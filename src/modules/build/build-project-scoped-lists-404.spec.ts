@@ -1,5 +1,5 @@
 import { GoneException, NotFoundException } from "@nestjs/common";
-import { listReleasesQuerySchema, ProjectsReleasesService, ProjectsWebhooksService } from "./core";
+import { listReleasesQuerySchema, ProjectsReleasesService, ProjectsWebhooksDispatchService, ProjectsWebhooksService } from "./core";
 import { SprintsService } from "./execution/sprints.service";
 import { EpicsService } from "./execution/epics.service";
 import { CyclesService } from "./execution/cycles.service";
@@ -78,18 +78,18 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   const cases: Array<[string, (db: Db) => Promise<unknown>]> = [
     ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess, lifecycleAuditDouble()).listReleases(releasesU, 1, listReleasesQuerySchema.parse({}))],
-    ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db, new WebhookEndpointService(db)).listWebhooks(ATTACKER_ORG, 1)],
+    ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db, new WebhookEndpointService(db), releasesAccess, new ProjectsWebhooksDispatchService(db, new WebhookEndpointService(db))).listWebhooks(releasesU, 1)],
     ["GET /build/:projectId/epics", async (db) => (await epicsService(db, releasesAccess)).listEpics(releasesU, 1)],
     ["GET /build/:projectId/cycles", (db) => new CyclesService(db, releasesAccess).listCycles(releasesU, 1, {})],
     ["GET /build/:projectId/modules", (db) => new ModulesService(db, releasesAccess).listModules(releasesU, 1)],
     [
       "GET /build/:projectId/custom-fields",
-      (db) => new ProjectsCustomFieldsService(db, releasesAccess).listFields(ATTACKER_ORG, 1),
+      (db) => new ProjectsCustomFieldsService(db, releasesAccess).listFields(releasesU, 1),
     ],
     [
       "GET /build/:projectId/analytics",
       (db) =>
-        new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1),
+        new ProjectsAnalyticsService(db, passThroughCache(), releasesAccess).getProjectAnalytics(releasesU, 1),
     ],
   ];
 
@@ -103,7 +103,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   it("GET /build/:projectId/analytics control reaches the raw execute() aggregate past the gate, so a resolved control is not an unreached one", async () => {
     const db = makeDb({ id: 1 });
-    const result = await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1);
+    const result = await new ProjectsAnalyticsService(db, passThroughCache(), releasesAccess).getProjectAnalytics(releasesU, 1);
 
     expect(result.assigneeCompletion).toEqual([
       { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: 3, completed: 1 },
@@ -118,7 +118,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   it("GET /build/:projectId/analytics never reaches execute() for a foreign project, so the 404 is the gate and not a downstream failure", async () => {
     const db = makeDb(undefined);
-    await expect(new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(
+    await expect(new ProjectsAnalyticsService(db, passThroughCache(), releasesAccess).getProjectAnalytics(releasesU, 1)).rejects.toThrow(
       NotFoundException,
     );
 

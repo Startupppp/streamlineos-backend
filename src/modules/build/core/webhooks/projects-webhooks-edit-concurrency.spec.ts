@@ -6,10 +6,28 @@ import { WebhookEndpointService } from "../../../integrations/core/webhook-endpo
 import { TicketVersionConflictException } from "../tickets/ticket-version-conflict.exception";
 import { createWebhookSchema, updateWebhookSchema } from "../dto/webhook.schemas";
 import { projectWebhookSchema } from "../dto/build-core-response.schemas";
+import { AccessService } from "../../../access/access.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
 
 const ORG = "org-1";
 const PROJECT_ID = 7;
 const WEBHOOK_ID = 42;
+const ACTOR: CurrentUserContext = {
+  userId: "user-1",
+  orgId: ORG,
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
+};
 
 function returnedRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -65,6 +83,8 @@ async function webhooksService(
       ProjectsWebhooksService,
       { provide: DRIZZLE, useValue: db as unknown as Record<string, unknown> },
       { provide: WebhookEndpointService, useValue: webhookEndpoint },
+      { provide: AccessService, useValue: {} },
+      { provide: ProjectsWebhooksDispatchService, useValue: {} },
     ],
   }).compile();
   return { service: module.get(ProjectsWebhooksService), module, select, update, set, values, returning, updateReturning };
@@ -74,7 +94,7 @@ describe("webhook update concurrency token", () => {
   it("stale token returns 409 with currentVersion in details and never runs the update", async () => {
     const { service, module, update } = await webhooksService(9);
     const error = await service
-      .updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 3, isActive: false })
+      .updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 3, isActive: false })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(TicketVersionConflictException);
     expect((error as TicketVersionConflictException).getStatus()).toBe(409);
@@ -87,7 +107,7 @@ describe("webhook update concurrency token", () => {
 
   it("matching token does not throw and runs the update query (BE-141 positive pair)", async () => {
     const { service, module, update } = await webhooksService(9, [returnedRow({ version: 10 })]);
-    const result = await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, {
+    const result = await service.updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, {
       version: 9,
       isActive: false,
     });
@@ -99,7 +119,7 @@ describe("webhook update concurrency token", () => {
   it("a row that vanished before the token check is 404, not 409", async () => {
     const { service, module } = await webhooksService(undefined);
     const error = await service
-      .updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 1, isActive: false })
+      .updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 1, isActive: false })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(NotFoundException);
     expect((error as NotFoundException).getStatus()).toBe(404);
@@ -109,7 +129,7 @@ describe("webhook update concurrency token", () => {
   it("a row updated by a racer between the read and the write returns 409, not a silent no-op", async () => {
     const { service, module } = await webhooksService(9, []);
     const error = await service
-      .updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 9, isActive: false })
+      .updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 9, isActive: false })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(TicketVersionConflictException);
     expect((error as TicketVersionConflictException).getResponse()).toMatchObject({
@@ -120,7 +140,7 @@ describe("webhook update concurrency token", () => {
 
   it("writes url and events through the update, so edit no longer needs delete-and-recreate", async () => {
     const { service, module, set } = await webhooksService(2, [returnedRow({ version: 3 })]);
-    await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, {
+    await service.updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, {
       version: 2,
       url: "https://new.example.com/hook",
       events: ["ticket.updated", "ticket.deleted"],
@@ -136,7 +156,7 @@ describe("webhook update concurrency token", () => {
 
   it("does not write a field the caller omitted", async () => {
     const { service, module, set } = await webhooksService(2, [returnedRow({ version: 3 })]);
-    await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 2, isActive: false });
+    await service.updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 2, isActive: false });
     const written = set.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(written).not.toHaveProperty("url");
     expect(written).not.toHaveProperty("events");
@@ -146,7 +166,7 @@ describe("webhook update concurrency token", () => {
 
   it("a body carrying only the token returns the stored row and never builds an empty SET, which Drizzle would throw on", async () => {
     const { service, module, update } = await webhooksService(4, []);
-    const result = await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 4 });
+    const result = await service.updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 4 });
     expect(update).not.toHaveBeenCalled();
     expect(result.version).toBe(4);
     expect(result.hasSecret).toBe(true);
@@ -156,7 +176,7 @@ describe("webhook update concurrency token", () => {
   it("a token-only body on a stale token is still 409, so the empty-patch shortcut cannot skip the conflict check", async () => {
     const { service, module, update } = await webhooksService(9, []);
     const error = await service
-      .updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 4 })
+      .updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 4 })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(TicketVersionConflictException);
     expect((error as TicketVersionConflictException).getStatus()).toBe(409);
@@ -166,7 +186,7 @@ describe("webhook update concurrency token", () => {
 
   it("does not let the caller's token overwrite the stored version column", async () => {
     const { service, module, set } = await webhooksService(2, [returnedRow({ version: 3 })]);
-    await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 2, isActive: false });
+    await service.updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 2, isActive: false });
     expect(set.mock.calls[0]?.[0]).not.toHaveProperty("version");
     await module.close();
   });
@@ -215,7 +235,7 @@ describe("webhook update validation cannot drift from create", () => {
 describe("webhook secret age is expressible without exposing the secret", () => {
   it("stamps secret_set_at when create mints the secret", async () => {
     const { service, module, values } = await webhooksService(1);
-    await service.createWebhook(ORG, PROJECT_ID, "user-1", {
+    await service.createWebhook(ACTOR, PROJECT_ID, {
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
@@ -226,7 +246,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
 
   it("asks the database for hasSecret and secretSetAt but never for the secret column on create", async () => {
     const { service, module, returning } = await webhooksService(1);
-    await service.createWebhook(ORG, PROJECT_ID, "user-1", {
+    await service.createWebhook(ACTOR, PROJECT_ID, {
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
@@ -238,7 +258,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
 
   it("asks the database for hasSecret and secretSetAt but never for the secret column on update", async () => {
     const { service, module, updateReturning } = await webhooksService(2, [returnedRow({ version: 3 })]);
-    await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 2, isActive: false });
+    await service.updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 2, isActive: false });
     const projection = Object.keys(updateReturning.mock.calls[0]?.[0] as Record<string, unknown>);
     expect(projection).toEqual(expect.arrayContaining(["hasSecret", "secretSetAt", "version", "updatedAt"]));
     expect(projection).not.toContain("secret");
@@ -247,7 +267,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
 
   it("never asks for the secret column on the pre-update read that the token-only shortcut returns", async () => {
     const { service, module, select } = await webhooksService(4, []);
-    await service.updateWebhook(ORG, PROJECT_ID, WEBHOOK_ID, { version: 4 });
+    await service.updateWebhook(ACTOR, PROJECT_ID, WEBHOOK_ID, { version: 4 });
     const projection = Object.keys(select.mock.calls[0]?.[0] as Record<string, unknown>);
     expect(projection).toEqual(expect.arrayContaining(["hasSecret", "secretSetAt", "version"]));
     expect(projection).not.toContain("secret");
@@ -256,7 +276,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
 
   it("derives hasSecret from an integrations_endpoint_id IS NOT NULL predicate rather than a stored flag", async () => {
     const { service, module, returning } = await webhooksService(1);
-    await service.createWebhook(ORG, PROJECT_ID, "user-1", {
+    await service.createWebhook(ACTOR, PROJECT_ID, {
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
@@ -329,12 +349,14 @@ describe("webhook secret age is expressible without exposing the secret", () => 
           provide: WebhookEndpointService,
           useValue: { deliveryStats: jest.fn().mockResolvedValue(new Map()) },
         },
+        { provide: AccessService, useValue: {} },
+        { provide: ProjectsWebhooksDispatchService, useValue: {} },
       ],
     }).compile();
-    await module.get(ProjectsWebhooksService).listWebhooks(ORG, PROJECT_ID);
+    await module.get(ProjectsWebhooksService).listWebhooks(ACTOR, PROJECT_ID);
 
     const write = await webhooksService(1);
-    await write.service.createWebhook(ORG, PROJECT_ID, "user-1", {
+    await write.service.createWebhook(ACTOR, PROJECT_ID, {
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });

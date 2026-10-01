@@ -82,7 +82,7 @@ export class ProjectsRoadmapController {
     @Query() query: RoadmapListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.listRoadmapWithPrioritization(u.orgId, query);
+    return this.roadmap.listRoadmapWithPrioritization(u, query);
   }
 
   @Get("roadmap/:itemId/signals")
@@ -93,7 +93,7 @@ export class ProjectsRoadmapController {
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.getRoadmapSignals(u.orgId, itemId);
+    return this.roadmap.getRoadmapSignals(u, itemId);
   }
 
   @Post("roadmap")
@@ -105,7 +105,7 @@ export class ProjectsRoadmapController {
     @Body() body: CreateRoadmapInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.createRoadmap(u.orgId, u.userId, body);
+    return this.roadmap.createRoadmap(u, body);
   }
 
   @Patch("roadmap/:itemId")
@@ -117,7 +117,7 @@ export class ProjectsRoadmapController {
     @Body() body: UpdateRoadmapInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.updateRoadmap(u.orgId, itemId, body);
+    return this.roadmap.updateRoadmap(u, itemId, body);
   }
 
   @Delete("roadmap/:itemId")

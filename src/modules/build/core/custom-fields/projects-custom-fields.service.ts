@@ -7,7 +7,11 @@ import { ticketCustomFieldValues } from "../../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "../dto/custom-fields.schemas";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
-import { assertProjectInOrg, assertTicketWriteAccess } from "../project-crud/project-access";
+import {
+  assertCanManageProject,
+  assertProjectVisible,
+  assertTicketWriteAccess,
+} from "../project-crud/project-access";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
@@ -75,8 +79,9 @@ export class ProjectsCustomFieldsService {
     };
   }
 
-  async listFields(orgId: string, projectId: number) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async listFields(actor: CurrentUserContext, projectId: number) {
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const rows = await this.db
       .select()
       .from(customFieldDefinitions)
@@ -91,8 +96,9 @@ export class ProjectsCustomFieldsService {
     return rows.map((r) => this.toBuildField(r));
   }
 
-  async createField(orgId: string, projectId: number, data: CreateCustomFieldInput) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async createField(actor: CurrentUserContext, projectId: number, data: CreateCustomFieldInput) {
+    await assertCanManageProject(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const [field] = await this.db
       .insert(customFieldDefinitions)
       .values({
@@ -120,8 +126,9 @@ export class ProjectsCustomFieldsService {
     return this.toBuildField(field);
   }
 
-  async updateField(orgId: string, projectId: number, fieldId: number, data: UpdateCustomFieldInput) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async updateField(actor: CurrentUserContext, projectId: number, fieldId: number, data: UpdateCustomFieldInput) {
+    await assertCanManageProject(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const [updated] = await this.db
       .update(customFieldDefinitions)
       .set({
@@ -154,8 +161,9 @@ export class ProjectsCustomFieldsService {
     return this.toBuildField(updated);
   }
 
-  async deleteField(orgId: string, projectId: number, fieldId: number) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async deleteField(actor: CurrentUserContext, projectId: number, fieldId: number) {
+    await assertCanManageProject(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const [deleted] = await this.db
       .delete(customFieldDefinitions)
       .where(

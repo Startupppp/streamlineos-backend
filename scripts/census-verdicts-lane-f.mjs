@@ -8,7 +8,7 @@ export default [
     blastRadius:
       "None: there is no read-then-write window in which the projectId predicate is dropped, and a version conflict re-reads under the same tenantMatch so it cannot leak a foreign row's version.",
     evidence: [
-      { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 77, anchor: /return this\.webhooks\.updateWebhook\(u\.orgId, projectId, webhookId, body\);/, note: "the controller supplies the tenant from the authenticated actor" },
+      { file: "src/modules/build/core/webhooks/projects-webhooks.controller.ts", line: 77, anchor: /return this\.webhooks\.updateWebhook\(u, projectId, webhookId, body\);/, note: "the controller supplies the tenant from the authenticated actor" },
       { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 206, anchor: /const tenantMatch = and\(/, note: "one conjunction is reused by every statement in the method" },
       { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 208, anchor: /eq\(projectWebhooks\.orgId, orgId\),/, note: "the tenant is a predicate, not a written value" },
       { file: "src/modules/build/core/webhooks/projects-webhooks.service.ts", line: 209, anchor: /eq\(projectWebhooks\.projectId, projectId\),/, note: "the URL project is bound in the same conjunction" },

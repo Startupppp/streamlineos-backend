@@ -1,3 +1,4 @@
+import { orgWideRoadmapAccess, roadmapActor } from "./__tests__/roadmap-access-double";
 import { NotFoundException } from "@nestjs/common";
 import { SQL } from "drizzle-orm";
 import { feedbackPosts } from "../../../../db/schema";
@@ -73,7 +74,7 @@ function makeRoadmapService(rows: unknown[], tierRows: unknown[]) {
     insert: jest.fn(),
     update: jest.fn(),
   } as unknown as Db;
-  return { service: new ProjectsRoadmapService(db, lifecycleAuditDouble()), select };
+  return { service: new ProjectsRoadmapService(db, lifecycleAuditDouble(), orgWideRoadmapAccess()), select };
 }
 
 function listRow(id: number, scored: boolean) {
@@ -208,13 +209,13 @@ describe("listRoadmapWithPrioritization — a page of items costs one tier query
       [listRow(1, true), listRow(2, true), listRow(3, true)],
       [{ itemId: 1, linkedFeedbackCount: 2, linkedAccountCount: 2, topTierRank: 3 }],
     );
-    await service.listRoadmapWithPrioritization(ORG, { limit: 50 });
+    await service.listRoadmapWithPrioritization(roadmapActor(ORG), { limit: 50 });
     expect(select).toHaveBeenCalledTimes(1);
   });
 
   it("returns the plain RICE score and declares no_linked_feedback for an item nothing links to", async () => {
     const { service } = makeRoadmapService([listRow(2, true)], []);
-    const page = await service.listRoadmapWithPrioritization(ORG, { limit: 50 });
+    const page = await service.listRoadmapWithPrioritization(roadmapActor(ORG), { limit: 50 });
     expect(page.data[0].prioritization.score).toBe(100);
     expect(page.data[0].tierWeighting).toMatchObject({
       tierWeighted: false,
@@ -228,7 +229,7 @@ describe("listRoadmapWithPrioritization — a page of items costs one tier query
       [listRow(1, true)],
       [{ itemId: 1, linkedFeedbackCount: 3, linkedAccountCount: 2, topTierRank: 3 }],
     );
-    const page = await service.listRoadmapWithPrioritization(ORG, { limit: 50 });
+    const page = await service.listRoadmapWithPrioritization(roadmapActor(ORG), { limit: 50 });
     expect(page.data[0].tierWeighting).toMatchObject({
       tierWeighted: true,
       tier: "enterprise",

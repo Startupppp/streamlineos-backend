@@ -1,4 +1,4 @@
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 import { feedbackPosts, projectStatuses, tickets } from "../../../../db/schema";
 import type { Db, TenantTx } from "../../../../db/drizzle.types";
 
@@ -55,6 +55,7 @@ export async function loadRoadmapDeliveryProgress(
   db: Db | TenantTx,
   orgId: string,
   link: RoadmapDeliveryLink,
+  visible: SQL,
 ): Promise<RoadmapDeliveryProgress> {
   const epicTicketId = link.epicTicketId ?? null;
   const projectId = link.projectId ?? null;
@@ -107,7 +108,7 @@ export async function loadRoadmapDeliveryProgress(
         eq(projectStatuses.name, tickets.status),
       ),
     )
-    .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), linkPredicate));
+    .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), linkPredicate, visible));
 
   if (!row) return empty;
 

@@ -1,6 +1,22 @@
 import type { Db } from "../../../../db/drizzle.types";
-import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { CacheService } from "../../../../common/cache/cache.service";
+import { analyticsService } from "./__tests__/analytics-service-double";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectAggregateAccess: jest.fn().mockResolvedValue(undefined),
+}));
+
+const ANALYTICS_ACTOR = (orgId: string): CurrentUserContext => ({
+  userId: "user-1",
+  orgId,
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
+});
 
 function passThroughCache() {
   return {
@@ -54,7 +70,7 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
   it("decodes cycleVelocity completedPoints to a number, because SUM over the integer points column arrives from postgres-js as a bigint string and the frontend contract types it z.number()", async () => {
     const { db, selections } = captureSelections();
 
-    await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);
+    await (await analyticsService(db, passThroughCache())).getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 1);
 
     const fields = fieldsNamed(selections, "completedPoints");
     expect(fields.length).toBeGreaterThan(0);
@@ -64,7 +80,7 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
   it("decodes estimateVsActual actual to a number, because SUM over the decimal hours column arrives as a numeric string and fractional hours must survive", async () => {
     const { db, selections } = captureSelections();
 
-    await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);
+    await (await analyticsService(db, passThroughCache())).getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 1);
 
     const fields = fieldsNamed(selections, "actual");
     expect(fields.length).toBeGreaterThan(0);
@@ -75,7 +91,7 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
     const { db, selections } = captureSelections();
     (db.execute as jest.Mock).mockResolvedValueOnce([{ total: "2", healthy: "1", atRisk: "1", critical: "0", avgScore: "55" }]);
 
-    await expect(new ProjectsAnalyticsService(db, passThroughCache()).getOrgProjectHealthSummary("org-1")).resolves.toEqual({
+    await expect((await analyticsService(db, passThroughCache())).getOrgProjectHealthSummary("org-1")).resolves.toEqual({
       total: 2,
       healthy: 1,
       atRisk: 1,
@@ -93,7 +109,7 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
   it("returns NOT_STARTED health when a project has no tickets so an empty project is never flagged AT_RISK (BUG-003)", async () => {
     const { db } = captureSelections();
 
-    const result = await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);
+    const result = await (await analyticsService(db, passThroughCache())).getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 1);
 
     expect(result.healthStatus).toBe("NOT_STARTED");
     expect(result.healthScore).toBe(100);
@@ -102,7 +118,7 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
   it("healthBreakdown includes openTickets so the project overview reads the open count from one definition, excluding Done (BUG-036)", async () => {
     const { db } = captureSelections();
 
-    const result = await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);
+    const result = await (await analyticsService(db, passThroughCache())).getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 1);
 
     expect(result.healthBreakdown).toBeDefined();
     expect(result.healthBreakdown).toHaveProperty("openTickets");

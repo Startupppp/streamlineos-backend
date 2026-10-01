@@ -224,8 +224,8 @@ describe("Build project analytics read the points column", () => {
       completedPoints: [{ cycleId: CYCLE, cycleName: "C1", completedPoints: 13 }],
     });
 
-    const result = await new ProjectsAnalyticsService(built.db, passThroughCache()).getProjectAnalytics(
-      ORG,
+    const result = await new ProjectsAnalyticsService(built.db, passThroughCache(), unrestrictedAccess()).getProjectAnalytics(
+      owner,
       PROJECT,
     );
 
@@ -243,6 +243,7 @@ describe("Build project analytics read the points column", () => {
     const summary = await new ProjectsAnalyticsService(
       built.db,
       passThroughCache(),
+      unrestrictedAccess(),
     ).getOrgProjectHealthSummary(ORG);
 
     const statement = built.executed[0];

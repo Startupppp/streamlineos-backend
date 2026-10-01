@@ -10,6 +10,7 @@ import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertCanManageProject } from "../core";
+import { resolveProjectReach } from "../core/project-crud/project-access";
 
 @Injectable()
 export class TeamProjectsService {
@@ -20,8 +21,11 @@ export class TeamProjectsService {
     private readonly access: AccessService,
   ) {}
 
-  async listTeamProjects(orgId: string, teamId: number) {
+  async listTeamProjects(actor: CurrentUserContext, teamId: number) {
+    const { orgId } = actor;
     await this.teams.loadTeam(orgId, teamId);
+    const reach = await resolveProjectReach(this.access, actor);
+    if (reach.empty) return [];
     return this.db
       .select({
         id: projects.id,
@@ -36,7 +40,9 @@ export class TeamProjectsService {
         and(
           eq(projectTeamAssignments.teamId, teamId),
           eq(projectTeamAssignments.orgId, orgId),
+          eq(projects.orgId, orgId),
           isNull(projects.deletedAt),
+          reach.where,
         ),
       )
       .orderBy(desc(projectTeamAssignments.addedAt))

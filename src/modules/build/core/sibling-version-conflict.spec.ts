@@ -1,3 +1,4 @@
+import { AuditService } from "../../../common/audit/audit.service";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { TicketVersionConflictException } from "./tickets/ticket-version-conflict.exception";
@@ -98,6 +99,8 @@ async function roadmapService(itemRow: Record<string, unknown> | undefined, upda
     providers: [
       ProjectsRoadmapService,
       { provide: DRIZZLE, useValue: db },
+      { provide: AccessService, useValue: accessWithBuildManage },
+      { provide: AuditService, useValue: { log: jest.fn() } },
     ],
   }).compile();
   return { service: module.get(ProjectsRoadmapService), module, update };
@@ -139,7 +142,7 @@ it("release matching token does not throw TicketVersionConflictException and run
 
 it("roadmap stale token returns 409 with currentVersion in details (ticket-13)", async () => {
   const { service, module } = await roadmapService({ version: 9 });
-  const error = await service.updateRoadmap("org-1", 50, { version: 3, title: "Feature X" }).catch((e: unknown) => e);
+  const error = await service.updateRoadmap(actor, 50, { version: 3, title: "Feature X" }).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(TicketVersionConflictException);
   expect((error as TicketVersionConflictException).getResponse()).toMatchObject({ details: { currentVersion: 9 } });
   await module.close();
@@ -148,7 +151,7 @@ it("roadmap stale token returns 409 with currentVersion in details (ticket-13)",
 it("roadmap matching token does not throw TicketVersionConflictException and runs the update query (BE-141 positive pair)", async () => {
   const itemRow = { id: 50, orgId: "org-1", title: "Feature X", description: null, status: "planned", category: null, isPublic: true, projectId: null, epicTicketId: null, targetQuarter: null, sortOrder: 0, votes: 0, reach: null, impact: null, confidence: null, effort: null, version: 10, createdBy: null, createdAt: new Date(), updatedAt: new Date(), deletedAt: null };
   const { service, module, update } = await roadmapService({ version: 9 }, [itemRow]);
-  const error = await service.updateRoadmap("org-1", 50, { version: 9, title: "Feature X" }).catch((e: unknown) => e);
+  const error = await service.updateRoadmap(actor, 50, { version: 9, title: "Feature X" }).catch((e: unknown) => e);
   expect(error).not.toBeInstanceOf(TicketVersionConflictException);
   expect(update).toHaveBeenCalled();
   await module.close();

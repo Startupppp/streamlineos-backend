@@ -1,3 +1,4 @@
+import { orgWideRoadmapAccess } from "../core/roadmap/__tests__/roadmap-access-double";
 import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
@@ -93,7 +94,7 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
   it("deleteRoadmap audits build.roadmap_item.deleted", async () => {
     const written = updateDouble([{ id: 9 }]);
     const { audit, log } = auditDouble();
-    const svc = new ProjectsRoadmapService(makeDb({}, written), audit);
+    const svc = new ProjectsRoadmapService(makeDb({}, written), audit, orgWideRoadmapAccess());
     await expect(svc.deleteRoadmap(ORG, USER, 9)).resolves.toEqual({ success: true });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: "build.roadmap_item.deleted", userId: USER, orgId: ORG, resourceId: "9" }),
@@ -201,7 +202,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
   it("restoreRoadmap clears deletedAt and audits build.roadmap_item.restored", async () => {
     const written = updateDouble([{ id: 9 }]);
     const { audit, log } = auditDouble();
-    const svc = new ProjectsRoadmapService(makeDb({ roadmapItems: DELETED }, written), audit);
+    const svc = new ProjectsRoadmapService(makeDb({ roadmapItems: DELETED }, written), audit, orgWideRoadmapAccess());
     await expect(svc.restoreRoadmap(ORG, USER, 9)).resolves.toEqual({ success: true });
     expect(written.set).toHaveBeenCalledWith({ deletedAt: null });
     expect(log).toHaveBeenCalledWith(
@@ -212,7 +213,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
   it("restoreRoadmap refuses a live roadmap item with 409 and writes nothing", async () => {
     const written = updateDouble([{ id: 9 }]);
     const { audit, log } = auditDouble();
-    const svc = new ProjectsRoadmapService(makeDb({ roadmapItems: LIVE }, written), audit);
+    const svc = new ProjectsRoadmapService(makeDb({ roadmapItems: LIVE }, written), audit, orgWideRoadmapAccess());
     await expect(svc.restoreRoadmap(ORG, USER, 9)).rejects.toThrow(ConflictException);
     expect(written.update).not.toHaveBeenCalled();
     expect(log).not.toHaveBeenCalled();

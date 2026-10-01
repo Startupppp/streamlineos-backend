@@ -49,6 +49,11 @@ export class MeetingsService {
     private readonly audit: AuditService,
   ) {}
 
+  private async authorizeMeetingWrite(u: CurrentUserContext, projectId: number, meetingId: number) {
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
+    return this.loadMeeting(u.orgId, projectId, meetingId);
+  }
+
   private async loadMeeting(orgId: string, projectId: number, meetingId: number) {
     const row = await this.db.query.projectMeetings.findFirst({
       where: and(
@@ -323,14 +328,9 @@ export class MeetingsService {
     return meeting;
   }
 
-  async updateMeeting(
-    orgId: string,
-    userId: string,
-    projectId: number,
-    meetingId: number,
-    input: UpdateMeetingInput,
-  ) {
-    await this.loadMeeting(orgId, projectId, meetingId);
+  async updateMeeting(u: CurrentUserContext, projectId: number, meetingId: number, input: UpdateMeetingInput) {
+    await this.authorizeMeetingWrite(u, projectId, meetingId);
+    const { orgId, userId } = u;
     const patch: MeetingPatch = {};
     if (input.title !== undefined) patch.title = input.title;
     if (input.type !== undefined) patch.type = input.type;
@@ -360,8 +360,9 @@ export class MeetingsService {
     return updated;
   }
 
-  async deleteMeeting(orgId: string, userId: string, projectId: number, meetingId: number) {
-    await this.loadMeeting(orgId, projectId, meetingId);
+  async deleteMeeting(u: CurrentUserContext, projectId: number, meetingId: number) {
+    await this.authorizeMeetingWrite(u, projectId, meetingId);
+    const { orgId, userId } = u;
     await this.db
       .update(projectMeetings)
       .set({ deletedAt: new Date() })
@@ -376,8 +377,9 @@ export class MeetingsService {
     });
   }
 
-  async addAttendee(orgId: string, userId: string, projectId: number, meetingId: number, input: AddAttendeeInput) {
-    await this.loadMeeting(orgId, projectId, meetingId);
+  async addAttendee(u: CurrentUserContext, projectId: number, meetingId: number, input: AddAttendeeInput) {
+    await this.authorizeMeetingWrite(u, projectId, meetingId);
+    const { orgId } = u;
     const [member] = await this.db
       .select({ id: projectMembers.id, membershipId: projectMembers.membershipId })
       .from(projectMembers)
@@ -395,8 +397,9 @@ export class MeetingsService {
     return { meetingId, userId: input.userId };
   }
 
-  async removeAttendee(orgId: string, userId: string, projectId: number, meetingId: number, attendeeUserId: string) {
-    await this.loadMeeting(orgId, projectId, meetingId);
+  async removeAttendee(u: CurrentUserContext, projectId: number, meetingId: number, attendeeUserId: string) {
+    await this.authorizeMeetingWrite(u, projectId, meetingId);
+    const { orgId } = u;
     await this.db
       .delete(meetingAttendees)
       .where(
@@ -408,8 +411,9 @@ export class MeetingsService {
       );
   }
 
-  async upsertStandup(orgId: string, userId: string, projectId: number, meetingId: number, input: UpsertStandupInput) {
-    await this.loadMeeting(orgId, projectId, meetingId);
+  async upsertStandup(u: CurrentUserContext, projectId: number, meetingId: number, input: UpsertStandupInput) {
+    await this.authorizeMeetingWrite(u, projectId, meetingId);
+    const { orgId, userId } = u;
     const [entry] = await this.db
       .insert(meetingStandupEntries)
       .values({

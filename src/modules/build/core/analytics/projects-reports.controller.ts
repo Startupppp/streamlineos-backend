@@ -60,13 +60,12 @@ export class ProjectsReportsController {
   @RequirePermission("build:view")
   @ResponseSchema(analyticsSchema)
   @Validate({ params: projectIdParams, query: projectAnalyticsQuerySchema })
-  async getAnalytics(
+  getAnalytics(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query() query: ProjectAnalyticsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.reports.authorizeProject(u, projectId);
-    return this.analytics.getProjectAnalytics(u.orgId, projectId, query);
+    return this.analytics.getProjectAnalytics(u, projectId, query);
   }
 
   @Get(":projectId/reports/burnup")
