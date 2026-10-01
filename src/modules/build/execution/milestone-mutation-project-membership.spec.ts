@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -59,9 +59,9 @@ const mutations: readonly [string, (svc: MilestonesService) => Promise<unknown>]
 ];
 
 describe("milestone mutations require membership of the URL project, like listing them does", () => {
-  it.each(mutations)("%s conceals the project from a same-org non-member as 404 and writes nothing", async (_name, run) => {
+  it.each(mutations)("%s refuses a same-org non-member with 403 and writes nothing", async (_name, run) => {
     const { db, update } = makeDb(false);
-    await expect(run(service(db))).rejects.toThrow(NotFoundException);
+    await expect(run(service(db))).rejects.toThrow(ForbiddenException);
     expect(update).not.toHaveBeenCalled();
   });
 

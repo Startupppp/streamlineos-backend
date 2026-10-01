@@ -9,7 +9,7 @@ import { systemActor } from "../../../common/auth/system-actor";
 
 jest.mock("./project-crud/project-access", () => ({
   ...jest.requireActual("./project-crud/project-access"),
-  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
 }));
 
 const actor = systemActor("integrations.git.webhook", "org-1");
