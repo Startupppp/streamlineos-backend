@@ -82,10 +82,11 @@ export class TimesheetPeriodsController {
    * first was declared, so `PermissionGuard` refused the other two before any
    * scope logic ran and an approver opened an empty sheet.
    *
-   * Row visibility is unchanged and still belongs to the service:
-   * `resolveEntriesScope` and the `periodInScope` probe decide which period this
-   * caller may actually read, so admission here widens who may ask, never what
-   * the answer contains.
+   * Row visibility belongs to the service, which answers each standing with the
+   * predicate that listed the period in the first place: `resolveEntriesScope`
+   * with the `periodInScope` probe for own and team, and `approvalQueueScope`
+   * for an approver. Admission here widens who may ask, never what the answer
+   * contains.
    */
   @Get(":periodId")
   @RequirePermission("timesheets:entries:view", "timesheets:team:view", "timesheets:approvals:view")
