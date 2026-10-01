@@ -89,6 +89,7 @@ export const ticketDetailSchema = ticketRowSchema.extend({
       id: z.number().int(),
       filename: z.string(),
       url: z.string(),
+      mimeType: z.string().nullable(),
       uploader: userSummarySchema,
     }),
   ),

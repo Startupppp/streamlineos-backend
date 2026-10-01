@@ -1,15 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import {
   changeRequests,
   portalMemberships,
   projectClientGrants,
-  projectMilestones,
   projects,
-  ticketAttachments,
-  ticketComments,
-  tickets,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -20,6 +15,15 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import type { CreatePortalCrInput } from "./dto/client-portal.schemas";
 import { assertProjectAccess } from "../core";
 import { nextChangeRequestNumber } from "./change-request-number-counter";
+import { buildPortalProjection } from "./portal-projection";
+import type { PortalCapabilities } from "./portal-projection";
+
+const INACTIVE_CAPABILITIES: PortalCapabilities = {
+  canViewMilestones: false,
+  canViewTasks: false,
+  canViewAttachments: false,
+  canViewComments: false,
+};
 
 @Injectable()
 export class ClientPortalService {
@@ -125,6 +129,29 @@ export class ClientPortalService {
       .limit(100);
   }
 
+  private async resolveActiveGrant(orgId: string, projectId: number) {
+    const now = new Date();
+    const [grantRow] = await this.db
+      .select({
+        canViewMilestones: projectClientGrants.canViewMilestones,
+        canViewTasks: projectClientGrants.canViewTasks,
+        canViewAttachments: projectClientGrants.canViewAttachments,
+        canViewComments: projectClientGrants.canViewComments,
+      })
+      .from(projectClientGrants)
+      .where(
+        and(
+          eq(projectClientGrants.organizationId, orgId),
+          eq(projectClientGrants.projectId, projectId),
+          eq(projectClientGrants.status, "ACTIVE"),
+          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
+        ),
+      )
+      .orderBy(desc(projectClientGrants.createdAt))
+      .limit(1);
+    return grantRow ?? null;
+  }
+
   async getProjectOverview(u: CurrentUserContext, projectId: number) {
     await assertProjectAccess(this.db, this.access, u, projectId);
 
@@ -142,134 +169,9 @@ export class ClientPortalService {
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
 
-    const now = new Date();
-    const [grantRow] = await this.db
-      .select({
-        canViewMilestones: projectClientGrants.canViewMilestones,
-        canViewTasks: projectClientGrants.canViewTasks,
-        canViewAttachments: projectClientGrants.canViewAttachments,
-        canViewComments: projectClientGrants.canViewComments,
-      })
-      .from(projectClientGrants)
-      .where(
-        and(
-          eq(projectClientGrants.organizationId, u.orgId),
-          eq(projectClientGrants.projectId, projectId),
-          eq(projectClientGrants.status, "ACTIVE"),
-          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
-        ),
-      )
-      .orderBy(desc(projectClientGrants.createdAt))
-      .limit(1);
-
-    const capabilities = grantRow ?? {
-      canViewMilestones: false,
-      canViewTasks: false,
-      canViewAttachments: false,
-      canViewComments: false,
-    };
-
-    const [milestones, tasks, attachments, comments] = await Promise.all([
-      capabilities.canViewMilestones
-        ? this.db
-            .select({
-              id: projectMilestones.id,
-              name: projectMilestones.name,
-              dueDate: projectMilestones.targetDate,
-              status: projectMilestones.status,
-            })
-            .from(projectMilestones)
-            .where(
-              and(
-                eq(projectMilestones.orgId, u.orgId),
-                eq(projectMilestones.projectId, projectId),
-                eq(projectMilestones.clientVisible, true),
-                isNull(projectMilestones.deletedAt),
-              ),
-            )
-            .limit(100)
-        : Promise.resolve([]),
-
-      capabilities.canViewTasks
-        ? this.db
-            .select({
-              id: tickets.id,
-              ticketNumber: tickets.ticketNumber,
-              title: tickets.title,
-              status: tickets.status,
-              dueDate: tickets.dueDate,
-            })
-            .from(tickets)
-            .where(
-              and(
-                eq(tickets.orgId, u.orgId),
-                eq(tickets.projectId, projectId),
-                eq(tickets.clientVisible, true),
-                isNull(tickets.deletedAt),
-              ),
-            )
-            .limit(100)
-        : Promise.resolve([]),
-
-      capabilities.canViewAttachments
-        ? this.db
-            .select({
-              id: ticketAttachments.id,
-              filename: ticketAttachments.fileName,
-              url: ticketAttachments.fileUrl,
-            })
-            .from(ticketAttachments)
-            .innerJoin(
-              tickets,
-              and(
-                eq(tickets.id, ticketAttachments.ticketId),
-                eq(tickets.projectId, projectId),
-                eq(tickets.orgId, u.orgId),
-                isNull(tickets.deletedAt),
-                eq(tickets.clientVisible, true),
-              ),
-            )
-            .where(
-              and(
-                eq(ticketAttachments.orgId, u.orgId),
-                eq(ticketAttachments.clientVisible, true),
-              ),
-            )
-            .limit(100)
-        : Promise.resolve([]),
-
-      capabilities.canViewComments
-        ? this.db
-            .select({
-              id: ticketComments.id,
-              body: ticketComments.content,
-              authorName: sql<string>`COALESCE(${users.name}, ${users.email}, 'Unknown')`,
-              createdAt: ticketComments.createdAt,
-            })
-            .from(ticketComments)
-            .innerJoin(
-              tickets,
-              and(
-                eq(tickets.id, ticketComments.ticketId),
-                eq(tickets.projectId, projectId),
-                eq(tickets.orgId, u.orgId),
-                isNull(tickets.deletedAt),
-                eq(tickets.clientVisible, true),
-              ),
-            )
-            .leftJoin(users, eq(users.id, ticketComments.userId))
-            .where(
-              and(
-                eq(ticketComments.orgId, u.orgId),
-                eq(ticketComments.clientVisible, true),
-                isNull(ticketComments.deletedAt),
-              ),
-            )
-            .limit(100)
-        : Promise.resolve([]),
-    ]);
-
-    return { project, milestones, tasks, attachments, comments };
+    const capabilities = (await this.resolveActiveGrant(u.orgId, projectId)) ?? INACTIVE_CAPABILITIES;
+    const data = await buildPortalProjection(this.db, u.orgId, projectId, capabilities);
+    return { project, ...data };
   }
 
   async getPortalPreview(u: CurrentUserContext, projectId: number) {
@@ -289,99 +191,10 @@ export class ClientPortalService {
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
 
-    const [milestones, tasks, attachments, comments] = await Promise.all([
-      this.db
-        .select({
-          id: projectMilestones.id,
-          name: projectMilestones.name,
-          dueDate: projectMilestones.targetDate,
-          status: projectMilestones.status,
-        })
-        .from(projectMilestones)
-        .where(
-          and(
-            eq(projectMilestones.orgId, u.orgId),
-            eq(projectMilestones.projectId, projectId),
-            eq(projectMilestones.clientVisible, true),
-            isNull(projectMilestones.deletedAt),
-          ),
-        )
-        .limit(100),
-
-      this.db
-        .select({
-          id: tickets.id,
-          ticketNumber: tickets.ticketNumber,
-          title: tickets.title,
-          status: tickets.status,
-          dueDate: tickets.dueDate,
-        })
-        .from(tickets)
-        .where(
-          and(
-            eq(tickets.orgId, u.orgId),
-            eq(tickets.projectId, projectId),
-            eq(tickets.clientVisible, true),
-            isNull(tickets.deletedAt),
-          ),
-        )
-        .limit(100),
-
-      this.db
-        .select({
-          id: ticketAttachments.id,
-          filename: ticketAttachments.fileName,
-          url: ticketAttachments.fileUrl,
-        })
-        .from(ticketAttachments)
-        .innerJoin(
-          tickets,
-          and(
-            eq(tickets.id, ticketAttachments.ticketId),
-            eq(tickets.projectId, projectId),
-            eq(tickets.orgId, u.orgId),
-            isNull(tickets.deletedAt),
-            eq(tickets.clientVisible, true),
-          ),
-        )
-        .where(
-          and(
-            eq(ticketAttachments.orgId, u.orgId),
-            eq(ticketAttachments.clientVisible, true),
-          ),
-        )
-        .limit(100),
-
-      this.db
-        .select({
-          id: ticketComments.id,
-          body: ticketComments.content,
-          authorName: sql<string>`COALESCE(${users.name}, ${users.email}, 'Unknown')`,
-          createdAt: ticketComments.createdAt,
-        })
-        .from(ticketComments)
-        .innerJoin(
-          tickets,
-          and(
-            eq(tickets.id, ticketComments.ticketId),
-            eq(tickets.projectId, projectId),
-            eq(tickets.orgId, u.orgId),
-            isNull(tickets.deletedAt),
-            eq(tickets.clientVisible, true),
-          ),
-        )
-        .leftJoin(users, eq(users.id, ticketComments.userId))
-        .where(
-          and(
-            eq(ticketComments.orgId, u.orgId),
-            eq(ticketComments.clientVisible, true),
-            isNull(ticketComments.deletedAt),
-          ),
-        )
-        .limit(100),
-    ]);
-
-    return { project, milestones, tasks, attachments, comments };
+    const grant = await this.resolveActiveGrant(u.orgId, projectId);
+    if (!grant) throw new NotFoundException("No active portal grant for this project");
+    const data = await buildPortalProjection(this.db, u.orgId, projectId, grant);
+    return { project, ...data };
   }
 
   async listPortalChangeRequests(u: CurrentUserContext, projectId: number) {

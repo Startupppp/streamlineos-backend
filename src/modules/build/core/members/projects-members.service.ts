@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -57,7 +56,7 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { ProjectsCustomStatesService } from "../custom-states/projects-custom-states.service";
 import { ProjectsLabelsService } from "../lib/projects-labels.service";
 import { escapeLike } from "../lib/escape-like";
-import { assertProjectAccess, resolveProjectAccess } from "../project-crud/project-access";
+import { assertProjectAccess, assertCanManageProject } from "../project-crud/project-access";
 
 @Injectable()
 export class ProjectsMembersService {
@@ -73,10 +72,7 @@ export class ProjectsMembersService {
     u: CurrentUserContext,
     projectId: number,
   ): Promise<void> {
-    const { hasAccess, role } = await resolveProjectAccess(this.db, this.access, u, projectId);
-    if (!hasAccess) throw new ForbiddenException("You do not have permission to manage this project");
-    if (role === "OWNER" || role === "MANAGER" || role === "ADMIN") return;
-    throw new ForbiddenException("You do not have permission to manage this project");
+    return assertCanManageProject(this.db, this.access, u, projectId);
   }
 
   async listMembers(
@@ -233,7 +229,6 @@ export class ProjectsMembersService {
   ) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.assertCanManageProject(u, projectId);
 
     let actor: OrganizationActor;
@@ -292,7 +287,6 @@ export class ProjectsMembersService {
   async removeMember(projectId: number, userId: string, u: CurrentUserContext) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.assertCanManageProject(u, projectId);
     const targetActor = await assertOrganizationActor(this.db, orgId, {
       kind: "user",
@@ -359,7 +353,6 @@ export class ProjectsMembersService {
   ) {
     const orgId = u.orgId;
     const actorId = u.userId;
-    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.assertCanManageProject(u, projectId);
     const targetActor = await assertOrganizationActor(this.db, orgId, {
       kind: "user",

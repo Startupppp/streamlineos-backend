@@ -290,3 +290,14 @@ export async function assertTicketReadAccess(
   if (!projectAccess.hasAccess || !ticket.allowed)
     throw new ForbiddenException("Ticket is outside your access scope");
 }
+
+export async function assertCanManageProject(
+  db: Db,
+  access: Pick<AccessService, "resolveUserPermissions">,
+  u: CurrentUserContext,
+  projectId: number,
+): Promise<void> {
+  const { hasAccess, role } = await resolveProjectAccess(db, access, u, projectId);
+  if (!hasAccess || (role !== "OWNER" && role !== "MANAGER" && role !== "ADMIN"))
+    throw new ForbiddenException("You do not have permission to manage this project");
+}

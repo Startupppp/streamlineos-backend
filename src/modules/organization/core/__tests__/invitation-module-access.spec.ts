@@ -12,7 +12,7 @@ import { MembershipAdmissionService } from "../membership-admission.service";
 import { InvitationLifecycleService } from "../invitation-lifecycle.service";
 import { InvitationAcceptanceService } from "../invitation-acceptance.service";
 import { InvitationCreateService } from "../invitation-create.service";
-import { inviteUserSchema } from "../../../users/dto/users.schemas";
+import { bulkInviteSchema, inviteUserSchema } from "../../../users/dto/users.schemas";
 import { assertMayAssignRole } from "../../../rbac/assert-role-assignment";
 import { resolveModuleStandingRole } from "../../../rbac/resolve-module-standing-role";
 import { bumpPermissionsVersion } from "../../../../common/rbac/access-invalidate";
@@ -541,5 +541,78 @@ describe("InvitationCreateService.invite() — invite-time authority check", () 
       resolvedRole,
     );
     expect(validated).toEqual([{ moduleKey: "hr", standing: "MEMBER" }]);
+  });
+});
+
+describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)", () => {
+  async function buildService(): Promise<InvitationCreateService> {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        InvitationCreateService,
+        { provide: DRIZZLE, useValue: {} },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: CacheService, useValue: {} },
+        { provide: EmailService, useValue: {} },
+        { provide: PlanLimitsService, useValue: {} },
+        { provide: SeatLedgerService, useValue: {} },
+        { provide: AccessService, useValue: {} },
+        { provide: MembershipAdmissionService, useValue: {} },
+      ],
+    }).compile();
+    return moduleRef.get(InvitationCreateService);
+  }
+
+  function stubRows(service: InvitationCreateService): jest.Mock {
+    const inviteAuthorized = jest.fn().mockResolvedValue({ invitationId: "inv-1" });
+    Object.assign(service, { inviteAuthorized });
+    return inviteAuthorized;
+  }
+
+  it("the schema accepts module standings on a bulk invite, with the single invite's limits", () => {
+    expect(
+      bulkInviteSchema.safeParse({ emails: ["a@b.com"], moduleAccess: [{ moduleKey: "hr", standing: "ADMIN" }] }).success,
+    ).toBe(true);
+    expect(
+      bulkInviteSchema.safeParse({
+        emails: ["a@b.com"],
+        moduleAccess: [{ moduleKey: "hr", standing: "ADMIN" }, { moduleKey: "hr", standing: "MEMBER" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("attaches the validated standings to every row", async () => {
+    const service = await buildService();
+    const inviteAuthorized = stubRows(service);
+    (resolveModuleStandingRole as jest.Mock).mockResolvedValue(resolvedRole);
+    (assertMayAssignRole as jest.Mock).mockResolvedValue(undefined);
+    const access = [{ moduleKey: "hr", standing: "ADMIN" as const }];
+
+    await service.bulkInvite(ORG_ID, actor, ["a@b.com", "c@d.com"], "MEMBER", "enqueue", access);
+
+    expect(inviteAuthorized).toHaveBeenCalledTimes(2);
+    for (const call of inviteAuthorized.mock.calls) expect(call[4]).toEqual(access);
+    expect(assertMayAssignRole).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses the whole batch, creating nothing, when the actor may not grant a standing", async () => {
+    const service = await buildService();
+    const inviteAuthorized = stubRows(service);
+    (resolveModuleStandingRole as jest.Mock).mockResolvedValue(resolvedRole);
+    (assertMayAssignRole as jest.Mock).mockRejectedValue(new ForbiddenException("not allowed"));
+
+    await expect(
+      service.bulkInvite(ORG_ID, actor, ["a@b.com"], "MEMBER", "enqueue", [{ moduleKey: "hr", standing: "ADMIN" }]),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(inviteAuthorized).not.toHaveBeenCalled();
+  });
+
+  it("still sends no standings when none were asked for (positive pair)", async () => {
+    const service = await buildService();
+    const inviteAuthorized = stubRows(service);
+
+    await service.bulkInvite(ORG_ID, actor, ["a@b.com"], "MEMBER");
+
+    expect(inviteAuthorized.mock.calls[0]?.[4]).toEqual([]);
+    expect(resolveModuleStandingRole).not.toHaveBeenCalled();
   });
 });

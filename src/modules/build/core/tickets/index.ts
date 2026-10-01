@@ -16,8 +16,9 @@ export { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 export { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 export { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 export { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
-export { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 export { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
+export { ProjectsTicketWatchersService } from "./projects-ticket-watchers.service";
+export { ProjectsTicketLabelsService } from "./projects-ticket-labels.service";
 export { ProjectsTicketsRestoreService } from "./projects-tickets-restore.service";
 export { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 export { ProjectsTicketLinksService } from "./projects-ticket-links.service";
@@ -28,3 +29,4 @@ export { lockProjectTicketMutation, assertTicketReadAccess, type TicketReadAcces
 export { resolveValidTicketStatuses } from "./ticket-status.util";
 export { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 export { resolveTicketsScope, ticketScope, TICKETS_PERMISSION } from "../lib/tickets-scope";
+export { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";

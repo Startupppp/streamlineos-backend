@@ -55,23 +55,6 @@ export class ProjectsBudgetService {
     private readonly access: AccessService,
   ) {}
 
-  private async loadProjectBudget(
-    u: CurrentUserContext,
-    projectId: number,
-  ): Promise<{
-    id: number;
-    budgetMinor: number | null;
-    budgetCurrency: string | null;
-  }> {
-    await assertProjectAccess(this.db, this.access, u, projectId);
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
-      columns: { id: true, budgetMinor: true, budgetCurrency: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-    return { id: project.id, budgetMinor: project.budgetMinor, budgetCurrency: project.budgetCurrency };
-  }
-
   /**
    * Spent-to-date on a project.
    *
@@ -92,7 +75,12 @@ export class ProjectsBudgetService {
    * now agrees with them.
    */
   async getBudget(u: CurrentUserContext, projectId: number) {
-    const project = await this.loadProjectBudget(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const project = await this.db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
+      columns: { budgetMinor: true, budgetCurrency: true },
+    });
+    if (!project) throw new NotFoundException("Project not found");
     const orgId = u.orgId;
 
     // Voided entries are excluded here as they are on every other money surface
@@ -219,7 +207,7 @@ export class ProjectsBudgetService {
   }
 
   async updateBudget(u: CurrentUserContext, projectId: number, input: UpdateBudgetInput) {
-    await this.loadProjectBudget(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     const [updated] = await this.db
       .update(projects)

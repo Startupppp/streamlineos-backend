@@ -41,19 +41,32 @@ const MINIMAL_PROJECT = {
   targetEndDate: null,
 };
 
+const ALL_CAPS_GRANT = {
+  canViewMilestones: true,
+  canViewTasks: true,
+  canViewAttachments: true,
+  canViewComments: true,
+};
+
 beforeEach(() => {
   jest.resetAllMocks();
   (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
-describe("ClientPortalService.getPortalPreview — all client_visible content shown regardless of grant state", () => {
-  function makePreviewDb(capturedPredicates: Array<{ idx: number; pred: unknown }>) {
+describe("ClientPortalService.getPortalPreview — grant is required; same projection seam as getProjectOverview", () => {
+  function makePreviewDb(
+    capturedPredicates: Array<{ idx: number; pred: unknown }>,
+    grantRow: typeof ALL_CAPS_GRANT | null = ALL_CAPS_GRANT,
+  ) {
     let selectCount = 0;
     const chain = (idx: number) => ({
       where: jest.fn().mockImplementation((pred: unknown) => {
         capturedPredicates.push({ idx, pred });
         return {
           limit: jest.fn().mockResolvedValue(idx === 1 ? [MINIMAL_PROJECT] : []),
+          orderBy: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue(idx === 2 && grantRow !== null ? [grantRow] : []),
+          }),
         };
       }),
       innerJoin: jest.fn().mockReturnValue({
@@ -86,7 +99,7 @@ describe("ClientPortalService.getPortalPreview — all client_visible content sh
     const db = makePreviewDb(predicates);
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await svc.getPortalPreview(makeU("org-1"), 10);
-    const milestoneEntry = predicates.find((e) => e.idx === 2);
+    const milestoneEntry = predicates.find((e) => e.idx === 3);
     expect(milestoneEntry).toBeDefined();
     expect(renderSql(milestoneEntry!.pred)).toContain("client_visible");
   });
@@ -96,7 +109,7 @@ describe("ClientPortalService.getPortalPreview — all client_visible content sh
     const db = makePreviewDb(predicates);
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await svc.getPortalPreview(makeU("org-1"), 10);
-    const taskEntry = predicates.find((e) => e.idx === 3);
+    const taskEntry = predicates.find((e) => e.idx === 4);
     expect(taskEntry).toBeDefined();
     expect(renderSql(taskEntry!.pred)).toContain("client_visible");
   });
@@ -133,15 +146,30 @@ describe("ClientPortalService.getPortalPreview — all client_visible content sh
     await expect(svc.getPortalPreview(makeU("org-1"), 999)).rejects.toThrow(NotFoundException);
   });
 
-  it("NEGATIVE — preview does not look up a grant so it does not fall closed when no grant exists", async () => {
+  it("throws NotFoundException when no active grant exists so preview falls closed without a published portal", async () => {
+    const predicates: Array<{ idx: number; pred: unknown }> = [];
+    const db = makePreviewDb(predicates, null);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
+    await expect(svc.getPortalPreview(makeU("org-1"), 10)).rejects.toThrow(NotFoundException);
+  });
+
+  it("grant predicate includes project_client_grants so preview is gated on an active published portal", async () => {
     const predicates: Array<{ idx: number; pred: unknown }> = [];
     const db = makePreviewDb(predicates);
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
-    const result = await svc.getPortalPreview(makeU("org-1"), 10);
-    const allPredicateSql = predicates.map((e) => renderSql(e.pred)).join(" ");
-    expect(allPredicateSql).not.toContain("project_client_grants");
-    expect(result).toHaveProperty("project");
-    expect(result).toHaveProperty("milestones");
-    expect(result).toHaveProperty("tasks");
+    await svc.getPortalPreview(makeU("org-1"), 10);
+    const grantEntry = predicates.find((e) => e.idx === 2);
+    expect(grantEntry).toBeDefined();
+    expect(renderSql(grantEntry!.pred)).toContain("project_client_grants");
+  });
+
+  it("grant predicate contains expires_at so an expired grant does not constitute a published portal", async () => {
+    const predicates: Array<{ idx: number; pred: unknown }> = [];
+    const db = makePreviewDb(predicates);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
+    await svc.getPortalPreview(makeU("org-1"), 10);
+    const grantEntry = predicates.find((e) => e.idx === 2);
+    expect(grantEntry).toBeDefined();
+    expect(renderSql(grantEntry!.pred)).toContain("expires_at");
   });
 });

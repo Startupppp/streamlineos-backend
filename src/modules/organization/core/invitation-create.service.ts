@@ -121,6 +121,13 @@ export class InvitationCreateService {
     results: BulkInviteRowResult[];
   }> {
     await assertMayGrantRole(this.access, orgId, actor, role);
+    // Validated once for the batch: one actor, one set of standings. A standing
+    // the actor may not grant refuses the whole batch rather than every row.
+    const validatedAccess = await this.validateModuleAccess(
+      orgId,
+      actor,
+      moduleAccess,
+    );
 
     const results: BulkInviteRowResult[] = new Array(emails.length);
     const seenCanonical = new Map<string, number>();
