@@ -20,6 +20,7 @@ export * from "./directory";
 export * from "./party";
 export * from "./portal-access";
 export * from "./payroll";
+export * from "./integrations";
 
 // MUST be last: cross-module relations reference tables from common/, hr/ and build/.
 // Declaring them inside common/ created a circular import (common -> build/hr while common

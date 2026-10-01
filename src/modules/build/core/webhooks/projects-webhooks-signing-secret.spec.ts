@@ -4,6 +4,7 @@ import {
   MISSING_SIGNING_SECRET_ERROR,
   ProjectsWebhooksDispatchService,
 } from "./projects-webhooks-dispatch.service";
+import { INTEGRATIONS_WEBHOOK_DELIVERY_EVENT } from "../../../integrations/core/webhook-delivery.service";
 
 jest.mock("../../../../common/outbound/safe-webhook-transport", () => {
   const actual = jest.requireActual("../../../../common/outbound/safe-webhook-transport");
@@ -12,7 +13,7 @@ jest.mock("../../../../common/outbound/safe-webhook-transport", () => {
 
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: jest.fn(
-    (_db: unknown, callback: (tx: unknown) => Promise<unknown>) =>
+    (_db: unknown, callback: (tx: unknown) => Promise<unknown>, _opts: unknown) =>
       callback({
         insert: () => ({
           values: () => ({ returning: () => Promise.resolve([{ id: 77 }]) }),
@@ -27,37 +28,37 @@ jest.mock("../../../../common/outbox/outbox-writer", () => ({
 
 const post = postSafeWebhook as jest.MockedFunction<typeof postSafeWebhook>;
 
-function dispatchServiceWithSecret(secret: string | null) {
+function dispatchServiceWith(
+  signingSecret: string | null,
+  integrationsEndpointId: number | null = signingSecret !== null ? 5 : null,
+) {
   const endpointRow = {
     id: 5,
     url: "https://hooks.example.test/build",
-    secret,
     orgId: "org-1",
-    projectId: 9,
+    integrationsEndpointId,
   };
-  const deliveryRow = {
-    deliveryId: 77,
-    event: "webhook.test",
-    payload: { id: 5, projectId: 9, actor: "system", timestamp: "now" },
-    status: "pending",
-    endpointId: 5,
-    url: "https://hooks.example.test/build",
-    secret,
-    endpointOrgId: "org-1",
-  };
+  const credentialRow = signingSecret !== null ? { signingSecret } : undefined;
   const set = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
   const db = {
     select: jest
       .fn()
       .mockReturnValueOnce({
         from: () => ({
-          where: () => ({ limit: () => Promise.resolve([endpointRow]) }),
-          innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([deliveryRow]) }) }),
+          where: () => ({
+            limit: () =>
+              Promise.resolve(integrationsEndpointId !== null ? [endpointRow] : [endpointRow]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({ limit: () => Promise.resolve(credentialRow ? [credentialRow] : []) }),
         }),
       })
       .mockReturnValue({
         from: () => ({
-          innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([deliveryRow]) }) }),
+          where: () => ({ limit: () => Promise.resolve([]) }),
         }),
       }),
     update: jest.fn().mockReturnValue({ set }),
@@ -68,8 +69,8 @@ function dispatchServiceWithSecret(secret: string | null) {
 describe("ProjectsWebhooksDispatchService signing secret", () => {
   beforeEach(() => post.mockReset());
 
-  it("signs and sends when the endpoint has a secret", async () => {
-    const { service } = dispatchServiceWithSecret("s3cret");
+  it("signs and sends when the endpoint has a signing secret in the credentials store", async () => {
+    const { service } = dispatchServiceWith("s3cret");
     post.mockResolvedValue({ statusCode: 204, responseBody: "" });
 
     const result = await service.sendTest("org-1", 9, 5);
@@ -78,8 +79,8 @@ describe("ProjectsWebhooksDispatchService signing secret", () => {
     expect(result).toEqual({ success: true, responseCode: 204 });
   });
 
-  it("sends a non-empty hex signature header when the endpoint has a secret", async () => {
-    const { service } = dispatchServiceWithSecret("s3cret");
+  it("sends a non-empty hex signature header when the endpoint has a signing secret", async () => {
+    const { service } = dispatchServiceWith("s3cret");
     post.mockResolvedValue({ statusCode: 204, responseBody: "" });
 
     await service.sendTest("org-1", 9, 5);
@@ -88,8 +89,8 @@ describe("ProjectsWebhooksDispatchService signing secret", () => {
     expect(headers["X-StreamlineOS-Signature"]).toMatch(/^sha256=[0-9a-f]{64}$/);
   });
 
-  it("refuses to deliver when the endpoint has no signing secret", async () => {
-    const { service } = dispatchServiceWithSecret(null);
+  it("refuses to deliver and records the error when the endpoint has no integrations_endpoint_id", async () => {
+    const { service } = dispatchServiceWith(null, null);
 
     const result = await service.sendTest("org-1", 9, 5);
 
@@ -97,8 +98,8 @@ describe("ProjectsWebhooksDispatchService signing secret", () => {
     expect(result.success).toBe(false);
   });
 
-  it("refuses to deliver when the signing secret is an empty string", async () => {
-    const { service } = dispatchServiceWithSecret("");
+  it("refuses to deliver when the credentials store returns no row for the endpoint", async () => {
+    const { service } = dispatchServiceWith(null, 5);
 
     const result = await service.sendTest("org-1", 9, 5);
 
@@ -107,7 +108,7 @@ describe("ProjectsWebhooksDispatchService signing secret", () => {
   });
 
   it("records a readable failure reason on the delivery row instead of a silent drop", async () => {
-    const { service, set } = dispatchServiceWithSecret(null);
+    const { service, set } = dispatchServiceWith(null, null);
 
     await service.sendTest("org-1", 9, 5);
 
@@ -116,33 +117,17 @@ describe("ProjectsWebhooksDispatchService signing secret", () => {
     );
   });
 
-  it("does not throw a retryable error for a missing secret, because no retry can mint one", async () => {
-    const { service } = dispatchServiceWithSecret(null);
+  it("emits the delivery outbox event with the integrations event type, not the legacy build type", async () => {
+    const { OutboxWriter } = jest.requireMock(
+      "../../../../common/outbox/outbox-writer",
+    ) as { OutboxWriter: { emit: jest.Mock } };
+    OutboxWriter.emit.mockClear();
+    const { service } = dispatchServiceWith("s3cret");
+    post.mockResolvedValue({ statusCode: 204, responseBody: "" });
 
-    await expect(service.handle({
-      outboxEventId: 1,
-      eventId: "11111111-1111-4111-8111-111111111111",
-      organizationId: "org-1",
-      aggregateType: "project_webhook_delivery",
-      aggregateId: "77",
-      aggregateVersion: 77,
-      schemaVersion: 1,
-      causationId: null,
-      correlationId: null,
-      actorMembershipId: null,
-      audience: "INTERNAL",
-      lifecycleState: "ACTIVE",
-      deliveryState: "IN_FLIGHT",
-      eventType: "build.project-webhook.delivery.requested",
-      payload: { deliveryId: 77 },
-      occurredAt: new Date(),
-      publishedAt: null,
-      leaseExpiresAt: new Date(Date.now() + 30_000),
-      retryCount: 0,
-      lastError: null,
-      deadLetteredAt: null,
-      createdAt: new Date(),
-    })).resolves.toBeUndefined();
-    expect(post).not.toHaveBeenCalled();
+    await service.sendTest("org-1", 9, 5);
+
+    const emittedEvent = OutboxWriter.emit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(emittedEvent?.eventType).toBe(INTEGRATIONS_WEBHOOK_DELIVERY_EVENT);
   });
 });

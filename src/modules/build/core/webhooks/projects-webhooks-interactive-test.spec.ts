@@ -28,29 +28,21 @@ function dispatchServiceWithOneEndpoint(): { service: ProjectsWebhooksDispatchSe
   const endpointRow = {
     id: 5,
     url: "https://hooks.example.test/build",
-    secret: "secret",
     orgId: "org-1",
-    projectId: 9,
+    integrationsEndpointId: 7,
   };
-  const deliveryRow = {
-    deliveryId: 77,
-    event: "webhook.test",
-    payload: { id: 5, projectId: 9, actor: "system", timestamp: "now" },
-    status: "pending",
-    endpointId: 5,
-    url: "https://hooks.example.test/build",
-    secret: "secret",
-    endpointOrgId: "org-1",
-  };
+  const credentialRow = { signingSecret: "secret" };
   const db = {
-    select: jest.fn()
+    select: jest
+      .fn()
       .mockReturnValueOnce({
         from: () => ({ where: () => ({ limit: () => Promise.resolve([endpointRow]) }) }),
       })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: () => Promise.resolve([credentialRow]) }) }),
+      })
       .mockReturnValue({
-        from: () => ({
-          innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([deliveryRow]) }) }),
-        }),
+        from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
       }),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
