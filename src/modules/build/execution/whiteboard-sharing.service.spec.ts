@@ -6,6 +6,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
+import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -100,6 +101,10 @@ describe("WhiteboardSharingService", () => {
 
     mockAccess = {
       resolveUserPermissions,
+      scopeFor: jest.fn(async (_user: unknown, key: string) => {
+        const resolved = await resolveUserPermissions();
+        return resolved.get(key) ?? (key === "build:view" ? "own" : "none");
+      }),
       holds: jest.fn(async (_user: unknown, key: string) => {
         const resolved = await resolveUserPermissions();
         return (resolved.get(key) ?? "none") !== "none";
@@ -113,7 +118,7 @@ describe("WhiteboardSharingService", () => {
     shareRole: "viewer" | "editor" | null = null,
   ): typeof BASE_BOARD {
     const board = { ...BASE_BOARD, ...boardOverrides };
-    findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId, managerMembershipId: 1 });
+    dbSelect.mockReturnValueOnce(makeChain([projectAccessRow({ manages: true })]));
     dbSelect.mockReturnValueOnce(makeChain([{ board, shareRole }]));
     return board;
   }
@@ -211,7 +216,7 @@ describe("WhiteboardSharingService", () => {
 
   describe("updateSharing — manage-gating", () => {
     it("throws ForbiddenException for non-creator non-owner without manage permission", async () => {
-      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId, managerMembershipId: 1 });
+      dbSelect.mockReturnValueOnce(makeChain([projectAccessRow({ manages: true })]));
       dbSelect.mockReturnValueOnce(
         makeChain([{ board: { ...BASE_BOARD, createdBy: "other-user" }, shareRole: null }]),
       );
@@ -250,7 +255,7 @@ describe("WhiteboardSharingService", () => {
 
   describe("setShares", () => {
     it("throws BadRequestException for unknown org member userIds", async () => {
-      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId, managerMembershipId: 1 });
+      dbSelect.mockReturnValueOnce(makeChain([projectAccessRow({ manages: true })]));
       dbSelect
         .mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]))
         .mockReturnValueOnce(makeChain([]));
@@ -266,7 +271,7 @@ describe("WhiteboardSharingService", () => {
       const MEMBER_ID = "member-2";
       const MANAGER_ID = "manager-user";
 
-      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId, managerMembershipId: 1 });
+      dbSelect.mockReturnValueOnce(makeChain([projectAccessRow({ manages: true })]));
       dbSelect
         .mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]))
         .mockReturnValueOnce(
@@ -306,7 +311,7 @@ describe("WhiteboardSharingService", () => {
 
   describe("share token hashing — D1: tokens must be stored as SHA-256 hashes, not plaintext", () => {
     it("rotateShareToken stores hash not raw token: SET is called with sha256(rawToken)", async () => {
-      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId, managerMembershipId: 1 });
+      dbSelect.mockReturnValueOnce(makeChain([projectAccessRow({ manages: true })]));
       dbSelect.mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]));
 
       let capturedSetArg: Record<string, unknown> | undefined;
@@ -332,7 +337,7 @@ describe("WhiteboardSharingService", () => {
     });
 
     it("rotateShareToken response shareToken is the raw token, not the hash", async () => {
-      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId, managerMembershipId: 1 });
+      dbSelect.mockReturnValueOnce(makeChain([projectAccessRow({ manages: true })]));
       dbSelect.mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]));
 
       const returning = jest.fn().mockResolvedValue([{ ...BASE_BOARD, visibility: "public" as const, shareToken: "some-hash-stored-in-db" }]);
@@ -349,7 +354,7 @@ describe("WhiteboardSharingService", () => {
 
     it("updateSharing stores hash when token is newly generated (needsToken=true)", async () => {
       const boardWithNoToken = { ...BASE_BOARD, shareToken: null as string | null, visibility: "project" as const };
-      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId, managerMembershipId: 1 });
+      dbSelect.mockReturnValueOnce(makeChain([projectAccessRow({ manages: true })]));
       dbSelect.mockReturnValueOnce(makeChain([{ board: boardWithNoToken, shareRole: null }]));
 
       let capturedSetArg: Record<string, unknown> | undefined;
@@ -368,7 +373,7 @@ describe("WhiteboardSharingService", () => {
     });
 
     it("updateSharing returns null for shareToken when no new token is issued", async () => {
-      findFirstProject.mockResolvedValueOnce({ id: BASE_BOARD.projectId, managerMembershipId: 1 });
+      dbSelect.mockReturnValueOnce(makeChain([projectAccessRow({ manages: true })]));
       dbSelect.mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]));
       const returning = jest.fn().mockResolvedValue([{ ...BASE_BOARD, visibility: "public" as const }]);
       const where = jest.fn().mockReturnValue({ returning });

@@ -6,6 +6,11 @@ import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+
+function projectGate(found: boolean) {
+  return { from: () => ({ where: () => ({ limit: async () => (found ? [projectAccessRow({ manages: true })] : []) }) }) };
+}
 
 function actorIn(orgId: string, isOrgOwner: boolean): CurrentUserContext {
   return {
@@ -25,7 +30,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
 
   const access = stubService<AccessService>({
     holds: jest.fn().mockResolvedValue(true),
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+    scopeFor: principalAccess(MEMBER_STANDING).scopeFor,
   });
 
   function makeDb(projectRow: unknown | null, boardRows: unknown[]) {
@@ -38,10 +43,9 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     const leftJoin = jest.fn().mockReturnValue({ where: boardWhere });
     const from = jest.fn().mockReturnValue({ where: boardWhere, leftJoin, innerJoin });
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(projectRow) },
-      },
-      select: jest.fn().mockReturnValue({ from }),
+      select: jest.fn((projection: Record<string, unknown>) =>
+        "onTeam" in projection ? projectGate(projectRow !== null) : { from },
+      ),
     } as unknown as Db;
   }
 
@@ -111,7 +115,9 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     const whereMock = jest.fn().mockReturnValue({ orderBy: orderByMock });
     const leftJoinMock = jest.fn().mockReturnValue({ where: whereMock });
     const fromMock = jest.fn().mockReturnValue({ leftJoin: leftJoinMock });
-    (db as unknown as { select: jest.Mock }).select = jest.fn().mockReturnValue({ from: fromMock });
+    (db as unknown as { select: jest.Mock }).select = jest.fn((projection: Record<string, unknown>) =>
+      "onTeam" in projection ? projectGate(true) : { from: fromMock },
+    );
     void originalSelect;
 
     const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());

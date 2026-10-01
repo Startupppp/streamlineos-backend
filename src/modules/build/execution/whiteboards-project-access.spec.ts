@@ -8,6 +8,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { WhiteboardsService } from "./whiteboards.service";
+import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const BOARD_ID = 3;
@@ -58,8 +59,13 @@ type QueryChain = {
 
 async function build(standing: Standing) {
   const listWheres: SQL[] = [];
+  const projectRows = standing === "foreign" ? [] : [projectAccessRow({ manages: standing === "member" })];
   const select = jest.fn((projection: Record<string, unknown>) => {
-    const rows = "board" in projection ? [{ board: PROJECT_BOARD, shareRole: null }] : [];
+    const rows = "board" in projection
+      ? [{ board: PROJECT_BOARD, shareRole: null }]
+      : "onTeam" in projection
+        ? projectRows
+        : [];
     const chain: QueryChain = {
       from: jest.fn(),
       leftJoin: jest.fn(),
@@ -79,14 +85,9 @@ async function build(standing: Standing) {
   });
   const returning = jest.fn().mockResolvedValue([{ ...PROJECT_BOARD, createdBy: caller.userId }]);
   const insert = jest.fn(() => ({ values: jest.fn(() => ({ returning })) }));
-  const project =
-    standing === "foreign"
-      ? undefined
-      : { managerMembershipId: standing === "member" ? CALLER_MEMBERSHIP : 999 };
-  const db = { query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } }, select, insert };
+  const db = { select, insert };
   const access = {
     holds: jest.fn().mockResolvedValue(false),
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
     scopeFor: jest.fn(async (_user: CurrentUserContext, key: string) => (key === "build:view" ? "all" : "none")),
   };
   const moduleRef = await Test.createTestingModule({

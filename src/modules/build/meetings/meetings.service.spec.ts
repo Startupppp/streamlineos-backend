@@ -8,7 +8,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { stubService } from "../../../test/service-stub.spec-fixtures";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 function makeActionItemsTicketCreation() {
   return {
@@ -173,7 +173,11 @@ describe("MeetingsService.upsertStandup — caller-scoped write", () => {
 
 describe("ActionItemsService.convertToTask", () => {
   function ticketCreator(): AccessService {
-    return stubService<AccessService>({ holds: jest.fn().mockResolvedValue(true) });
+    return stubService<AccessService>({ holds: jest.fn().mockResolvedValue(true), scopeFor: principalAccess(MEMBER_STANDING).scopeFor });
+  }
+
+  function projectRowSelect() {
+    return jest.fn(() => ({ from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) }));
   }
 
   function visibleProject() {
@@ -224,6 +228,7 @@ describe("ActionItemsService.convertToTask", () => {
     const tx = makeTx({ convertedTicketId: 42 });
     const mockDb = {
       query: visibleProject(),
+      select: projectRowSelect(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
@@ -235,6 +240,7 @@ describe("ActionItemsService.convertToTask", () => {
     const tx = makeTx({ convertedTicketId: null });
     const mockDb = {
       query: visibleProject(),
+      select: projectRowSelect(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
@@ -256,6 +262,7 @@ describe("ActionItemsService.convertToTask", () => {
     };
     const mockDb = {
       query: visibleProject(),
+      select: projectRowSelect(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
@@ -273,6 +280,7 @@ describe("ActionItemsService.convertToTask", () => {
     };
     const mockDb = {
       query: visibleProject(),
+      select: projectRowSelect(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
@@ -292,6 +300,7 @@ describe("ActionItemsService.convertToTask", () => {
     };
     const mockDb = {
       query: visibleProject(),
+      select: projectRowSelect(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
@@ -440,9 +449,8 @@ describe("MeetingsService.getMeeting — attendees carry userId from the members
       },
       select: jest.fn().mockImplementation(() => {
         selectCall++;
-        if (selectCall === 1) return makeSimpleChain([{ role: "MEMBER" }]);
-        if (selectCall === 2) return makeSimpleChain([]);
-        if (selectCall === 3) {
+        if (selectCall === 1) return makeSimpleChain([projectAccessRow({ memberRole: "MEMBER" })]);
+        if (selectCall === 2) {
           return {
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([ATTENDEE_BASE]) }),
@@ -459,7 +467,7 @@ describe("MeetingsService.getMeeting — attendees carry userId from the members
 
   it("includes userId on each attendee so the display layer can match names without a second fetch", async () => {
     const db = makeGetMeetingDb();
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = principalAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new MeetingsService(db as unknown as Db, access, mockAudit);
     const result = await svc.getMeeting(makeU("org-1"), 1, 3);
     expect(result.attendees[0]).toHaveProperty("userId", "user-42");
@@ -467,7 +475,7 @@ describe("MeetingsService.getMeeting — attendees carry userId from the members
 
   it("returns exactly the attendees in the meeting, no extras from the join", async () => {
     const db = makeGetMeetingDb();
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = principalAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new MeetingsService(db as unknown as Db, access, mockAudit);
     const result = await svc.getMeeting(makeU("org-1"), 1, 3);
     expect(result.attendees).toHaveLength(1);

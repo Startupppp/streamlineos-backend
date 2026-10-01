@@ -5,6 +5,7 @@ import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ProjectsSettingsIterationsService } from "./projects-settings-iterations.service";
+import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const CALLER_MEMBERSHIP = 21;
@@ -19,23 +20,17 @@ const caller: CurrentUserContext = {
   principal: humanSessionPrincipal(CALLER_MEMBERSHIP, false),
 };
 
-type Standing = { project: { managerMembershipId: number } | undefined; memberRole: string | null };
+type Standing = ProjectAccessRow | undefined;
 
-const MANAGER: Standing = { project: { managerMembershipId: CALLER_MEMBERSHIP }, memberRole: null };
-const PLAIN_MEMBER: Standing = { project: { managerMembershipId: 999 }, memberRole: "MEMBER" };
-const NON_MEMBER: Standing = { project: { managerMembershipId: 999 }, memberRole: null };
-const FOREIGN: Standing = { project: undefined, memberRole: null };
+const MANAGER: Standing = projectAccessRow({ manages: true });
+const PLAIN_MEMBER: Standing = projectAccessRow({ memberRole: "MEMBER" });
+const NON_MEMBER: Standing = projectAccessRow();
+const FOREIGN: Standing = undefined;
 
 async function build(standing: Standing) {
-  const membershipLimit = jest.fn().mockResolvedValue(standing.memberRole === null ? [] : [{ role: standing.memberRole }]);
-  const membershipChain = { from: jest.fn(), innerJoin: jest.fn(), where: jest.fn(), limit: membershipLimit };
-  membershipChain.from.mockReturnValue(membershipChain);
-  membershipChain.innerJoin.mockReturnValue(membershipChain);
-  membershipChain.where.mockReturnValue(membershipChain);
-  const teamChain = { from: jest.fn(), innerJoin: jest.fn(), where: jest.fn(), limit: jest.fn().mockResolvedValue([]) };
-  teamChain.from.mockReturnValue(teamChain);
-  teamChain.innerJoin.mockReturnValue(teamChain);
-  teamChain.where.mockReturnValue(teamChain);
+  const projectChain = { from: jest.fn(), where: jest.fn(), limit: jest.fn().mockResolvedValue(standing === undefined ? [] : [standing]) };
+  projectChain.from.mockReturnValue(projectChain);
+  projectChain.where.mockReturnValue(projectChain);
   const settingsChain = {
     from: jest.fn(),
     where: jest.fn(),
@@ -45,13 +40,11 @@ async function build(standing: Standing) {
   settingsChain.where.mockReturnValue(settingsChain);
   const select = jest.fn((projection: Record<string, unknown>) => {
     if ("settings" in projection) return settingsChain;
-    if ("role" in projection) return membershipChain;
-    return teamChain;
+    return projectChain;
   });
   const updateWhere = jest.fn().mockResolvedValue(undefined);
   const update = jest.fn(() => ({ set: jest.fn(() => ({ where: updateWhere })) }));
   const db = {
-    query: { projects: { findFirst: jest.fn().mockResolvedValue(standing.project) } },
     select,
     update,
   };
@@ -59,7 +52,7 @@ async function build(standing: Standing) {
     providers: [
       ProjectsSettingsIterationsService,
       { provide: DRIZZLE, useValue: db },
-      { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } },
+      { provide: AccessService, useValue: standingAccess(MEMBER_STANDING) },
     ],
   }).compile();
   return { service: moduleRef.get(ProjectsSettingsIterationsService), update };

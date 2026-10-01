@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { CyclesService } from "./cycles.service";
 import { EpicsService } from "./epics.service";
@@ -33,9 +34,9 @@ const caller: CurrentUserContext = {
 
 type ProjectStanding = "member" | "non-member" | "foreign";
 
-function managerFor(standing: ProjectStanding) {
-  if (standing === "foreign") return undefined;
-  return { managerMembershipId: standing === "member" ? CALLER_MEMBERSHIP : 999 };
+function projectRowsFor(standing: ProjectStanding) {
+  if (standing === "foreign") return [];
+  return [projectAccessRow({ manages: standing === "member" })];
 }
 
 function makeDb(standing: ProjectStanding, row: Record<string, unknown> = { id: 5, version: 1 }) {
@@ -43,6 +44,9 @@ function makeDb(standing: ProjectStanding, row: Record<string, unknown> = { id: 
   for (const key of ["from", "innerJoin", "where", "orderBy", "groupBy"]) chain[key] = jest.fn(() => chain);
   chain.limit = jest.fn().mockResolvedValue([]);
   chain.for = jest.fn().mockResolvedValue([{ id: row.id, allowed: true }]);
+  const projectChain: Record<string, jest.Mock> = {};
+  for (const key of ["from", "where"]) projectChain[key] = jest.fn(() => projectChain);
+  projectChain.limit = jest.fn().mockResolvedValue(projectRowsFor(standing));
   const returning = jest.fn().mockResolvedValue([row]);
   const write = { set: jest.fn(), values: jest.fn(), where: jest.fn() };
   write.set.mockReturnValue(write);
@@ -51,12 +55,12 @@ function makeDb(standing: ProjectStanding, row: Record<string, unknown> = { id: 
   const tx = { update: jest.fn(() => write), delete: jest.fn(() => write) };
   return {
     query: {
-      projects: { findFirst: jest.fn().mockResolvedValue(managerFor(standing)) },
+      projects: { findFirst: jest.fn().mockResolvedValue(standing === "foreign" ? undefined : { id: PROJECT_ID }) },
       tickets: { findFirst: jest.fn().mockResolvedValue(row), findMany: jest.fn().mockResolvedValue([]) },
       cycles: { findFirst: jest.fn().mockResolvedValue(row) },
       modules: { findFirst: jest.fn().mockResolvedValue(row) },
     },
-    select: jest.fn(() => chain),
+    select: jest.fn((fields?: Record<string, unknown>) => (fields !== undefined && "memberRole" in fields ? projectChain : chain)),
     insert: jest.fn(() => write),
     update: jest.fn(() => write),
     transaction: jest.fn(async (work: (handle: typeof tx) => Promise<unknown>) => work(tx)),
@@ -69,7 +73,9 @@ async function build(standing: ProjectStanding) {
   const ticketChange = { updateTicket: jest.fn().mockResolvedValue(undefined) };
   const access = {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-    scopeFor: jest.fn().mockResolvedValue("all"),
+    scopeFor: jest.fn(async (_user: CurrentUserContext, key: string) =>
+      key === "build:manage" ? "none" : key === "build:view" ? "own" : "all",
+    ),
   };
   const moduleRef = await Test.createTestingModule({
     providers: [

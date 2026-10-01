@@ -6,6 +6,31 @@ import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+
+type GateSource = {
+  query?: { projects?: { findFirst?: (args: { where: unknown }) => Promise<unknown> } };
+  select?: (fields?: Record<string, unknown>) => unknown;
+};
+
+function gated(db: Db): Db {
+  const source: GateSource = db as unknown as GateSource;
+  const ownSelect = source.select;
+  const select = (fields?: Record<string, unknown>) => {
+    if (fields === undefined || !("memberRole" in fields)) return ownSelect?.(fields);
+    return {
+      from: () => ({
+        where: (where: unknown) => ({
+          limit: async () => {
+            const found = await source.query?.projects?.findFirst?.({ where });
+            return found ? [projectAccessRow()] : [];
+          },
+        }),
+      }),
+    };
+  };
+  return { ...source, select } as unknown as Db;
+}
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -42,7 +67,7 @@ describe("ModulesService — cross-tenant isolation", () => {
       query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
-    const svc = new ModulesService(db, stubService<AccessService>({}));
+    const svc = new ModulesService(gated(db), stubService<AccessService>(principalAccess()));
 
     await expect(svc.listModules(owner(ATTACKER_ORG), 1)).rejects.toThrow(NotFoundException);
 
@@ -65,7 +90,7 @@ describe("ModulesService — cross-tenant isolation", () => {
         return { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }) };
       }),
     } as unknown as Db;
-    const svc = new ModulesService(db, stubService<AccessService>({}));
+    const svc = new ModulesService(gated(db), stubService<AccessService>(principalAccess()));
 
     const result = await svc.listModules(owner(OWNER_ORG), 1);
     expect(result.data).toHaveLength(1);
@@ -77,7 +102,7 @@ describe("ModulesService — cross-tenant isolation", () => {
       query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
       select: jest.fn(),
     } as unknown as Db;
-    const svc = new ModulesService(db, stubService<AccessService>({}));
+    const svc = new ModulesService(gated(db), stubService<AccessService>(principalAccess()));
 
     await expect(svc.listModules(owner(OWNER_ORG), 1, { cursor: "not-a-cursor" })).rejects.toThrow(BadRequestException);
     expect(db.select).not.toHaveBeenCalled();
@@ -105,7 +130,7 @@ describe("ModulesService — createModule", () => {
       }),
     } as unknown as Db;
 
-    const svc = new ModulesService(db, stubService<AccessService>({}));
+    const svc = new ModulesService(gated(db), stubService<AccessService>(principalAccess()));
 
     await expect(
       svc.createModule(owner(OWNER_ORG), 1, { name: "Sprint Alpha", status: "in-progress", startDate: undefined, endDate: undefined }),
@@ -131,7 +156,7 @@ describe("ModulesService — createModule", () => {
       }),
     } as unknown as Db;
 
-    const svc = new ModulesService(db, stubService<AccessService>({}));
+    const svc = new ModulesService(gated(db), stubService<AccessService>(principalAccess()));
 
     await expect(
       svc.createModule(owner(OWNER_ORG), 1, { name: "Sprint Alpha", status: "in-progress", startDate: undefined, endDate: undefined }),

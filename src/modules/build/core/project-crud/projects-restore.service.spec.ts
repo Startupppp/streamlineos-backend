@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { stubService } from "../../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../../access/access.service";
+import { principalAccess } from "./__tests__/project-access-doubles";
 
 const member: CurrentUserContext = {
   userId: "user-2",
@@ -82,9 +83,9 @@ function buildService(options: {
     transaction,
   };
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
-  const access = stubService<AccessService>({
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(options.permissions ?? [])),
-  });
+  const access = stubService<AccessService>(
+    principalAccess(Object.fromEntries((options.permissions ?? []).map((key) => [key, "all" as const]))),
+  );
   const service = new ProjectsRestoreService(
     db as never,
     audit as never,

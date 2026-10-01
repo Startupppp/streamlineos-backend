@@ -5,6 +5,14 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual<typeof import("../core/project-crud/project-access")>("../core/project-crud/project-access"),
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
+
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
   if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));

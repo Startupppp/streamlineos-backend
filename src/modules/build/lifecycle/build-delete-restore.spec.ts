@@ -173,8 +173,9 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
   it("deleteWhiteboard audits build.whiteboard.deleted", async () => {
     const written = updateDouble([]);
     const { audit, log } = auditDouble();
+    const projectGate = { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) };
     const boardSelect = {
-      select: jest.fn().mockReturnValue({
+      select: jest.fn((projection: Record<string, unknown>) => "onTeam" in projection ? projectGate : {
         from: jest.fn().mockReturnValue({
           leftJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({

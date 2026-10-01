@@ -7,6 +7,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TeamProjectsService } from "./team-projects.service";
 import { TeamsService } from "./teams.service";
+import { MEMBER_STANDING, projectAccessRow, principalAccess, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const TEAM_ID = 4;
 const PROJECT_ID = 7;
@@ -22,12 +23,12 @@ const caller: CurrentUserContext = {
   principal: humanSessionPrincipal(CALLER_MEMBERSHIP, false),
 };
 
-type Standing = { project: { managerMembershipId: number } | undefined; memberRole: string | null };
+type Standing = ProjectAccessRow | undefined;
 
-const MANAGER: Standing = { project: { managerMembershipId: CALLER_MEMBERSHIP }, memberRole: null };
-const PLAIN_MEMBER: Standing = { project: { managerMembershipId: 999 }, memberRole: "MEMBER" };
-const NON_MEMBER: Standing = { project: { managerMembershipId: 999 }, memberRole: null };
-const FOREIGN: Standing = { project: undefined, memberRole: null };
+const MANAGER: Standing = projectAccessRow({ manages: true });
+const PLAIN_MEMBER: Standing = projectAccessRow({ memberRole: "MEMBER" });
+const NON_MEMBER: Standing = projectAccessRow();
+const FOREIGN: Standing = undefined;
 
 function chainResolving(rows: unknown[]) {
   const chain = { from: jest.fn(), innerJoin: jest.fn(), where: jest.fn(), limit: jest.fn().mockResolvedValue(rows) };
@@ -38,16 +39,15 @@ function chainResolving(rows: unknown[]) {
 }
 
 async function build(standing: Standing) {
-  const membershipChain = chainResolving(standing.memberRole === null ? [] : [{ role: standing.memberRole }]);
+  const projectChain = chainResolving(standing === undefined ? [] : [standing]);
   const emptyChain = chainResolving([]);
   const select = jest.fn((projection: Record<string, unknown>) =>
-    "role" in projection ? membershipChain : emptyChain,
+    "onTeam" in projection ? projectChain : emptyChain,
   );
   const returning = jest.fn().mockResolvedValue([{ id: 1, teamId: TEAM_ID, projectId: PROJECT_ID }]);
   const insert = jest.fn(() => ({ values: jest.fn(() => ({ returning })) }));
   const remove = jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) }));
   const db = {
-    query: { projects: { findFirst: jest.fn().mockResolvedValue(standing.project) } },
     select,
     insert,
     delete: remove,
@@ -58,7 +58,7 @@ async function build(standing: Standing) {
       { provide: DRIZZLE, useValue: db },
       { provide: TeamsService, useValue: { loadTeam: jest.fn().mockResolvedValue({ id: TEAM_ID }) } },
       { provide: AuditService, useValue: { log: jest.fn() } },
-      { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } },
+      { provide: AccessService, useValue: principalAccess(MEMBER_STANDING) },
     ],
   }).compile();
   return { service: moduleRef.get(TeamProjectsService), insert, remove };

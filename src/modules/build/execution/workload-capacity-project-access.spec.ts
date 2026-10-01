@@ -5,6 +5,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { WorkloadCapacityService } from "./workload-capacity.service";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const CALLER_MEMBERSHIP = 21;
@@ -23,28 +24,25 @@ type Standing = "member" | "non-member" | "foreign";
 
 async function build(standing: Standing) {
   const capacityReads: Record<string, unknown>[] = [];
+  const projectRows = standing === "foreign" ? [] : [projectAccessRow({ manages: standing === "member" })];
   const select = jest.fn((projection: Record<string, unknown>) => {
     if ("expectedDailyHours" in projection || "userId" in projection) capacityReads.push(projection);
     const chain = {
       from: jest.fn(),
       innerJoin: jest.fn(),
       where: jest.fn(),
-      limit: jest.fn().mockResolvedValue([]),
+      limit: jest.fn().mockResolvedValue("onTeam" in projection ? projectRows : []),
     };
     chain.from.mockReturnValue(chain);
     chain.innerJoin.mockReturnValue(chain);
     chain.where.mockReturnValue(chain);
     return chain;
   });
-  const project =
-    standing === "foreign"
-      ? undefined
-      : { managerMembershipId: standing === "member" ? CALLER_MEMBERSHIP : 999 };
   const moduleRef = await Test.createTestingModule({
     providers: [
       WorkloadCapacityService,
-      { provide: DRIZZLE, useValue: { query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } }, select } },
-      { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } },
+      { provide: DRIZZLE, useValue: { select } },
+      { provide: AccessService, useValue: principalAccess(MEMBER_STANDING) },
     ],
   }).compile();
   return { service: moduleRef.get(WorkloadCapacityService), capacityReads };

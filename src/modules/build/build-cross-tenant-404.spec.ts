@@ -7,6 +7,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { AccessService } from "../access/access.service";
 import { stubService } from "../../test/service-stub.spec-fixtures";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "./core/project-crud/__tests__/project-access-doubles";
+import { queuedSelectDb } from "./core/project-crud/__tests__/project-access-db";
 
 
 function txDb(deleted: Array<{ id: number }>) {
@@ -17,8 +19,9 @@ function txDb(deleted: Array<{ id: number }>) {
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
     delete: jest.fn().mockReturnValue({ where: deleteWhere }),
   };
+  const { select } = queuedSelectDb({ selects: [[projectAccessRow()]] });
   return {
-    query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+    select,
     transaction: jest.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
   } as unknown as Db;
 }
@@ -35,9 +38,7 @@ function ownerOf(orgId: string): CurrentUserContext {
   };
 }
 
-const access = stubService<AccessService>({
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-});
+const access = stubService<AccessService>(principalAccess(MEMBER_STANDING));
 
 describe("build — a delete that matched no row answers 404, not 204", () => {
   const ATTACKER_ORG = "org-attacker";

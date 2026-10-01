@@ -9,8 +9,33 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 type TxHandle = { insert: jest.Mock; execute: jest.Mock };
+
+type GateSource = {
+  query?: { projects?: { findFirst?: (args: { where: unknown }) => Promise<unknown> } };
+  select?: (fields?: Record<string, unknown>) => unknown;
+};
+
+function gated(db: Db): Db {
+  const source: GateSource = db as unknown as GateSource;
+  const ownSelect = source.select;
+  const select = (fields?: Record<string, unknown>) => {
+    if (fields === undefined || !("memberRole" in fields)) return ownSelect?.(fields);
+    return {
+      from: () => ({
+        where: (where: unknown) => ({
+          limit: async () => {
+            const found = await source.query?.projects?.findFirst?.({ where });
+            return found ? [projectAccessRow()] : [];
+          },
+        }),
+      }),
+    };
+  };
+  return { ...source, select } as unknown as Db;
+}
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -43,10 +68,10 @@ async function epicsService(db: Db, ticketCreation: object = {}): Promise<EpicsS
   const moduleRef = await Test.createTestingModule({
     providers: [
       EpicsService,
-      { provide: DRIZZLE, useValue: db },
+      { provide: DRIZZLE, useValue: gated(db) },
       { provide: BuildTicketCreationService, useValue: ticketCreation },
       { provide: ProjectsTicketsUpdateService, useValue: {} },
-      { provide: AccessService, useValue: { resolveUserPermissions: jest.fn() } },
+      { provide: AccessService, useValue: principalAccess() },
     ],
   }).compile();
   return moduleRef.get(EpicsService);
@@ -56,8 +81,8 @@ async function cyclesService(db: Db): Promise<CyclesService> {
   const moduleRef = await Test.createTestingModule({
     providers: [
       CyclesService,
-      { provide: DRIZZLE, useValue: db },
-      { provide: AccessService, useValue: { resolveUserPermissions: jest.fn() } },
+      { provide: DRIZZLE, useValue: gated(db) },
+      { provide: AccessService, useValue: principalAccess() },
     ],
   }).compile();
   return moduleRef.get(CyclesService);

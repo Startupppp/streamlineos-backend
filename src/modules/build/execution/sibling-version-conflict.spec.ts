@@ -8,6 +8,14 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual<typeof import("../core/project-crud/project-access")>("../core/project-crud/project-access"),
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
+
 const ACTOR: CurrentUserContext = {
   userId: "u-owner",
   orgId: "org-1",

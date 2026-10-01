@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { HttpException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -9,6 +9,7 @@ import { ProjectsTicketCommentsService } from "../core/tickets";
 import { ProjectsActivityService } from "../core/activity/projects-activity.service";
 import { ProjectsWebhooksDispatchService } from "../core/webhooks/projects-webhooks-dispatch.service";
 import { AgentPulseService } from "./agent-pulse.service";
+import { MEMBER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const TICKET_ID = 55;
@@ -36,7 +37,11 @@ type QueryChain = {
   limit: jest.Mock;
 };
 
-function rowsFor(projection: Record<string, unknown>): unknown[] {
+function rowsFor(standing: Standing, projection: Record<string, unknown>): unknown[] {
+  if ("reachable" in projection)
+    return standing === "foreign"
+      ? []
+      : [{ projectId: PROJECT_ID, projectState: "ACTIVE", projectDeletedAt: null, reachable: standing === "member", inScope: true }];
   if ("authorId" in projection) {
     return [
       {
@@ -58,7 +63,6 @@ function rowsFor(projection: Record<string, unknown>): unknown[] {
     ];
   }
   if ("body" in projection) return [{ id: DRAFT_ID, ticketId: TICKET_ID, body: "Ship the fix" }];
-  if ("allowed" in projection) return [{ id: TICKET_ID, allowed: true }];
   return [];
 }
 
@@ -69,7 +73,7 @@ async function build(standing: Standing) {
       innerJoin: jest.fn(),
       leftJoin: jest.fn(),
       where: jest.fn(),
-      limit: jest.fn().mockResolvedValue(rowsFor(projection)),
+      limit: jest.fn().mockResolvedValue(rowsFor(standing, projection)),
     };
     chain.from.mockReturnValue(chain);
     chain.innerJoin.mockReturnValue(chain);
@@ -89,11 +93,6 @@ async function build(standing: Standing) {
   const db = {
     query: {
       tickets: { findFirst: jest.fn().mockResolvedValue(ticket) },
-      projects: {
-        findFirst: jest.fn().mockResolvedValue({
-          managerMembershipId: standing === "member" ? CALLER_MEMBERSHIP : 999,
-        }),
-      },
     },
     select,
     transaction,
@@ -112,10 +111,7 @@ async function build(standing: Standing) {
       { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn() } },
       {
         provide: AccessService,
-        useValue: {
-          resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-          scopeFor: jest.fn().mockResolvedValue("all"),
-        },
+        useValue: standingAccess(MEMBER_STANDING),
       },
     ],
   }).compile();
@@ -125,7 +121,9 @@ async function build(standing: Standing) {
 describe("POST /build/agent-pulse/proposals/:draftId/apply authorizes through the canonical comment write", () => {
   it("answers 403 to a same-org caller who cannot reach the ticket's project, posting no comment and keeping the draft", async () => {
     const { service, insert, draftDelete } = await build("non-member");
-    await expect(service.applyDraft(caller, DRAFT_ID)).rejects.toThrow(ForbiddenException);
+    const refusal = await service.applyDraft(caller, DRAFT_ID).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(HttpException);
+    expect(refusal instanceof HttpException ? refusal.getStatus() : null).toBe(403);
     expect(insert).not.toHaveBeenCalled();
     expect(draftDelete).not.toHaveBeenCalled();
   });

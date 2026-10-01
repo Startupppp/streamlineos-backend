@@ -8,6 +8,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { BuildTicketCreationService } from "../core/tickets";
 import { ActionItemsService } from "./action-items.service";
 import { createActionItemSchema, updateActionItemSchema } from "./dto/meetings.schemas";
+import { MEMBER_STANDING, projectAccessRow, principalAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const MEETING_ID = 3;
@@ -28,7 +29,7 @@ type ProjectStanding = "member" | "non-member" | "foreign";
 
 function projectRow(standing: ProjectStanding) {
   if (standing === "foreign") return undefined;
-  return { managerMembershipId: standing === "member" ? CALLER_MEMBERSHIP : 999 };
+  return projectAccessRow({ manages: standing === "member" });
 }
 
 const ITEM = {
@@ -43,7 +44,8 @@ const ITEM = {
 };
 
 async function build(standing: ProjectStanding, canCreateTickets = true) {
-  const chain = { from: jest.fn(), innerJoin: jest.fn(), where: jest.fn(), limit: jest.fn().mockResolvedValue([]) };
+  const project = projectRow(standing);
+  const chain = { from: jest.fn(), innerJoin: jest.fn(), where: jest.fn(), limit: jest.fn().mockResolvedValue(project === undefined ? [] : [project]) };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
@@ -53,7 +55,6 @@ async function build(standing: ProjectStanding, canCreateTickets = true) {
   write.values.mockReturnValue({ returning });
   write.where.mockReturnValue({ returning });
   const query = {
-    projects: { findFirst: jest.fn().mockResolvedValue(projectRow(standing)) },
     projectMeetings: { findFirst: jest.fn().mockResolvedValue({ id: MEETING_ID }) },
     meetingActionItems: { findFirst: jest.fn().mockResolvedValue(ITEM) },
   };
@@ -70,7 +71,7 @@ async function build(standing: ProjectStanding, canCreateTickets = true) {
     publish: jest.fn(),
   };
   const access = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+    scopeFor: principalAccess(MEMBER_STANDING).scopeFor,
     holds: jest.fn().mockResolvedValue(canCreateTickets),
   };
   const moduleRef = await Test.createTestingModule({

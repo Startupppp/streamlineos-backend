@@ -9,6 +9,7 @@ import { primeRelocationTrafficTracker } from "../../../common/relocation/reloca
 import { withDelegatingTransaction } from "../../../test/delegating-transaction";
 import { CommentDraftGeneratorService } from "./comment-draft-generator.service";
 import { CommentDraftsService } from "./comment-drafts.service";
+import { MEMBER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const TICKET_ID = 55;
@@ -37,7 +38,8 @@ const TICKET = {
 
 function rowsFor(standing: Standing, projection: Record<string, unknown>): unknown[] {
   if (standing === "foreign") return [];
-  if ("allowed" in projection) return [{ id: TICKET_ID, allowed: true }];
+  if ("reachable" in projection)
+    return [{ projectId: PROJECT_ID, projectState: "ACTIVE", projectDeletedAt: null, reachable: standing === "member", inScope: true }];
   if ("projectId" in projection) return [{ projectId: PROJECT_ID }];
   if ("title" in projection) return [TICKET];
   if ("content" in projection) return [{ content: "Reproduced on staging." }];
@@ -49,12 +51,14 @@ async function build(standing: Standing) {
     const chain = {
       from: jest.fn(),
       innerJoin: jest.fn(),
+      leftJoin: jest.fn(),
       where: jest.fn(),
       orderBy: jest.fn(),
       limit: jest.fn().mockResolvedValue(rowsFor(standing, projection)),
     };
     chain.from.mockReturnValue(chain);
     chain.innerJoin.mockReturnValue(chain);
+    chain.leftJoin.mockReturnValue(chain);
     chain.where.mockReturnValue(chain);
     chain.orderBy.mockReturnValue(chain);
     return chain;
@@ -63,13 +67,6 @@ async function build(standing: Standing) {
   const onConflictDoUpdate = jest.fn(() => ({ returning }));
   const insert = jest.fn(() => ({ values: jest.fn(() => ({ onConflictDoUpdate })) }));
   const db = withDelegatingTransaction({
-    query: {
-      projects: {
-        findFirst: jest.fn().mockResolvedValue({
-          managerMembershipId: standing === "member" ? CALLER_MEMBERSHIP : 999,
-        }),
-      },
-    },
     select,
     insert,
   });
@@ -89,10 +86,7 @@ async function build(standing: Standing) {
       { provide: AiGatewayService, useValue: gateway },
       {
         provide: AccessService,
-        useValue: {
-          resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-          scopeFor: jest.fn().mockResolvedValue("all"),
-        },
+        useValue: standingAccess(MEMBER_STANDING),
       },
     ],
   }).compile();

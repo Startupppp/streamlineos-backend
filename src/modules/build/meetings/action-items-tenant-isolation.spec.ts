@@ -8,6 +8,9 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { BuildTicketCreationService } from "../core/tickets";
 import { ActionItemsService } from "./action-items.service";
 import { createActionItemSchema, updateActionItemSchema } from "./dto/meetings.schemas";
+import { MEMBER_STANDING, projectAccessRow, principalAccess } from "../core/project-crud/__tests__/project-access-doubles";
+
+const projectSelect = () => ({ from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) });
 
 describe("createActionItemSchema — strict() rejects status field sent by frontend in BUG-049", () => {
   it("rejects a payload that includes status because create schema has no status key and .strict() disallows extras", () => {
@@ -47,7 +50,7 @@ describe("ActionItemsService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: BuildTicketCreationService, useValue: {} },
-        { provide: AccessService, useValue: {} },
+        { provide: AccessService, useValue: principalAccess(MEMBER_STANDING) },
       ],
     }).compile();
     return moduleRef.get(ActionItemsService);
@@ -56,10 +59,10 @@ describe("ActionItemsService — cross-tenant isolation", () => {
   it("throws NotFoundException when meeting not found for different org (cross-tenant isolation)", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(null) },
         meetingActionItems: { findFirst: jest.fn().mockResolvedValue(null) },
       },
+      select: projectSelect,
     };
     const svc = await service(db);
     await expect(
@@ -74,11 +77,11 @@ describe("ActionItemsService — cross-tenant isolation", () => {
     const update = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning }) }) });
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(meeting) },
         meetingActionItems: { findFirst: jest.fn().mockResolvedValue(item) },
       },
       update,
+      select: projectSelect,
     };
     const svc = await service(db);
     const result = await svc.updateItem(owner(OWNER_ORG), 1, 1, 1, updateActionItemSchema.parse({ title: "Updated" }));

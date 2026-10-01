@@ -7,6 +7,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ChangeRequestAffectedItemsService } from "./change-request-affected-items.service";
 import { ChangeRequestsService } from "./change-requests.service";
+import { MEMBER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 10;
 const TICKET_ID = 55;
@@ -39,14 +40,17 @@ async function build(standing: TicketStanding) {
     const rows =
       standing === "foreign"
         ? []
-        : "allowed" in projection
-          ? [{ id: TICKET_ID, allowed: standing === "readable" }]
-          : "title" in projection
+        : "reachable" in projection
+          ? [{ projectId: PROJECT_ID, projectState: "ACTIVE", projectDeletedAt: null, reachable: true, inScope: standing === "readable" }]
+          : "manages" in projection
+            ? [{ state: "ACTIVE", manages: true, memberRole: null, onTeam: false }]
+            : "title" in projection
             ? [TICKET_SUMMARY]
             : [];
-    const chain = { from: jest.fn(), innerJoin: jest.fn(), where: jest.fn(), limit: jest.fn().mockResolvedValue(rows) };
+    const chain = { from: jest.fn(), innerJoin: jest.fn(), leftJoin: jest.fn(), where: jest.fn(), limit: jest.fn().mockResolvedValue(rows) };
     chain.from.mockReturnValue(chain);
     chain.innerJoin.mockReturnValue(chain);
+    chain.leftJoin.mockReturnValue(chain);
     chain.where.mockReturnValue(chain);
     return chain;
   });
@@ -55,7 +59,6 @@ async function build(standing: TicketStanding) {
   ]);
   const insert = jest.fn(() => ({ values: jest.fn(() => ({ returning })) }));
   const db = {
-    query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: CALLER_MEMBERSHIP }) } },
     select,
     insert,
   };
@@ -67,10 +70,10 @@ async function build(standing: TicketStanding) {
       { provide: ChangeRequestsService, useValue: { getChangeRequest: jest.fn().mockResolvedValue({ id: 1 }) } },
       {
         provide: AccessService,
-        useValue: {
-          resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-          scopeFor: jest.fn().mockResolvedValue(standing === "outside-scope" ? "own" : "all"),
-        },
+        useValue: standingAccess({
+          ...MEMBER_STANDING,
+          "build:tickets:view": standing === "outside-scope" ? "own" : "all",
+        }),
       },
     ],
   }).compile();

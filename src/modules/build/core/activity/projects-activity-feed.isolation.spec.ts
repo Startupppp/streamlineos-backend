@@ -5,6 +5,7 @@ import { stubService } from "../../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 
 function hasColumnName(node: unknown, name: string): boolean {
   if (!node || typeof node !== "object") return false;
@@ -22,9 +23,14 @@ const TICKET_ID = 42;
 const TICKET_NUMBER = 5;
 const PROJECT_KEY = "APP";
 
-function makeProjectQueryMock(found: boolean) {
-  return jest.fn().mockResolvedValue(
-    found ? { id: PROJECT_ID } : undefined,
+function withProjectGate(feedSelect: jest.Mock, found: boolean) {
+  const projectChain = {
+    from: () => projectChain,
+    where: () => projectChain,
+    limit: () => Promise.resolve(found ? [projectAccessRow()] : []),
+  };
+  return jest.fn((projection: Record<string, unknown>) =>
+    "manages" in projection ? projectChain : feedSelect(projection),
   );
 }
 
@@ -42,13 +48,8 @@ function makeSelectChainMock(rows: unknown[]) {
 }
 
 function makeDb(found: boolean, rows: unknown[]) {
-  const findFirstMock = makeProjectQueryMock(found);
-  const selectMock = makeSelectChainMock(rows);
   return {
-    query: {
-      projects: { findFirst: findFirstMock },
-    },
-    select: selectMock,
+    select: withProjectGate(makeSelectChainMock(rows), found),
   } as unknown as Db;
 }
 
@@ -177,12 +178,7 @@ describe("ProjectsActivityFeedService — tenant isolation", () => {
     const innerJoin1 = jest.fn().mockReturnValue({ innerJoin: innerJoin2 });
     const fromMock = jest.fn().mockReturnValue({ innerJoin: innerJoin1 });
     const db = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }),
-        },
-      },
-      select: jest.fn().mockReturnValue({ from: fromMock }),
+      select: withProjectGate(jest.fn().mockReturnValue({ from: fromMock }), true),
     } as unknown as Db;
 
     const svc = feedService(db);
@@ -292,12 +288,7 @@ describe("ProjectsActivityFeedService — cursor paging yields each entry exactl
     const ij1 = jest.fn().mockReturnValue({ innerJoin: ij2 });
     const fromMock2 = jest.fn().mockReturnValue({ innerJoin: ij1 });
     const db2 = {
-      query: {
-        projects: {
-          findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }),
-        },
-      },
-      select: jest.fn().mockReturnValue({ from: fromMock2 }),
+      select: withProjectGate(jest.fn().mockReturnValue({ from: fromMock2 }), true),
     } as unknown as Db;
 
     const svc2 = feedService(db2);

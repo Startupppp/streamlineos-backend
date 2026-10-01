@@ -7,6 +7,7 @@ import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ProjectsActivityFeedService } from "./projects-activity-feed.service";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const CALLER_MEMBERSHIP = 21;
@@ -35,6 +36,8 @@ type QueryChain = {
 
 async function build(standing: Standing, ticketScope: "all" | "own" = "all") {
   const feedWheres: SQL[] = [];
+  const projectRows =
+    standing === "foreign" ? [] : [projectAccessRow({ manages: standing === "member" })];
   const select = jest.fn((projection: Record<string, unknown>) => {
     const chain: QueryChain = {
       from: jest.fn(),
@@ -45,7 +48,7 @@ async function build(standing: Standing, ticketScope: "all" | "own" = "all") {
         return chain;
       }),
       orderBy: jest.fn(),
-      limit: jest.fn().mockResolvedValue([]),
+      limit: jest.fn().mockResolvedValue("manages" in projection ? projectRows : []),
     };
     chain.from.mockReturnValue(chain);
     chain.innerJoin.mockReturnValue(chain);
@@ -53,21 +56,14 @@ async function build(standing: Standing, ticketScope: "all" | "own" = "all") {
     chain.orderBy.mockReturnValue(chain);
     return chain;
   });
-  const project =
-    standing === "foreign"
-      ? undefined
-      : { managerMembershipId: standing === "member" ? CALLER_MEMBERSHIP : 999 };
-  const db = { query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } }, select };
+  const db = { select };
   const moduleRef = await Test.createTestingModule({
     providers: [
       ProjectsActivityFeedService,
       { provide: DRIZZLE, useValue: db },
       {
         provide: AccessService,
-        useValue: {
-          resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-          scopeFor: jest.fn().mockResolvedValue(ticketScope),
-        },
+        useValue: standingAccess({ ...MEMBER_STANDING, "build:tickets:view": ticketScope }),
       },
     ],
   }).compile();

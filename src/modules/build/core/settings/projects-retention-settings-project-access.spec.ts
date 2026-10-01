@@ -6,6 +6,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ProjectsRetentionSettingsService } from "./projects-retention-settings.service";
 import { setLegalHoldSchema, updateRetentionPolicySchema } from "../dto/project-retention-settings.schemas";
+import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const CALLER_MEMBERSHIP = 21;
@@ -20,12 +21,12 @@ const caller: CurrentUserContext = {
   principal: humanSessionPrincipal(CALLER_MEMBERSHIP, false),
 };
 
-type Standing = { project: { managerMembershipId: number } | undefined; memberRole: string | null };
+type Standing = ProjectAccessRow | undefined;
 
-const MANAGER: Standing = { project: { managerMembershipId: CALLER_MEMBERSHIP }, memberRole: null };
-const PLAIN_MEMBER: Standing = { project: { managerMembershipId: 999 }, memberRole: "MEMBER" };
-const NON_MEMBER: Standing = { project: { managerMembershipId: 999 }, memberRole: null };
-const FOREIGN: Standing = { project: undefined, memberRole: null };
+const MANAGER: Standing = projectAccessRow({ manages: true });
+const PLAIN_MEMBER: Standing = projectAccessRow({ memberRole: "MEMBER" });
+const NON_MEMBER: Standing = projectAccessRow();
+const FOREIGN: Standing = undefined;
 
 const SAVED_ROW = {
   inheritOrgPolicy: false,
@@ -48,17 +49,16 @@ function chainResolving(rows: unknown[]) {
 }
 
 async function build(standing: Standing) {
-  const membershipChain = chainResolving(standing.memberRole === null ? [] : [{ role: standing.memberRole }]);
+  const projectChain = chainResolving(standing === undefined ? [] : [standing]);
   const emptyChain = chainResolving([]);
   const select = jest.fn((projection: Record<string, unknown>) =>
-    "role" in projection ? membershipChain : emptyChain,
+    "manages" in projection ? projectChain : emptyChain,
   );
   const returning = jest.fn().mockResolvedValue([SAVED_ROW]);
   const values = jest.fn(() => ({ returning }));
   const insert = jest.fn(() => ({ values }));
   const update = jest.fn();
   const db = {
-    query: { projects: { findFirst: jest.fn().mockResolvedValue(standing.project) } },
     select,
     insert,
     update,
@@ -67,7 +67,7 @@ async function build(standing: Standing) {
     providers: [
       ProjectsRetentionSettingsService,
       { provide: DRIZZLE, useValue: db },
-      { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } },
+      { provide: AccessService, useValue: standingAccess(MEMBER_STANDING) },
     ],
   }).compile();
   return { service: moduleRef.get(ProjectsRetentionSettingsService), insert, update };
