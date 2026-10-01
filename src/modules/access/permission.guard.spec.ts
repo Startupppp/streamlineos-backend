@@ -2,6 +2,7 @@ import { testAuthContext } from "../../../test/helpers/module-guard-context";
 import {
   ForbiddenException,
   HttpException,
+  SetMetadata,
   UnauthorizedException,
 } from "@nestjs/common";
 import { DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
@@ -38,7 +39,7 @@ class GuardTestController {
   @RequirePermission("settings:rbac:manage")
   publicAuthenticationRoute(): void {}
 
-  @RequirePermission(UNCATALOGUED_KEY)
+  @SetMetadata(REQUIRE_PERMISSION, UNCATALOGUED_KEY)
   uncataloguedKeyRoute(): void {}
 
   @RequirePermission(TS_ENTRIES, TS_TEAM, TS_APPROVALS)
@@ -50,7 +51,7 @@ class GuardTestController {
   @RequirePermission(BILLING_KEY, GATED_KEY)
   billingOrSettingsRoute(): void {}
 
-  @RequirePermission(UNCATALOGUED_KEY, "alsonosuch:ghost:view")
+  @SetMetadata(REQUIRE_PERMISSION, [UNCATALOGUED_KEY, "alsonosuch:ghost:view"])
   onlyTyposRoute(): void {}
 }
 
