@@ -4,7 +4,18 @@ import { BuildAutomationActionExecutor } from "./build-automation-actions.servic
 import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
 import { RateLimitService } from "../../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
+import { assertTransitionAllowed } from "../tickets/projects-tickets-workflow-utils";
+import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { logger } from "../../../../common/logger/logger.service";
+
+jest.mock("../tickets/projects-tickets-workflow-utils", () => ({
+  assertTransitionAllowed: jest.fn(),
+}));
+
+jest.mock("../../../../common/outbox/outbox-writer", () => ({
+  OutboxWriter: { emit: jest.fn() },
+}));
 
 const noopHistory = { recordRun: jest.fn().mockResolvedValue(null), recordRunActions: jest.fn().mockResolvedValue(undefined) };
 const allowAllRateLimiter = { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) };
@@ -55,7 +66,8 @@ describe("BuildAutomationRunnerService", () => {
   };
 
   const mockSetFn = jest.fn().mockReturnThis();
-  const mockWhereFn = jest.fn().mockResolvedValue(undefined);
+  const mockReturningFn = jest.fn().mockResolvedValue([{ version: 2 }]);
+  const mockWhereFn = jest.fn().mockReturnValue({ returning: mockReturningFn });
   const mockUpdateChain = { set: mockSetFn, where: mockWhereFn };
 
   const mockDb = {
@@ -71,6 +83,9 @@ describe("BuildAutomationRunnerService", () => {
       projectStatuses: {
         findFirst: jest.fn().mockResolvedValue({ id: 7 }),
       },
+      tickets: {
+        findFirst: jest.fn().mockResolvedValue({ id: 10, status: "TODO", version: 1 }),
+      },
       organizationMembers: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
@@ -84,10 +99,14 @@ describe("BuildAutomationRunnerService", () => {
     mockDb.select.mockReturnValue(dbSelect);
     dbSelect.from.mockReturnThis();
     dbSelect.where.mockResolvedValue([]);
+    jest.mocked(assertTransitionAllowed).mockResolvedValue(undefined);
+    jest.mocked(OutboxWriter.emit).mockResolvedValue(undefined);
     mockDb.update.mockReturnValue(mockUpdateChain);
     mockSetFn.mockReturnThis();
-    mockWhereFn.mockResolvedValue(undefined);
+    mockReturningFn.mockResolvedValue([{ version: 2 }]);
+    mockWhereFn.mockReturnValue({ returning: mockReturningFn });
     mockDb.insert.mockReturnValue(dbInsert);
+    mockDb.query.tickets.findFirst.mockResolvedValue({ id: 10, status: "TODO", version: 1 });
     dbInsert.values.mockReturnThis();
     dbInsert.onConflictDoNothing.mockResolvedValue(undefined);
     mockDb.query.ticketLabels.findFirst.mockResolvedValue(null);
@@ -101,6 +120,7 @@ describe("BuildAutomationRunnerService", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: BuildAutomationRunHistoryService, useValue: noopHistory },
         { provide: RateLimitService, useValue: allowAllRateLimiter },
+        { provide: ProjectsActivityService, useValue: { logTicketActivity: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -194,9 +214,9 @@ describe("BuildAutomationRunnerService", () => {
   });
 
   it("continues processing subsequent actions when one action throws", async () => {
-    mockWhereFn
+    mockReturningFn
       .mockRejectedValueOnce(new Error("DB transient error"))
-      .mockResolvedValue(undefined);
+      .mockResolvedValue([{ version: 2 }]);
 
     dbSelect.where.mockResolvedValue([
       makeRule({

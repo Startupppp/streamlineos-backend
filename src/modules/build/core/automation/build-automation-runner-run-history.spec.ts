@@ -5,7 +5,18 @@ import { BuildAutomationRunHistoryService } from "./build-automation-run-history
 import { ProjectsMembersService } from "../members/projects-members.service";
 import { RateLimitService } from "../../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
+import { assertTransitionAllowed } from "../tickets/projects-tickets-workflow-utils";
+import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import type { Db } from "../../../../db/drizzle.module";
+
+jest.mock("../tickets/projects-tickets-workflow-utils", () => ({
+  assertTransitionAllowed: jest.fn(),
+}));
+
+jest.mock("../../../../common/outbox/outbox-writer", () => ({
+  OutboxWriter: { emit: jest.fn() },
+}));
 
 jest.mock("../../../../common/logger/logger.service", () => ({
   logger: { warn: jest.fn(), error: jest.fn() },
@@ -36,13 +47,6 @@ function flush(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 20));
 }
 
-/**
- * These tests exercise `BuildAutomationRunnerService` wired to the REAL
- * `BuildAutomationRunHistoryService` (only its `DRIZZLE` and
- * `ProjectsMembersService` dependencies are mocked), so what's asserted is
- * exactly what `db.insert(projectAutomationRuns)`/`projectAutomationRunActions`
- * were called with — the actual persistence shape, not a stubbed call.
- */
 describe("BuildAutomationRunnerService — durable run history", () => {
   let service: BuildAutomationRunnerService;
   let insertedRuns: Record<string, unknown>[];
@@ -50,7 +54,8 @@ describe("BuildAutomationRunnerService — durable run history", () => {
   let nextRunId: number;
 
   const dbSelect = { from: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue([]) };
-  const updateWhere = jest.fn().mockResolvedValue(undefined);
+  const updateReturning = jest.fn().mockResolvedValue([{ version: 2 }]);
+  const updateWhere = jest.fn().mockReturnValue({ returning: updateReturning });
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
 
   const mockDb = {
@@ -62,6 +67,7 @@ describe("BuildAutomationRunnerService — durable run history", () => {
     query: {
       ticketLabels: { findFirst: jest.fn().mockResolvedValue(null) },
       projectStatuses: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
+      tickets: { findFirst: jest.fn().mockResolvedValue({ id: 10, status: "TODO", version: 1 }) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
     },
   } as unknown as Db;
@@ -72,6 +78,8 @@ describe("BuildAutomationRunnerService — durable run history", () => {
     insertedActions = [];
     nextRunId = 100;
 
+    jest.mocked(assertTransitionAllowed).mockResolvedValue(undefined);
+    jest.mocked(OutboxWriter.emit).mockResolvedValue(undefined);
     (mockDb.transaction as jest.Mock).mockImplementation(async (work: (tx: typeof mockDb) => Promise<unknown>) => work(mockDb));
     (mockDb.execute as jest.Mock).mockResolvedValue([]);
     (mockDb.select as jest.Mock).mockReturnValue(dbSelect);
@@ -79,8 +87,10 @@ describe("BuildAutomationRunnerService — durable run history", () => {
     dbSelect.where.mockResolvedValue([]);
     (mockDb.update as jest.Mock).mockReturnValue({ set: updateSet });
     updateSet.mockReturnValue({ where: updateWhere });
-    updateWhere.mockResolvedValue(undefined);
+    updateReturning.mockResolvedValue([{ version: 2 }]);
+    updateWhere.mockReturnValue({ returning: updateReturning });
     (mockDb.query.projectStatuses.findFirst as jest.Mock).mockResolvedValue({ id: 7 });
+    (mockDb.query.tickets.findFirst as jest.Mock).mockResolvedValue({ id: 10, status: "TODO", version: 1 });
     (mockDb.query.organizationMembers.findFirst as jest.Mock).mockResolvedValue(null);
 
     // Routes by shape: a run-action row carries `runId`, a run row does not.
@@ -106,6 +116,7 @@ describe("BuildAutomationRunnerService — durable run history", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: ProjectsMembersService, useValue: { assertProjectAccess: jest.fn() } },
         { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) } },
+        { provide: ProjectsActivityService, useValue: { logTicketActivity: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 
@@ -139,7 +150,7 @@ describe("BuildAutomationRunnerService — durable run history", () => {
   });
 
   it("records a matched_failed run and a failure action row when the only action throws", async () => {
-    updateWhere.mockRejectedValueOnce(new Error("boom"));
+    updateReturning.mockRejectedValueOnce(new Error("boom"));
     dbSelect.where.mockResolvedValue([makeRule()]);
 
     service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
@@ -152,7 +163,7 @@ describe("BuildAutomationRunnerService — durable run history", () => {
   });
 
   it("records matched_partial_failure when some actions succeed and some fail", async () => {
-    updateWhere.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("second action failed"));
+    updateReturning.mockResolvedValueOnce([{ version: 2 }]).mockRejectedValueOnce(new Error("second action failed"));
     dbSelect.where.mockResolvedValue([
       makeRule({ actions: [{ type: "set_status", value: "IN_PROGRESS" }, { type: "set_status", value: "DONE" }] }),
     ]);

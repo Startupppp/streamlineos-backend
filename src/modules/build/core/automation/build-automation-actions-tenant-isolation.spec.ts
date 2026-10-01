@@ -1,35 +1,15 @@
-/**
- * Tenant-isolation coverage for BuildAutomationActionExecutor.
- *
- * File under test: src/modules/build/core/build-automation-actions.service.ts
- *
- * Every action that mutates a ticket goes through a shared WHERE predicate:
- *
- *   and(
- *     eq(tickets.id,        ticketId),
- *     eq(tickets.orgId,     orgId),
- *     eq(tickets.projectId, projectId),
- *     isNull(tickets.deletedAt),
- *   )
- *
- * An attacker that calls execute() with their own orgId can never reach a
- * ticket row that carries a different org's orgId — the database simply
- * returns 0 rows for the update.  The cross-project predicate gives the
- * same guarantee within the same org: a caller cannot update a ticket
- * that belongs to a project they did not supply.
- *
- * Test structure (modelled on projects-automations-tenant-isolation.spec.ts):
- *   1. Cross-org DENY — WHERE clause is bound to ATTACKER_ORG, not OWNER_ORG
- *   2. Cross-project DENY — WHERE clause is bound to FOREIGN_PROJECT_ID, not
- *      OWNER_PROJECT_ID
- *   3. Positive control — call resolves for the correctly-scoped actor and
- *      WHERE clause carries OWNER_ORG + OWNER_PROJECT_ID
- *   4. set_status early-exit guard — the preliminary projectStatuses lookup
- *      also carries orgId + projectId, preventing cross-org status poisoning
- */
-
 import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
 import type { Db } from "../../../../db/drizzle.module";
+import { assertTransitionAllowed } from "../tickets/projects-tickets-workflow-utils";
+import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
+
+jest.mock("../tickets/projects-tickets-workflow-utils", () => ({
+  assertTransitionAllowed: jest.fn(),
+}));
+
+jest.mock("../../../../common/outbox/outbox-writer", () => ({
+  OutboxWriter: { emit: jest.fn() },
+}));
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -62,17 +42,29 @@ function makeUpdateDb() {
   const where = jest.fn().mockReturnValue({ returning });
   const set = jest.fn().mockReturnValue({ where });
   const update = jest.fn().mockReturnValue({ set });
-  return { db: { update } as unknown as Db, where };
+  const db = {
+    update,
+    query: {
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
+    },
+  } as unknown as Db;
+  return { db, where };
+}
+
+function makeActivity() {
+  return { logTicketActivity: jest.fn().mockResolvedValue(undefined) };
 }
 
 beforeEach(() => {
   jest.resetAllMocks();
+  jest.mocked(assertTransitionAllowed).mockResolvedValue(undefined);
+  jest.mocked(OutboxWriter.emit).mockResolvedValue(undefined);
 });
 
 describe("BuildAutomationActionExecutor — cross-org tenant isolation (set_priority)", () => {
   it("binds attacker orgId in the WHERE clause — cross-org ticket is unreachable (DENY)", async () => {
     const { db, where } = makeUpdateDb();
-    const executor = new BuildAutomationActionExecutor(db);
+    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
 
     await executor.execute(
       ATTACKER_ORG,
@@ -92,7 +84,7 @@ describe("BuildAutomationActionExecutor — cross-org tenant isolation (set_prio
 
   it("binds projectId in the WHERE clause — cross-project ticket is unreachable (DENY)", async () => {
     const { db, where } = makeUpdateDb();
-    const executor = new BuildAutomationActionExecutor(db);
+    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
 
     await executor.execute(
       ATTACKER_ORG,
@@ -112,7 +104,7 @@ describe("BuildAutomationActionExecutor — cross-org tenant isolation (set_prio
 
   it("resolves without error and WHERE clause carries owner org + project (positive control)", async () => {
     const { db, where } = makeUpdateDb();
-    const executor = new BuildAutomationActionExecutor(db);
+    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
 
     await expect(
       executor.execute(
@@ -135,8 +127,8 @@ describe("BuildAutomationActionExecutor — cross-org tenant isolation (set_prio
 });
 
 describe("BuildAutomationActionExecutor — cross-org isolation via set_status guard", () => {
-  function makeStatusLookupDb(statusRow: unknown) {
-    const returning = jest.fn().mockResolvedValue([]);
+  function makeStatusLookupDb(statusRow: unknown, currentStatus: string | null = "TODO") {
+    const returning = jest.fn().mockResolvedValue([{ version: 2 }]);
     const txWhere = jest.fn().mockReturnValue({ returning });
     const txSet = jest.fn().mockReturnValue({ where: txWhere });
     const txUpdate = jest.fn().mockReturnValue({ set: txSet });
@@ -157,22 +149,29 @@ describe("BuildAutomationActionExecutor — cross-org isolation via set_status g
     );
 
     let statusFindFirstPredicate: unknown = undefined;
-    const findFirst = jest.fn().mockImplementation(({ where: predicate }: { where: unknown }) => {
+    const findFirstStatus = jest.fn().mockImplementation(({ where: predicate }: { where: unknown }) => {
       statusFindFirstPredicate = predicate;
       return Promise.resolve(statusRow);
     });
 
+    const findFirstTicket = jest.fn().mockResolvedValue(
+      currentStatus !== null ? { id: TICKET_ID, status: currentStatus, version: 1 } : undefined,
+    );
+
     const db = {
-      query: { projectStatuses: { findFirst } },
+      query: {
+        projectStatuses: { findFirst: findFirstStatus },
+        tickets: { findFirst: findFirstTicket },
+      },
       transaction,
     } as unknown as Db;
 
-    return { db, findFirst, txWhere, getStatusPredicate: () => statusFindFirstPredicate };
+    return { db, findFirst: findFirstStatus, txWhere, getStatusPredicate: () => statusFindFirstPredicate };
   }
 
   it("projectStatuses lookup carries attacker orgId — cross-org status lookup is isolated (DENY path)", async () => {
     const { db, findFirst, getStatusPredicate } = makeStatusLookupDb(undefined);
-    const executor = new BuildAutomationActionExecutor(db);
+    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
 
     await executor.execute(
       ATTACKER_ORG,
@@ -192,8 +191,8 @@ describe("BuildAutomationActionExecutor — cross-org isolation via set_status g
   });
 
   it("resolves and executes the transaction when status exists in the correct project (positive control)", async () => {
-    const { db, findFirst } = makeStatusLookupDb({ id: 7 });
-    const executor = new BuildAutomationActionExecutor(db);
+    const { db, findFirst } = makeStatusLookupDb({ id: 7 }, "TODO");
+    const executor = new BuildAutomationActionExecutor(db, makeActivity() as never);
 
     await expect(
       executor.execute(

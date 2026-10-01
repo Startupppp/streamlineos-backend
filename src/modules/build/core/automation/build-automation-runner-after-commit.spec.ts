@@ -4,12 +4,23 @@ import { BuildAutomationActionExecutor } from "./build-automation-actions.servic
 import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
 import { RateLimitService } from "../../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
+import { assertTransitionAllowed } from "../tickets/projects-tickets-workflow-utils";
+import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import {
   runWithTenantContext,
   type AfterCommitHook,
   type TenantContext,
 } from "../../../../common/tenant/tenant-context";
 import type { TenantTx } from "../../../../db/drizzle.types";
+
+jest.mock("../tickets/projects-tickets-workflow-utils", () => ({
+  assertTransitionAllowed: jest.fn(),
+}));
+
+jest.mock("../../../../common/outbox/outbox-writer", () => ({
+  OutboxWriter: { emit: jest.fn() },
+}));
 
 const noopHistory = { recordRun: jest.fn().mockResolvedValue(null), recordRunActions: jest.fn().mockResolvedValue(undefined) };
 const allowAllRateLimiter = { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) };
@@ -40,7 +51,8 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
   let service: BuildAutomationRunnerService;
 
   const dbSelect = { from: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue([RULE]) };
-  const updateWhere = jest.fn().mockResolvedValue(undefined);
+  const updateReturning = jest.fn().mockResolvedValue([{ version: 2 }]);
+  const updateWhere = jest.fn().mockReturnValue({ returning: updateReturning });
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
   const mockDb = {
     transaction: jest.fn(),
@@ -51,12 +63,15 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
     query: {
       ticketLabels: { findFirst: jest.fn().mockResolvedValue(null) },
       projectStatuses: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
+      tickets: { findFirst: jest.fn().mockResolvedValue({ id: 10, status: "TODO", version: 1 }) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
     },
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    jest.mocked(assertTransitionAllowed).mockResolvedValue(undefined);
+    jest.mocked(OutboxWriter.emit).mockResolvedValue(undefined);
     mockDb.transaction.mockImplementation(async (work: (tx: typeof mockDb) => Promise<unknown>) => work(mockDb));
     mockDb.execute.mockResolvedValue([]);
     mockDb.select.mockReturnValue(dbSelect);
@@ -64,8 +79,10 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
     dbSelect.where.mockResolvedValue([RULE]);
     mockDb.update.mockReturnValue({ set: updateSet });
     updateSet.mockReturnValue({ where: updateWhere });
-    updateWhere.mockResolvedValue(undefined);
+    updateWhere.mockReturnValue({ returning: updateReturning });
+    updateReturning.mockResolvedValue([{ version: 2 }]);
     mockDb.query.projectStatuses.findFirst.mockResolvedValue({ id: 7 });
+    mockDb.query.tickets.findFirst.mockResolvedValue({ id: 10, status: "TODO", version: 1 });
     mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -75,18 +92,12 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
         { provide: DRIZZLE, useValue: mockDb },
         { provide: BuildAutomationRunHistoryService, useValue: noopHistory },
         { provide: RateLimitService, useValue: allowAllRateLimiter },
+        { provide: ProjectsActivityService, useValue: { logTicketActivity: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = module.get(BuildAutomationRunnerService);
   });
 
-  /**
-   * The defect: `void this.execute(...)` started the automation on the request's own
-   * transaction and let it race the COMMIT. Whatever had not finished by then ran
-   * against a committed handle with no tenant GUC and died 42501 — the rule silently
-   * did not apply. The fix registers the work as an after-commit hook, which the
-   * interceptor drains inside a fresh tenant transaction.
-   */
   it("does not touch the database while the request transaction is still open", async () => {
     const afterCommit: AfterCommitHook[] = [];
     const context: TenantContext = {
@@ -126,11 +137,6 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
     expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ status: "IN_PROGRESS" }));
   });
 
-  /**
-   * Background sweeps run under `forEachOrg`, whose context carries no `afterCommit`
-   * array, so `registerAfterCommit` returns false there. CLAUDE.md §4 requires the
-   * work to run inline in that case rather than being dropped.
-   */
   it("runs inline when there is no ambient context to defer into", async () => {
     service.runForTicketEvent("org-1", 1, "ticket.created", TICKET);
     await flush();
