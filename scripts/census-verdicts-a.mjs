@@ -223,9 +223,9 @@ export default [
     verdict: "VERIFIED",
     finding: "parent-bound-through-a-repacked-query-object",
     summary:
-      "GET /build/:projectId/tickets/:ticketId/time-entries. The parent is genuinely bound, three times over. listTicketTimeEntries is a one-line adapter at timesheets.service.ts:410 that repacks its positional projectId and ticketId into the query object of listTimeEntries; that is why the static pass loses the trail, since it follows the named method and never sees projectId reach an eq(). Inside listTimeEntries the project is resolved under the caller's org by assertProjectInOrg at :75, the ticket must belong to that project at :79, and the entry list itself carries eq(timesheets.projectId, query.projectId) at :109. Org is bound at :87, and the row set is further narrowed by the timesheets scope predicate, so a caller without 'all' scope sees only their own entries. Residual noted and deliberately not changed: there is no project-membership assert here, but the identical rows are already reachable through the org-level GET /build/time-entries?projectId=&ticketId= on the same service method, so gating only the project-addressed route would close nothing.",
+      "GET /build/:projectId/tickets/:ticketId/time-entries. The parent is genuinely bound, three times over. listTicketTimeEntries is a one-line adapter at timesheets.service.ts:410 that repacks its positional projectId and ticketId into the query object of listTimeEntries; that is why the static pass loses the trail, since it follows the named method and never sees projectId reach an eq(). Inside listTimeEntries the project is decided by assertProjectVisible (404 when the caller does not reach it), the ticket must belong to that project at :79, and the entry list itself carries eq(timesheets.projectId, query.projectId) at :109. Org is bound at :87, and the row set is further narrowed by the timesheets scope predicate, so a caller without 'all' scope sees only their own entries. The org-level GET /build/time-entries shares the method and the same project reach clause, so neither route reads entries on a project the caller does not reach beyond their own.",
     blastRadius:
-      "None beyond what the org-level list route already exposes. Not cross-tenant: timesheets.orgId is bound and a project outside the org 404s at assertProjectInOrg. Within the org a build:timesheets:manage holder at 'all' scope sees org-wide entries by design; everyone else is cut to their own membership by the scope predicate.",
+      "None beyond what the org-level list route already exposes. Not cross-tenant: timesheets.orgId is bound and a project outside the org 404s at assertProjectVisible. Within the org a build:timesheets:manage holder at 'all' scope sees org-wide entries by design; everyone else is cut to their own membership by the scope predicate.",
     evidence: [
       {
         file: "src/modules/build/execution/timesheets.service.ts",
@@ -248,8 +248,8 @@ export default [
       {
         file: "src/modules/build/execution/timesheets.service.ts",
         line: 74,
-        anchor: /if \(query\.projectId\) await assertProjectInOrg\(this\.db, user\.orgId, query\.projectId\);/,
-        note: "the url project is resolved under the caller's org first",
+        anchor: /if \(query\.projectId\) await assertProjectVisible\(this\.db, this\.access, user, query\.projectId\);/,
+        note: "the url project is decided by project-access first: 404 cross-tenant and for a same-org project the caller does not reach",
       },
     ],
   },
