@@ -9,7 +9,7 @@ import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { CacheService } from "../../../common/cache/cache.service";
-import { AuditService } from "../../../common/audit/audit.service";
+import { auditLogs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
@@ -52,7 +52,7 @@ describe("OrgLifecycleService", () => {
   const cacheInvalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const revokeOrgScopedAccess = jest.fn().mockResolvedValue(undefined);
   const revokeAllPending = jest.fn().mockResolvedValue(undefined);
-  const auditLog = jest.fn();
+  const inserted: Array<{ table: unknown; row: unknown }> = [];
   const sagaBegin = jest.fn();
   const sagaRunStep = jest.fn();
   const sagaComplete = jest.fn().mockResolvedValue(undefined);
@@ -64,12 +64,14 @@ describe("OrgLifecycleService", () => {
     select: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
+    insert: jest.Mock;
     transaction: jest.Mock;
   };
   let service: OrgLifecycleService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    inserted.length = 0;
     selectResults = [];
     nextActiveOrgRows = [];
     db = {
@@ -84,6 +86,16 @@ describe("OrgLifecycleService", () => {
       delete: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue(undefined),
       }),
+      insert: jest.fn((table: unknown) => ({
+        values: jest.fn((row: unknown) => {
+          inserted.push({ table, row });
+          const done = Promise.resolve();
+          return {
+            then: done.then.bind(done),
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+          };
+        }),
+      })),
       transaction: jest.fn(
         (fn: (tx: typeof db) => Promise<unknown>) => fn(db),
       ),
@@ -100,7 +112,6 @@ describe("OrgLifecycleService", () => {
       providers: [
         OrgLifecycleService,
         { provide: DRIZZLE, useValue: db },
-        { provide: AuditService, useValue: { log: auditLog } },
         {
           provide: CacheService,
           useValue: {
@@ -142,10 +153,38 @@ describe("OrgLifecycleService", () => {
       nextOrgId: "org-2",
     });
 
-    expect(db.transaction).toHaveBeenCalledTimes(4);
+    expect(db.transaction).toHaveBeenCalledTimes(6);
     expect(revokeAllPending).toHaveBeenCalledWith("org-1", db);
     expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1", "removed");
     expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
+  });
+
+  it("writes the org.archived audit on the archiving transaction, in the same commit as the status change", async () => {
+    selectResults.push([{ statusV2: "ACTIVE" }], [], [{ id: 1, userId: "user-1" }]);
+
+    await service.archiveOrg("org-1", "user-1");
+
+    const audits = inserted.filter((entry) => entry.table === auditLogs);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.row).toMatchObject({
+      action: "org.archived",
+      userId: "user-1",
+      orgId: "org-1",
+      targetType: "organization",
+    });
+  });
+
+  it("revokes every member of a large organisation, page by page, with no row cap", async () => {
+    const firstPage = Array.from({ length: 500 }, (_, index) => ({
+      id: index + 1,
+      userId: `member-${index + 1}`,
+    }));
+    selectResults.push([{ statusV2: "ACTIVE" }], [], firstPage, [{ id: 501, userId: "member-501" }]);
+
+    await service.archiveOrg("org-1", "user-1");
+
+    expect(revokeOrgScopedAccess).toHaveBeenCalledTimes(501);
+    expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "member-501", "removed");
   });
 
   it("hides another tenant's archived organization during restore", async () => {

@@ -142,6 +142,8 @@ export const ACCESS_SCOPES = [
   "src/modules/delegations/",
   "src/common/org/",
   "src/common/rbac/",
+  "src/modules/organization/core/",
+  "src/modules/users/",
 ];
 
 export const REVOCATION_SCOPES = [
@@ -172,7 +174,78 @@ export const ACCESS_SIDE_EFFECT_EXEMPT = new Map([
     "src/modules/module-access/lib/module-ownership-transfers.ts",
     "initiating or withdrawing a PENDING module transfer changes no access",
   ],
+  [
+    "src/modules/organization/core/invitation-create.service.ts",
+    "issuing or resending a PENDING invitation grants nothing; access is granted at acceptance, which commits through the access-mutation commit",
+  ],
+  [
+    "src/modules/organization/core/invitation-lifecycle.service.ts",
+    "re-roling, cancelling or revoking a PENDING invitation changes no member's access",
+  ],
+  [
+    "src/modules/organization/core/lib/invitation-mail-ops.ts",
+    "resending an invitation email changes no access",
+  ],
+  [
+    "src/modules/organization/core/lifecycle/organization-legal-hold.service.ts",
+    "a legal hold blocks deletion of records; it changes no role, standing, grant or ownership",
+  ],
+  [
+    "src/modules/organization/core/lifecycle/organization-placement-admin.service.ts",
+    "moving an organisation's data placement changes no role, standing, grant or ownership",
+  ],
+  [
+    "src/modules/organization/core/org-custom-domains.service.ts",
+    "custom domain bookkeeping changes no access",
+  ],
+  [
+    "src/modules/organization/core/org-holidays.service.ts",
+    "holiday calendar entries change no access",
+  ],
+  [
+    "src/modules/organization/core/organization-settings.service.ts",
+    "org settings and authentication policy (MFA, IP allowlist, session cap, allowed domains) are read by the guards from the org row on every request; no role, standing, grant or ownership changes",
+  ],
+  [
+    "src/modules/organization/core/org-profile.service.ts",
+    "switching the caller's active organisation changes no access; the session bust re-resolves which organisation the session points at",
+  ],
 ]);
+
+export const NON_ACCESS_AUDIT_ACTIONS = new Map([
+  [
+    "user.invitation.module_access_skipped",
+    "records a module grant that was NOT made at acceptance; the grants that are made commit through commitAccessChange",
+  ],
+  [
+    "user.signin_link_sent",
+    "mints a one-time sign-in link for an existing active member; it changes no role, standing, grant or ownership",
+  ],
+  [
+    "user.bulk_imported",
+    "a bulk import issues PENDING invitations; access is granted at acceptance",
+  ],
+  [
+    "org.deleted",
+    "written after the organisation row is purged, so it cannot join a tenant commit; every member's revocation already committed through revokeOrgScopedAccess",
+  ],
+  [
+    "org.purge_scheduled",
+    "scheduling a purge changes no access until the purge runs",
+  ],
+  [
+    "org.purge_cancelled",
+    "cancelling a scheduled purge changes no access",
+  ],
+]);
+
+const AUDIT_ACTION_RE = /\baction\s*:\s*(["'`])([^"'`$]+)\1/;
+
+export function auditActionAt(source, index) {
+  const end = source.indexOf("})", index);
+  const call = source.slice(index, end === -1 ? undefined : end);
+  return AUDIT_ACTION_RE.exec(call)?.[2] ?? null;
+}
 
 export function isAccessScoped(rel) {
   return ACCESS_SCOPES.some((scope) => rel.startsWith(scope));
@@ -189,7 +262,15 @@ const MEMBERSHIP_BUST_IMPORT_RE =
   /import\s+(?:type\s+)?\{[^}]*\}\s*from\s*["'][^"']*\/membership-bust["']/g;
 
 export function findAccessAuditWrites(source) {
-  return matchesWith(source, ACCESS_AUDIT_RE);
+  const out = [];
+  ACCESS_AUDIT_RE.lastIndex = 0;
+  for (const match of source.matchAll(ACCESS_AUDIT_RE)) {
+    const index = match.index ?? 0;
+    const action = auditActionAt(source, index);
+    if (action !== null && NON_ACCESS_AUDIT_ACTIONS.has(action)) continue;
+    out.push({ line: lineOf(source, index), text: match[0].replace(/\s+/g, " ") });
+  }
+  return out;
 }
 
 export function findSessionBusts(source) {
@@ -430,6 +511,28 @@ if (RUN_DIRECTLY && process.argv.includes("--self-test")) {
     1,
   );
   check(
+    "an audit whose literal action is listed as non-access is not an access audit",
+    findAccessAuditWrites("this.audit.log({ action: \"user.signin_link_sent\", userId });").length,
+    0,
+  );
+  check(
+    "an unlisted literal action is still an access audit",
+    findAccessAuditWrites("this.audit.log({ action: \"org.member_role_changed\", userId });").length,
+    1,
+  );
+  check(
+    "a computed action is never exempt",
+    findAccessAuditWrites("this.audit.log({ action: options?.auditAction ?? `user.status.${s}` });").length,
+    1,
+  );
+  check(
+    "a listed action in a LATER call does not exempt an earlier computed one",
+    findAccessAuditWrites(
+      "this.audit.log({ action: dynamic });\nthis.audit.log({ action: \"user.bulk_imported\" });",
+    ).length,
+    1,
+  );
+  check(
     "an auditLogs read is not a write",
     findAccessAuditWrites("await tx.select().from(auditLogs).where(w);").length,
     0,
@@ -468,14 +571,20 @@ if (RUN_DIRECTLY && process.argv.includes("--self-test")) {
   check("a spec-only fixture is not scanned", isProductionSource("hrms-kb-seed.spec-fixtures.ts"), false);
   check("a production fixture-named file is still scanned", isProductionSource("retention-drill-fixtures.ts"), true);
   check("rbac is access-scoped", isAccessScoped("src/modules/rbac/roles.service.ts"), true);
+  check(
+    "organization core is access-scoped",
+    isAccessScoped("src/modules/organization/core/org-membership.service.ts"),
+    true,
+  );
+  check("users is access-scoped", isAccessScoped("src/modules/users/users.service.ts"), true);
   check("ownership is access-scoped", isAccessScoped("src/modules/ownership/x.ts"), true);
   check("hr is not access-scoped", isAccessScoped("src/modules/hr/x.ts"), false);
   check("an owned file is revocation-scoped", isRevocationScoped("src/modules/users/users.service.ts"), true);
-  check("its sibling is not", isRevocationScoped("src/modules/users/users.controller.ts"), false);
+  check("a non-access file is not", isRevocationScoped("src/modules/hr/x.service.ts"), false);
   check(
-    "an owned file's lifecycle audit is not an access audit",
+    "a users-module access audit outside the commit is caught",
     scanAccessSideEffects("src/modules/users/users.service.ts", "this.audit.log({ action: 'user.deleted' });").length,
-    0,
+    1,
   );
   check(
     "an owned file's direct session bust is still caught",

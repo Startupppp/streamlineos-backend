@@ -102,7 +102,13 @@ describe("OrgMembershipService — cross-tenant membership mutations", () => {
           useValue: { canManageOrganizationMembership: jest.fn().mockResolvedValue(true) },
         },
         { provide: EmailService, useValue: {} },
-        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: NotificationDispatchService,
+          useValue: {
+            emit: jest.fn().mockResolvedValue(undefined),
+            emitInTx: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: OrgMembershipReadService, useValue: { list: jest.fn() } },
       ],
     }).compile();

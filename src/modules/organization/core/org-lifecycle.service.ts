@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import {
   accountOrganizationIndex,
   organizationLegalHolds,
@@ -17,9 +17,11 @@ import { type Db } from "../../../db/drizzle.module";
 import {
   assertTransitionAllowed,
 } from "./lifecycle/organization-lifecycle-transitions";
-import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { scheduleStandingRevocation } from "../../../common/rbac/access-mutation-commit";
+import {
+  commitAccessChange,
+  scheduleStandingRevocation,
+} from "../../../common/rbac/access-mutation-commit";
 import { OrgMembershipService } from "./org-membership.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -32,11 +34,12 @@ import { repairLastActiveOrgIds } from "./lifecycle/last-active-org-repair";
 import { nextActiveOrgIdsQuery } from "./lifecycle/next-active-org";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
+const MEMBER_PAGE_SIZE = 500;
+
 @Injectable()
 export class OrgLifecycleService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly orgMembership: OrgMembershipService,
     private readonly invitations: InvitationLifecycleService,
@@ -61,12 +64,25 @@ export class OrgLifecycleService {
   }
 
   private async listMemberUserIds(db: DbOrTx, orgId: string): Promise<string[]> {
-    const members = await db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId))
-      .limit(10000);
-    return members.map((m) => m.userId);
+    const userIds: string[] = [];
+    let afterMembershipId = 0;
+    for (;;) {
+      const page = await db
+        .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            gt(organizationMembers.id, afterMembershipId),
+          ),
+        )
+        .orderBy(asc(organizationMembers.id))
+        .limit(MEMBER_PAGE_SIZE);
+      for (const member of page) userIds.push(member.userId);
+      const last = page[page.length - 1];
+      if (page.length < MEMBER_PAGE_SIZE || !last) return userIds;
+      afterMembershipId = last.id;
+    }
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
@@ -199,16 +215,27 @@ export class OrgLifecycleService {
                 .update(accountOrganizationIndex)
                 .set({ organizationStatus: "ARCHIVED" })
                 .where(eq(accountOrganizationIndex.orgId, orgId));
+              await commitAccessChange(tx, orgId, {
+                audit: {
+                  action: "org.archived",
+                  userId,
+                  targetId: orgId,
+                  targetType: "organization",
+                },
+                revoke: {
+                  cache: this.cache,
+                  loses: [{ kind: "standing", userIds: memberUserIds }],
+                },
+              });
             },
             { orgId },
           ),
         );
 
       if (!done.has("revoke-member-access"))
-        await this.saga.runStep(sagaCtx.saga.sagaId, "revoke-member-access", async () => {
-          await this.revokeMembersAccess(orgId, memberUserIds);
-          await this.bustMembersMembership(orgId, memberUserIds);
-        });
+        await this.saga.runStep(sagaCtx.saga.sagaId, "revoke-member-access", () =>
+          this.revokeMembersAccess(orgId, memberUserIds),
+        );
 
       await this.saga.complete(sagaCtx.saga.sagaId);
     } catch (err) {
@@ -217,14 +244,6 @@ export class OrgLifecycleService {
     }
 
     const nextOrgId = replacements.get(userId) ?? null;
-
-    this.audit.log({
-      action: "org.archived",
-      userId,
-      orgId,
-      targetId: orgId,
-      targetType: "organization",
-    });
     return { success: true as const, nextOrgId };
   }
 
@@ -298,6 +317,14 @@ export class OrgLifecycleService {
                   .update(users)
                   .set({ lastActiveOrgId: orgId })
                   .where(eq(users.id, userId));
+                await commitAccessChange(tx, orgId, {
+                  audit: {
+                    action: "org.restored",
+                    userId,
+                    targetId: orgId,
+                    targetType: "organization",
+                  },
+                });
                 return ids;
               },
               { orgId },
@@ -329,14 +356,6 @@ export class OrgLifecycleService {
         ),
     );
     await this.bustMembersMembership(orgId, memberUserIds);
-
-    this.audit.log({
-      action: "org.restored",
-      userId,
-      orgId,
-      targetId: orgId,
-      targetType: "organization",
-    });
     return { success: true as const, orgId };
   }
 

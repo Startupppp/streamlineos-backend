@@ -3,7 +3,7 @@ jest.mock("../../common/rbac/sync-structural-role", () => ({
 }));
 
 import { getTableColumns } from "drizzle-orm";
-import { users, hrEmployments } from "../../db/schema";
+import { auditLogs, users, hrEmployments } from "../../db/schema";
 import { syncStructuralRoleAssignments } from "../../common/rbac/sync-structural-role";
 import { UserOpsService } from "./user-ops.service";
 
@@ -31,8 +31,14 @@ function buildService(
   const txDelete = jest.fn().mockReturnValue({ where: deleteWhere });
 
   const onConflictDoNothing = jest.fn().mockResolvedValue([]);
-  const insertValues = jest.fn().mockReturnValue({ onConflictDoNothing });
-  const txInsert = jest.fn().mockReturnValue({ values: insertValues });
+  const onConflictDoUpdate = jest.fn().mockResolvedValue([]);
+  const inserted: Array<{ table: unknown; row: unknown }> = [];
+  const txInsert = jest.fn().mockImplementation((table: unknown) => ({
+    values: jest.fn().mockImplementation((row: unknown) => {
+      inserted.push({ table, row });
+      return Object.assign(Promise.resolve([]), { onConflictDoNothing, onConflictDoUpdate });
+    }),
+  }));
 
   const selectInnerJoinWhere = jest.fn().mockResolvedValue([]);
   const selectInnerJoin = jest.fn().mockReturnValue({ where: selectInnerJoinWhere });
@@ -66,16 +72,18 @@ function buildService(
     select: jest.fn(() => organizationTimezone),
   };
 
+  const auditLog = jest.fn();
+  const cache = {
+    invalidate: jest.fn(),
+    invalidateForOrg: jest.fn(),
+    invalidateNamespace: jest.fn(),
+    invalidateMany: jest.fn(),
+    invalidateNamespaceMany: jest.fn(),
+  };
   const service = new UserOpsService(
     db as never,
-    { log: jest.fn() } as never,
-    {
-      invalidate: jest.fn(),
-      invalidateForOrg: jest.fn(),
-      invalidateNamespace: jest.fn(),
-      invalidateMany: jest.fn(),
-      invalidateNamespaceMany: jest.fn(),
-    } as never,
+    { log: auditLog } as never,
+    cache as never,
     {} as never,
     {} as never,
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) } as never,
@@ -83,7 +91,7 @@ function buildService(
     { getFacts: jest.fn(), getFactsBatch: jest.fn() } as never,
   );
 
-  return { db, tx, service, updatedTables, setCalls };
+  return { db, tx, service, updatedTables, setCalls, inserted, auditLog, cache };
 }
 
 const actor = { userId: "actor-1", isOrgOwner: false };
@@ -171,6 +179,43 @@ describe("bulkUpdateUsers — canonical destination writes", () => {
       "org-a",
       [11, 12],
       "MEMBER",
+      expect.objectContaining({
+        audit: expect.objectContaining({ action: "user.bulk_updated", userId: "actor-1" }),
+        revoke: expect.objectContaining({
+          loses: [{ kind: "standing", userIds: ["user-a", "user-b"] }],
+        }),
+      }),
     );
+  });
+
+  it("commits a bulk role change's audit and every target's session bust inside the role change, not best-effort after it", async () => {
+    const { service, auditLog } = buildService(
+      [{ userId: "user-a" }, { userId: "user-b" }],
+      [{ id: 11 }, { id: 12 }],
+    );
+
+    await service.bulkUpdateUsers("org-a", { userIds: ["user-a", "user-b"], role: "MEMBER" }, ownerActor);
+
+    expect(auditLog).not.toHaveBeenCalled();
+    expect(syncStructuralRoleAssignments).toHaveBeenCalledWith(
+      expect.anything(),
+      "org-a",
+      [11, 12],
+      "MEMBER",
+      expect.objectContaining({ revoke: expect.anything() }),
+    );
+  });
+
+  it("writes the audit row on the transaction and busts the targets' sessions when only placement changes", async () => {
+    const { service, inserted, auditLog, cache } = buildService([{ userId: "user-a" }]);
+
+    await service.bulkUpdateUsers("org-a", { userIds: ["user-a"], departmentId: "dept-1" }, actor);
+
+    const audits = inserted.filter((entry) => entry.table === auditLogs);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.row).toMatchObject({ action: "user.bulk_updated", orgId: "org-a" });
+    expect(auditLog).not.toHaveBeenCalled();
+    expect(cache.invalidate).toHaveBeenCalledWith("user:session:user-a");
+    expect(syncStructuralRoleAssignments).not.toHaveBeenCalled();
   });
 });

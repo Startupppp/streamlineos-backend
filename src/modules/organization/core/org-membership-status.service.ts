@@ -13,15 +13,15 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import {
   OrgMembershipAccessRevocation,
-  type MembershipRevocationCause,
+  type OrgScopedRevocation,
 } from "./org-membership-access-revocation";
+import type { DispatchEventInput } from "../../notifications/notification.types";
 import {
   queryOwnedModuleKeys,
   queryPrivilegedRoleNames,
@@ -39,11 +39,36 @@ import {
   applyLastActiveOrganizationChange,
 } from "./org-membership-last-active-org";
 
+function restoredStanding(memberUserId: string): OrgScopedRevocation {
+  return {
+    loses: [{ kind: "standing", userIds: [memberUserId] }],
+    afterCommit: () => Promise.resolve(),
+  };
+}
+
+function reactivatedEvent(
+  orgId: string,
+  actorUserId: string,
+  memberUserId: string,
+): DispatchEventInput {
+  return {
+    eventKey: "organization.member.reactivated",
+    orgId,
+    actorUserId,
+    targetUserIds: [memberUserId],
+    entityType: "user",
+    entityId: memberUserId,
+    title: "Your access was restored",
+    message:
+      "An administrator restored your membership. You can sign in to this organization again.",
+    link: "/dashboard",
+  };
+}
+
 @Injectable()
 export class OrgMembershipStatusService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
     private readonly ably: AblyService,
@@ -126,15 +151,7 @@ export class OrgMembershipStatusService {
                 `Remove administrative role(s) before this action: ${privilegedRoles.join(", ")}.`,
               );
             }
-          }
 
-          await membership.setLifecycleStatus(tx, {
-            orgId,
-            userId: memberUserId,
-            status: membershipStatus,
-            occurredAt: now,
-          });
-          if (status !== "active") {
             await tx
               .delete(orgUnitMembers)
               .where(
@@ -146,16 +163,54 @@ export class OrgMembershipStatusService {
           }
 
           await applyLastActiveOrganizationChange(tx, memberUserId, lastActiveOrgChange);
+
+          const revocation =
+            status === "active"
+              ? restoredStanding(memberUserId)
+              : await this.accessRevocation.planOrgScopedRevocation(
+                  tx,
+                  orgId,
+                  memberUserId,
+                  status,
+                );
+          await membership.setLifecycleStatus(
+            tx,
+            { orgId, userId: memberUserId, status: membershipStatus, occurredAt: now },
+            {
+              audit: {
+                action: options?.auditAction ?? `user.status.${status}`,
+                userId: actorUserId,
+                targetId: memberUserId,
+                targetType: "user",
+                resourceType: "user",
+                resourceId: memberUserId,
+                metadata: { status, reason: options?.reason },
+              },
+              revoke: { cache: this.cache, loses: revocation.loses },
+              notify: {
+                via: this.dispatch,
+                events: status === "active" ? [reactivatedEvent(orgId, actorUserId, memberUserId)] : [],
+              },
+              afterCommit: () =>
+                Promise.all([
+                  revocation.afterCommit(),
+                  status === "active"
+                    ? undefined
+                    : this.accessRevocation.notifyAccessLoss(
+                        orgId,
+                        memberUserId,
+                        status === "suspended" ? "suspended" : "removed",
+                      ),
+                  this.cache.invalidateNamespaceForOrg(orgId, "org:members:list"),
+                  this.cache.invalidateForOrg(orgId, "rbac:members"),
+                ]).then(() => undefined),
+            },
+          );
         },
         { orgId },
       ),
     );
 
-    if (status !== "active") {
-      await this.accessRevocation.revokeOrgScopedAccess(orgId, memberUserId, status as MembershipRevocationCause);
-    } else {
-      await this.accessRevocation.invalidateMemberSessionCaches(orgId, memberUserId);
-    }
     await this.db
       .update(accountOrganizationIndex)
       .set({ membershipStatus: userStatusToMembershipStatus(status) })
@@ -165,41 +220,6 @@ export class OrgMembershipStatusService {
           eq(accountOrganizationIndex.orgId, orgId),
         ),
       );
-    await this.cache.invalidateNamespaceForOrg(orgId, "org:members:list");
-    await this.cache.invalidateForOrg(orgId, "rbac:members");
-
-    this.audit.log({
-      action: options?.auditAction ?? `user.status.${status}`,
-      userId: actorUserId,
-      orgId,
-      targetId: memberUserId,
-      targetType: "user",
-      actorUserId,
-      resourceType: "user",
-      resourceId: memberUserId,
-      metadata: { status, reason: options?.reason },
-    });
-
-    if (status === "active") {
-      void this.dispatch
-        .emit({
-          eventKey: "organization.member.reactivated",
-          orgId,
-          actorUserId,
-          targetUserIds: [memberUserId],
-          entityType: "user",
-          entityId: memberUserId,
-          title: "Your access was restored",
-          message:
-            "An administrator restored your membership. You can sign in to this organization again.",
-          link: "/dashboard",
-        })
-        .catch(() => undefined);
-    } else {
-      await this.accessRevocation
-        .notifyAccessLoss(orgId, memberUserId, status === "suspended" ? "suspended" : "removed")
-        .catch(() => undefined);
-    }
 
     return { success: true };
   }

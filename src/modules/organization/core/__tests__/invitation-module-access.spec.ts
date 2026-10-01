@@ -475,7 +475,15 @@ describe("applyPendingRoleGrants — Finding 2: acceptance does not replay stale
     );
 
     expect(txInsert).toHaveBeenCalledWith(roleAssignments);
-    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG_ID);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG_ID, {
+      audit: expect.objectContaining({
+        action: "user.invitation.module_access_granted",
+        systemActor: "invitation-acceptance",
+        targetId: "42",
+        targetType: "membership",
+        metadata: expect.objectContaining({ roleIds: [10] }),
+      }),
+    });
   });
 });
 

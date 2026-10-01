@@ -154,6 +154,30 @@ describe("syncStructuralRoleAssignment", () => {
     expect(statementsOn(captured, 'delete from "role_assignments"')).toHaveLength(0);
     expect(statementsOn(captured, 'insert into "access_versions"')).toHaveLength(0);
   });
+
+  it("still commits the caller's audit once when the org has no seeded structural roles, so the role change is never unaudited", async () => {
+    const { db, captured } = makeDb([]);
+
+    await syncStructuralRoleAssignment(db, ORG, MEMBERSHIP, ORG_MEMBER_ROLES.ORG_ADMIN, {
+      audit: { action: "org.member_role_changed", userId: "actor" },
+    });
+
+    expect(statementsOn(captured, 'insert into "role_assignments"')).toHaveLength(0);
+    expect(statementsOn(captured, 'insert into "access_versions"')).toHaveLength(1);
+    expect(statementsOn(captured, 'insert into "audit_logs"')).toHaveLength(1);
+  });
+
+  it("writes the grant, the version bump and the audit row on the same handle", async () => {
+    const { db, captured } = makeDb([ADMIN_ROW, MEMBER_ROW]);
+
+    await syncStructuralRoleAssignment(db, ORG, MEMBERSHIP, ORG_MEMBER_ROLES.ORG_ADMIN, {
+      audit: { action: "org.member_role_changed", userId: "actor" },
+    });
+
+    expect(statementsOn(captured, 'insert into "role_assignments"')).toHaveLength(1);
+    expect(statementsOn(captured, 'insert into "access_versions"')).toHaveLength(1);
+    expect(statementsOn(captured, 'insert into "audit_logs"')).toHaveLength(1);
+  });
 });
 
 describe("syncStructuralRoleAssignments", () => {

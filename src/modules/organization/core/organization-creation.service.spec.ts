@@ -130,7 +130,10 @@ async function build(options: {
     providers: [
       OrganizationCreationService,
       { provide: DRIZZLE, useValue: db },
-      { provide: CacheService, useValue: { invalidate } },
+      {
+        provide: CacheService,
+        useValue: { invalidate, invalidateNamespace: jest.fn().mockResolvedValue(undefined) },
+      },
       {
         provide: AccountOrganizationIndexService,
         useValue: { refreshForUser, touchLastActivated, activate },

@@ -4,6 +4,7 @@ import type { CacheService } from "../cache/cache.service";
 import {
   commitAccessChange,
   scheduleStandingRevocation,
+  type CommitAccessOpts,
   type DbOrTx,
 } from "../rbac/access-mutation-commit";
 import {
@@ -144,9 +145,10 @@ export class MembershipMutations {
     return byUserId;
   }
 
-  async changeRole(
+  async changeRole<E = never>(
     tx: DbOrTx,
     input: { orgId: string; userId: string; role: string },
+    access?: CommitAccessOpts<E>,
   ): Promise<number | null> {
     const [member] = await tx
       .update(organizationMembers)
@@ -160,13 +162,14 @@ export class MembershipMutations {
       .returning({ id: organizationMembers.id });
     this.record(input.userId);
     if (!member) return null;
-    await syncStructuralRoleAssignment(tx, input.orgId, member.id, input.role);
+    await syncStructuralRoleAssignment(tx, input.orgId, member.id, input.role, access);
     return member.id;
   }
 
-  async changeRoles(
+  async changeRoles<E = never>(
     tx: DbOrTx,
     input: { orgId: string; userIds: readonly string[]; role: string },
+    access?: CommitAccessOpts<E>,
   ): Promise<number[]> {
     if (input.userIds.length === 0) return [];
     const rows = await tx
@@ -181,11 +184,11 @@ export class MembershipMutations {
       .returning({ id: organizationMembers.id });
     for (const userId of input.userIds) this.record(userId);
     const membershipIds = rows.map((row) => row.id);
-    await syncStructuralRoleAssignments(tx, input.orgId, membershipIds, input.role);
+    await syncStructuralRoleAssignments(tx, input.orgId, membershipIds, input.role, access);
     return membershipIds;
   }
 
-  async setLifecycleStatus(
+  async setLifecycleStatus<E = never>(
     tx: DbOrTx,
     input: {
       orgId: string;
@@ -193,6 +196,7 @@ export class MembershipMutations {
       status: MembershipStatus;
       occurredAt: Date;
     },
+    access?: CommitAccessOpts<E>,
   ): Promise<void> {
     await tx
       .update(organizationMembers)
@@ -203,7 +207,7 @@ export class MembershipMutations {
           eq(organizationMembers.orgId, input.orgId),
         ),
       );
-    await commitAccessChange(tx, input.orgId);
+    await commitAccessChange(tx, input.orgId, access);
     this.record(input.userId);
   }
 
@@ -274,9 +278,10 @@ export class MembershipMutations {
     this.record(input.to.userId);
   }
 
-  async deleteMembership(
+  async deleteMembership<E = never>(
     tx: DbOrTx,
     input: { orgId: string; userId: string },
+    access?: CommitAccessOpts<E>,
   ): Promise<void> {
     await tx
       .delete(organizationMembers)
@@ -286,7 +291,7 @@ export class MembershipMutations {
           eq(organizationMembers.userId, input.userId),
         ),
       );
-    await commitAccessChange(tx, input.orgId);
+    await commitAccessChange(tx, input.orgId, access);
     this.record(input.userId);
   }
 
