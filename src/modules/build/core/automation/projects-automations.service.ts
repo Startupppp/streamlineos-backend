@@ -9,7 +9,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { CreateAutomationInput, UpdateAutomationInput, ListAutomationsQuery } from "../dto/automation.schemas";
 import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
-import { escapeLike } from "../";
+import { escapeLike } from "../lib/escape-like";
 
 @Injectable()
 export class ProjectsAutomationsService {
