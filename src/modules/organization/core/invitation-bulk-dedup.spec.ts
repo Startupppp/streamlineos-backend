@@ -62,6 +62,7 @@ function harness(options: HarnessOptions = {}) {
     update: jest.fn(() => ({
       set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
     })),
+    delete: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
   };
   (globalThis as { __bulkInviteTx?: unknown }).__bulkInviteTx = tx;
 
