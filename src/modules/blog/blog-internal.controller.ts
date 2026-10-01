@@ -1,9 +1,9 @@
-import { Body, Controller, Headers, HttpCode, Post, type RawBodyRequest, Req } from "@nestjs/common";
-import type { Request } from "express";
+import { Body, Controller, Headers, HttpCode, Post, UseGuards } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { BlogInvalidationSignatureGuard } from "./blog-invalidation.guard";
 import { BlogInvalidationService } from "./blog-invalidation.service";
 import { invalidationBodySchema, type InvalidationBody } from "./dto/blog.schemas";
 import { blogInvalidationAckSchema } from "./dto/blog-response.schemas";
@@ -21,16 +21,10 @@ export class BlogInternalController {
   @Post("invalidate")
   @HttpCode(200)
   @UseRateLimit("blog:invalidate")
+  @UseGuards(BlogInvalidationSignatureGuard)
   @Validate({ body: invalidationBodySchema })
   @ResponseSchema(blogInvalidationAckSchema)
-  invalidate(
-    @Req() req: RawBodyRequest<Request>,
-    @Body() body: InvalidationBody,
-    @Headers("x-blog-event-id") eventId: string | undefined,
-    @Headers("x-blog-timestamp") timestamp: string | undefined,
-    @Headers("x-blog-signature") signature: string | undefined,
-  ) {
-    this.invalidation.verify({ eventId, timestamp, signature }, req.rawBody?.toString("utf8") ?? "");
+  invalidate(@Body() body: InvalidationBody, @Headers("x-blog-event-id") eventId: string | undefined) {
     return this.invalidation.receive(eventId ?? "", body);
   }
 }
