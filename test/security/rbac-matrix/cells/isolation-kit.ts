@@ -1,7 +1,7 @@
 import type { AdapterBinding, Observation, Scenario } from "../matrix.types";
 import { matrixRows } from "../fixtures";
 import { outcomeOfError } from "../matrix-runner";
-import { ORG_A, ORG_B } from "../standings";
+import { ORG_A, ORG_B, standingRows } from "../standings";
 import { boundValues, mergeRows, worldDb, type WorldDb, type WorldRows } from "../world-db";
 
 export interface PairSide {
@@ -29,6 +29,10 @@ export function victimOf(callerOrg: string): string {
 
 export function freshWorld(...parts: readonly WorldRows[]): WorldDb {
   return worldDb(mergeRows(matrixRows(), ...parts), { mutable: true });
+}
+
+export function standingWorld(...parts: readonly WorldRows[]): WorldDb {
+  return worldDb(mergeRows(standingRows(ORG_A), standingRows(ORG_B), ...parts), { mutable: true });
 }
 
 export function boundBy(world: WorldDb, mark: { readonly reads: number; readonly writes: number }, table: string): unknown[] {
