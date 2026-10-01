@@ -116,6 +116,7 @@ export class InvitationCreateService {
     emails: string[],
     role: string,
     _delivery: InvitationDelivery = "enqueue",
+    moduleAccess?: Array<{ moduleKey: string; standing: ModuleStanding }>,
   ): Promise<{
     deliveryMode: InvitationDelivery;
     results: BulkInviteRowResult[];
