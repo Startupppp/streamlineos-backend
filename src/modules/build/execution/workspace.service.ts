@@ -19,7 +19,7 @@ import {
   clearingLifecycle,
 } from "../lifecycle/lifecycle-restore";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess, escapeLike, assertProjectInOrg } from "../core";
+import { assertProjectAccess, assertProjectVisible, escapeLike, assertProjectInOrg } from "../core";
 import { buildCursorPage, buildTupleCursorPage, decodeCursor, decodeIntegerCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId, keysetBeforeTuple, keysetBoolean, keysetTimestamp, keysetInteger } from "../../../common/pagination/keyset";
 import type {
@@ -175,7 +175,9 @@ export class MilestonesService {
     };
   }
 
-  async updateMilestone(orgId: string, projectId: number, milestoneId: number, input: UpdateMilestoneInput) {
+  async updateMilestone(u: CurrentUserContext, projectId: number, milestoneId: number, input: UpdateMilestoneInput) {
+    await assertProjectVisible(this.db, this.access, u, projectId);
+    const { orgId } = u;
     const before = await this.db.query.projectMilestones.findFirst({
       where: and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
       columns: { version: true, ownerMembershipId: true },
@@ -204,7 +206,9 @@ export class MilestonesService {
     };
   }
 
-  async deleteMilestone(orgId: string, userId: string, projectId: number, milestoneId: number) {
+  async deleteMilestone(u: CurrentUserContext, projectId: number, milestoneId: number) {
+    await assertProjectVisible(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const [stamped] = await this.db
       .update(projectMilestones)
       .set({ deletedAt: new Date() })
@@ -222,8 +226,9 @@ export class MilestonesService {
     return { success: true };
   }
 
-  async restoreMilestone(orgId: string, userId: string, projectId: number, milestoneId: number) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async restoreMilestone(u: CurrentUserContext, projectId: number, milestoneId: number) {
+    await assertProjectVisible(this.db, this.access, u, projectId);
+    const { orgId, userId } = u;
     const existing = await this.db.query.projectMilestones.findFirst({
       where: and(
         eq(projectMilestones.id, milestoneId),

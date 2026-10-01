@@ -15,6 +15,8 @@ import { ModulesService } from "./modules.service";
 import { IntakeService, MilestonesService, ViewsService } from "./workspace.service";
 import { BuildTicketCreationService } from "../core/tickets";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function makeIntakeTicketCreation() {
   return {
@@ -33,6 +35,10 @@ function makeIntakeTicketCreation() {
   } as unknown as BuildTicketCreationService;
 }
 
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual("../core/project-crud/project-access"),
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock("../core/lib/allocate-ticket-number", () => ({
   allocateTicketNumbers: jest.fn(async () => 1),
 }));
@@ -44,6 +50,18 @@ const ORG = "org-1";
 const OTHER_ORG = "org-2";
 const USER = "user-7";
 const OTHER_USER = "user-9";
+
+function milestoneActor(orgId: string): CurrentUserContext {
+  return {
+    userId: "user-1",
+    orgId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(7, false),
+  };
+}
 const PROJECT_A = 11;
 const PROJECT_B = 22;
 const SPRINT_A = 100;
@@ -363,7 +381,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_A, MILESTONE_B, { name: "hijacked", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(milestoneActor(ORG), PROJECT_A, MILESTONE_B, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_B)?.name).toBe("milestone-b");
   });
@@ -373,7 +391,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_A, MILESTONE_A, { name: "milestone-a-v2", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(milestoneActor(ORG), PROJECT_A, MILESTONE_A, { name: "milestone-a-v2", version: 1 }),
     ).resolves.toMatchObject({ id: MILESTONE_A, name: "milestone-a-v2" });
   });
 
@@ -382,7 +400,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(OTHER_ORG, PROJECT_A, MILESTONE_A, { name: "hijacked", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(milestoneActor(OTHER_ORG), PROJECT_A, MILESTONE_A, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_A)?.name).toBe("milestone-a");
   });
@@ -392,7 +410,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(ORG, "user-1", PROJECT_A, MILESTONE_B),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(milestoneActor(ORG), PROJECT_A, MILESTONE_B),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_B)?.deletedAt).toBeNull();
   });
@@ -402,7 +420,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(ORG, "user-1", PROJECT_A, MILESTONE_A),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(milestoneActor(ORG), PROJECT_A, MILESTONE_A),
     ).resolves.toEqual({ success: true });
     expect(store.milestones.find((row) => row.id === MILESTONE_A)?.deletedAt).toBeInstanceOf(Date);
   });

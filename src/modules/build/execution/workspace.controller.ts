@@ -114,7 +114,7 @@ export class MilestonesController {
     @Body() body: UpdateMilestoneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.updateMilestone(u.orgId, projectId, milestoneId, body);
+    return this.milestones.updateMilestone(u, projectId, milestoneId, body);
   }
 
   @Delete(":milestoneId")
@@ -127,7 +127,7 @@ export class MilestonesController {
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.deleteMilestone(u.orgId, u.userId, projectId, milestoneId);
+    return this.milestones.deleteMilestone(u, projectId, milestoneId);
   }
 
   @Post(":milestoneId/restore")
@@ -140,7 +140,7 @@ export class MilestonesController {
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.restoreMilestone(u.orgId, u.userId, projectId, milestoneId);
+    return this.milestones.restoreMilestone(u, projectId, milestoneId);
   }
 }
 

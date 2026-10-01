@@ -7,6 +7,11 @@ import { ProjectsRoadmapService } from "./roadmap/projects-roadmap.service";
 import { AccessService } from "../../access/access.service";
 import { systemActor } from "../../../common/auth/system-actor";
 
+jest.mock("./project-crud/project-access", () => ({
+  ...jest.requireActual("./project-crud/project-access"),
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+}));
+
 const actor = systemActor("integrations.git.webhook", "org-1");
 
 const accessWithBuildManage = {
@@ -100,7 +105,7 @@ async function roadmapService(itemRow: Record<string, unknown> | undefined, upda
 
 it("milestone stale token returns 409 with currentVersion in details (ticket-13)", async () => {
   const { service, module } = await milestonesService({ version: 4 });
-  const error = await service.updateMilestone("org-1", 1, 10, { version: 2, name: "M1" }).catch((e: unknown) => e);
+  const error = await service.updateMilestone(actor, 1, 10, { version: 2, name: "M1" }).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(TicketVersionConflictException);
   expect((error as TicketVersionConflictException).getResponse()).toMatchObject({ details: { currentVersion: 4 } });
   await module.close();
@@ -109,7 +114,7 @@ it("milestone stale token returns 409 with currentVersion in details (ticket-13)
 it("milestone matching token does not throw TicketVersionConflictException and runs the update query (BE-141 positive pair)", async () => {
   const updatedMilestone = { id: 10, orgId: "org-1", projectId: 1, name: "M1", version: 5 };
   const { service, module, update } = await milestonesService({ version: 4 }, [updatedMilestone]);
-  const error = await service.updateMilestone("org-1", 1, 10, { version: 4, name: "M1" }).catch((e: unknown) => e);
+  const error = await service.updateMilestone(actor, 1, 10, { version: 4, name: "M1" }).catch((e: unknown) => e);
   expect(error).not.toBeInstanceOf(TicketVersionConflictException);
   expect(update).toHaveBeenCalled();
   await module.close();

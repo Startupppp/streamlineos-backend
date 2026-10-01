@@ -4,6 +4,7 @@ export {
   assertProjectAccess,
   assertProjectAggregateAccess,
   assertProjectInOrg,
+  assertProjectVisible,
   assertTicketInProject,
   assertTicketReadAccess,
   authorizeProjectTicketRead,
