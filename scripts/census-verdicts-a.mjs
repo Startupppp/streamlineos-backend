@@ -258,6 +258,7 @@ export default [
     key: "modules/build/execution/workspace.controller.ts#createWorkspaceView",
     verdict: "VERIFIED",
     finding: "insert-binds-org-in-values",
+    projectRelationshipExempt: "creates an org-level workspace view with projectId written as null; no existing project row is read or written, and the saved filters are stored as opaque JSON that the server never evaluates — tickets are read only through list routes that apply their own visibility rule",
     summary:
       "POST on the workspace views controller. An org-level route with no :projectId, and the row is deliberately project-less: the INSERT into project_views sets projectId: null and scope: 'workspace' explicitly (workspace.service.ts:316) and binds the tenant by writing orgId as a column at :317. PASSED-UNBOUND is the documented false reading for create endpoints — the binding is an INSERT column, not a predicate. The sibling readers and mutators of the same table (listWorkspaceViews, updateWorkspaceView, deleteWorkspaceView) all bind eq(projectViews.orgId, orgId) in their WHERE clauses and additionally refuse a private view the caller does not own.",
     blastRadius:
