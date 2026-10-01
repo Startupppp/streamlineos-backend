@@ -92,7 +92,7 @@ describe("ModulesService — createModule", () => {
     const svc = new ModulesService(db);
 
     await expect(
-      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress", startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(ConflictException);
   });
 
@@ -118,10 +118,10 @@ describe("ModulesService — createModule", () => {
     const svc = new ModulesService(db);
 
     await expect(
-      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress", startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(otherError);
     await expect(
-      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress", startDate: undefined, endDate: undefined }),
     ).rejects.not.toThrow(ConflictException);
   });
 });

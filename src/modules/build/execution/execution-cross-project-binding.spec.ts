@@ -280,8 +280,8 @@ describe("SprintsService — the frozen surface cannot bind to any project, in o
     ["getSprint, in-project", (svc) => svc.getSprint(ORG, PROJECT_A, SPRINT_A)],
     ["getSprint, sibling project", (svc) => svc.getSprint(ORG, PROJECT_A, SPRINT_B)],
     ["getSprint, foreign tenant", (svc) => svc.getSprint(OTHER_ORG, PROJECT_A, SPRINT_A)],
-    ["updateSprint, in-project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_A, { name: "sprint-a-v2" }, USER)],
-    ["updateSprint, sibling project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_B, { name: "hijacked" }, USER)],
+    ["updateSprint, in-project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_A, { name: "sprint-a-v2", startDate: undefined, endDate: undefined }, USER)],
+    ["updateSprint, sibling project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_B, { name: "hijacked", startDate: undefined, endDate: undefined }, USER)],
     ["deleteSprint, sibling project", (svc) => svc.deleteSprint(ORG, PROJECT_A, SPRINT_B)],
     ["listSprints, in-project", (svc) => svc.listSprints(ORG, PROJECT_A)],
   ];
@@ -305,7 +305,7 @@ describe("SprintsService — the frozen surface cannot bind to any project, in o
     const { db, outbox } = makeDb(makeStore());
 
     await expect(
-      new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_A, { status: "COMPLETED" }, USER),
+      new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_A, { status: "COMPLETED", startDate: undefined, endDate: undefined }, USER),
     ).rejects.toThrow(GoneException);
 
     expect(outbox).toHaveLength(0);
@@ -318,7 +318,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_B, { name: "hijacked", version: 1 }),
+      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_B, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_B)?.name).toBe("module-b");
   });
@@ -328,7 +328,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1 }),
+      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1, startDate: undefined, endDate: undefined }),
     ).resolves.toMatchObject({ id: MODULE_A, name: "module-a-v2" });
   });
 
@@ -337,7 +337,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(OTHER_ORG, PROJECT_A, MODULE_A, { name: "hijacked", version: 1 }),
+      new ModulesService(db).updateModule(OTHER_ORG, PROJECT_A, MODULE_A, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_A)?.name).toBe("module-a");
   });

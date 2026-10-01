@@ -62,7 +62,7 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
     const u = makeU();
     const svc = new EpicsService(db, makeTicketCreation(), ticketChange, makeTicketDelete());
 
-    await svc.updateEpic(u, PROJECT_ID, EPIC_ID, { version: VERSION, title: "New title" });
+    await svc.updateEpic(u, PROJECT_ID, EPIC_ID, { version: VERSION, title: "New title", startDate: undefined, dueDate: undefined });
 
     expect(ticketChange.updateTicket).toHaveBeenCalledTimes(1);
     expect(ticketChange.updateTicket).toHaveBeenCalledWith(
@@ -78,7 +78,7 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
     const ticketChange = makeTicketChange();
     const svc = new EpicsService(db, makeTicketCreation(), ticketChange, makeTicketDelete());
 
-    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, title: "New title" });
+    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, title: "New title", startDate: undefined, dueDate: undefined });
 
     expect((db as unknown as { update: jest.Mock }).update).not.toHaveBeenCalled();
   });
@@ -89,7 +89,7 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
     const svc = new EpicsService(db, makeTicketCreation(), ticketChange, makeTicketDelete());
 
     await expect(
-      svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION }),
+      svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, startDate: undefined, dueDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(ticketChange.updateTicket).not.toHaveBeenCalled();
   });
@@ -101,7 +101,7 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
     const svc = new EpicsService(db, makeTicketCreation(), ticketChange, makeTicketDelete());
 
     await expect(
-      svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION }),
+      svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, startDate: undefined, dueDate: undefined }),
     ).rejects.toThrow(TicketVersionConflictException);
   });
 
@@ -110,7 +110,7 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
     const ticketChange = makeTicketChange();
     const svc = new EpicsService(db, makeTicketCreation(), ticketChange, makeTicketDelete());
 
-    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, health: "at_risk" });
+    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, health: "at_risk", startDate: undefined, dueDate: undefined });
 
     expect(ticketChange.updateTicket).toHaveBeenCalledWith(
       expect.anything(),
@@ -125,7 +125,7 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
     const ticketChange = makeTicketChange();
     const svc = new EpicsService(db, makeTicketCreation(), ticketChange, makeTicketDelete());
 
-    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, assigneeId: null });
+    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, assigneeId: null, startDate: undefined, dueDate: undefined });
 
     expect(ticketChange.updateTicket).toHaveBeenCalledWith(
       expect.anything(),

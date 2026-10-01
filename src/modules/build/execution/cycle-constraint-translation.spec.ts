@@ -10,7 +10,7 @@ const CYCLE_ID = 7;
 const USER_ID = "user-1";
 
 const CREATE_INPUT = { name: "Q4 Sprint", startDate: "2026-10-01", endDate: "2026-10-14" };
-const UPDATE_INPUT_ACTIVE = { status: "active" as const, version: 1 };
+const UPDATE_INPUT_ACTIVE = { status: "active" as const, version: 1, startDate: undefined, endDate: undefined };
 const UPDATE_INPUT_DATES = { startDate: "2026-10-01", endDate: "2026-10-14", version: 1 };
 
 type CycleRowStatus = (typeof cycleStatusEnum.enumValues)[number];

@@ -1,6 +1,7 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import type { PlanLimitsService } from "../../../billing/core/plan-limits.service";
+import type { BuildTicketCreationService } from "../tickets";
 import { encodeCursor } from "../../../../common/pagination/cursor";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -30,6 +31,12 @@ interface SelectBuilder {
   limit: jest.Mock;
 }
 
+interface TicketBuilder {
+  from: jest.Mock;
+  where: jest.Mock;
+  orderBy: jest.Mock;
+}
+
 function makeSelectDb(rows: unknown[], templateTicketRows: unknown[] = []) {
   const where = jest.fn();
   const templateBuilder: SelectBuilder = {
@@ -41,7 +48,7 @@ function makeSelectDb(rows: unknown[], templateTicketRows: unknown[] = []) {
     orderBy: jest.fn(() => templateBuilder),
     limit: jest.fn(() => Promise.resolve(rows)),
   };
-  const ticketBuilder = {
+  const ticketBuilder: TicketBuilder = {
     from: jest.fn(() => ticketBuilder),
     where: jest.fn((condition: unknown) => {
       where(condition);
@@ -62,7 +69,7 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
   it("listTemplates scopes the select WHERE to the requesting org (cross-tenant isolation)", async () => {
     const { db, where } = makeSelectDb([]);
     const { planLimits } = makeDeps();
-    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never);
+    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never, {} as unknown as BuildTicketCreationService);
 
     const result = await svc.listTemplates(ATTACKER_ORG, {});
 
@@ -77,7 +84,7 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
     const fakeTemplate = { id: 1, orgId: OWNER_ORG, name: "Sprint" };
     const { db } = makeSelectDb([fakeTemplate]);
     const { planLimits } = makeDeps();
-    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never);
+    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never, {} as unknown as BuildTicketCreationService);
 
     const result = await svc.listTemplates(OWNER_ORG, {});
 
@@ -88,7 +95,7 @@ describe("ProjectsTemplatesService — cross-tenant isolation", () => {
   it("listTemplates carries the cursor id into the WHERE so page two cannot silently restart at page one", async () => {
     const { db, where } = makeSelectDb([]);
     const { planLimits } = makeDeps();
-    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never);
+    const svc = new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never, {} as unknown as BuildTicketCreationService);
 
     const cursor = encodeCursor({ sortValue: new Date(0).toISOString(), id: "42" });
     await svc.listTemplates(OWNER_ORG, { cursor });

@@ -1,5 +1,7 @@
 import { GoneException, NotFoundException } from "@nestjs/common";
 import { listReleasesQuerySchema, ProjectsReleasesService, ProjectsWebhooksService } from "./core";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "./core/tickets";
+import type { WebhookEndpointService } from "../webhooks/webhook-endpoint.service";
 import { SprintsService } from "./execution/sprints.service";
 import { EpicsService } from "./execution/epics.service";
 import { CyclesService } from "./execution/cycles.service";
@@ -58,8 +60,8 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   const cases: Array<[string, (db: Db) => Promise<unknown>]> = [
     ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess, lifecycleAuditDouble()).listReleases(releasesU, 1, listReleasesQuerySchema.parse({}))],
-    ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db).listWebhooks(ATTACKER_ORG, 1)],
-    ["GET /build/:projectId/epics", (db) => new EpicsService(db).listEpics(ATTACKER_ORG, 1)],
+    ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db, {} as unknown as WebhookEndpointService).listWebhooks(ATTACKER_ORG, 1)],
+    ["GET /build/:projectId/epics", (db) => new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService).listEpics(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/cycles", (db) => new CyclesService(db).listCycles(ATTACKER_ORG, 1, {} as never)],
     ["GET /build/:projectId/modules", (db) => new ModulesService(db).listModules(ATTACKER_ORG, 1)],
     [

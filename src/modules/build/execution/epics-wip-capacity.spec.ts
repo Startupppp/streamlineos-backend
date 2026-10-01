@@ -26,7 +26,7 @@ it("refuses an epic when its destination column has no remaining capacity", asyn
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic" }))
+    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .rejects.toThrow("WIP limit");
   } finally {
     await module.close();
@@ -53,7 +53,7 @@ it.each([false, true])("refuses a missing destination with configured workflow=%
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic" }))
+    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .rejects.toThrow("no longer exists");
   } finally {
     await module.close();
@@ -82,7 +82,7 @@ it("permits an existing unlimited destination", async () => {
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic" }))
+    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .resolves.toMatchObject({ id: 10, title: "Epic" });
   } finally {
     await module.close();
