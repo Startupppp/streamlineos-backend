@@ -2,6 +2,9 @@ import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, idCursorPageSchema } from "../../../../common/openapi/response-envelopes";
 import { DB_ENUMS } from "../../../../db/enums.generated";
+import { releaseStatusSchema } from "./releases.schemas";
+
+const webhookDeliveryStatusSchema = z.enum(["pending", "success", "failed"]);
 
 export const ticketLabelSchema = z.object({
   id: z.number().int(),
@@ -126,7 +129,7 @@ export const projectReleaseListItemSchema = z.object({
   version: z.string(),
   rowVersion: z.number().int(),
   description: z.string().nullable(),
-  status: z.string(),
+  status: releaseStatusSchema,
   releaseDate: z.string().nullable(),
   publishedAt: nullableWireDate(),
   createdBy: z.string().nullable(),
@@ -151,7 +154,7 @@ export const projectReleaseRowSchema = z.object({
   version: z.string(),
   rowVersion: z.number().int(),
   description: z.string().nullable(),
-  status: z.string(),
+  status: releaseStatusSchema,
   releaseDate: z.string().nullable(),
   publishedAt: nullableWireDate(),
   createdBy: z.string().nullable(),
@@ -173,7 +176,7 @@ export const projectWebhookSchema = z.object({
   createdAt: wireDate(),
   updatedAt: wireDate(),
   lastDeliveryAt: nullableWireDate(),
-  lastDeliveryStatus: z.enum(["success", "failed", "pending"]).nullable(),
+  lastDeliveryStatus: webhookDeliveryStatusSchema.nullable(),
   failureRate: z.number().nullable(),
 });
 
@@ -183,7 +186,7 @@ export const webhookDeliverySchema = z.object({
   id: z.number().int(),
   webhookId: z.number().int(),
   event: z.string(),
-  status: z.string(),
+  status: webhookDeliveryStatusSchema,
   responseCode: z.number().int().nullable(),
   attempts: z.number().int(),
   lastError: z.string().nullable(),
@@ -245,21 +248,13 @@ export const projectAutomationRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
-const automationRunOutcomeSchema = z.enum([
-  "matched_success",
-  "matched_partial_failure",
-  "matched_failed",
-  "not_matched",
-  "blocked_loop_guard",
-  "blocked_rate_limit",
-  "error",
-]);
+const automationRunOutcomeSchema = z.enum(DB_ENUMS.automation_run_outcome);
 
 export const automationRunActionRowSchema = z.object({
   id: z.number().int(),
   actionIndex: z.number().int(),
   actionType: z.string(),
-  outcome: z.enum(["success", "failure"]),
+  outcome: z.enum(DB_ENUMS.automation_action_outcome),
   errorMessage: z.string().nullable(),
   createdAt: wireDate(),
 });
@@ -328,7 +323,7 @@ export const projectListItemSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   key: z.string(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.project_status),
   priority: z.string().nullable(),
   startDate: wireDate().nullable(),
   endDate: wireDate().nullable(),

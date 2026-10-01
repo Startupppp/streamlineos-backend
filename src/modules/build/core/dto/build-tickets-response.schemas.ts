@@ -4,7 +4,15 @@ import {
   nullableWireDate,
 } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
-import { ticketTypeEnum, ticketPriorityEnum } from "../../../../db/schema";
+import {
+  ticketTypeEnum,
+  ticketPriorityEnum,
+  cycleStatusEnum,
+  ticketActivityActionEnum,
+  workItemRelationTypeEnum,
+  gitProviderEnum,
+  gitRefTypeEnum,
+} from "../../../../db/schema";
 
 const userSummarySchema = z
   .object({
@@ -184,7 +192,7 @@ export const ticketListRowSchema = ticketRowSchema
       .object({
         id: z.number().int(),
         name: z.string(),
-        status: z.string(),
+        status: z.enum(cycleStatusEnum.enumValues),
         startDate: z.string(),
         endDate: z.string(),
       })
@@ -204,7 +212,7 @@ export const ticketSearchResultSchema = z.object({
   id: z.number().int(),
   title: z.string(),
   status: z.string(),
-  priority: z.string(),
+  priority: z.enum(ticketPriorityEnum.enumValues),
   ticketNumber: z.number().int(),
   projectId: z.number().int(),
   projectKey: z.string(),
@@ -215,7 +223,7 @@ export const ticketSearchResultListSchema = z.array(ticketSearchResultSchema);
 
 const activityItemSchema = z.object({
   id: z.number().int(),
-  action: z.string(),
+  action: z.enum(ticketActivityActionEnum.enumValues),
   label: z.string(),
   fromValue: z.string().nullable(),
   toValue: z.string().nullable(),
@@ -251,21 +259,21 @@ export const ticketRelationSchema = z.object({
   orgId: z.string(),
   workItemId: z.number().int(),
   relatedWorkItemId: z.number().int(),
-  relationType: z.enum(["blocks", "blocked_by", "duplicate_of", "relates_to"]),
+  relationType: z.enum(workItemRelationTypeEnum.enumValues),
   createdAt: wireDate(),
 });
 
 export const ticketRelationListItemSchema = z.object({
   id: z.number().int(),
-  relationType: z.enum(["blocks", "blocked_by", "duplicate_of", "relates_to"]),
+  relationType: z.enum(workItemRelationTypeEnum.enumValues),
   direction: z.enum(["outgoing", "incoming"]),
   relatedTicket: z.object({
     id: z.number().int(),
     title: z.string(),
     ticketNumber: z.number().int(),
     status: z.string(),
-    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]),
-    type: z.enum(["EPIC", "STORY", "TASK", "BUG"]),
+    priority: z.enum(ticketPriorityEnum.enumValues),
+    type: z.enum(ticketTypeEnum.enumValues),
     points: z.number().int().nullable(),
     version: z.number().int(),
     assigneeMembershipId: z.number().int().nullable(),
@@ -277,8 +285,8 @@ export const ticketRelationListItemSchema = z.object({
 
 export const gitLinkSchema = z.object({
   id: z.number().int(),
-  provider: z.enum(["github", "gitlab", "bitbucket"]),
-  refType: z.enum(["commit", "pull_request", "branch"]),
+  provider: z.enum(gitProviderEnum.enumValues),
+  refType: z.enum(gitRefTypeEnum.enumValues),
   externalId: z.string(),
   title: z.string().nullable(),
   url: z.string().nullable(),
@@ -396,9 +404,9 @@ export const columnCountsSchema = z.record(z.string(), z.number().int());
 export const allWorkItemSchema = z.object({
   id: z.number().int(),
   title: z.string(),
-  type: z.string(),
+  type: z.enum(ticketTypeEnum.enumValues),
   status: z.string(),
-  priority: z.string().nullable(),
+  priority: z.enum(ticketPriorityEnum.enumValues).nullable(),
   projectId: z.number().int().nullable(),
   projectKey: z.string().nullable(),
   projectName: z.string().nullable(),

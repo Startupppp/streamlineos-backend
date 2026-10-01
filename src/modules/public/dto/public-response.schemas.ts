@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
 import { successSchema } from "../../../common/openapi/response-envelopes";
+import { DB_ENUMS } from "../../../db/enums.generated";
+import { roadmapVoteSchema as roadmapVoteInputSchema } from "./public.schemas";
 
 export { successSchema as contactSubmitSchema };
 
@@ -220,7 +222,7 @@ const roadmapItemSchema = z.object({
   id: z.number().int(),
   title: z.string(),
   description: z.string().nullable(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.roadmap_status),
   category: z.string().nullable(),
   targetQuarter: z.string().nullable(),
   votes: z.number().int(),
@@ -240,7 +242,7 @@ const changelogEntrySchema = z.object({
   title: z.string(),
   content: z.string().nullable(),
   version: z.string().nullable(),
-  type: z.string().nullable(),
+  type: z.enum(DB_ENUMS.changelog_type).nullable(),
   publishedAt: nullableWireDate(),
 });
 
@@ -257,7 +259,7 @@ export const roadmapSchema = z.object({
 
 export const roadmapVoteSchema = z.object({
   id: z.number().int(),
-  type: z.string(),
+  type: roadmapVoteInputSchema.shape.type,
   votes: z.number().int(),
   voted: z.boolean(),
 });

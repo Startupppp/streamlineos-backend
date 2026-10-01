@@ -2,6 +2,10 @@ import { z } from "zod";
 import { clearableCalendarDate } from "../../../../common/validation/calendar-date.schema";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
+export const RELEASE_STATUSES = ["draft", "released", "archived"] as const;
+
+export const releaseStatusSchema = z.enum(RELEASE_STATUSES);
+
 const MEANINGFUL_TEXT_RE = /[a-zA-Z0-9À-ɏЀ-ӿ一-鿿]/;
 const VERSION_RE = /^v?\d+(\.\d+)*(-[\w.]+)?(\+[\w.]+)?$|^\d{4}\.\d{2}(\.\d+)?$/;
 
@@ -27,7 +31,7 @@ export const createReleaseSchema = z.object({
   name: releaseNameSchema,
   version: releaseVersionSchema,
   description: z.string().max(10000, "Release notes must be 10,000 characters or fewer").optional().nullable(),
-  status: z.enum(["draft", "released", "archived"]).default("draft"),
+  status: releaseStatusSchema.default("draft"),
   releaseDate: clearableCalendarDate,
 }).strict();
 
@@ -36,7 +40,7 @@ export const updateReleaseSchema = z.object({
   name: releaseNameSchema.optional(),
   version: releaseVersionSchema.optional(),
   description: z.string().max(10000, "Release notes must be 10,000 characters or fewer").optional().nullable(),
-  status: z.enum(["draft", "released", "archived"]).optional(),
+  status: releaseStatusSchema.optional(),
   releaseDate: clearableCalendarDate,
 }).strict();
 
@@ -47,7 +51,7 @@ export const addReleaseTicketSchema = z.object({
 export const listReleasesQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(25),
-  status: z.enum(["draft", "released", "archived"]).optional(),
+  status: releaseStatusSchema.optional(),
   q: z.string().max(200).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -57,7 +61,7 @@ export const orgListReleasesQuerySchema = z
   .object({
     cursor: z.string().optional(),
     limit: pageSizeField(50),
-    status: z.enum(["draft", "released", "archived"]).optional(),
+    status: releaseStatusSchema.optional(),
   })
   .strict();
 
