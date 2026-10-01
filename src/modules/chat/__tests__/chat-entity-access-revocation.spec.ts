@@ -252,6 +252,8 @@ describe("record channel — durable copies of its content are withheld too", ()
       id: 9,
       metadata: null,
       senderMembership: null,
+      attachments: [],
+      reactions: [],
       channel: {
         id: RECORD_CHANNEL,
         name: "Apollo",
@@ -279,6 +281,8 @@ describe("record channel — durable copies of its content are withheld too", ()
       id: 9,
       metadata: null,
       senderMembership: null,
+      attachments: [],
+      reactions: [],
       channel: {
         id: RECORD_CHANNEL,
         name: "Apollo",
@@ -303,6 +307,8 @@ describe("record channel — durable copies of its content are withheld too", ()
       id: 9,
       metadata: null,
       senderMembership: null,
+      attachments: [],
+      reactions: [],
       channel: {
         id: PLAIN_CHANNEL,
         name: "General",
@@ -328,6 +334,8 @@ describe("record channel — durable copies of its content are withheld too", ()
       id: 9,
       metadata: null,
       senderMembership: null,
+      attachments: [],
+      reactions: [],
       channel: {
         id: PLAIN_CHANNEL,
         name: "General",

@@ -5,6 +5,7 @@ import { BuildEntityActions } from "../build/entity/build-entity.actions";
 import { BuildEntityAdapter } from "../build/entity/build-entity.adapter";
 import { CrmEntityAdapter } from "../crm/entity/crm-entity.adapter";
 import { EntityReferenceService } from "./entity-reference.service";
+import { ProjectsModule } from "../build/core";
 import {
   ENTITY_ADAPTERS,
   ENTITY_MODULE_ENTITLEMENT,
@@ -12,7 +13,7 @@ import {
 } from "./entity-reference.types";
 
 @Module({
-  imports: [AccessModule],
+  imports: [AccessModule, ProjectsModule],
   providers: [
     BuildEntityActions,
     BuildEntityAdapter,

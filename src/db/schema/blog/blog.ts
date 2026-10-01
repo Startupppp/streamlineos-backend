@@ -84,7 +84,7 @@ export const blogPosts = pgTable(
     tags: text("tags").array().default([]).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-    // Written only by the standalone blog admin (migration 1703). The legacy columns above hold
+    // Written only by the standalone blog admin (migration 1705). The legacy columns above hold
     // the PUBLISHED projection of `publishedRevisionId`; drafts live in `blog_post_revisions`.
     workingRevisionId: uuid("working_revision_id"),
     publishedRevisionId: uuid("published_revision_id"),

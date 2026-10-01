@@ -87,8 +87,8 @@ export class PayrollAiExplainService {
       .limit(1)
       .then((rows) => rows[0] ?? null);
 
-    if (!pub) throw new NotFoundException("Payslip not found");
-    if (pub.pubUserId !== userId) throw new ForbiddenException("Access denied");
+    // A colleague's publication answers exactly like a missing one, so ids cannot be probed.
+    if (!pub || pub.pubUserId !== userId) throw new NotFoundException("Payslip not found");
     if (pub.pubStatus !== "PUBLISHED") throw new ForbiddenException("Payslip is not published");
 
     const lineItems = await this.db

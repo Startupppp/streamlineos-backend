@@ -1,4 +1,9 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import {
+  createBoundedPdfSession,
+  type PdfRenderLimits,
+  type PdfRenderSession,
+} from "../../../../common/documents/pdf-render-kernel";
 
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
@@ -47,20 +52,24 @@ export class DocumentBuilder {
   private y: number;
 
   private constructor(
-    private readonly doc: PDFDocument,
+    private readonly renderSession: PdfRenderSession,
     private readonly regular: PDFFont,
     private readonly bold: PDFFont,
     private readonly footerLabel: string,
   ) {
-    this.page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    this.page = renderSession.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     this.y = PAGE_HEIGHT - MARGIN;
   }
 
-  static async create(footerLabel: string): Promise<DocumentBuilder> {
-    const doc = await PDFDocument.create();
+  static async create(
+    footerLabel: string,
+    limits?: Partial<PdfRenderLimits>,
+  ): Promise<DocumentBuilder> {
+    const renderSession = await createBoundedPdfSession(limits);
+    const doc = renderSession.document;
     const regular = await doc.embedFont(StandardFonts.Helvetica);
     const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-    return new DocumentBuilder(doc, regular, bold, footerLabel);
+    return new DocumentBuilder(renderSession, regular, bold, footerLabel);
   }
 
   /**
@@ -73,6 +82,7 @@ export class DocumentBuilder {
    * note and pick list that tenant ever asked for.
    */
   header(organizationName: string, title: string, reference: string): this {
+    this.renderSession.checkpoint(organizationName.length + title.length + reference.length);
     const safeReference = this.fit(reference, this.bold, 12, CONTENT_WIDTH);
     this.page.drawText(this.fit(organizationName || "Organisation", this.bold, 10, CONTENT_WIDTH), {
       x: MARGIN,
@@ -102,6 +112,9 @@ export class DocumentBuilder {
 
   /** Two columns of label/value pairs — the document's facts, above the lines. */
   facts(pairs: ReadonlyArray<readonly [string, string]>): this {
+    this.renderSession.checkpoint(
+      pairs.reduce((total, pair) => total + pair[0].length + pair[1].length, 0),
+    );
     const columnWidth = CONTENT_WIDTH / 2;
     const rows = Math.ceil(pairs.length / 2);
     this.ensure(rows * 16 + 10);
@@ -126,6 +139,7 @@ export class DocumentBuilder {
   }
 
   sectionTitle(text: string): this {
+    this.renderSession.checkpoint(text.length);
     this.ensure(24);
     this.page.drawText(this.fit(text, this.bold, 10, CONTENT_WIDTH), {
       x: MARGIN,
@@ -144,6 +158,13 @@ export class DocumentBuilder {
    * the rest of the module has already decided.
    */
   table(columns: readonly DocumentColumn[], rows: ReadonlyArray<readonly string[]>): this {
+    this.renderSession.checkpoint(
+      columns.reduce((total, column) => total + column.header.length + 1, 0) +
+        rows.reduce(
+          (total, row) => total + row.reduce((rowTotal, cell) => rowTotal + cell.length, 0),
+          0,
+        ),
+    );
     const widths = this.columnWidths(columns);
     this.tableHeader(columns, widths);
 
@@ -181,6 +202,7 @@ export class DocumentBuilder {
 
   /** A free line of muted text — totals, counts, a signature strip. */
   note(text: string): this {
+    this.renderSession.checkpoint(text.length);
     this.ensure(18);
     this.page.drawText(this.fit(text, this.regular, 9, CONTENT_WIDTH), {
       x: MARGIN,
@@ -195,9 +217,11 @@ export class DocumentBuilder {
 
   /** A scannable code for the document itself, top-right of the first page. */
   async stamp(pngDataUri: string): Promise<this> {
+    this.renderSession.checkpoint();
     const base64 = pngDataUri.slice(pngDataUri.indexOf(",") + 1);
-    const image = await this.doc.embedPng(Buffer.from(base64, "base64"));
-    const first = this.doc.getPage(0);
+    const image = await this.renderSession.document.embedPng(Buffer.from(base64, "base64"));
+    this.renderSession.checkpoint();
+    const first = this.renderSession.document.getPage(0);
     first.drawImage(image, {
       x: PAGE_WIDTH - MARGIN - 64,
       y: PAGE_HEIGHT - MARGIN - 92,
@@ -208,7 +232,7 @@ export class DocumentBuilder {
   }
 
   async finish(): Promise<Buffer> {
-    const pages = this.doc.getPages();
+    const pages = this.renderSession.document.getPages();
     pages.forEach((page, index) => {
       const label = `${this.footerLabel}   ·   Page ${index + 1} of ${pages.length}`;
       page.drawText(label, {
@@ -219,7 +243,7 @@ export class DocumentBuilder {
         color: MUTED,
       });
     });
-    return Buffer.from(await this.doc.save());
+    return this.renderSession.finish();
   }
 
   private rule(): this {
@@ -269,7 +293,7 @@ export class DocumentBuilder {
   }
 
   private newPage(): void {
-    this.page = this.doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    this.page = this.renderSession.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     this.y = PAGE_HEIGHT - MARGIN;
   }
 

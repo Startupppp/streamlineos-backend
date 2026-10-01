@@ -1,5 +1,5 @@
--- Reverses 1703. Dropping these tables and columns destroys every editorial revision, media
--- record, redirect and audit event written since 1703. The legacy columns of blog_posts still hold
+-- Reverses 1705. Dropping these tables and columns destroys every editorial revision, media
+-- record, redirect and audit event written since 1705. The legacy columns of blog_posts still hold
 -- the published projection, so the public site keeps serving what was last published.
 SET lock_timeout = '5s';
 --> statement-breakpoint

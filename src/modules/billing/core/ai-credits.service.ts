@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -14,9 +14,18 @@ import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import type { AiCreditReserveInput, AiCreditSettleInput } from "../../ai/core/gateway/credit-ledger.interface";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../db/drizzle.types";
-import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postgres-error";
 
 type WalletExecutor = Db | TenantTx;
+
+export interface GrantAiCreditsInput {
+  orgId: string;
+  userId: string | null;
+  credits: number;
+  feature: string;
+  reason: string;
+  idempotencyKey: string;
+}
 
 @Injectable()
 export class AiCreditsService {
@@ -165,6 +174,50 @@ export class AiCreditsService {
         return;
       }
       throw err;
+    }
+  }
+
+  async grantCredits(input: GrantAiCreditsInput): Promise<{ balance: number }> {
+    const amountMilli = creditsToMilli(input.credits);
+    if (amountMilli <= 0) throw new ConflictException("AI credit grant must be positive");
+    if (!input.idempotencyKey.trim()) throw new ConflictException("AI credit grant requires an idempotency key");
+
+    try {
+      const balanceMilli = await runInTenantTransaction(
+        this.db,
+        (outer) => outer.transaction(async (tx) => {
+          const newBalance = await this.creditWallet(tx, input.orgId, amountMilli);
+          await tx.insert(aiCreditTransactions).values({
+            orgId: input.orgId,
+            userId: input.userId,
+            type: "REFUND",
+            amount: amountMilli,
+            balanceAfter: newBalance,
+            feature: input.feature,
+            referenceId: input.idempotencyKey.trim(),
+            metadata: { reason: input.reason, source: "credit-ledger-adjustment" },
+          });
+          return newBalance;
+        }),
+        { orgId: input.orgId },
+      );
+      return { balance: milliToCredits(balanceMilli) };
+    } catch (error: unknown) {
+      if (!isUniqueViolationOn(error, "uq_ai_credit_txns_refund_ref")) throw error;
+      const result = await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const [wallet] = await tx
+            .select({ balance: orgAiCredits.balance })
+            .from(orgAiCredits)
+            .where(eq(orgAiCredits.orgId, input.orgId))
+            .limit(1);
+          if (!wallet) throw new ConflictException("AI credit wallet is missing after replayed grant");
+          return wallet.balance;
+        },
+        { orgId: input.orgId },
+      );
+      return { balance: milliToCredits(result) };
     }
   }
 

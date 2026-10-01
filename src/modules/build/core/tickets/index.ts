@@ -5,6 +5,12 @@ export { ProjectsTicketChecklistsController } from "./projects-ticket-checklists
 export { ProjectsTicketAssociationsController } from "./projects-ticket-associations.controller";
 export { ProjectsTicketsService } from "./projects-tickets.service";
 export { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
+export {
+  BuildTicketCreationService,
+  type BuildTicketDraft,
+  type BuildTicketCreation,
+  type CreatedBuildTickets,
+} from "./build-ticket-creation.service";
 export { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 export { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 export { ProjectsTicketsReadService } from "./projects-tickets-read.service";

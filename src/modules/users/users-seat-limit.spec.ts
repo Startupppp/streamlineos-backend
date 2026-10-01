@@ -31,6 +31,13 @@ describe("UsersService direct member creation", () => {
         chain["limit"] = () => Promise.resolve([]);
         return chain;
       }),
+      update: jest.fn().mockImplementation(() => {
+        const chain: Record<string, unknown> = {};
+        chain["set"] = () => chain;
+        chain["where"] = () => chain;
+        chain["returning"] = () => Promise.resolve([]);
+        return chain;
+      }),
       transaction: jest.fn(),
     };
     db.transaction.mockImplementation(
@@ -97,7 +104,9 @@ describe("UsersService direct member creation", () => {
       update: jest.fn().mockImplementation(() => {
         const chain: Record<string, unknown> = {};
         chain["set"] = () => chain;
-        chain["where"] = () => Promise.resolve([]);
+        chain["where"] = () => chain;
+        chain["returning"] = () => Promise.resolve([]);
+        chain["then"] = (resolve: (rows: unknown[]) => unknown) => resolve([]);
         return chain;
       }),
       delete: jest.fn().mockImplementation(() => ({ where: () => Promise.resolve([]) })),

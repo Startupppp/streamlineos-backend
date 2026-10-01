@@ -95,6 +95,8 @@ describe("ChatSearchService error handling (CHAT-001)", () => {
               isDeleted: false,
               senderMembership: { userId: "u1", user: { id: "u1", name: "Alice", image: null } },
               channel: { id: 1, name: "general", type: "PUBLIC", entityType: null, entityId: null },
+              attachments: [],
+              reactions: [],
             },
           ]),
         },

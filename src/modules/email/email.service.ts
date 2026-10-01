@@ -42,6 +42,26 @@ export class EmailService extends EmailSendersBase {
     );
   }
 
+  async queueInvitationEmails(
+    invitations: readonly {
+      email: string;
+      token: string;
+      organizationName: string;
+      organizationId: string;
+    }[],
+  ): Promise<EmailQueueOutcome[]> {
+    return this.outbox.enqueueManyOnly(
+      invitations.map((invitation) => ({
+        ...invitationEmailOptions(
+          invitation.email,
+          invitation.token,
+          invitation.organizationName,
+        ),
+        organizationId: invitation.organizationId,
+      })),
+    );
+  }
+
   handoffQueued(toEmail: string): Promise<{ sent: number }> {
     return this.outbox.dispatchPendingRecipient(toEmail);
   }

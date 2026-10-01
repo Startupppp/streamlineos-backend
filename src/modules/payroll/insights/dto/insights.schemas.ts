@@ -47,7 +47,7 @@ export const accountingMappingUpdateSchema = z.object({
 
 export const essBankSchema = z
   .object({
-    accountNumber: z.string().min(8).max(34),
+    accountNumber: z.string().min(8).max(34).regex(/^[A-Za-z0-9 ]+$/, "Account number may contain only letters, digits and spaces"),
     bankName: z.string().max(100).optional(),
     branch: z.string().max(100).optional(),
     ifsc: z.string().max(50).optional(),

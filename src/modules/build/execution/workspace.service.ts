@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { TicketVersionConflictException, reserveTicketCapacity } from "../core/tickets";
+import { BuildTicketCreationService, TicketVersionConflictException } from "../core/tickets";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   intakeItems,
@@ -19,7 +19,7 @@ import {
   clearingLifecycle,
 } from "../lifecycle/lifecycle-restore";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess, allocateTicketNumbers, escapeLike, assertProjectInOrg } from "../core";
+import { assertProjectAccess, escapeLike, assertProjectInOrg } from "../core";
 import { buildCursorPage, buildTupleCursorPage, decodeCursor, decodeIntegerCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId, keysetBeforeTuple, keysetBoolean, keysetTimestamp, keysetInteger } from "../../../common/pagination/keyset";
 import type {
@@ -262,7 +262,10 @@ export class MilestonesService {
 
 @Injectable()
 export class IntakeService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly ticketCreation: BuildTicketCreationService,
+  ) {}
 
   async listIntake(orgId: string, projectId: number, query: IntakeListQuery) {
     await assertProjectInOrg(this.db, orgId, projectId);
@@ -336,10 +339,8 @@ export class IntakeService {
     }
 
     if (input.status === "accepted") {
-      return this.db.transaction(async (tx) => {
-        await reserveTicketCapacity(tx, orgId, item.projectId, [{ status: "TODO", count: 1 }]);
-        const ticketNumber = await allocateTicketNumbers(tx, orgId, item.projectId);
-
+      let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
+      const response = await this.db.transaction(async (tx) => {
         const description =
           typeof item.description === "object"
             ? JSON.stringify(item.description)
@@ -347,17 +348,17 @@ export class IntakeService {
               ? item.description
               : "";
 
-        const [ticket] = await tx
-          .insert(tickets)
-          .values({
-            orgId,
-            projectId: item.projectId,
+        createdResult = await this.ticketCreation.createInTransaction(tx, {
+          orgId,
+          projectId: item.projectId,
+          actor: { userId, membershipId: null },
+          drafts: [{
             title: item.title,
             description,
-            ticketNumber,
             reporterId: userId,
-          })
-          .returning();
+          }],
+        });
+        const ticket = createdResult.tickets[0]!;
 
         const [updated] = await tx
           .update(intakeItems)
@@ -367,6 +368,8 @@ export class IntakeService {
 
         return { ...updated, linkedTicket: ticket };
       });
+      this.ticketCreation.publish(createdResult!);
+      return response;
     }
 
     if (input.status === "declined") {

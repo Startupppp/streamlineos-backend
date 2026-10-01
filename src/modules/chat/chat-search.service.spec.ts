@@ -137,6 +137,23 @@ describe("ChatSearchService — search terms and failures", () => {
     await expect(service.searchMessages(actor, "hello")).rejects.toThrow("db down");
   });
 
+  it("loads the attachments and folded reactions its response schema declares", async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 1,
+        content: "hi",
+        senderMembership: { userId: "u1", user: { id: "u1", name: "Ann", image: null } },
+        channel: { id: 5, name: "general", type: "PUBLIC", entityType: null, entityId: null },
+        attachments: [],
+        reactions: [{ emoji: "👍", membership: { userId: "u2" } }],
+      },
+    ]);
+    const { service } = await buildService({ query: { chatMessages: { findMany } } });
+    const { results } = await service.searchMessages(actor, "hi");
+    expect(findMany.mock.calls[0][0].with).toMatchObject({ attachments: true, reactions: expect.any(Object) });
+    expect(results[0]).toMatchObject({ attachments: [], reactions: { "👍": ["u2"] } });
+  });
+
   it("offers only ACTIVE organization members as users", async () => {
     let where: SQL | undefined;
     const chain = {

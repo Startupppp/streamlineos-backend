@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { SubmissionsService } from "./submissions.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
+import { BuildTicketCreationService } from "../core/tickets";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -59,9 +60,11 @@ const actor: CurrentUserContext = {
 describe("SubmissionsService.createSubmission", () => {
   let svc: SubmissionsService;
   let mockDb: Record<string, unknown>;
+  let mockTicketCreation: { createInTransaction: jest.Mock; publish: jest.Mock };
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockTicketCreation = { createInTransaction: jest.fn(), publish: jest.fn() };
 
     mockDb = {
       query: {
@@ -80,6 +83,11 @@ describe("SubmissionsService.createSubmission", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: mockAccess },
         { provide: AuditService, useValue: mockAudit },
+        {
+          provide: BuildTicketCreationService,
+          useValue: { createInTransaction: jest.fn(), publish: jest.fn() },
+        },
+        { provide: BuildTicketCreationService, useValue: mockTicketCreation },
       ],
     }).compile();
     svc = module.get(SubmissionsService);
@@ -120,31 +128,15 @@ describe("SubmissionsService.createSubmission", () => {
       convertedTicketId: 99,
     };
 
-    const mockSelect = jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([{ maxNum: 5 }]),
-      }),
-    });
-    const mockInsertTicket = jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([createdTicket]),
-      }),
-    });
-    const mockInsertSubmission = jest.fn().mockReturnValue({
+    mockTicketCreation.createInTransaction.mockResolvedValueOnce({ tickets: [createdTicket], command: {} });
+
+    const mockInsert = jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
         returning: jest.fn().mockResolvedValue([createdSubmission]),
       }),
     });
     const mockExecute = jest.fn().mockResolvedValue([{ start: 1 }]);
 
-    let insertCallCount = 0;
-    const mockInsert = jest.fn().mockImplementation(() => {
-      insertCallCount++;
-      if (insertCallCount === 1) return mockInsertTicket();
-      return mockInsertSubmission();
-    });
-
-    (mockDb as Record<string, unknown>)["select"] = mockSelect;
     (mockDb as Record<string, unknown>)["insert"] = mockInsert;
     (mockDb as Record<string, unknown>)["execute"] = mockExecute;
 
@@ -152,7 +144,7 @@ describe("SubmissionsService.createSubmission", () => {
       async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           execute: mockExecute,
-          select: mockSelect,
+          select: jest.fn(),
           insert: mockInsert,
           query: mockDb["query"],
         };
@@ -189,36 +181,21 @@ describe("SubmissionsService.createSubmission", () => {
       convertedTicketId: 55,
     };
 
-    const mockSelect = jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([{ maxNum: 0 }]),
+    mockTicketCreation.createInTransaction.mockResolvedValueOnce({ tickets: [createdTicket], command: {} });
+
+    const mockInsert = jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([createdSubmission]),
       }),
-    });
-    let insertCallCount = 0;
-    const mockInsert = jest.fn().mockImplementation(() => {
-      insertCallCount++;
-      if (insertCallCount === 1) {
-        return {
-          values: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([createdTicket]),
-          }),
-        };
-      }
-      return {
-        values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([createdSubmission]),
-        }),
-      };
     });
     const mockExecute = jest.fn().mockResolvedValue([{ start: 1 }]);
 
-    (mockDb as Record<string, unknown>)["select"] = mockSelect;
     (mockDb as Record<string, unknown>)["insert"] = mockInsert;
     (mockDb as Record<string, unknown>)["execute"] = mockExecute;
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: mockSelect, insert: mockInsert, query: mockDb["query"] };
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -322,35 +299,24 @@ describe("SubmissionsService.createSubmission", () => {
       convertedTicketId: 77,
     };
 
-    const executeSpy = jest.fn().mockResolvedValue([{ start: 1 }]);
-    const mockSelect = jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([{ maxNum: 0 }]),
-      }),
-    });
-    let insertCallCount = 0;
-    const mockInsert = jest.fn().mockImplementation(() => {
-      insertCallCount++;
-      if (insertCallCount === 1) {
-        return { values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([createdTicket]) }) };
-      }
-      return { values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([createdSubmission]) }) };
+    mockTicketCreation.createInTransaction.mockResolvedValueOnce({ tickets: [createdTicket], command: {} });
+
+    const mockInsert = jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([createdSubmission]) }),
     });
 
-    (mockDb as Record<string, unknown>)["select"] = mockSelect;
     (mockDb as Record<string, unknown>)["insert"] = mockInsert;
-    (mockDb as Record<string, unknown>)["execute"] = executeSpy;
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: executeSpy, select: mockSelect, insert: mockInsert, query: mockDb["query"] };
+        const tx = { execute: jest.fn(), select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
 
     await svc.createSubmission(actor, PROJECT_ID, FORM_ID, { values: {} });
 
-    expect(executeSpy).toHaveBeenCalledTimes(3);
+    expect(mockTicketCreation.createInTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT acquire advisory lock when form has no create_task/create_bug actions", async () => {
@@ -385,9 +351,11 @@ describe("SubmissionsService.createSubmission", () => {
 describe("SubmissionsService.updateSubmission", () => {
   let svc: SubmissionsService;
   let mockDb: Record<string, unknown>;
+  let mockTicketCreation: { createInTransaction: jest.Mock; publish: jest.Mock };
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockTicketCreation = { createInTransaction: jest.fn(), publish: jest.fn() };
 
     mockDb = {
       query: {
@@ -406,6 +374,7 @@ describe("SubmissionsService.updateSubmission", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: mockAccess },
         { provide: AuditService, useValue: mockAudit },
+        { provide: BuildTicketCreationService, useValue: mockTicketCreation },
       ],
     }).compile();
     svc = module.get(SubmissionsService);
@@ -470,9 +439,11 @@ describe("SubmissionsService.updateSubmission", () => {
 describe("SubmissionsService.submitPublicForm", () => {
   let svc: SubmissionsService;
   let mockDb: Record<string, unknown>;
+  let mockTicketCreation: { createInTransaction: jest.Mock; publish: jest.Mock };
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockTicketCreation = { createInTransaction: jest.fn(), publish: jest.fn() };
 
     mockDb = {
       query: {
@@ -491,6 +462,7 @@ describe("SubmissionsService.submitPublicForm", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: mockAccess },
         { provide: AuditService, useValue: mockAudit },
+        { provide: BuildTicketCreationService, useValue: mockTicketCreation },
       ],
     }).compile();
     svc = module.get(SubmissionsService);
@@ -592,9 +564,11 @@ describe("SubmissionsService.submitPublicForm", () => {
 describe("SubmissionsService.listSubmissions", () => {
   let svc: SubmissionsService;
   let mockDb: Record<string, unknown>;
+  let mockTicketCreation: { createInTransaction: jest.Mock; publish: jest.Mock };
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    mockTicketCreation = { createInTransaction: jest.fn(), publish: jest.fn() };
 
     mockDb = {
       query: {
@@ -613,6 +587,7 @@ describe("SubmissionsService.listSubmissions", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: mockAccess },
         { provide: AuditService, useValue: mockAudit },
+        { provide: BuildTicketCreationService, useValue: mockTicketCreation },
       ],
     }).compile();
     svc = module.get(SubmissionsService);

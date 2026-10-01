@@ -13,6 +13,7 @@ import type {
   ToolOutcome,
 } from "./ask-os-tool.types";
 import type { AskOsDirective } from "../streaming/ask-os-directive";
+import { isRecord } from "../../../../common/types/is-record";
 
 export const ACTION_LABELS: Record<string, { title: string; confirmLabel: string }> = {
   "email.send": { title: "Send email", confirmLabel: "Send" },
@@ -106,6 +107,35 @@ export function toJsonSafe(value: Record<string, unknown>): Record<string, unkno
   }
 }
 
+function droppedInputPaths(raw: unknown, parsed: unknown, prefix = ""): string[] {
+  if (Array.isArray(raw) && Array.isArray(parsed))
+    return raw.flatMap((value, index) =>
+      droppedInputPaths(value, parsed[index], `${prefix}[${String(index)}]`),
+    );
+  if (!isRecord(raw) || !isRecord(parsed)) return [];
+
+  return Object.keys(raw).flatMap((key) => {
+    const path = prefix.length > 0 ? `${prefix}.${key}` : key;
+    if (!(key in parsed)) return [path];
+    return droppedInputPaths(raw[key], parsed[key], path);
+  });
+}
+
+export function parseToolInput<TInput>(
+  schema: { parse: (value: unknown) => TInput },
+  rawInput: unknown,
+): TInput {
+  const parsed = schema.parse(rawInput);
+  const dropped = droppedInputPaths(rawInput, parsed);
+  if (dropped.length > 0)
+    throw new Error(`Tool input contains undeclared field(s): ${dropped.sort().join(", ")}`);
+  return parsed;
+}
+
+export function safeToolFailureReason(_error: unknown): string {
+  return "The tool could not complete.";
+}
+
 export function renderOutcome(outcome: ToolOutcome): Record<string, unknown> {
   switch (outcome.kind) {
     case "data":
@@ -180,7 +210,7 @@ export function buildAskOsToolset(input: AskOsToolsetInput): ToolSet {
               if (runContext.read.denied && definition.permission) {
                 return renderOutcome(denied(definition.permission));
               }
-              const parsed: unknown = definition.input.parse(rawInput);
+              const parsed: unknown = parseToolInput(definition.input, rawInput);
               const outcome = await definition.run(parsed, runContext);
               if (onDirective !== undefined) {
                 if (outcome.kind === "needs-confirmation") {
@@ -204,7 +234,7 @@ export function buildAskOsToolset(input: AskOsToolsetInput): ToolSet {
           return toJsonSafe(
             renderOutcome({
               kind: "failed",
-              reason: error instanceof Error ? error.message : "The tool could not complete.",
+              reason: safeToolFailureReason(error),
             }),
           );
         }

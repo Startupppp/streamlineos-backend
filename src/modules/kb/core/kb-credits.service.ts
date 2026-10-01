@@ -1,111 +1,83 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, sql } from "drizzle-orm";
-import { tenantAiCredits, tenantAiCreditTransactions } from "../../../db/schema";
-import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type Db } from "../../../db/drizzle.module";
-import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
+import { ConflictException, Injectable } from "@nestjs/common";
+import { creditsToMilli } from "../../ai/core/billing/ai-model-pricing.constants";
+import { AiCreditsService } from "../../billing/core/ai-credits.service";
 
 export interface CreditLedgerOptions {
   reason: string;
   feature?: string;
+  userId?: string;
   actorMembershipId?: number;
+  idempotencyKey?: string;
 }
 
-const DEFAULT_AI_CREDITS = 100_000;
+export interface CanonicalCreditBalance {
+  id: number;
+  orgId: string;
+  balance: number;
+  lifetimeGranted: number;
+  lifetimeConsumed: number;
+}
 
 @Injectable()
 export class KbCreditsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(private readonly ledger: AiCreditsService) {}
 
-  getBalance(
-    orgId: string,
-  ): Promise<typeof tenantAiCredits.$inferSelect | undefined> {
-    return this.db.query.tenantAiCredits.findFirst({
-      where: eq(tenantAiCredits.orgId, orgId),
-    });
+  async getBalance(orgId: string): Promise<CanonicalCreditBalance> {
+    const { wallet } = await this.ledger.getWallet(orgId);
+    return {
+      id: wallet.id,
+      orgId: wallet.orgId,
+      balance: wallet.balance,
+      lifetimeGranted: wallet.lifetimeGranted,
+      lifetimeConsumed: wallet.lifetimeConsumed,
+    };
   }
 
-  async ensure(
-    orgId: string,
-  ): Promise<typeof tenantAiCredits.$inferSelect | undefined> {
-    const existing = await this.getBalance(orgId);
-    if (existing) return existing;
-    await this.db
-      .insert(tenantAiCredits)
-      .values({
-        orgId,
-        balance: DEFAULT_AI_CREDITS,
-        monthlyAllowance: DEFAULT_AI_CREDITS,
-      })
-      .onConflictDoNothing({ target: tenantAiCredits.orgId });
+  async ensure(orgId: string): Promise<CanonicalCreditBalance> {
     return this.getBalance(orgId);
   }
 
   async hasCredits(orgId: string, cost: number): Promise<boolean> {
     if (cost <= 0) return true;
-    const row = (await this.getBalance(orgId)) ?? (await this.ensure(orgId));
-    return (row?.balance ?? 0) >= cost;
+    return (await this.getBalance(orgId)).balance >= cost;
   }
 
-  async consume(
-    orgId: string,
-    cost: number,
-    options: CreditLedgerOptions,
-  ): Promise<number> {
-    if (cost <= 0) {
-      const row = await this.getBalance(orgId);
-      return row?.balance ?? 0;
-    }
-    return this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(tenantAiCredits)
-        .set({ balance: sql`${tenantAiCredits.balance} - ${cost}` })
-        .where(
-          and(
-            eq(tenantAiCredits.orgId, orgId),
-            gte(tenantAiCredits.balance, cost),
-          ),
-        )
-        .returning({ balance: tenantAiCredits.balance });
-      if (!row) throw new InsufficientAiCreditsException();
-      await tx.insert(tenantAiCreditTransactions).values({
-        orgId,
-        delta: -cost,
-        balanceAfter: row.balance,
-        reason: options.reason,
-        feature: options.feature ?? null,
-        actorMembershipId: options.actorMembershipId ?? null,
-      });
-      return row.balance;
+  async consume(orgId: string, cost: number, options: CreditLedgerOptions): Promise<number> {
+    if (cost <= 0) return (await this.getBalance(orgId)).balance;
+    const idempotencyKey = this.requireIdempotencyKey(options.idempotencyKey);
+    const actualMilli = creditsToMilli(cost);
+    const { reservationId } = await this.ledger.reserve({
+      orgId,
+      userId: options.userId ?? null,
+      feature: options.feature ?? "kb.legacy-consume",
+      credits: actualMilli,
+      idempotencyKey,
     });
+    await this.ledger.settle(reservationId, {
+      orgId,
+      actualMilli,
+      metadata: { reason: options.reason },
+    });
+    return (await this.getBalance(orgId)).balance;
   }
 
-  async grant(
-    orgId: string,
-    amount: number,
-    options: CreditLedgerOptions,
-  ): Promise<number> {
-    if (amount <= 0) {
-      const row = await this.getBalance(orgId);
-      return row?.balance ?? 0;
-    }
-    await this.ensure(orgId);
-    return this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(tenantAiCredits)
-        .set({ balance: sql`${tenantAiCredits.balance} + ${amount}` })
-        .where(eq(tenantAiCredits.orgId, orgId))
-        .returning({ balance: tenantAiCredits.balance });
-      const balance = row?.balance ?? amount;
-      await tx.insert(tenantAiCreditTransactions).values({
-        orgId,
-        delta: amount,
-        balanceAfter: balance,
-        reason: options.reason,
-        feature: options.feature ?? null,
-        actorMembershipId: options.actorMembershipId ?? null,
-      });
-      return balance;
+  async grant(orgId: string, amount: number, options: CreditLedgerOptions): Promise<number> {
+    if (amount <= 0) return (await this.getBalance(orgId)).balance;
+    const result = await this.ledger.grantCredits({
+      orgId,
+      userId: options.userId ?? null,
+      credits: amount,
+      feature: options.feature ?? "kb.legacy-grant",
+      reason: options.reason,
+      idempotencyKey: this.requireIdempotencyKey(options.idempotencyKey),
     });
+    return result.balance;
+  }
+
+  private requireIdempotencyKey(value: string | undefined): string {
+    if (!value?.trim()) {
+      throw new ConflictException("An idempotency key is required for AI credit mutations");
+    }
+    return value.trim();
   }
 }

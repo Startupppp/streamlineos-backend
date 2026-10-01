@@ -25,11 +25,16 @@ import { type Db } from "../../../db/drizzle.module";
 import { candidates, emailTemplates } from "../../../db/schema";
 import { EmailService } from "../email.service";
 import { EmailProviderService } from "../email.provider";
+import { escapeHtml } from "../templates/base";
 
-function replaceVariables(text: string, vars: Record<string, string>): string {
+function replaceVariables(
+  text: string,
+  vars: Record<string, string>,
+  encode: (value: string) => string = (value) => value,
+): string {
   let result = text;
   for (const [key, value] of Object.entries(vars)) {
-    result = result.replaceAll(`{{${key}}}`, value);
+    result = result.replaceAll(`{{${key}}}`, encode(value));
   }
   return result;
 }
@@ -92,11 +97,12 @@ export class HrSendEmailController {
         };
         const vars = { ...autoVars, ...(body.variables ?? {}) };
         subject = replaceVariables(subject, vars);
-        emailBody = replaceVariables(emailBody, vars);
+        // Candidate names arrive from the public careers form; in an HTML body they are text.
+        emailBody = replaceVariables(emailBody, vars, escapeHtml);
       }
     } else if (body.variables) {
       subject = replaceVariables(subject, body.variables);
-      emailBody = replaceVariables(emailBody, body.variables);
+      emailBody = replaceVariables(emailBody, body.variables, escapeHtml);
     }
 
     await this.emailService.sendEmail({

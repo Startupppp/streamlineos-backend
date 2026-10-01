@@ -1,4 +1,4 @@
--- 1703: editorial revisions, publication pointers and the tables the standalone blog admin
+-- 1705: editorial revisions, publication pointers and the tables the standalone blog admin
 -- (`Startupppp/blogs`) writes to. Additive only: every legacy column stays, and after this
 -- migration `blog_posts`' legacy columns hold the PUBLISHED projection of the published revision,
 -- so a reader that only knows the old columns keeps serving exactly what was last published.
@@ -21,7 +21,7 @@ DO $$
 BEGIN
   IF to_regclass('public.blog_posts') IS NULL OR to_regclass('public.blog_authors') IS NULL
      OR to_regclass('public.blog_categories') IS NULL THEN
-    RAISE EXCEPTION '1703 precondition: blog tables are absent';
+    RAISE EXCEPTION '1705 precondition: blog tables are absent';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -348,7 +348,7 @@ SELECT
   GREATEST(COALESCE(p."reading_time", 1), 1),
   p."title", p."slug", p."excerpt", p."meta_title", p."meta_description", p."cover_image",
   p."author_id", p."category_id", p."tags", p."is_featured",
-  'Backfilled from the legacy post row by migration 1703', now(), COALESCE(p."updated_at", p."created_at")
+  'Backfilled from the legacy post row by migration 1705', now(), COALESCE(p."updated_at", p."created_at")
 FROM "blog_posts" p
 WHERE NOT EXISTS (SELECT 1 FROM "blog_post_revisions" r WHERE r."post_id" = p."id");
 --> statement-breakpoint
@@ -469,12 +469,12 @@ DO $$
 BEGIN
   IF to_regclass('public.blog_post_revisions') IS NULL OR to_regclass('public.blog_jobs') IS NULL
      OR to_regclass('public.blog_media') IS NULL OR to_regclass('public.blog_redirects') IS NULL THEN
-    RAISE EXCEPTION '1703: blog editorial tables were not created';
+    RAISE EXCEPTION '1705: blog editorial tables were not created';
   END IF;
   IF EXISTS (SELECT 1 FROM "blog_posts" WHERE "working_revision_id" IS NULL) THEN
-    RAISE EXCEPTION '1703: a blog post was left without a working revision';
+    RAISE EXCEPTION '1705: a blog post was left without a working revision';
   END IF;
   IF EXISTS (SELECT 1 FROM "blog_posts" WHERE "status" = 'published' AND "published_revision_id" IS NULL) THEN
-    RAISE EXCEPTION '1703: a published blog post was left without a published revision';
+    RAISE EXCEPTION '1705: a published blog post was left without a published revision';
   END IF;
 END $$;

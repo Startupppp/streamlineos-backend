@@ -7,12 +7,14 @@ describe("MfaPolicyService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
   const USER_ID = "user-abc";
+  const INTERACTIVE_SESSION = { sessionId: "session-abc", interactive: true };
 
   function makeDb(orgRow: unknown): Db {
     return {
       query: {
         organizations: { findFirst: jest.fn().mockResolvedValue(orgRow) },
         users: { findFirst: jest.fn().mockResolvedValue(null) },
+        userSessions: { findFirst: jest.fn().mockResolvedValue(null) },
       },
     } as unknown as Db;
   }
@@ -26,7 +28,7 @@ describe("MfaPolicyService — cross-tenant isolation", () => {
       invalidate: jest.fn(),
     });
     const svc = new MfaPolicyService(db, mockCache);
-    const result = await svc.resolve(ATTACKER, USER_ID);
+    const result = await svc.resolve(ATTACKER, USER_ID, INTERACTIVE_SESSION);
     expect(result.enforced).toBe(false);
   });
 
@@ -39,7 +41,7 @@ describe("MfaPolicyService — cross-tenant isolation", () => {
       invalidate: jest.fn(),
     });
     const svc = new MfaPolicyService(db, mockCache);
-    const result = await svc.resolve(OWNER, USER_ID);
+    const result = await svc.resolve(OWNER, USER_ID, INTERACTIVE_SESSION);
     expect(result).toHaveProperty("enforced");
     expect(result).toHaveProperty("satisfied");
   });

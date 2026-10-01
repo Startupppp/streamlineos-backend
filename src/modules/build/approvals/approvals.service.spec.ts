@@ -1,4 +1,5 @@
 process.env.APP_URL ??= "http://localhost:1000";
+import "reflect-metadata";
 
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -82,8 +83,7 @@ describe("BUG-040 — BuildApprovalsController.createApproval is decorated with 
     const { BuildApprovalsController } = jest.requireActual("./approvals.controller") as { BuildApprovalsController: new () => object };
     const key: string | undefined = Reflect.getMetadata(
       IDEMPOTENCY_COMMAND,
-      BuildApprovalsController.prototype,
-      "createApproval",
+      (BuildApprovalsController.prototype as Record<string, unknown>)["createApproval"] as object,
     );
     expect(key).toBe("build.approval.create");
   });

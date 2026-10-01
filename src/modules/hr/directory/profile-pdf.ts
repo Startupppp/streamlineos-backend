@@ -1,5 +1,6 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { formatDayMonthYear, formatDayMonthYearTime } from "../../../common/date";
+import { renderBoundedPdf } from "../../../common/documents/pdf-render-kernel";
 import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 export interface ProfileEmployee {
@@ -124,11 +125,19 @@ export async function buildEmployeeProfilePdf(
   employee: ProfileEmployee,
   skills: { name: string; level: number }[],
 ): Promise<Buffer> {
-  const doc = await PDFDocument.create();
+  return renderBoundedPdf(async ({ document: doc, addPage, checkpoint }) => {
+  checkpoint(
+    (employee.bio?.length ?? 0) +
+      Object.values(employee).reduce(
+        (total, value) => total + (typeof value === "string" ? value.length : 1),
+        0,
+      ) +
+      skills.reduce((total, skill) => total + skill.name.length + 1, 0),
+  );
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
 
-  let page = doc.addPage([PAGE_W, PAGE_H]);
+  let page = addPage([PAGE_W, PAGE_H]);
   const contentW = PAGE_W - MARGIN * 2;
   let y = PAGE_H - MARGIN;
 
@@ -147,7 +156,7 @@ export async function buildEmployeeProfilePdf(
     : "-";
   const ensureSpace = (needed: number) => {
     if (y < MARGIN + needed) {
-      page = doc.addPage([PAGE_W, PAGE_H]);
+      page = addPage([PAGE_W, PAGE_H]);
       y = PAGE_H - MARGIN;
     }
   };
@@ -199,6 +208,7 @@ export async function buildEmployeeProfilePdf(
     y = drawSectionTitle(page, "Bio", y, bold, contentW);
     const bioLines = wrapLines(pdfSafe(employee.bio), regular, 11, contentW);
     for (const line of bioLines) {
+      checkpoint();
       ensureSpace(16);
       if (line) drawText(page, line, MARGIN, y, regular, 11, BLACK);
       y -= 14;
@@ -212,6 +222,7 @@ export async function buildEmployeeProfilePdf(
     skills.length > 0 ? skills.map((s) => pdfSafe(s.name)).join(", ") : "-";
   const skillLines = wrapLines(skillsText, regular, 11, contentW);
   for (const line of skillLines) {
+    checkpoint();
     ensureSpace(16);
     if (line) drawText(page, line, MARGIN, y, regular, 11, BLACK);
     y -= 14;
@@ -238,6 +249,5 @@ export async function buildEmployeeProfilePdf(
     GRAY,
   );
 
-  const bytes = await doc.save();
-  return Buffer.from(bytes);
+  });
 }

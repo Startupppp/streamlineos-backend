@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -82,11 +81,13 @@ export class PayslipDownloadService {
         columns: { isOwner: true },
       });
       const isOwner = memberRow?.isOwner === true;
+      // 404, not 403: a colleague probing publication ids must not learn which exist.
       if (!isOwner && !perms.has("payroll:payslips:view")) {
-        throw new ForbiddenException(
-          "Missing permission: payroll:payslips:view",
-        );
+        throw new NotFoundException("Payslip publication not found");
       }
+    } else if (publication.status !== "PUBLISHED") {
+      // The employee's own list shows PUBLISHED only; a pending or failed render is not theirs yet.
+      throw new NotFoundException("Payslip publication not found");
     }
 
     const runEmployee = await this.db.query.payrollRunEmployees.findFirst({

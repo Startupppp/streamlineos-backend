@@ -5,7 +5,18 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   buildCursorPage,
   decodeCursor,
@@ -46,6 +57,7 @@ import type {
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsCustomStatesService } from "../custom-states/projects-custom-states.service";
 import { ProjectsLabelsService } from "../lib/projects-labels.service";
+import { escapeLike } from "../lib/escape-like";
 
 async function assertProjectOwnership(
   db: Db,
@@ -165,9 +177,25 @@ export class ProjectsMembersService {
     query: ListProjectMembersQuery = { limit: 25 },
   ) {
     await this.assertProjectAccess(u, projectId);
-    const { limit, cursor } = query;
+    const { limit, cursor, search } = query;
     const pos = decodeCursor(cursor);
-    const conds: SQL[] = [eq(projectMembers.projectId, projectId)];
+    const conds: SQL[] = [
+      eq(projectMembers.orgId, u.orgId),
+      eq(projectMembers.projectId, projectId),
+      isNull(projects.deletedAt),
+    ];
+    if (search) {
+      const like = `%${escapeLike(search)}%`;
+      conds.push(
+        or(
+          ilike(users.name, like),
+          ilike(users.email, like),
+          ilike(users.firstName, like),
+          ilike(users.lastName, like),
+          ilike(sql`${projectMembers.role}::text`, like),
+        )!,
+      );
+    }
     if (pos)
       conds.push(
         keysetAfterId(

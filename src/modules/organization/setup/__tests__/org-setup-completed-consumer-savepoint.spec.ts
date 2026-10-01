@@ -109,7 +109,7 @@ const PAYLOAD = {
   ],
 };
 
-function membershipSelect(rows: unknown[]) {
+function selectRows(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {};
   chain.from = jest.fn().mockReturnValue(chain);
   chain.innerJoin = jest.fn().mockReturnValue(chain);
@@ -121,7 +121,9 @@ function membershipSelect(rows: unknown[]) {
   return jest.fn().mockReturnValue(chain);
 }
 
-async function build(overrides: { bulkInvite?: jest.Mock } = {}) {
+async function build(
+  overrides: { bulkInvite?: jest.Mock; seededRoles?: boolean } = {},
+) {
   const bulkInvite =
     overrides.bulkInvite ??
     jest.fn().mockImplementation(async (_org, _actor, emails: string[]) => {
@@ -145,6 +147,14 @@ async function build(overrides: { bulkInvite?: jest.Mock } = {}) {
     activeTx.statement("select:user");
     return { email: "owner@acme.test", name: "Acme Owner", firstName: null };
   });
+  const select = jest
+    .fn()
+    .mockImplementationOnce(
+      selectRows(overrides.seededRoles === false ? [] : [{ id: 1 }]),
+    )
+    .mockImplementation(
+      selectRows([{ isOwner: true, email: "owner@acme.test" }]),
+    );
 
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -153,7 +163,7 @@ async function build(overrides: { bulkInvite?: jest.Mock } = {}) {
         provide: DRIZZLE,
         useValue: {
           query: { users: { findFirst } },
-          select: membershipSelect([{ isOwner: true, email: "owner@acme.test" }]),
+          select,
         },
       },
       {
@@ -245,7 +255,7 @@ describe("OrgSetupCompletedConsumerService — optional phases run behind a save
   });
 
   it("a required phase that aborts still records FAILED durably, then rethrows", async () => {
-    const { svc } = await build();
+    const { svc } = await build({ seededRoles: false });
     seedSystemRolesForOrg.mockImplementation(async () => {
       activeTx.failingStatement("roles", "23503");
     });

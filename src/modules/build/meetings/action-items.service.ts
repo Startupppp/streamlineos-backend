@@ -9,8 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateActionItemInput, UpdateActionItemInput } from "./dto/meetings.schemas";
-import { allocateTicketNumbers } from "../core";
-import { reserveTicketCapacity } from "../core/tickets";
+import { BuildTicketCreationService } from "../core/tickets";
 
 type ActionItemPatch = Partial<
   Pick<
@@ -24,6 +23,7 @@ export class ActionItemsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
   private async assertMeeting(orgId: string, projectId: number, meetingId: number): Promise<void> {
@@ -136,6 +136,7 @@ export class ActionItemsService {
   }
 
   async convertToTask(orgId: string, userId: string, projectId: number, meetingId: number, itemId: number) {
+    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
     const result = await this.db.transaction(async (tx) => {
       const meeting = await tx.query.projectMeetings.findFirst({
         where: and(
@@ -159,15 +160,11 @@ export class ActionItemsService {
       if (!item) throw new NotFoundException("Action item not found");
       if (item.convertedTicketId !== null) throw new ConflictException("Action item already converted to a task");
 
-      await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: 1 }]);
-      const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
-
-      const [ticket] = await tx
-        .insert(tickets)
-        .values({
-          orgId,
-          projectId,
-          ticketNumber: nextNumber,
+      createdResult = await this.ticketCreation.createInTransaction(tx, {
+        orgId,
+        projectId,
+        actor: { userId, membershipId: null },
+        drafts: [{
           title: item.title,
           description: item.description ?? null,
           type: "TASK",
@@ -175,8 +172,9 @@ export class ActionItemsService {
           priority: "MEDIUM",
           reporterId: userId,
           dueDate: item.dueDate ?? null,
-        })
-        .returning();
+        }],
+      });
+      const ticket = createdResult.tickets[0];
       if (!ticket) throw new NotFoundException("Failed to create ticket");
 
       const [updatedItem] = await tx
@@ -194,6 +192,7 @@ export class ActionItemsService {
       if (!updatedItem) throw new ConflictException("Action item was already converted by a concurrent request");
       return { actionItem: updatedItem, ticketId: ticket.id };
     });
+    this.ticketCreation.publish(createdResult!);
 
     this.audit.log({
       action: "action_item.converted",

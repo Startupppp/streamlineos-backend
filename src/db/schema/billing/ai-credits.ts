@@ -16,6 +16,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -89,6 +90,9 @@ export const aiCreditTransactions = pgTable(
     index("ai_credit_txns_org_created_idx").on(t.orgId, t.createdAt),
     uniqueIndex("uq_ai_credit_txns_plan_grant_ref").on(t.orgId, t.referenceId).where(sql`type = 'PLAN_GRANT' AND reference_id IS NOT NULL`),
     uniqueIndex("uq_ai_credit_txns_purchase_ref").on(t.orgId, t.referenceId).where(sql`type = 'PURCHASE' AND reference_id IS NOT NULL`),
+    uniqueIndex("uq_ai_credit_txns_refund_ref")
+      .on(t.orgId, t.referenceId)
+      .where(sql`type = 'REFUND' AND reference_id IS NOT NULL AND metadata->>'source' = 'credit-ledger-adjustment'`),
     unique("uniq_ai_credit_transactions_org_id").on(t.orgId, t.id),
   ],
 );
@@ -116,5 +120,26 @@ export const aiCreditReservations = pgTable(
       .on(t.orgId, t.idempotencyKey)
       .where(sql`idempotency_key IS NOT NULL`),
     unique("uniq_ai_credit_reservations_org_id").on(t.orgId, t.id),
+  ],
+);
+
+export const aiCreditLegacyReconciliations = pgTable(
+  "ai_credit_legacy_reconciliations",
+  {
+    orgId: text("org_id").primaryKey().references(() => organizations.id, { onDelete: "cascade" }),
+    legacyBalance: integer("legacy_balance").notNull(),
+    canonicalBalanceMilli: integer("canonical_balance_milli"),
+    discrepancyMilli: integer("discrepancy_milli"),
+    status: varchar("status", { length: 24 }).notNull(),
+    capturedAt: timestamp("captured_at").defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at"),
+    resolution: jsonb("resolution"),
+  },
+  (t) => [
+    index("idx_ai_credit_legacy_reconciliation_status").on(t.status, t.capturedAt),
+    check(
+      "ck_ai_credit_legacy_reconciliation_status",
+      sql`${t.status} IN ('MATCHED', 'QUARANTINED', 'LEGACY_ONLY', 'RESOLVED')`,
+    ),
   ],
 );

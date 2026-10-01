@@ -157,6 +157,88 @@ export class EmailOutboxService {
     return { queued: true };
   }
 
+  async enqueueManyOnly(options: readonly EmailOptions[]): Promise<EmailQueueOutcome[]> {
+    if (options.length === 0) return [];
+
+    const scopes = options.map((item) => resolveScope(item.organizationId));
+    const scopeKey = (scope: { organizationId: string | null; scope: "PLATFORM" | "TENANT" }) =>
+      `${scope.scope}:${scope.organizationId ?? ""}`;
+    const firstScope = scopes[0];
+    if (!firstScope || scopes.some((scope) => scopeKey(scope) !== scopeKey(firstScope)))
+      throw new Error("email outbox: a batched enqueue must use one organization scope");
+
+    const recipients = options.flatMap((item) =>
+      Array.isArray(item.to) ? item.to : [item.to],
+    );
+    const suppressed = await this.suppression.findSuppressed(
+      recipients,
+      firstScope.organizationId,
+    );
+    const providerMissing = this.emailProvider.getEmailProvider() === "none";
+    const outcomes: EmailQueueOutcome[] = [];
+    const pending: DurableEmailOptions[] = [];
+    const withheld: Array<{
+      options: DurableEmailOptions;
+      status: "SUPPRESSED" | "FAILED";
+      lastError: string;
+    }> = [];
+
+    for (const item of options) {
+      const itemRecipients = Array.isArray(item.to) ? item.to : [item.to];
+      const deliverable = itemRecipients.filter(
+        (recipient) => !suppressed.has(canonicalEmail(recipient)),
+      );
+      if (deliverable.length === 0) {
+        outcomes.push({ queued: false, reason: SUPPRESSED_RECIPIENT_REASON });
+        withheld.push({
+          options: { ...item, to: itemRecipients },
+          status: "SUPPRESSED",
+          lastError: "Recipient is on the email suppression list",
+        });
+        continue;
+      }
+
+      const filtered: DurableEmailOptions = {
+        ...item,
+        to: Array.isArray(item.to) ? deliverable : deliverable[0]!,
+      };
+      if (providerMissing) {
+        outcomes.push({ queued: false, reason: NO_EMAIL_PROVIDER_REASON });
+        withheld.push({
+          options: filtered,
+          status: "FAILED",
+          lastError: "No email provider configured",
+        });
+        continue;
+      }
+
+      outcomes.push({ queued: true });
+      pending.push(filtered);
+    }
+
+    if (withheld.length > 0) {
+      await this.db.insert(emailOutbox).values(
+        withheld.map(({ options: item, status, lastError }) => {
+          const { organizationId, scope } = resolveScope(item.organizationId);
+          return {
+            organizationId,
+            scope,
+            toEmail: Array.isArray(item.to) ? item.to.join(",") : item.to,
+            subject: item.subject,
+            html: status === "SUPPRESSED" ? "" : item.html,
+            text: status === "SUPPRESSED" ? null : (item.text ?? null),
+            recipientUserId: item.recipientUserId ?? null,
+            status,
+            attempts: status === "FAILED" ? 1 : 0,
+            lastError,
+          };
+        }),
+      );
+    }
+    await this.enqueueForDelivery(pending);
+    return outcomes;
+  }
+
   private async recordUnsendable(options: DurableEmailOptions): Promise<void> {
     const { organizationId, scope } = resolveScope(options.organizationId);
     const toEmail = Array.isArray(options.to) ? options.to.join(",") : options.to;

@@ -22,6 +22,9 @@ const TIERS: Record<string, Tier> = {
   // valid long enough for an unthrottled loop to walk a meaningful slice of the
   // 10^6 space. Keyed per user, not per IP.
   "auth:mfa-verify": { limit: 10, windowSecs: 300 },
+  // The per-session login challenge. Same 10^6 space and the same one-step
+  // tolerance as enrolment, so it gets the same budget, keyed per user.
+  "auth:mfa-challenge": { limit: 10, windowSecs: 300 },
   // The three INTERNAL_API_SECRET routes. They were the only @Public() routes on
   // auth.controller.ts with no limiter at all, so a leaked shared secret minted
   // sessions unbounded. Keyed on the SUBJECT, not the source: the caller is the

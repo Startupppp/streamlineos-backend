@@ -7,16 +7,19 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(__dirname, "../..");
 const BUILD_ROOT = join(BACKEND_ROOT, "src/modules/build");
 const RATCHET_PATH = join(__dirname, "ticket-write-module-ratchet.json");
+const CREATE_RATCHET_PATH = join(__dirname, "ticket-create-module-ratchet.json");
 
 const SELF_TEST = process.argv.includes("--self-test");
 
 const WRITE_PATTERN = /\.update\(\s*tickets\s*\)/;
+const CREATE_PATTERN = /\.insert\(\s*tickets\s*\)/;
 
 const CHANGE_MODULE = new Set([
   "src/modules/build/core/tickets/apply-ticket-change.ts",
   "src/modules/build/core/tickets/projects-tickets-rank-utils.ts",
   "src/modules/build/core/tickets/build-ticket-bulk-mutation.ts",
 ]);
+const CREATION_MODULE = "src/modules/build/core/tickets/build-ticket-creation.service.ts";
 
 const MIN_SCANNED = 60;
 
@@ -44,6 +47,10 @@ export function writesToTickets(text) {
   return WRITE_PATTERN.test(text);
 }
 
+export function insertsTickets(text) {
+  return CREATE_PATTERN.test(text);
+}
+
 export function checkRatchet(writing, ratchet) {
   const newBypasses = writing.filter((f) => !ratchet.includes(f));
   const stale = ratchet.filter((r) => !writing.includes(r));
@@ -61,6 +68,16 @@ export function scanFiles(files) {
   return writing.sort();
 }
 
+export function scanTicketInserts(files) {
+  const writing = [];
+  for (const f of files) {
+    const rel = norm(f);
+    if (rel === CREATION_MODULE) continue;
+    if (insertsTickets(readFileSync(f, "utf8"))) writing.push(rel);
+  }
+  return writing.sort();
+}
+
 function runSelfTest() {
   const failures = [];
   const assert = (label, cond) => {
@@ -70,6 +87,15 @@ function runSelfTest() {
   assert(
     "a .update(tickets) call is detected as a write to the tickets table",
     writesToTickets("await tx.update(tickets).set({ status: 'DONE' }).where(eq(tickets.id, id));"),
+  );
+
+  assert(
+    "an .insert(tickets) call is detected as a ticket creation",
+    insertsTickets("await tx.insert(tickets).values({ title: 'x' });"),
+  );
+  assert(
+    "an insert into another table is not flagged as ticket creation",
+    !insertsTickets("await tx.insert(projects).values({ name: 'x' });"),
   );
 
   assert(
@@ -127,7 +153,7 @@ function runSelfTest() {
     console.error(`check-ticket-write-module self-test: ${failures.length} failed`);
     process.exit(1);
   }
-  console.log(`check-ticket-write-module self-tests: ${failures.length === 0 ? 6 : 0} passed`);
+  console.log(`check-ticket-write-module self-tests: ${failures.length === 0 ? 8 : 0} passed`);
   process.exit(0);
 }
 
@@ -143,7 +169,9 @@ if (files.length < MIN_SCANNED) {
 }
 
 const ratchet = JSON.parse(readFileSync(RATCHET_PATH, "utf8"));
+const createRatchet = JSON.parse(readFileSync(CREATE_RATCHET_PATH, "utf8"));
 const writing = scanFiles(files);
+const insertWriting = scanTicketInserts(walk(join(BACKEND_ROOT, "src/modules")));
 
 console.log(
   `Scanned ${files.length} source files under src/modules/build — ${writing.length} write to tickets outside the change module.`,
@@ -159,6 +187,7 @@ console.log(
 );
 
 const { newBypasses, stale } = checkRatchet(writing, ratchet);
+const { newBypasses: newCreateBypasses, stale: staleCreate } = checkRatchet(insertWriting, createRatchet);
 
 if (stale.length > 0) {
   console.error(
@@ -177,10 +206,21 @@ if (newBypasses.length > 0) {
   for (const f of newBypasses) console.error(`  ${f}`);
 }
 
-if (stale.length > 0 || newBypasses.length > 0) {
+if (staleCreate.length > 0) {
+  console.error(`\nFAIL — ${staleCreate.length} stale ticket-creation exception(s); remove them from ticket-create-module-ratchet.json:`);
+  for (const f of staleCreate) console.error(`  ${f}`);
+}
+
+if (newCreateBypasses.length > 0) {
+  console.error(`\nFAIL — ${newCreateBypasses.length} ticket creation bypass(es) outside ${CREATION_MODULE}:`);
+  for (const f of newCreateBypasses) console.error(`  ${f}`);
+}
+
+if (stale.length > 0 || newBypasses.length > 0 || staleCreate.length > 0 || newCreateBypasses.length > 0) {
   process.exit(1);
 }
 
 console.log(
   `\nOK — ${ratchet.length} grandfathered bypass(es) in ratchet, 0 new bypasses, 0 stale entries.`,
 );
+console.log(`OK — ticket creation has one module and ${createRatchet.length} explicit cross-domain exception(s).`);

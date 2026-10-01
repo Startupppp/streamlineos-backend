@@ -1,8 +1,9 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import { clientAccountStatusEnum, crmHealthEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
+import { clientPartyMap } from "../party";
 
 /**
  * The legacy `clients` table, declared for its readers and never written.
@@ -148,6 +149,20 @@ export const clientOnboardingTemplates = pgTable("client_onboarding_templates", 
 }, (table) => [
   index("idx_client_onboarding_templates_org").on(table.orgId),
   unique("uniq_client_onboarding_tmpls_org_id").on(table.orgId, table.id),
+  uniqueIndex("uniq_client_onboarding_templates_default").on(table.orgId).where(sql`${table.isDefault} = true`),
+]);
+
+export const clientOnboardingTemplateItems = pgTable("client_onboarding_template_items", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  templateId: integer("template_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [clientOnboardingTemplates.orgId, clientOnboardingTemplates.id], name: "fk_client_onboarding_template_items_org_template" }).onDelete("cascade"),
+  index("idx_client_onboarding_template_items_template").on(table.orgId, table.templateId, table.sortOrder),
 ]);
 
 export const clientOnboardingItems = pgTable("client_onboarding_items", {
@@ -171,6 +186,9 @@ export const clientOnboardingItems = pgTable("client_onboarding_items", {
   completedAt: timestamp("completed_at"),
   completedBy: text("completed_by").references(() => users.id),
   completedByMembershipId: integer("completed_by_membership_id"),
+  archivedAt: timestamp("archived_at"),
+  archivedBy: text("archived_by").references(() => users.id),
+  archivedByMembershipId: integer("archived_by_membership_id"),
   sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -178,6 +196,10 @@ export const clientOnboardingItems = pgTable("client_onboarding_items", {
   index("idx_onboarding_items_client").on(table.clientId),
   index("idx_onboarding_items_org").on(table.orgId),
   unique("uniq_client_onboarding_items_org_id").on(table.orgId, table.id),
+  foreignKey({ columns: [table.orgId, table.clientId], foreignColumns: [clientPartyMap.organizationId, clientPartyMap.clientId], name: "fk_client_onboarding_items_client_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.assignedToMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_cob_items_assigned_to_mbr" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.completedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_cob_items_completed_by_mbr" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.archivedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_client_onboarding_items_org_archiver_membership" }).onDelete("set null"),
 ]);
 
 export const csatSurveys = pgTable("csat_surveys", {
@@ -245,6 +267,11 @@ export const clientOnboardingTemplatesRelations = relations(clientOnboardingTemp
   organization: one(organizations, { fields: [clientOnboardingTemplates.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [clientOnboardingTemplates.createdBy], references: [users.id] }),
   items: many(clientOnboardingItems),
+  definitions: many(clientOnboardingTemplateItems),
+}));
+
+export const clientOnboardingTemplateItemsRelations = relations(clientOnboardingTemplateItems, ({ one }) => ({
+  template: one(clientOnboardingTemplates, { fields: [clientOnboardingTemplateItems.orgId, clientOnboardingTemplateItems.templateId], references: [clientOnboardingTemplates.orgId, clientOnboardingTemplates.id] }),
 }));
 
 export const clientOnboardingItemsRelations = relations(clientOnboardingItems, ({ one }) => ({

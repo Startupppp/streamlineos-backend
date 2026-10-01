@@ -16,9 +16,10 @@ import { KbTagsController } from "./kb-tags.controller";
 import { KbTagsService } from "./kb-tags.service";
 import { KbTranslationsController } from "./kb-translations.controller";
 import { KbTranslationsService } from "./kb-translations.service";
+import { AiCreditsModule } from "../../billing/core/ai-credits.module";
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, AiCreditsModule],
   controllers: [
     KbTagsController,
     KbSettingsController,

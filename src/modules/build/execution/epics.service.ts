@@ -17,12 +17,15 @@ import {
   microsecondCursorValue,
 } from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { allocateTicketNumbers, assertProjectInOrg } from "../core";
-import { reserveTicketCapacity, TicketVersionConflictException } from "../core/tickets";
+import { assertProjectInOrg } from "../core";
+import { BuildTicketCreationService, TicketVersionConflictException } from "../core/tickets";
 
 @Injectable()
 export class EpicsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly ticketCreation: BuildTicketCreationService,
+  ) {}
 
   async listEpics(orgId: string, projectId: number, query: EpicListQuery = {}) {
     await assertProjectInOrg(this.db, orgId, projectId);
@@ -103,16 +106,11 @@ export class EpicsService {
 
   async createEpic(orgId: string, userId: string, projectId: number, input: CreateEpicInput) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    const [epic] = await this.db.transaction(async (tx) => {
-      await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: 1 }]);
-      const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);
-
-      return tx
-        .insert(tickets)
-        .values({
-          orgId,
-          projectId,
-          ticketNumber: nextNumber,
+    const created = await this.ticketCreation.create({
+      orgId,
+      projectId,
+      actor: { userId, membershipId: null },
+      drafts: [{
           title: input.title,
           description: input.description,
           type: "EPIC",
@@ -123,11 +121,9 @@ export class EpicsService {
           startDate: input.startDate ?? null,
           dueDate: input.dueDate ?? null,
           status: "TODO",
-        })
-        .returning();
+      }],
     });
-
-    return epic;
+    return created.tickets[0];
   }
 
   async updateEpic(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput) {

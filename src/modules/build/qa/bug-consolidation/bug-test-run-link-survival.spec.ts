@@ -4,7 +4,25 @@ import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { TestRunsService } from "../test-runs.service";
+import { BuildTicketCreationService } from "../../core/tickets";
 import { tickets } from "../../../../db/schema";
+
+function makeTicketCreation() {
+  return {
+    createInTransaction: jest.fn(async (tx: Record<string, unknown>, command: Record<string, unknown>) => {
+      const drafts = command["drafts"] as Record<string, unknown>[];
+      const draft = drafts[0] ?? {};
+      const row: Record<string, unknown> = {
+        orgId: command["orgId"],
+        projectId: command["projectId"],
+        ...draft,
+      };
+      const inserted = await (tx["insert"] as jest.Mock)(tickets).values(row).returning() as unknown[];
+      return { tickets: inserted, command };
+    }),
+    publish: jest.fn(),
+  } as unknown as BuildTicketCreationService;
+}
 
 const MEMBERSHIP_ID = 7;
 const ORG = "org-owner";
@@ -67,7 +85,7 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
       transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, makeTicketCreation());
     const result = await svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 1, 3, {});
 
     expect(result).toMatchObject({ id: 200, type: "BUG" });
@@ -111,7 +129,7 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
       transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, makeTicketCreation());
     await svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 1, 5, {});
 
     expect(insertedTables).toContain(tickets);
@@ -149,7 +167,7 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
       transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
-    const svc = new TestRunsService(db, makeAccess(), auditSpy);
+    const svc = new TestRunsService(db, makeAccess(), auditSpy, makeTicketCreation());
     await svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 1, 7, {});
 
     const auditCall = (auditSpy as { log: jest.Mock }).log.mock.calls[0]?.[0] as { resourceType: string; action: string } | undefined;
@@ -169,7 +187,7 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
       transaction: jest.fn(),
     } as unknown as Db;
 
-    const svc = new TestRunsService(db, makeAccess(), audit);
+    const svc = new TestRunsService(db, makeAccess(), audit, makeTicketCreation());
     await expect(
       svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 1, 999, {}),
     ).rejects.toThrow(NotFoundException);

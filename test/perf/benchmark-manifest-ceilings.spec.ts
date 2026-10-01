@@ -98,6 +98,8 @@ const AWAITING_NEXT_CAPTURE: readonly string[] = [
   "inv-audit-events-cursor",
   "inv-genealogy-item-hop",
   "inv-genealogy-document-hop",
+  "build-org-project-health-summary",
+  "build-resource-allocation",
 ];
 
 /** The ids the read-cost catalog declares, read out of the module itself rather than re-parsed. */

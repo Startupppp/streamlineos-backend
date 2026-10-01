@@ -6,8 +6,10 @@ import { BugsController } from "./bugs.controller";
 import { TestManagementService } from "./test-management.service";
 import { TestRunsService } from "./test-runs.service";
 import { BugsService } from "./bugs.service";
+import { ProjectsModule } from "../core";
 
 @Module({
+  imports: [ProjectsModule],
   controllers: [
     TestSuitesController,
     TestCasesController,

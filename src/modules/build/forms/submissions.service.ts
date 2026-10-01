@@ -1,17 +1,17 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
-import { formSubmissions, projectForms, tickets } from "../../../db/schema";
+import { formSubmissions, projectForms } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess, allocateTicketNumbers } from "../core";
+import { assertProjectAccess } from "../core";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
 import type { CreateSubmissionInput, ListSubmissionsQuery, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
-import { reserveTicketCapacity } from "../core/tickets";
+import { BuildTicketCreationService, type CreatedBuildTickets } from "../core/tickets";
 
 type FormRow = typeof projectForms.$inferSelect;
 type SubmissionRow = typeof formSubmissions.$inferSelect;
@@ -35,6 +35,7 @@ type SubmissionRunResult = {
   createdTicketIds: number[];
   executedActionTypes: string[];
   skippedActionTypes: string[];
+  creation?: CreatedBuildTickets;
 };
 
 @Injectable()
@@ -43,6 +44,7 @@ export class SubmissionsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly audit: AuditService,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
   private async loadForm(orgId: string, projectId: number, formId: number): Promise<FormRow> {
@@ -94,6 +96,7 @@ export class SubmissionsService {
     const executedActionTypes: string[] = [];
     const skippedActionTypes: string[] = [];
     const createdTicketIds: number[] = [];
+    let creation: CreatedBuildTickets | undefined;
 
     const ticketActions = form.actions.filter(
       (action) => action.type === "create_task" || action.type === "create_bug",
@@ -108,20 +111,16 @@ export class SubmissionsService {
 
     const execute = async (tx: TenantTx) => {
       if (ticketActions.length > 0) {
-        await reserveTicketCapacity(tx, orgId, projectId, [{ status: "TODO", count: ticketActions.length }]);
-        const startNumber = await allocateTicketNumbers(tx, orgId, projectId, ticketActions.length);
-        const inserted = await tx
-          .insert(tickets)
-          .values(
-            ticketActions.map((action, index) => {
+        creation = await this.ticketCreation.createInTransaction(tx, {
+          orgId,
+          projectId,
+          actor: { userId, membershipId: null, systemActor: "public-form-submit" },
+          drafts: ticketActions.map((action) => {
               const config = action.config ?? {};
               const titleFieldKey =
                 typeof config["titleField"] === "string" ? config["titleField"] : undefined;
               const rawTitle = titleFieldKey !== undefined ? input.values[titleFieldKey] : undefined;
               return {
-                orgId,
-                projectId,
-                ticketNumber: startNumber + index,
                 title: typeof rawTitle === "string" ? rawTitle : form.name,
                 description,
                 type: action.type === "create_bug" ? ("BUG" as const) : ("TASK" as const),
@@ -130,8 +129,8 @@ export class SubmissionsService {
                 reporterId: userId,
               };
             }),
-          )
-          .returning({ id: tickets.id });
+        });
+        const inserted = creation.tickets;
 
         for (const [index, ticket] of inserted.entries()) {
           createdTicketIds.push(ticket.id);
@@ -160,7 +159,8 @@ export class SubmissionsService {
       : await this.db.transaction(execute);
 
     if (!submission) throw new NotFoundException("Failed to create submission");
-    return { submission, createdTicketIds, executedActionTypes, skippedActionTypes };
+    if (!activeTx && creation) this.ticketCreation.publish(creation);
+    return { submission, createdTicketIds, executedActionTypes, skippedActionTypes, creation };
   }
 
   async listSubmissions(u: CurrentUserContext, projectId: number, formId: number, query: ListSubmissionsQuery) {
@@ -232,7 +232,8 @@ export class SubmissionsService {
       const result = await this.runSubmission(form, input, null, tx);
       return { form, result };
     });
-    const { submission, executedActionTypes, skippedActionTypes } = result;
+    const { submission, executedActionTypes, skippedActionTypes, creation } = result;
+    if (creation) this.ticketCreation.publish(creation);
 
     this.audit.log({
       action: "form.public_submitted",

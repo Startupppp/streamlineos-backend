@@ -140,6 +140,8 @@ describe("ChatSearchService — tenant isolation", () => {
       isDeleted: false,
       senderMembership: { user: { id: "u1", name: "Alice", image: null } },
       channel: { id: 2, name: "general", type: "PUBLIC" },
+      attachments: [],
+      reactions: [],
     };
 
     let capturedOpts: Record<string, unknown> | undefined;

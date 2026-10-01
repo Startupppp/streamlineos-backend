@@ -1,11 +1,24 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { MeetingsService } from "./meetings.service";
 import { ActionItemsService } from "./action-items.service";
+import { BuildTicketCreationService } from "../core/tickets";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+function makeActionItemsTicketCreation() {
+  return {
+    createInTransaction: jest.fn(async (tx: Record<string, unknown>, command: Record<string, unknown>) => {
+      const drafts = command["drafts"] as Record<string, unknown>[];
+      const draft = drafts[0] ?? {};
+      const inserted = await (tx["insert"] as jest.Mock)({}).values(draft).returning() as Record<string, unknown>[];
+      return { tickets: inserted, command };
+    }),
+    publish: jest.fn(),
+  } as unknown as BuildTicketCreationService;
+}
 
 const MEMBERSHIP_ID = 7;
 
@@ -205,7 +218,7 @@ describe("ActionItemsService.convertToTask", () => {
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
     await expect(svc.convertToTask("org-1", "user-1", 1, 2, 1)).rejects.toThrow(ConflictException);
   });
 
@@ -215,7 +228,7 @@ describe("ActionItemsService.convertToTask", () => {
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
     const result = await svc.convertToTask("org-1", "user-1", 1, 2, 1);
 
     expect(result).toMatchObject({ actionItem: expect.anything(), ticketId: 100 });
@@ -235,7 +248,7 @@ describe("ActionItemsService.convertToTask", () => {
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
     await expect(svc.convertToTask("org-1", "user-1", 1, 2, 999)).rejects.toThrow(NotFoundException);
   });
 
@@ -251,7 +264,7 @@ describe("ActionItemsService.convertToTask", () => {
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
     await expect(svc.convertToTask("org-1", "user-1", 1, 999, 1)).rejects.toThrow(NotFoundException);
   });
 
@@ -269,7 +282,7 @@ describe("ActionItemsService.convertToTask", () => {
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
     await expect(svc.convertToTask("org-1", "user-1", 1, 2, 1)).rejects.toThrow(ConflictException);
   });
 });

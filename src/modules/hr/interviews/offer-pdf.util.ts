@@ -1,4 +1,5 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { StandardFonts, rgb } from "pdf-lib";
+import { renderBoundedPdf } from "../../../common/documents/pdf-render-kernel";
 
 export interface OfferPlaceholderVars {
   candidateName: string;
@@ -42,8 +43,9 @@ export async function renderOfferLetterPdf(
   const hydrated = applyPlaceholders(htmlContent, vars);
   const plainText = stripHtml(hydrated);
 
-  const pdfDoc = await PDFDocument.create();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const bytes = await renderBoundedPdf(async ({ document: pdfDoc, addPage, checkpoint }) => {
+    checkpoint(plainText.length);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const pageWidth = 595;
   const pageHeight = 842;
@@ -52,7 +54,7 @@ export async function renderOfferLetterPdf(
   const fontSize = 11;
   const maxWidth = pageWidth - margin * 2;
 
-  let page = pdfDoc.addPage([pageWidth, pageHeight]);
+  let page = addPage([pageWidth, pageHeight]);
   let y = pageHeight - margin;
 
   const lines = plainText.split("\n");
@@ -62,11 +64,12 @@ export async function renderOfferLetterPdf(
     let current = "";
 
     for (const word of words) {
+      checkpoint();
       const test = current ? `${current} ${word}` : word;
       const width = font.widthOfTextAtSize(test, fontSize);
       if (width > maxWidth && current) {
         if (y < margin + lineHeight) {
-          page = pdfDoc.addPage([pageWidth, pageHeight]);
+          page = addPage([pageWidth, pageHeight]);
           y = pageHeight - margin;
         }
         page.drawText(current, { x: margin, y, size: fontSize, font, color: rgb(0, 0, 0) });
@@ -79,7 +82,7 @@ export async function renderOfferLetterPdf(
 
     if (current.trim()) {
       if (y < margin + lineHeight) {
-        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        page = addPage([pageWidth, pageHeight]);
         y = pageHeight - margin;
       }
       page.drawText(current, { x: margin, y, size: fontSize, font, color: rgb(0, 0, 0) });
@@ -87,6 +90,6 @@ export async function renderOfferLetterPdf(
     y -= lineHeight;
   }
 
-  const pdfBytes = await pdfDoc.save();
-  return Buffer.from(pdfBytes).toString("base64");
+  });
+  return bytes.toString("base64");
 }

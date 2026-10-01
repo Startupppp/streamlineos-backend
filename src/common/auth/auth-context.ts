@@ -1,6 +1,6 @@
 import type { CurrentUserContext } from "./backend-claims";
 import type { MembershipState } from "./membership-state.service";
-import type { MfaState } from "./mfa-policy.token";
+import { mfaSessionRefFor, type MfaSessionRef, type MfaState } from "./mfa-policy.token";
 import type { ModuleAvailabilityResult } from "../rbac/module-availability";
 
 export interface ModuleAvailabilityLookup {
@@ -12,7 +12,11 @@ export interface ModuleAvailabilityLookup {
 
 export interface AuthContextLookups extends ModuleAvailabilityLookup {
   membershipState(userId: string, orgId: string): Promise<MembershipState>;
-  mfaState(orgId: string, userId: string): Promise<MfaState>;
+  mfaState(
+    orgId: string,
+    userId: string,
+    session: MfaSessionRef,
+  ): Promise<MfaState>;
 }
 
 /** Every fact is resolved once per request and reused — ADR 0004. */
@@ -65,7 +69,7 @@ export function createAuthContext(
     mfa(): Promise<MfaState> {
       if (mfa) return mfa;
       mfa = actor.orgId
-        ? lookups.mfaState(actor.orgId, actor.userId)
+        ? lookups.mfaState(actor.orgId, actor.userId, mfaSessionRefFor(actor))
         : Promise.resolve(NO_ORG_MFA);
       return mfa;
     },

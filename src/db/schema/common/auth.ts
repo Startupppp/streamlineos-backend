@@ -214,6 +214,7 @@ export const userSessions = pgTable("user_sessions", {
   lastActive: timestamp("last_active").defaultNow().notNull(),
   deviceId: text("device_id"),
   expiresAt: timestamp("expires_at"),
+  mfaSatisfiedAt: timestamp("mfa_satisfied_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_user_sessions_user_active").on(table.userId, table.isRevoked, table.createdAt),

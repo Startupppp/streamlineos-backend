@@ -6,6 +6,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { invitations, organizationMembers, users } from "../../db/schema";
 import { membershipStatusToUserStatus } from "../organization/core/org-membership.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { safeCsvCell } from "../../common/security/spreadsheet-cell";
 
 export class UserOperationsReporter {
   constructor(
@@ -57,7 +58,7 @@ export class UserOperationsReporter {
     ): string => {
       if (val === null || val === undefined) return "";
       if (val instanceof Date) return val.toISOString();
-      return String(val).replace(/,/g, ";");
+      return safeCsvCell(val);
     };
 
     const rows = data.map((userRecord) => {

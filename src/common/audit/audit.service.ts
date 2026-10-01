@@ -86,6 +86,17 @@ export class AuditService {
     if (!registerAfterCommit(dispatch)) void dispatch();
   }
 
+  logMany(entries: readonly AuditEntry[]): void {
+    if (entries.length === 0) return;
+    const stamped = entries.map((entry) => this.withAmbientRequestMeta(entry));
+    const dispatch = () =>
+      runOutsideTenantContext(() => this.writeMany(stamped)).catch((error: unknown) => {
+        logger.error("audit.logMany failed", { error, entries: stamped.length });
+        reportError(error, { action: "audit.logMany" });
+      });
+    if (!registerAfterCommit(dispatch)) void dispatch();
+  }
+
   /** Awaited and transaction-aware; failures prevent the enclosing mutation from committing. */
   async logCritical(entry: AuditEntry): Promise<void> {
     await this.write(this.withAmbientRequestMeta(entry));
@@ -140,6 +151,24 @@ export class AuditService {
   private async write(entry: AuditEntry): Promise<void> {
     const values = this.buildValues(entry);
     const orgId = values.orgId;
+
+    if (orgId && !getTenantContext()) {
+      await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
+        await tx.insert(auditLogs).values(values);
+      });
+      return;
+    }
+
+    await this.db.insert(auditLogs).values(values);
+  }
+
+  private async writeMany(entries: readonly AuditEntry[]): Promise<void> {
+    if (entries.length === 0) return;
+    const values = entries.map((entry) => this.buildValues(entry));
+    const orgIds = new Set(values.map((entry) => entry.orgId));
+    if (orgIds.size !== 1)
+      throw new Error("audit.logMany entries must belong to one organization scope");
+    const orgId = values[0]?.orgId ?? null;
 
     if (orgId && !getTenantContext()) {
       await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {

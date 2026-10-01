@@ -75,6 +75,10 @@ export const createTemplateSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().optional(),
   isDefault: z.boolean().optional().default(false),
+  items: z.array(z.object({
+    title: z.string().min(1).max(500),
+    description: z.string().max(2000).optional(),
+  }).strict()).min(1).max(50),
 }).strict();
 
 export const updateClientStatusSchema = z.object({

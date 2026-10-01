@@ -16,16 +16,10 @@ export const updateProfileSchema = z.object({
       email: z.string().email().optional(),
     })
     .optional(),
-  bankDetails: z
-    .object({
-      accountNumber: z.string().min(1),
-      bankName: z.string().min(1),
-      branch: z.string().min(1),
-      ifsc: z.string().min(1),
-      accountHolder: z.string().min(1),
-      pfUanNumber: z.string().optional(),
-    })
-    .optional(),
+  // No bankDetails here. Salary routing is written only through PATCH /payroll/me/bank,
+  // which honours the org's self-service toggle, freezes while a run is LOCKED..PUBLISHED,
+  // validates the bank code per scheme and audits the change. This profile route did none
+  // of that, so an employee could redirect their pay after the run was approved.
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

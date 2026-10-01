@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { cycles, ticketAssignees, tickets } from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.types";
@@ -44,6 +44,35 @@ export interface ApplyTicketChangeDeps {
   readonly automationRunner: BuildAutomationRunnerService;
   readonly cache: CacheService;
   readonly access: AccessService;
+}
+
+export interface RestoreTicketRowsInput {
+  readonly orgId: string;
+  readonly projectId: number;
+  readonly deletedAt: Date;
+  readonly ticketIds?: readonly number[];
+}
+
+export async function restoreTicketRows(
+  tx: DbOrTx,
+  input: RestoreTicketRowsInput,
+): Promise<Array<{ id: number }>> {
+  if (input.ticketIds?.length === 0) return [];
+
+  return tx
+    .update(tickets)
+    .set({ deletedAt: null })
+    .where(
+      and(
+        eq(tickets.orgId, input.orgId),
+        eq(tickets.projectId, input.projectId),
+        eq(tickets.deletedAt, input.deletedAt),
+        ...(input.ticketIds === undefined
+          ? []
+          : [inArray(tickets.id, [...input.ticketIds])]),
+      ),
+    )
+    .returning({ id: tickets.id });
 }
 
 async function assertSelfRefChain(

@@ -1,3 +1,5 @@
+import { escapeHtml } from "../templates/html-sanitizer";
+
 export interface ResignationLetterData {
   employeeName: string;
   designation: string;
@@ -10,7 +12,24 @@ export interface ResignationLetterData {
   companyName: string;
 }
 
-export function generateResignationLetter(data: ResignationLetterData): string {
+/**
+ * Every field is escaped: the reason and name are written by the resigning employee and the HR
+ * admin opens the result as HTML in an app-origin window. Unescaped, a reason carrying a `<form>`
+ * rendered a credential prompt that looked like the product's own (DOMPurify strips scripts,
+ * not forms).
+ */
+export function generateResignationLetter(raw: ResignationLetterData): string {
+  const data: ResignationLetterData = {
+    employeeName: escapeHtml(raw.employeeName),
+    designation: escapeHtml(raw.designation),
+    department: raw.department === null ? null : escapeHtml(raw.department),
+    joiningDate: escapeHtml(raw.joiningDate),
+    date: escapeHtml(raw.date),
+    reason: escapeHtml(raw.reason),
+    reasonCategory: escapeHtml(raw.reasonCategory),
+    lastWorkingDate: escapeHtml(raw.lastWorkingDate),
+    companyName: escapeHtml(raw.companyName),
+  };
   return `
 <div style="font-family: 'Times New Roman', serif; max-width: 700px; margin: 0 auto; padding: 40px; line-height: 1.8;">
   <p style="text-align: right; margin-bottom: 30px;">Date: ${data.date}</p>

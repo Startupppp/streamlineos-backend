@@ -1,7 +1,10 @@
-import { tickets } from "../../../db/schema";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { IMPORT_BATCH_SIZE } from "./import-export.constants";
 import type { ImportPreviewRow } from "./ticket-import-preview";
+import {
+  BuildTicketCreationService,
+  type CreatedBuildTickets,
+} from "../core/tickets";
 
 export interface ImportActor {
   orgId: string;
@@ -14,6 +17,11 @@ export interface InsertedRow {
   ticketId: number;
 }
 
+export interface InsertedTicketBatch {
+  rows: InsertedRow[];
+  creation: CreatedBuildTickets;
+}
+
 export function chunkRows<T>(rows: readonly T[], size: number = IMPORT_BATCH_SIZE): T[][] {
   if (size < 1) throw new RangeError("Batch size must be at least 1");
   const chunks: T[][] = [];
@@ -24,17 +32,26 @@ export function chunkRows<T>(rows: readonly T[], size: number = IMPORT_BATCH_SIZ
 
 export async function insertTicketBatch(
   tx: DbOrTx,
+  ticketCreation: BuildTicketCreationService,
   actor: ImportActor,
   projectId: number,
   startNumber: number,
   batch: readonly ImportPreviewRow[],
-): Promise<InsertedRow[]> {
-  if (batch.length === 0) return [];
+): Promise<InsertedTicketBatch> {
+  void startNumber;
+  if (batch.length === 0) {
+    const creation = await ticketCreation.createInTransaction(tx as never, {
+      orgId: actor.orgId,
+      projectId,
+      actor: { userId: actor.userId, membershipId: actor.membershipId },
+      drafts: [],
+    });
+    return { rows: [], creation };
+  }
 
-  const values = batch.map((row, index) => ({
+  const values = batch.map((row) => ({
     orgId: actor.orgId,
     projectId,
-    ticketNumber: startNumber + index,
     title: row.values.title,
     description: row.values.description ?? null,
     type: row.values.type ?? "TASK",
@@ -51,10 +68,15 @@ export async function insertTicketBatch(
     reporterMembershipId: actor.membershipId,
   }));
 
-  const inserted = await tx.insert(tickets).values(values).returning({ id: tickets.id });
+  const creation = await ticketCreation.createInTransaction(tx as never, {
+    orgId: actor.orgId,
+    projectId,
+    actor: { userId: actor.userId, membershipId: actor.membershipId },
+    drafts: values,
+  });
 
-  return inserted.map((created, index) => ({
+  return { rows: creation.tickets.map((created, index) => ({
     rowNumber: batch[index]?.rowNumber ?? -1,
     ticketId: created.id,
-  }));
+  })), creation };
 }

@@ -164,6 +164,8 @@ export const MODULES = [
       "ticket-org-assigned-to-me": O,
       "build-all-work": C("joins build.tickets × build.projects and filters through a project-membership subquery"),
       "build-roadmap-list": O,
+      "build-org-project-health-summary": C("aggregates ticket and cycle health across projects through three CTEs"),
+      "build-resource-allocation": C("unions direct and multi-assignee paths, then aggregates distinct open tickets per member"),
       "build-feedback-list": O,
       "build-changelog-list": O,
       "timesheets-pending-org": O,

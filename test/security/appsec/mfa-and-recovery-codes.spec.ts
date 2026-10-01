@@ -26,10 +26,12 @@ interface UserRow {
 function makeDb(state: { user: UserRow | null; backupCodes: BackupCodeRow[] }) {
   const userUpdates: Array<Record<string, unknown>> = [];
   const codeUpdates: number[] = [];
+  const sessionStamps: Array<Record<string, unknown>> = [];
 
   const db = {
     userUpdates,
     codeUpdates,
+    sessionStamps,
     query: {
       users: { findFirst: () => Promise.resolve(state.user) },
       mfaBackupCodes: {
@@ -50,6 +52,8 @@ function makeDb(state: { user: UserRow | null; backupCodes: BackupCodeRow[] }) {
               target.usedAt = values.usedAt as Date;
               codeUpdates.push(target.id);
             }
+          } else if ("mfaSatisfiedAt" in values) {
+            sessionStamps.push(values);
           } else {
             userUpdates.push(values);
             if (state.user && "totpEnabled" in values) {
@@ -95,7 +99,7 @@ describe("MFA enrolment refuses a wrong factor", () => {
       user: { totpSecret: SECRET, totpEnabled: false },
       backupCodes: [],
     });
-    await expect(makeService(db).verify("user-1", { token: wrongToken() })).rejects.toThrow(
+    await expect(makeService(db).verify("user-1", "session-1", { token: wrongToken() })).rejects.toThrow(
       BadRequestException,
     );
     expect(db.userUpdates).toEqual([]);
@@ -106,7 +110,7 @@ describe("MFA enrolment refuses a wrong factor", () => {
       user: { totpSecret: SECRET, totpEnabled: false },
       backupCodes: [],
     });
-    await expect(makeService(db).verify("user-1", { token: currentToken() })).resolves.toEqual({
+    await expect(makeService(db).verify("user-1", "session-1", { token: currentToken() })).resolves.toEqual({
       enabled: true,
     });
     expect(db.userUpdates).toEqual([{ totpEnabled: true }]);
@@ -114,12 +118,12 @@ describe("MFA enrolment refuses a wrong factor", () => {
 
   it("a caller who never enrolled is refused before any secret is decrypted", async () => {
     const db = makeDb({ user: { totpSecret: null, totpEnabled: false }, backupCodes: [] });
-    await expect(makeService(db).verify("user-1", { token: currentToken() })).rejects.toThrow(
+    await expect(makeService(db).verify("user-1", "session-1", { token: currentToken() })).rejects.toThrow(
       "MFA not set up",
     );
 
     const missing = makeDb({ user: null, backupCodes: [] });
-    await expect(makeService(missing).verify("ghost", { token: currentToken() })).rejects.toThrow(
+    await expect(makeService(missing).verify("ghost", "session-1", { token: currentToken() })).rejects.toThrow(
       "MFA not set up",
     );
   });
@@ -139,7 +143,7 @@ describe("Recovery codes are single-use and rejected when wrong", () => {
       backupCodes: [await codeRow(1, GOOD)],
     });
     await expect(
-      makeService(db).verify("user-1", { backupCode: "ZZZZZZ-ZZZZZZ" }),
+      makeService(db).verify("user-1", "session-1", { backupCode: "ZZZZZZ-ZZZZZZ" }),
     ).rejects.toThrow("Invalid backup code");
     expect(db.codeUpdates).toEqual([]);
   });
@@ -152,12 +156,12 @@ describe("Recovery codes are single-use and rejected when wrong", () => {
     });
     const service = makeService(db);
 
-    await expect(service.verify("user-1", { backupCode: GOOD })).resolves.toEqual({
+    await expect(service.verify("user-1", "session-1", { backupCode: GOOD })).resolves.toEqual({
       enabled: true,
     });
     expect(row.usedAt).not.toBeNull();
 
-    await expect(service.verify("user-1", { backupCode: GOOD })).rejects.toThrow(
+    await expect(service.verify("user-1", "session-1", { backupCode: GOOD })).rejects.toThrow(
       "Invalid backup code",
     );
   });
@@ -167,7 +171,7 @@ describe("Recovery codes are single-use and rejected when wrong", () => {
       user: { totpSecret: SECRET, totpEnabled: false },
       backupCodes: [await codeRow(1, GOOD, new Date())],
     });
-    await expect(makeService(db).verify("user-1", { backupCode: GOOD })).rejects.toThrow(
+    await expect(makeService(db).verify("user-1", "session-1", { backupCode: GOOD })).rejects.toThrow(
       "Invalid backup code",
     );
   });

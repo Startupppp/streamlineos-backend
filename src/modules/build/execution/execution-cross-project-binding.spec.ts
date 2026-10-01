@@ -13,7 +13,25 @@ import {
 import { SprintsService } from "./sprints.service";
 import { ModulesService } from "./modules.service";
 import { IntakeService, MilestonesService, ViewsService } from "./workspace.service";
+import { BuildTicketCreationService } from "../core/tickets";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+
+function makeIntakeTicketCreation() {
+  return {
+    createInTransaction: jest.fn(async (tx: Record<string, unknown>, command: Record<string, unknown>) => {
+      const drafts = command["drafts"] as Record<string, unknown>[];
+      const draft = drafts[0] ?? {};
+      const row: Record<string, unknown> = {
+        orgId: command["orgId"],
+        projectId: command["projectId"],
+        ...draft,
+      };
+      const inserted = await (tx["insert"] as jest.Mock)(tickets).values(row).returning() as unknown[];
+      return { tickets: inserted, command };
+    }),
+    publish: jest.fn(),
+  } as unknown as BuildTicketCreationService;
+}
 
 jest.mock("../core/lib/allocate-ticket-number", () => ({
   allocateTicketNumbers: jest.fn(async () => 1),
@@ -396,7 +414,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db } = makeDb(store);
 
     await expect(
-      new IntakeService(db).updateIntake(ORG, USER, PROJECT_A, INTAKE_B, {
+      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(ORG, USER, PROJECT_A, INTAKE_B, {
         status: "declined",
         declineReason: "not mine",
       }),
@@ -409,7 +427,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db } = makeDb(store);
 
     await expect(
-      new IntakeService(db).updateIntake(ORG, USER, PROJECT_A, INTAKE_A, {
+      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(ORG, USER, PROJECT_A, INTAKE_A, {
         status: "declined",
         declineReason: "duplicate of ABC",
       }),
@@ -421,7 +439,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db, transaction } = makeDb(store);
 
     await expect(
-      new IntakeService(db).updateIntake(ORG, USER, PROJECT_A, INTAKE_B, { status: "accepted" }),
+      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(ORG, USER, PROJECT_A, INTAKE_B, { status: "accepted" }),
     ).rejects.toThrow(NotFoundException);
     expect(transaction).not.toHaveBeenCalled();
     expect(store.tickets).toHaveLength(2);
@@ -433,7 +451,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db, transaction } = makeDb(store);
 
     await expect(
-      new IntakeService(db).updateIntake(ORG, USER, PROJECT_A, INTAKE_A, { status: "accepted" }),
+      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(ORG, USER, PROJECT_A, INTAKE_A, { status: "accepted" }),
     ).resolves.toMatchObject({ id: INTAKE_A, status: "accepted" });
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(store.tickets).toHaveLength(3);
@@ -445,7 +463,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db } = makeDb(store);
 
     await expect(
-      new IntakeService(db).updateIntake(OTHER_ORG, USER, PROJECT_A, INTAKE_A, {
+      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(OTHER_ORG, USER, PROJECT_A, INTAKE_A, {
         status: "declined",
         declineReason: "x",
       }),

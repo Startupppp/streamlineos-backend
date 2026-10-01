@@ -17,6 +17,7 @@ import {
 } from "./lib/bank-validation";
 
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
+import { isSafeBankToken } from "./lib/payout-csv";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import {
   PAYROLL_READ_CAP,
@@ -139,6 +140,9 @@ export class PayoutValidationService {
 
       if (bank?.accountNumber) {
         const bankCode = bank.ifsc ?? "";
+
+        if (!isSafeBankToken(bank.accountNumber) || !isSafeBankToken(bankCode))
+          errors.push("Bank account number and bank code may contain only letters, digits and spaces");
 
         if (bankCode) {
           const codeValidation = validateSchemeCode(scheme, bankCode);

@@ -10,7 +10,7 @@
  *   BLOG_PROBE_DATABASE_URL=postgresql://… \
  *     npx jest --config jest-db.json --runInBand --testPathPattern="blog-public-reads.db"
  *
- * The database needs migration 1703. Fixtures carry a random suffix and are deleted afterwards.
+ * The database needs migration 1705. Fixtures carry a random suffix and are deleted afterwards.
  */
 import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";

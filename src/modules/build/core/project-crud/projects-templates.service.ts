@@ -13,7 +13,6 @@ import {
   projectTemplates,
   projectTemplateTickets,
   ticketPriorityEnum,
-  tickets,
   ticketTypeEnum,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
@@ -34,6 +33,7 @@ import {
   keysetBeforeId,
 } from "../../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../../common/pagination/list-query.schema";
+import { BuildTicketCreationService } from "../tickets";
 
 
 function normalizeTicketType(
@@ -56,6 +56,7 @@ export class ProjectsTemplatesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
     private readonly audit: AuditService,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
   async listTemplates(orgId: string, query: ListTemplatesQuery) {
@@ -278,27 +279,21 @@ export class ProjectsTemplatesService {
     );
 
     if (template.tickets.length > 0) {
-      const [maxRow] = await this.db
-        .select({ value: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-        .from(tickets)
-        .where(and(eq(tickets.orgId, orgId), eq(tickets.projectId, project.id)));
-      const maxTN = maxRow?.value ?? 0;
-
-      await this.db.insert(tickets).values(
-        template.tickets.map((t, i) => ({
-          orgId,
-          projectId: project.id,
+      await this.ticketCreation.create({
+        orgId,
+        projectId: project.id,
+        actor: { userId, membershipId: creator.membershipId },
+        drafts: template.tickets.map((t, i) => ({
           title: t.title,
           description: t.description ?? null,
           type: normalizeTicketType(t.type),
           status: "TODO",
           priority: normalizeTicketPriority(t.priority),
-          ticketNumber: Number(maxTN) + i + 1,
           rank: String(((t.order ?? i) + 1) * 1000),
           originalEstimate: t.estimatedHours ? String(t.estimatedHours) : null,
           reporterId: userId,
         })),
-      );
+      });
     }
 
     return {

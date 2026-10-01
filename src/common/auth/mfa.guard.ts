@@ -11,7 +11,7 @@ import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_WITHOUT_MFA } from "./allow-without-mfa.decorator";
 import type { CurrentUserContext } from "./backend-claims";
 import type { AuthContext } from "./auth-context";
-import { MFA_POLICY, type IMfaPolicy } from "./mfa-policy.token";
+import { MFA_POLICY, mfaSessionRefFor, type IMfaPolicy } from "./mfa-policy.token";
 
 @Injectable()
 export class MfaGuard implements CanActivate {
@@ -51,7 +51,11 @@ export class MfaGuard implements CanActivate {
         : null;
     const { enforced, satisfied } = shared
       ? await shared.mfa()
-      : await this.mfaPolicy.resolve(user.orgId, user.userId);
+      : await this.mfaPolicy.resolve(
+          user.orgId,
+          user.userId,
+          mfaSessionRefFor(user),
+        );
     if (enforced && !satisfied) {
       throw new ForbiddenException({
         code: "MFA_REQUIRED",

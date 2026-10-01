@@ -1,5 +1,6 @@
 import type { Db } from "../../../../db/drizzle.module";
 import type { PlanLimitsService } from "../../../billing/core/plan-limits.service";
+import { BuildTicketCreationService } from "../tickets";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 
 const FAKE_TEMPLATE = {
@@ -37,6 +38,8 @@ function makeMultiSelectDb(sequences: unknown[][]): Db {
         where: jest.fn(() => builder),
         orderBy: jest.fn(() => builder),
         limit: jest.fn(() => Promise.resolve(rows)),
+        then: (resolve: (v: unknown) => void, reject: (r: unknown) => void) =>
+          Promise.resolve(rows).then(resolve, reject),
       };
       return builder;
     }),
@@ -50,6 +53,7 @@ describe("ProjectsTemplatesService.listTemplates — BUG-054: tickets are includ
       db,
       {} as PlanLimitsService,
       { log: jest.fn(), logCritical: jest.fn() } as never,
+      { create: jest.fn(), createInTransaction: jest.fn(), publish: jest.fn() } as unknown as BuildTicketCreationService,
     );
 
     const result = await svc.listTemplates("org-1", {});
@@ -64,6 +68,7 @@ describe("ProjectsTemplatesService.listTemplates — BUG-054: tickets are includ
       db,
       {} as PlanLimitsService,
       { log: jest.fn(), logCritical: jest.fn() } as never,
+      { create: jest.fn(), createInTransaction: jest.fn(), publish: jest.fn() } as unknown as BuildTicketCreationService,
     );
 
     const result = await svc.listTemplates("org-1", {});
@@ -78,6 +83,7 @@ describe("ProjectsTemplatesService.listTemplates — BUG-054: tickets are includ
       db,
       {} as PlanLimitsService,
       { log: jest.fn(), logCritical: jest.fn() } as never,
+      { create: jest.fn(), createInTransaction: jest.fn(), publish: jest.fn() } as unknown as BuildTicketCreationService,
     );
 
     const result = await svc.listTemplates("org-1", {});
@@ -92,6 +98,7 @@ describe("ProjectsTemplatesService.listTemplates — BUG-054: tickets are includ
       db,
       {} as PlanLimitsService,
       { log: jest.fn(), logCritical: jest.fn() } as never,
+      { create: jest.fn(), createInTransaction: jest.fn(), publish: jest.fn() } as unknown as BuildTicketCreationService,
     );
 
     const builder: Record<string, unknown> = {

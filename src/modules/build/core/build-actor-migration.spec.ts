@@ -330,7 +330,8 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
 
     const txCall = txFn.mock.calls[0];
     expect(txCall).toBeDefined();
-    const innerInsert = insertChain.values.mock.calls[0]?.[0];
+    const values = insertChain.values.mock.calls[0]?.[0];
+    const innerInsert = Array.isArray(values) ? values[0] : values;
     expect(innerInsert).toMatchObject({
       assigneeMembershipId: 7,
       reporterId: "user-caller",

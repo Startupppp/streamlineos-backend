@@ -10,8 +10,32 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CommandFenceStore } from "../../../common/idempotency/command-fence-store";
 import type { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.types";
+import { BuildTicketCreationService } from "../core/tickets";
 import { TicketImportService } from "./ticket-import.service";
 import type { TicketImportReport } from "./ticket-import-report";
+
+function makeTicketCreation() {
+  return {
+    createInTransaction: jest.fn(async (tx: Record<string, unknown>, command: Record<string, unknown>) => {
+      const counter = await (tx["select"] as jest.Mock)({ value: 0 })
+        .from({})
+        .where({})
+        .orderBy({})
+        .limit(1) as Array<{ value?: number | null }>;
+      const startNumber = (counter[0]?.value ?? 0) + 1;
+      const drafts = command["drafts"] as Record<string, unknown>[];
+      const rows = drafts.map((draft, index) => ({
+        ...draft,
+        orgId: command["orgId"],
+        projectId: command["projectId"],
+        ticketNumber: startNumber + index,
+      }));
+      const inserted = await (tx["insert"] as jest.Mock)({}).values(rows).returning() as { id: number }[];
+      return { tickets: inserted, command };
+    }),
+    publish: jest.fn(),
+  } as unknown as BuildTicketCreationService;
+}
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const PROJECT = 42;
@@ -131,7 +155,7 @@ function csv(...titles: string[]): string {
 describe("TicketImportService.previewImport", () => {
   it("returns a dry run without opening a transaction or writing a row", async () => {
     const { db, state } = makeDb();
-    const service = new TicketImportService(db, makeAccess(), makeFences());
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
 
     const preview = await service.previewImport(owner, PROJECT, {
       format: "csv",
@@ -146,7 +170,7 @@ describe("TicketImportService.previewImport", () => {
 
   it("surfaces existing project titles as duplicates", async () => {
     const { db } = makeDb({ conflicting: ["ship it"] });
-    const service = new TicketImportService(db, makeAccess(), makeFences());
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
 
     const preview = await service.previewImport(owner, PROJECT, {
       format: "csv",
@@ -161,7 +185,7 @@ describe("TicketImportService.previewImport", () => {
 describe("TicketImportService authorization", () => {
   it("refuses a project that is not in the caller's organisation", async () => {
     const { db } = makeDb({ project: undefined });
-    const service = new TicketImportService(db, makeAccess(), makeFences());
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
 
     await expect(
       service.previewImport(owner, PROJECT, { format: "csv", content: csv("Ship it") }),
@@ -187,7 +211,7 @@ describe("TicketImportService authorization", () => {
 describe("TicketImportService.commitImport confirmation boundary", () => {
   it("refuses a token that does not match the file being committed", async () => {
     const { db, state } = makeDb();
-    const service = new TicketImportService(db, makeAccess(), makeFences());
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
 
     await expect(
       service.commitImport(owner, PROJECT, {
@@ -201,7 +225,7 @@ describe("TicketImportService.commitImport confirmation boundary", () => {
 
   it("refuses a file in which nothing is importable", async () => {
     const { db, state } = makeDb({ conflicting: ["ship it"] });
-    const service = new TicketImportService(db, makeAccess(), makeFences());
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
 
     await expect(
       service.commitImport(owner, PROJECT, {
@@ -215,7 +239,7 @@ describe("TicketImportService.commitImport confirmation boundary", () => {
 
   it("writes only once the token from the preview is presented back", async () => {
     const { db, state } = makeDb({ maxTicketNumber: 4 });
-    const service = new TicketImportService(db, makeAccess(), makeFences());
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
     const content = csv("Ship it", "Ship it later");
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
 
@@ -240,7 +264,7 @@ describe("TicketImportService.commitImport confirmation boundary", () => {
 
   it("never assigns a field the file was not allowed to carry", async () => {
     const { db, state } = makeDb();
-    const service = new TicketImportService(db, makeAccess(), makeFences());
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
     const content = "title,assigneeMembershipId\nShip it,999\nClean up,";
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
 
@@ -272,7 +296,7 @@ describe("TicketImportService.commitImport reporting", () => {
     mode?: "atomic" | "partial",
   ): Promise<{ report: TicketImportReport; state: DbState }> {
     const { db, state } = makeDb(options);
-    const service = new TicketImportService(db, makeAccess(), makeFences());
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
     const report = await service.commitImport(owner, PROJECT, {
       format: "csv",
@@ -328,7 +352,7 @@ describe("TicketImportService.commitImport idempotency", () => {
   it("claims no fence when the caller supplies no key", async () => {
     const { db } = makeDb();
     const fences = makeFences();
-    const service = new TicketImportService(db, makeAccess(), fences);
+    const service = new TicketImportService(db, makeAccess(), fences, makeTicketCreation());
     const content = csv("Ship it");
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
 
@@ -344,7 +368,7 @@ describe("TicketImportService.commitImport idempotency", () => {
   it("fences the command on the confirmation token and records the report", async () => {
     const { db } = makeDb();
     const fences = makeFences();
-    const service = new TicketImportService(db, makeAccess(), fences);
+    const service = new TicketImportService(db, makeAccess(), fences, makeTicketCreation());
     const content = csv("Ship it");
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
 
@@ -376,7 +400,7 @@ describe("TicketImportService.commitImport idempotency", () => {
         responseStatus: 200,
       })),
     });
-    const service = new TicketImportService(db, makeAccess(), fences);
+    const service = new TicketImportService(db, makeAccess(), fences, makeTicketCreation());
     const content = csv("Ship it");
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
 
@@ -395,7 +419,7 @@ describe("TicketImportService.commitImport idempotency", () => {
   it("rejects a key already in flight", async () => {
     const { db } = makeDb();
     const fences = makeFences({ claim: jest.fn(async () => ({ kind: "inflight" })) });
-    const service = new TicketImportService(db, makeAccess(), fences);
+    const service = new TicketImportService(db, makeAccess(), fences, makeTicketCreation());
     const content = csv("Ship it");
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
 
@@ -412,7 +436,7 @@ describe("TicketImportService.commitImport idempotency", () => {
   it("rejects a key that was used for a different file", async () => {
     const { db } = makeDb();
     const fences = makeFences({ claim: jest.fn(async () => ({ kind: "mismatch" })) });
-    const service = new TicketImportService(db, makeAccess(), fences);
+    const service = new TicketImportService(db, makeAccess(), fences, makeTicketCreation());
     const content = csv("Ship it");
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
 
@@ -429,7 +453,7 @@ describe("TicketImportService.commitImport idempotency", () => {
   it("releases the fence when the whole import rolled back, so the key can be retried", async () => {
     const { db } = makeDb();
     const fences = makeFences();
-    const service = new TicketImportService(db, makeAccess(), fences);
+    const service = new TicketImportService(db, makeAccess(), fences, makeTicketCreation());
     const content = csv("Ship it");
     const preview = await service.previewImport(owner, PROJECT, { format: "csv", content });
     (db.transaction as unknown as jest.Mock).mockRejectedValueOnce(new Error("connection lost"));

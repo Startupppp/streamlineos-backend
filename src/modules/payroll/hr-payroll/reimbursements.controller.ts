@@ -99,7 +99,8 @@ export class HrPayrollReimbursementsController {
   ) {
     if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:expenses:approve")) {
+      // Org-wide only; team-scoped approvers go through the manager inbox's reporting-line check.
+      if (perms.get("hr:expenses:approve") !== "all") {
         throw new ForbiddenException("Only admins can process reimbursements.");
       }
     }

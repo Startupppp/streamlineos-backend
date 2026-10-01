@@ -1,12 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
-import { organizations, users } from "../../db/schema";
+import { organizations, users, userSessions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
 import type { MfaState } from "./access.types";
+import type { MfaSessionRef } from "../../common/auth/mfa-policy.token";
 
 const UNDETERMINED: MfaState = { enforced: true, satisfied: false };
 
@@ -17,13 +18,23 @@ export class MfaPolicyService {
     private readonly cache: CacheService,
   ) {}
 
-  async resolve(orgId: string, userId: string): Promise<MfaState> {
+  async resolve(
+    orgId: string,
+    userId: string,
+    session: MfaSessionRef,
+  ): Promise<MfaState> {
     try {
-      const [enforced, satisfied] = await Promise.all([
+      const [enforced, enrolled] = await Promise.all([
         this.isEnforcedByOrg(orgId),
         this.hasTotp(userId),
       ]);
-      return { enforced, satisfied };
+      if (!enforced) return { enforced, satisfied: enrolled };
+      if (!enrolled) return { enforced, satisfied: false };
+      if (!session.interactive) return { enforced, satisfied: true };
+      return {
+        enforced,
+        satisfied: await this.hasPassedChallenge(session.sessionId),
+      };
     } catch (error) {
       logger.error("Failed to resolve MFA policy", { error, orgId, userId });
       return UNDETERMINED;
@@ -52,6 +63,15 @@ export class MfaPolicyService {
       },
       CACHE_TTL.MEDIUM,
     );
+  }
+
+  private async hasPassedChallenge(sessionId: string): Promise<boolean> {
+    if (!sessionId) return false;
+    const session = await this.db.query.userSessions.findFirst({
+      where: eq(userSessions.id, sessionId),
+      columns: { mfaSatisfiedAt: true },
+    });
+    return session?.mfaSatisfiedAt != null;
   }
 
   private async hasTotp(userId: string): Promise<boolean> {

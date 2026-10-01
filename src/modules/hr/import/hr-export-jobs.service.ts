@@ -15,14 +15,13 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
-import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { FileStreamResult } from "../../storage/storage.service";
 import { StorageService } from "../../storage/storage.service";
 import { AccessService } from "../../access/access.service";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
 import { ScopedRead } from "../../access/scoped-read";
-import { authorize } from "../../access/authorize";
+import { resolveHrExportScope } from "./hr-export-scope";
 import type { CreateEmployeeExportJobInput } from "./dto/export-job.dto";
 import {
   hrExportUnavailable,
@@ -39,7 +38,6 @@ import {
 import {
   HrExportProcessingError,
   isExportScopeStillAllowed,
-  narrowestExportScope,
   type HrExportJobRow,
   type HrExportJobView,
 } from "./hr-export-jobs.types";
@@ -198,50 +196,14 @@ export class HrExportJobsService {
   }
 
   async resolveExecutionScope(job: HrExportJobRow): Promise<ScopedRead> {
-    // No guard ran for this job, so liveness comes from the same resolver JwtAuthGuard uses.
-    const member = await this.membershipState.resolve(
-      job.requestedBy,
-      job.orgId,
+    return resolveHrExportScope(
+      {
+        membershipState: this.membershipState,
+        authContexts: this.authContexts,
+        access: this.access,
+      },
+      job,
     );
-    if (!member.active || member.membershipId === null) {
-      throw new HrExportProcessingError(
-        "EXPORT_ACCESS_REVOKED",
-        "Your access changed before the export ran. Create a new export after access is restored.",
-      );
-    }
-
-    const context: CurrentUserContext = {
-      userId: job.requestedBy,
-      orgId: job.orgId,
-      role: member.role,
-      isOrgOwner: member.isOwner,
-      sessionId: "hr-export-worker",
-      tokenScopes: null,
-      principal: humanSessionPrincipal(member.membershipId, member.isOwner),
-    };
-    const authCtx = this.authContexts.create(context);
-    const [exportAccess, employeeAccess] = await Promise.all([
-      authorize(this.access, authCtx, "hr:export:manage"),
-      authorize(this.access, authCtx, "hr:employees:view"),
-    ]);
-    if (!exportAccess.allow || !employeeAccess.allow) {
-      throw new HrExportProcessingError(
-        "EXPORT_ACCESS_REVOKED",
-        "Your access changed before the export ran. Create a new export after access is restored.",
-      );
-    }
-
-    const scope = narrowestExportScope(
-      job.requestedScope,
-      employeeAccess.scope,
-    );
-    if (scope === "none") {
-      throw new HrExportProcessingError(
-        "EXPORT_SCOPE_EMPTY",
-        "No employee records are available in your current access scope.",
-      );
-    }
-    return ScopedRead.of(job.orgId, job.requestedBy, scope);
   }
 
   async claimForOrg(orgId: string): Promise<HrExportJobRow | null> {

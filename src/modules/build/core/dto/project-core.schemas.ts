@@ -3,12 +3,27 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
 import { invoiceLineDetailEnum } from "../../../../db/schema";
 
+const projectMemberSearchSchema = z
+  .string()
+  .trim()
+  .max(200)
+  .transform((value) => value || undefined)
+  .optional();
+
 export const listProjectMembersQuerySchema = z
   .object({
     cursor: z.string().optional(),
     limit: pageSizeField(25),
+    q: projectMemberSearchSchema,
+    search: projectMemberSearchSchema,
   })
-  .strict();
+  .strict()
+  .transform(
+    ({ q, ...query }): { cursor?: string; limit: number; search?: string } => {
+      const search = query.search ?? q;
+      return search ? { ...query, search } : query;
+    },
+  );
 export type ListProjectMembersQuery = z.infer<
   typeof listProjectMembersQuerySchema
 >;

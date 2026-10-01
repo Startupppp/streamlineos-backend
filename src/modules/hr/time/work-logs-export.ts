@@ -6,6 +6,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ExportWorkLogsQuery } from "./dto/work-logs.schemas";
+import { safeCsvCell } from "../../../common/security/spreadsheet-cell";
 import { resolveWorkLogsScope } from "./worklogs-scope";
 
 export async function exportWorkLogsCsv(
@@ -66,7 +67,7 @@ export async function exportWorkLogsCsv(
   ]);
 
   const csv = [headers, ...rows]
-    .map((row) => row.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","))
+    .map((row) => row.map(safeCsvCell).join(","))
     .join("\n");
 
   await audit.logCritical({

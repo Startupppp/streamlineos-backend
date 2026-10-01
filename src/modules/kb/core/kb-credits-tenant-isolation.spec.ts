@@ -1,54 +1,35 @@
-import type { Db } from "../../../db/drizzle.module";
+import type { AiCreditsService } from "../../billing/core/ai-credits.service";
 import { KbCreditsService } from "./kb-credits.service";
 
-function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
-  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
-  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
-  if (typeof value !== "object" || seen.has(value)) return [];
-  seen.add(value);
-  const record = value as { queryChunks?: unknown[]; value?: unknown };
-  return [
-    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
-    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
-  ];
-}
-
-function makeDb(row?: unknown): { db: Db; allWhereArgs: unknown[] } {
-  const allWhereArgs: unknown[] = [];
-  const db = {
-    query: new Proxy({}, {
-      get: () => ({
-        findFirst: jest.fn().mockImplementation(({ where }: { where?: unknown } = {}) => {
-          if (where) allWhereArgs.push(where);
-          return Promise.resolve(row);
-        }),
-      }),
-    }),
-  } as unknown as Db;
-  return { db, allWhereArgs };
-}
-
 describe("KbCreditsService — cross-tenant isolation", () => {
-  const ATTACKER_ORG = "org-attacker";
-  const OWNER_ORG = "org-owner";
+  function service() {
+    const getWallet = jest.fn().mockImplementation(async (orgId: string) => ({
+      wallet: {
+        id: 1,
+        orgId,
+        balance: 1,
+        lifetimeGranted: 1,
+        lifetimeConsumed: 0,
+      },
+      recentTransactions: [],
+    }));
+    const ledger = { getWallet } as unknown as AiCreditsService;
+    return { credits: new KbCreditsService(ledger), getWallet };
+  }
 
-  it("scopes AI credit balance lookup to the requesting org (tenant isolation)", async () => {
-    const { db, allWhereArgs } = makeDb(undefined);
-    const svc = new KbCreditsService(db);
+  it("scopes the canonical wallet lookup to the requesting org", async () => {
+    const { credits, getWallet } = service();
 
-    await svc.getBalance(ATTACKER_ORG);
-
-    expect(allWhereArgs.length).toBeGreaterThan(0);
-    const allVals = allWhereArgs.flatMap(w => sqlValues(w));
-    expect(allVals).toContain(ATTACKER_ORG);
+    await expect(credits.getBalance("org-attacker")).resolves.toMatchObject({ orgId: "org-attacker" });
+    expect(getWallet).toHaveBeenCalledWith("org-attacker");
   });
 
-  it("returns credit balance for the owning org (same-tenant control)", async () => {
-    const { db } = makeDb({ orgId: OWNER_ORG, balance: 1000, reservedBalance: 0 });
-    const svc = new KbCreditsService(db);
+  it("does not reuse another tenant's balance", async () => {
+    const { credits, getWallet } = service();
 
-    const result = await svc.getBalance(OWNER_ORG);
+    await credits.getBalance("org-owner");
+    await credits.getBalance("org-other");
 
-    expect(result).toBeDefined();
+    expect(getWallet.mock.calls).toEqual([["org-owner"], ["org-other"]]);
   });
 });
