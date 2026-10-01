@@ -12,11 +12,25 @@ import { AI_FEATURE_COSTS } from "../../ai/core/billing/ai-cost-catalog";
 import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 import { withDelegatingTransaction } from "../../../test/delegating-transaction";
 import { tickets } from "../../../db/schema/build/tasks";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
 const MEMBERSHIP_ID = 42;
 const TICKET_ID = 99;
+
+function actorIn(orgId: string, principal = humanSessionPrincipal(MEMBERSHIP_ID, false)): CurrentUserContext {
+  return {
+    userId: USER_ID,
+    orgId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s",
+    tokenScopes: null,
+    principal,
+  };
+}
 
 type TicketDraftSource = Pick<
   typeof tickets.$inferSelect,
@@ -124,11 +138,11 @@ describe("CommentDraftGeneratorService — membership guard", () => {
   it("throws ForbiddenException before making any DB query when membershipId is null", async () => {
     const db = { select: jest.fn() } as unknown as Db;
     const gateway = { invokeStructuredWithUsage: jest.fn() } as unknown as AiGatewayService;
-    const drafts = { upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
+    const drafts = { assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
 
-    await expect(svc.generate(ORG_ID, null, USER_ID, TICKET_ID)).rejects.toBeInstanceOf(
+    await expect(svc.generate(actorIn(ORG_ID, ACCOUNT_ONLY_PRINCIPAL), TICKET_ID)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
     expect(db.select).not.toHaveBeenCalled();
@@ -140,11 +154,11 @@ describe("CommentDraftGeneratorService — unreachable ticket short-circuit", ()
   it("throws NotFoundException and never calls the AI provider when the ticket is not found in the requesting org", async () => {
     const db = makeDb([]);
     const gateway = { invokeStructuredWithUsage: jest.fn() } as unknown as AiGatewayService;
-    const drafts = { upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
+    const drafts = { assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
 
-    await expect(svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID)).rejects.toBeInstanceOf(
+    await expect(svc.generate(actorIn(ORG_ID), TICKET_ID)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(gateway.invokeStructuredWithUsage).not.toHaveBeenCalled();
@@ -153,12 +167,12 @@ describe("CommentDraftGeneratorService — unreachable ticket short-circuit", ()
   it("never calls the AI provider when the ticket belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb([]);
     const gateway = { invokeStructuredWithUsage: jest.fn() } as unknown as AiGatewayService;
-    const drafts = { upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
+    const drafts = { assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
 
     await expect(
-      svc.generate("org-attacker", MEMBERSHIP_ID, USER_ID, TICKET_ID),
+      svc.generate(actorIn("org-attacker"), TICKET_ID),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(gateway.invokeStructuredWithUsage).not.toHaveBeenCalled();
   });
@@ -168,12 +182,12 @@ describe("CommentDraftGeneratorService — no eligible context (denial of wallet
   it("spends no credits on a ticket with neither a description nor comments, because there is nothing to draft from", async () => {
     const db = makeDb([{ ...ticketRow, description: null }], []);
     const gateway = { invokeStructuredWithUsage: jest.fn() } as unknown as AiGatewayService;
-    const drafts = { upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
+    const drafts = { assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
 
     await expect(
-      svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID),
+      svc.generate(actorIn(ORG_ID), TICKET_ID),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
     expect(gateway.invokeStructuredWithUsage).not.toHaveBeenCalled();
     expect(drafts.upsertGenerated).not.toHaveBeenCalled();
@@ -182,12 +196,12 @@ describe("CommentDraftGeneratorService — no eligible context (denial of wallet
   it("treats a whitespace-only description as absent, so blank text cannot buy a provider call", async () => {
     const db = makeDb([{ ...ticketRow, description: "   \n\t  " }], []);
     const gateway = { invokeStructuredWithUsage: jest.fn() } as unknown as AiGatewayService;
-    const drafts = { upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
+    const drafts = { assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
 
     await expect(
-      svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID),
+      svc.generate(actorIn(ORG_ID), TICKET_ID),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
     expect(gateway.invokeStructuredWithUsage).not.toHaveBeenCalled();
   });
@@ -198,11 +212,11 @@ describe("CommentDraftGeneratorService — no eligible context (denial of wallet
       invokeStructuredWithUsage: jest.fn().mockResolvedValue(makeGatewayOk()),
     } as unknown as AiGatewayService;
     const drafts = {
-      upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
+      assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
     } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
-    await svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID);
+    await svc.generate(actorIn(ORG_ID), TICKET_ID);
 
     expect(gateway.invokeStructuredWithUsage).toHaveBeenCalled();
   });
@@ -214,11 +228,11 @@ describe("CommentDraftGeneratorService — credit exhaustion", () => {
     const gateway = {
       invokeStructuredWithUsage: jest.fn().mockResolvedValue(makeGatewayFail("quota_exceeded")),
     } as unknown as AiGatewayService;
-    const drafts = { upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
+    const drafts = { assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
 
-    await expect(svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID)).rejects.toBeInstanceOf(
+    await expect(svc.generate(actorIn(ORG_ID), TICKET_ID)).rejects.toBeInstanceOf(
       InsufficientAiCreditsException,
     );
     expect(drafts.upsertGenerated).not.toHaveBeenCalled();
@@ -231,11 +245,11 @@ describe("CommentDraftGeneratorService — credit exhaustion", () => {
         makeGatewayFail("provider_unavailable"),
       ),
     } as unknown as AiGatewayService;
-    const drafts = { upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
+    const drafts = { assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn() } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
 
-    await expect(svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID)).rejects.toThrow(Error);
+    await expect(svc.generate(actorIn(ORG_ID), TICKET_ID)).rejects.toThrow(Error);
     expect(drafts.upsertGenerated).not.toHaveBeenCalled();
   });
 });
@@ -247,11 +261,11 @@ describe("CommentDraftGeneratorService — evidence fields persisted on success"
       invokeStructuredWithUsage: jest.fn().mockResolvedValue(makeGatewayOk()),
     } as unknown as AiGatewayService;
     const drafts = {
-      upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
+      assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
     } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
-    const result = await svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID);
+    const result = await svc.generate(actorIn(ORG_ID), TICKET_ID);
 
     expect(drafts.upsertGenerated).toHaveBeenCalledWith(
       ORG_ID,
@@ -273,11 +287,11 @@ describe("CommentDraftGeneratorService — evidence fields persisted on success"
       invokeStructuredWithUsage: jest.fn().mockResolvedValue(makeGatewayOk()),
     } as unknown as AiGatewayService;
     const drafts = {
-      upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
+      assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
     } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
-    await svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID);
+    await svc.generate(actorIn(ORG_ID), TICKET_ID);
 
     const callArg = (gateway.invokeStructuredWithUsage as jest.Mock).mock.calls[0][0] as {
       actor: { orgId: string; userId: string };
@@ -297,11 +311,11 @@ describe("CommentDraftGeneratorService — evidence fields persisted on success"
       invokeStructuredWithUsage: jest.fn().mockResolvedValue(makeGatewayOk()),
     } as unknown as AiGatewayService;
     const drafts = {
-      upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
+      assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
     } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
-    await svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID);
+    await svc.generate(actorIn(ORG_ID), TICKET_ID);
 
     const callArg = (gateway.invokeStructuredWithUsage as jest.Mock).mock.calls[0][0] as {
       feature: string;
@@ -327,11 +341,11 @@ describe("BSN-03-A06 — generator writes only to commentDrafts; db.update and d
       invokeStructuredWithUsage: jest.fn().mockResolvedValue(makeGatewayOk()),
     } as unknown as AiGatewayService;
     const drafts = {
-      upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
+      assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
     } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
-    await svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID);
+    await svc.generate(actorIn(ORG_ID), TICKET_ID);
 
     expect(trackedUpdate).not.toHaveBeenCalled();
     expect(trackedDelete).not.toHaveBeenCalled();
@@ -344,11 +358,11 @@ describe("BSN-03-A06 — generator writes only to commentDrafts; db.update and d
       invokeStructuredWithUsage: jest.fn().mockResolvedValue(makeGatewayOk()),
     } as unknown as AiGatewayService;
     const drafts = {
-      upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
+      assertTicketReadable: jest.fn().mockResolvedValue(undefined), upsertGenerated: jest.fn().mockResolvedValue(upsertedDraftRow),
     } as unknown as CommentDraftsService;
 
     const svc = new CommentDraftGeneratorService(db, gateway, drafts);
-    await svc.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID);
+    await svc.generate(actorIn(ORG_ID), TICKET_ID);
 
     expect(drafts.upsertGenerated).toHaveBeenCalledTimes(1);
     expect(drafts.upsertGenerated).toHaveBeenCalledWith(

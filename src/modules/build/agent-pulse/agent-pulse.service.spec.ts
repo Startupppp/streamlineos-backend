@@ -2,10 +2,30 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AgentPulseService } from "./agent-pulse.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal, type Principal } from "../../../common/auth/principal";
+
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual<object>("../core/project-crud/project-access"),
+  assertTicketReadAccess: jest.fn(),
+}));
 
 const ORG = "org-1";
 const USER = "user-1";
 const MID = 42;
+
+function actorIn(orgId: string, principal: Principal = humanSessionPrincipal(MID, false)): CurrentUserContext {
+  return {
+    userId: USER,
+    orgId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s",
+    tokenScopes: null,
+    principal,
+  };
+}
 
 function makeSelectChain(rows: unknown[]) {
   const limitFn = jest.fn().mockResolvedValue(rows);
@@ -39,6 +59,7 @@ describe("AgentPulseService", () => {
       providers: [
         AgentPulseService,
         { provide: DRIZZLE, useValue: { select: selectMock, transaction: transactionMock } },
+        { provide: AccessService, useValue: {} },
       ],
     }).compile();
     svc = module.get(AgentPulseService);
@@ -402,12 +423,12 @@ describe("AgentPulseService", () => {
   it("re-authorization defect proof: throws NotFoundException when the draft does not exist for the calling actor — stored creation access is not replayed at approve time", async () => {
     selectMock.mockImplementationOnce(() => makeSelectChain([]));
 
-    await expect(svc.applyDraft(ORG, USER, MID, 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.applyDraft(actorIn(ORG), 99)).rejects.toThrow(NotFoundException);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
   it("throws ForbiddenException when membershipId is null — account-only and system principals cannot approve proposals", async () => {
-    await expect(svc.applyDraft(ORG, USER, null, 99)).rejects.toThrow(ForbiddenException);
+    await expect(svc.applyDraft(actorIn(ORG, ACCOUNT_ONLY_PRINCIPAL), 99)).rejects.toThrow(ForbiddenException);
     expect(selectMock).not.toHaveBeenCalled();
     expect(transactionMock).not.toHaveBeenCalled();
   });
@@ -415,14 +436,14 @@ describe("AgentPulseService", () => {
   it("cross-tenant isolation: draft that exists in a different org returns NotFoundException when called with the attacker org — orgId is always re-asserted against the stored row", async () => {
     selectMock.mockImplementationOnce(() => makeSelectChain([]));
 
-    await expect(svc.applyDraft("org-attacker", USER, MID, 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.applyDraft(actorIn("org-attacker"), 1)).rejects.toThrow(NotFoundException);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
   it("actor isolation: draft owned by membershipId=100 returns NotFoundException when called with membershipId=999 — another actor cannot approve a draft they do not own", async () => {
     selectMock.mockImplementationOnce(() => makeSelectChain([]));
 
-    await expect(svc.applyDraft(ORG, USER, 999, 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.applyDraft(actorIn(ORG, humanSessionPrincipal(999, false)), 1)).rejects.toThrow(NotFoundException);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
@@ -432,7 +453,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([draftRow]))
       .mockImplementationOnce(() => makeSelectChain([]));
 
-    await expect(svc.applyDraft(ORG, USER, MID, 7)).rejects.toThrow(NotFoundException);
+    await expect(svc.applyDraft(actorIn(ORG), 7)).rejects.toThrow(NotFoundException);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
@@ -452,7 +473,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([draftRow]))
       .mockImplementationOnce(() => makeSelectChain([ticketRow]));
 
-    const result = await svc.applyDraft(ORG, USER, MID, 7);
+    const result = await svc.applyDraft(actorIn(ORG), 7);
 
     expect(result).toEqual({ commentId: 101, ticketId: 55 });
     expect(transactionMock).toHaveBeenCalledTimes(1);
@@ -476,7 +497,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([draftRow]))
       .mockImplementationOnce(() => makeSelectChain([ticketRow]));
 
-    await svc.applyDraft(ORG, USER, MID, 3);
+    await svc.applyDraft(actorIn(ORG), 3);
 
     expect(returningFn).toHaveBeenCalledTimes(1);
     expect(innerDeleteWhereFn).toHaveBeenCalledTimes(1);

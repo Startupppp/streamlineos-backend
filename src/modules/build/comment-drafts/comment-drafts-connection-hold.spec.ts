@@ -7,11 +7,22 @@ import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service"
 import { CommentDraftGeneratorService } from "./comment-draft-generator.service";
 import { CommentDraftsController } from "./comment-drafts.controller";
 import type { CommentDraftsService } from "./comment-drafts.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ORG_ID = "org-comment-draft";
 const USER_ID = "user-comment-draft";
 const MEMBERSHIP_ID = 42;
 const TICKET_ID = 99;
+const ACTOR: CurrentUserContext = {
+  userId: USER_ID,
+  orgId: ORG_ID,
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(MEMBERSHIP_ID, false),
+};
 
 interface Trace {
   transactionDepth: number;
@@ -87,7 +98,7 @@ function makeService(
   providerResult:
     | { ok: true; data: typeof aiOutput; aiUsage: typeof aiUsage; correlationId: string }
     | { ok: false; kind: "provider_unavailable"; message: string; correlationId: string },
-): { service: CommentDraftGeneratorService; drafts: jest.Mocked<Pick<CommentDraftsService, "upsertGenerated">> } {
+): { service: CommentDraftGeneratorService; drafts: jest.Mocked<Pick<CommentDraftsService, "assertTicketReadable" | "upsertGenerated">> } {
   const gateway = {
     invokeStructuredWithUsage: jest.fn().mockImplementation(async () => {
       trace.providerDepth = getTenantContext() ? trace.transactionDepth : 0;
@@ -95,6 +106,7 @@ function makeService(
     }),
   } as unknown as AiGatewayService;
   const drafts = {
+    assertTicketReadable: jest.fn().mockResolvedValue(undefined),
     upsertGenerated: jest.fn().mockImplementation(async () => {
       trace.writeDepth = getTenantContext() ? trace.transactionDepth : 0;
       return { id: 1, ...aiOutput };
@@ -152,7 +164,7 @@ describe("comment draft generation connection hold", () => {
     });
 
     await expect(
-      service.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID),
+      service.generate(ACTOR, TICKET_ID),
     ).rejects.toThrow("AI draft generation failed");
 
     expect(trace.providerDepth).toBe(0);
@@ -170,7 +182,7 @@ describe("comment draft generation connection hold", () => {
       correlationId: "corr-ok",
     });
 
-    await service.generate(ORG_ID, MEMBERSHIP_ID, USER_ID, TICKET_ID);
+    await service.generate(ACTOR, TICKET_ID);
 
     expect(trace.dbDepths.length).toBeGreaterThan(0);
     expect(trace.dbDepths.every((depth) => depth === 1)).toBe(true);

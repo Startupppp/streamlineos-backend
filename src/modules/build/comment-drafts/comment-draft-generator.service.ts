@@ -16,6 +16,8 @@ import { CommentDraftsService } from "./comment-drafts.service";
 import { generatedDraftAiOutputSchema } from "./dto/comment-drafts.schemas";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 const FEATURE_KEY = "ticket.generate-comment-draft";
 const MAX_DESCRIPTION_CHARS = 2_000;
@@ -35,21 +37,22 @@ export class CommentDraftGeneratorService {
   ) {}
 
   async generate(
-    orgId: string,
-    membershipId: number | null,
-    userId: string,
+    actor: CurrentUserContext,
     ticketId: number,
   ): Promise<
     Awaited<ReturnType<CommentDraftsService["upsertGenerated"]>> & {
       aiUsage: AiUsageMeta;
     }
   > {
+    const { orgId, userId } = actor;
+    const membershipId = actingMembershipId(actor.principal);
     if (membershipId === null)
       throw new ForbiddenException("Organization membership required");
 
     const { ticketRow, commentRows } = await runInTenantTransaction(
       this.db,
       async (tx) => {
+        await this.drafts.assertTicketReadable(actor, ticketId);
         const [ticketRow, commentRows] = await Promise.all([
           tx
             .select({

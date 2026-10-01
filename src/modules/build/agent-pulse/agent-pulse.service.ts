@@ -16,6 +16,10 @@ import {
 import type { AgentPulseSignal } from "./dto/agent-pulse.schema";
 import { COMMENT_DRAFT_MAX_RETRIES } from "../comment-drafts/comment-drafts.constants";
 import { parseRecordIds } from "../comment-draft-record-ids";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { assertTicketReadAccess } from "../core";
 
 const DEPENDENCY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 const COMMENT_DRAFT_MIN_CONFIDENCE = 50;
@@ -27,7 +31,10 @@ interface AgentPulseScope {
 
 @Injectable()
 export class AgentPulseService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   async getTopSignal(
     orgId: string,
@@ -207,11 +214,11 @@ export class AgentPulseService {
   }
 
   async applyDraft(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
+    actor: CurrentUserContext,
     draftId: number,
   ): Promise<{ commentId: number; ticketId: number }> {
+    const { orgId, userId } = actor;
+    const membershipId = actingMembershipId(actor.principal);
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
 
     const [draft] = await this.db
@@ -227,12 +234,13 @@ export class AgentPulseService {
     if (!draft) throw new NotFoundException("Draft not found");
 
     const [ticket] = await this.db
-      .select({ id: tickets.id })
+      .select({ id: tickets.id, projectId: tickets.projectId })
       .from(tickets)
       .where(and(eq(tickets.id, draft.ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .limit(1);
 
     if (!ticket) throw new NotFoundException("Ticket not found");
+    await assertTicketReadAccess(this.db, this.access, actor, ticket.projectId, draft.ticketId);
 
     const commentId = await this.db.transaction(async (tx) => {
       const [comment] = await tx
