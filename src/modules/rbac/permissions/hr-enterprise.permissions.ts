@@ -24,6 +24,7 @@ export const HR_ENTERPRISE_PERMISSIONS: Permission[] = [
     resource: "hr:legalhold",
     action: "manage",
     description: "Place and release legal holds (sensitive)",
+    sensitive: true,
   },
   {
     name: "hr:retention:manage",
@@ -68,6 +69,7 @@ export const HR_ENTERPRISE_PERMISSIONS: Permission[] = [
     resource: "hr:equity",
     action: "view",
     description: "View equity grants and vesting (sensitive)",
+    sensitive: true,
   },
   {
     name: "hr:equity:manage",
@@ -75,6 +77,7 @@ export const HR_ENTERPRISE_PERMISSIONS: Permission[] = [
     action: "manage",
     description:
       "Manage ESOP/equity grants, vesting, and exercises (sensitive)",
+    sensitive: true,
   },
   {
     name: "hr:accommodations:view",
@@ -244,6 +247,7 @@ export const HR_ENTERPRISE_PERMISSIONS: Permission[] = [
     resource: "hr:bank-details",
     action: "view",
     description: "View unmasked employee bank account details (sensitive)",
+    sensitive: true,
   },
   {
     name: "hr:loans:view",

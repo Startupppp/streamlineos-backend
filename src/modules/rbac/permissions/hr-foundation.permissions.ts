@@ -203,12 +203,14 @@ export const HR_FOUNDATION_PERMISSIONS: Permission[] = [
     action: "view",
     description:
       "View employee sensitive fields (salary, bank, tax, government ID, medical)",
+    sensitive: true,
   },
   {
     name: "hr:sensitive:manage",
     resource: "hr:sensitive",
     action: "manage",
     description: "Manage employee sensitive fields",
+    sensitive: true,
   },
   {
     name: "hr:audit:view",
