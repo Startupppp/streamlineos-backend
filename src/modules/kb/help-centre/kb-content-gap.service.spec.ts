@@ -1,5 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import { KbContentGapService } from "./kb-content-gap.service";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
   SupportKnowledgeGapStatus,
@@ -71,13 +74,20 @@ function buildCreateFixDb(
   return { insert: mockInsert } as never;
 }
 
-function makeService(db: never): KbContentGapService {
-  return new KbContentGapService(db, null as never);
+async function makeService(db: never): Promise<KbContentGapService> {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      KbContentGapService,
+      { provide: DRIZZLE, useValue: db },
+      { provide: KnowledgeAuthorizationService, useValue: { assertSpaceAccess: async () => ({ via: "space" }) } },
+    ],
+  }).compile();
+  return moduleRef.get(KbContentGapService);
 }
 
 describe("KbContentGapService.assignGap", () => {
   it("returns the gap row when RETURNING yields one row", async () => {
-    const service = makeService(buildGapInsertDb([GAP_ROW]));
+    const service = await makeService(buildGapInsertDb([GAP_ROW]));
 
     const result = await service.assignGap(user, {
       query: "how do I reset my password",
@@ -88,7 +98,7 @@ describe("KbContentGapService.assignGap", () => {
   });
 
   it("throws NotFoundException when RETURNING is empty", async () => {
-    const service = makeService(buildGapInsertDb([]));
+    const service = await makeService(buildGapInsertDb([]));
 
     await expect(
       service.assignGap(user, {
@@ -107,7 +117,7 @@ describe("KbContentGapService.dismissGap", () => {
   };
 
   it("returns the gap row when RETURNING yields one row", async () => {
-    const service = makeService(buildGapInsertDb([dismissedRow]));
+    const service = await makeService(buildGapInsertDb([dismissedRow]));
 
     const result = await service.dismissGap(user, {
       query: "how do I reset my password",
@@ -118,7 +128,7 @@ describe("KbContentGapService.dismissGap", () => {
   });
 
   it("throws NotFoundException when RETURNING is empty", async () => {
-    const service = makeService(buildGapInsertDb([]));
+    const service = await makeService(buildGapInsertDb([]));
 
     await expect(
       service.dismissGap(user, {
@@ -137,7 +147,7 @@ describe("KbContentGapService.createFix", () => {
   };
 
   it("returns the gap row when both inserts succeed", async () => {
-    const service = makeService(buildCreateFixDb([PAGE_ROW], [draftedRow]));
+    const service = await makeService(buildCreateFixDb([PAGE_ROW], [draftedRow]));
 
     const result = await service.createFix(user, {
       query: "how do I reset my password",
@@ -148,7 +158,7 @@ describe("KbContentGapService.createFix", () => {
   });
 
   it("throws NotFoundException when the page RETURNING is empty", async () => {
-    const service = makeService(buildCreateFixDb([], [draftedRow]));
+    const service = await makeService(buildCreateFixDb([], [draftedRow]));
 
     await expect(
       service.createFix(user, {
@@ -159,7 +169,7 @@ describe("KbContentGapService.createFix", () => {
   });
 
   it("throws NotFoundException when the gap RETURNING is empty after a successful page insert", async () => {
-    const service = makeService(buildCreateFixDb([PAGE_ROW], []));
+    const service = await makeService(buildCreateFixDb([PAGE_ROW], []));
 
     await expect(
       service.createFix(user, {
