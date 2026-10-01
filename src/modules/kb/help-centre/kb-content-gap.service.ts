@@ -286,6 +286,7 @@ export class KbContentGapService {
 
   async createFix(user: CurrentUserContext, body: GapCreateFixBody) {
     const now = new Date();
+    if (body.spaceId !== undefined) await this.auth.assertSpaceAccess(user, body.spaceId, "edit");
 
     const spaceId = body.spaceId
       ?? await this.db

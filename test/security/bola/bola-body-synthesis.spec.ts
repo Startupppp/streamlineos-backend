@@ -6,6 +6,9 @@ import {
   withQuery,
 } from "./live/body-synthesis";
 import { objectAddressableRoutes } from "./live/param-tables";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { BACKEND_ROOT } from "./route-surface";
 
 /**
  * Ticket 15, register item A-1 — the harness gap that hid 24% of the attack surface.
@@ -306,6 +309,35 @@ describe("path translation and query assembly", () => {
   });
 });
 
+const MUTATING_BODIES_AT_916712D47 = 1475;
+
+const MUTATING_BODY_DELTA_SINCE_916712D47: {
+  readonly added: Readonly<Record<string, number>>;
+  readonly removed: Readonly<Record<string, number>>;
+} = {
+  added: {
+    hr: 35,
+    build: 16,
+    kb: 15,
+    me: 4,
+    feedbucket: 3,
+    platform: 2,
+    public: 2,
+    auth: 1,
+    blog: 1,
+    careers: 1,
+    clients: 1,
+    crm: 1,
+    impersonation: 1,
+    invoices: 1,
+    onboarding: 1,
+    organization: 1,
+    "portal-access": 1,
+    timesheets: 1,
+  },
+  removed: { kb: 12, blog: 4, build: 3, billing: 2, auth: 1, careers: 1 },
+};
+
 describe("COVERAGE — the whole mutating surface, checked against its own schemas", () => {
   interface Op {
     verb: string;
@@ -349,8 +381,17 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
    * reader, and `{}` is rejected where the synthesised body is accepted. Those all hold at 1,475
    * on the merged surface — the 86 new bodies are equipped, not excused.
    */
-  it("ANTI-VACUITY: the contract really does carry the 1,475 mutating bodies the gate counts", () => {
-    expect(mutating.length).toBe(1475);
+  it("ANTI-VACUITY: the contract really does carry the 1,540 mutating bodies the gate counts, 1,475 at 916712d47 moved by module rather than absorbed", () => {
+    const total = (byModule: Readonly<Record<string, number>>): number =>
+      Object.values(byModule).reduce((sum, n) => sum + n, 0);
+    expect(total(MUTATING_BODY_DELTA_SINCE_916712D47.added)).toBe(88);
+    expect(total(MUTATING_BODY_DELTA_SINCE_916712D47.removed)).toBe(23);
+    expect(mutating.length).toBe(
+      MUTATING_BODIES_AT_916712D47 +
+        total(MUTATING_BODY_DELTA_SINCE_916712D47.added) -
+        total(MUTATING_BODY_DELTA_SINCE_916712D47.removed),
+    );
+    expect(mutating.length).toBe(1540);
   });
 
   it("derives a body for every operation that declares a JSON one", () => {
@@ -376,14 +417,17 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
    * "9 unsatisfiable" can never quietly grow into "9 we stopped looking at" — a route that loses
    * its JSON schema and joins them fails the assertion above, not this one.
    */
-  it("names the operations that carry no JSON body at all, so the residue cannot drift", () => {
+  it("names the operations that carry no JSON body at all, so the residue cannot drift, now including the three careers and candidate document uploads", () => {
     const multipart = results.filter((r) => r.op.schema === undefined).map((r) => `${r.op.verb} ${r.op.path}`).sort();
     expect(multipart).toEqual([
+      "POST /careers/resumes/upload",
+      "POST /hr/recruitment/candidates/{candidateId}/documents/upload",
       "POST /hr/recruitment/candidates/{candidateId}/resume-parse",
       "POST /inventory/import/preview",
       "POST /kb/media",
       "POST /kb/sources",
       "POST /onboarding/documents",
+      "POST /public/careers/{orgSlug}/jobs/{jobId}/apply",
       "POST /public/feedbucket/{publicKey}",
       "POST /public/feedbucket/{publicKey}/ai-assist",
       "POST /sign/documents/upload",
@@ -436,8 +480,30 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
  */
 const ABSENT_FROM_CONTRACT: readonly string[] = [];
 
+const UNREGISTERED_CONTROLLERS: ReadonlyMap<string, string> = new Map([
+  ["KbArticlesController", "retired by disuse in 91f76c85f: unregistered from KbHelpCentreModule, so /kb/articles/* is not served; the help-centre UI calls /support/kb/articles"],
+  ["KbCategoriesController", "retired by disuse in 91f76c85f: unregistered, so /kb/categories/* and /kb/spaces/:spaceId/categories are not served; the UI calls /support/kb/categories"],
+  ["KbCommentsController", "retired by disuse in 91f76c85f: unregistered, so /kb/comments/* and /kb/articles/:articleId/comments are not served"],
+]);
+
+const MODULE_SOURCES: string = readdirSync(join(BACKEND_ROOT, "src"), { recursive: true, encoding: "utf8" })
+  .filter((file) => file.endsWith(".module.ts"))
+  .map((file) => readFileSync(join(BACKEND_ROOT, "src", file), "utf8"))
+  .join("\n");
+
 describe("REACH — the object-addressable routes the sweep actually walks", () => {
-  const routes = objectAddressableRoutes().filter((r) => ["POST", "PUT", "PATCH"].includes(r.verb));
+  const routes = objectAddressableRoutes().filter(
+    (r) => ["POST", "PUT", "PATCH"].includes(r.verb) && !UNREGISTERED_CONTROLLERS.has(r.controllerClass),
+  );
+
+  it("excuses only controllers no module registers, and each still declares mutating routes, so the excuse cannot outlive the retirement", () => {
+    const declared = objectAddressableRoutes().filter((r) => UNREGISTERED_CONTROLLERS.has(r.controllerClass));
+    for (const controller of UNREGISTERED_CONTROLLERS.keys()) {
+      expect([controller, new RegExp(`\\b${controller}\\b`).test(MODULE_SOURCES)]).toEqual([controller, false]);
+      expect([controller, declared.some((r) => r.controllerClass === controller && r.verb !== "GET")]).toEqual([controller, true]);
+    }
+    expect(MODULE_SOURCES).toMatch(/\bKbFromTicketController\b/);
+  });
 
   it("ANTI-VACUITY: the route surface still yields a mutating object-addressable population", () => {
     expect(routes.length).toBeGreaterThan(300);

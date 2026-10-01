@@ -121,7 +121,84 @@ const DRIFTING_KEYS: readonly string[] = [
  *       own import (`resolveImportedClassMethods`), and the timesheets exceptions service is
  *       named for its entity, as its controller already was.
  */
-const UNSCOPED_ROUTE_BASELINE = 336;
+const UNSCOPED_ROUTE_BASELINE = 293;
+
+const notScopable = (key: string): string =>
+  `${key} is not scopable: the catalog syncs it to permission_supported_scopes only at all and no seeded role narrows it, so no sibling withholds a row this read returns`;
+
+const ADMITTED_KEYS_SINCE_BASELINE: ReadonlyMap<string, string> = new Map([
+  ["hr:requisitions:view", `${notScopable("hr:requisitions:view")}; the recruitment reads moved here from hr:employees:view`],
+  ["hr:templates:view", notScopable("hr:templates:view")],
+  ["hr:attendance:manage", "its only unscoped read is GET /hr/biometric/devices, the org's device configuration with no person row"],
+]);
+
+const ADMITTED_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
+  ["GET /agent/v1/projects/:projectId/tickets", "build:tickets:view is not scopable, and the read binds the project through ProjectAccessCache and spends the ticket DataScope through ticketScope like GET /build/:projectId/tickets"],
+  ["GET /build/:projectId/import-export/tickets/export", "build:tickets:view is not scopable, and the export spends ticketScope; its silent-subset ticketIds defect is held open by bola-bulk-mixed-tenant"],
+  ["GET /build/:projectId/tickets", "build:tickets:view is not scopable, and the list binds the project through ProjectAccessCache and spends ticketScope"],
+  ["GET /build/:projectId/tickets/column-counts", "build:tickets:view is not scopable, and the count binds the project through ProjectAccessCache and spends ticketScope"],
+  ["GET /build/:projectId/tickets/export", "build:tickets:view is not scopable, and the export spends ticketScope; its silent-subset ticketIds defect is held open by bola-bulk-mixed-tenant"],
+  ["GET /build/:projectId/workload/capacity", "build:tickets:view is not scopable, and WorkloadCapacityService.capacity calls assertProjectVisible first"],
+  ["GET /build/:projectId/activity", "build:view is not scopable, and the read narrows to readableTickets under ticketScope"],
+  ["GET /build/:projectId/automations/runs", "build:view is not scopable, and the service calls assertProjectAccess before reading"],
+  ["GET /build/:projectId/invoice-line-detail", "build:view is not scopable, and the service calls assertProjectAccess before reading"],
+  ["GET /build/:projectId/labels", "build:view is not scopable, and the service calls assertProjectAccess before reading"],
+  ["GET /build/:projectId/settings/iterations", "build:view is not scopable, and ProjectsSettingsIterationsService.getSettings calls assertProjectVisible first"],
+  ["GET /build/:projectId/settings/retention", "build:view is not scopable, and ProjectsRetentionSettingsService.getSettings calls assertProjectVisible first"],
+  ["GET /build/org-custom-states", "build:view is not scopable, and the read returns only the org's custom workflow state names, colours and types grouped across projects, with no project id, ticket or person"],
+  ["GET /dashboard/crm-pulse", "crm:leads:view at own still sees four org-level KPI aggregates (MRR, pipeline value, new leads this week, conversion rate) and no lead or deal row; the section is registered with cacheScope org by design, so narrowing it is a product decision, not a row leak"],
+  ["GET /hr/biometric/devices", "hr:attendance:manage: the read returns the org's biometric device configuration (name, address, vendor, sync state) and no attendance or person row"],
+  ["GET /hr/reporting-lines/manager-candidates", "hr:employees:view: a manager picker returning name, email and designation of active members, the people the self-service directory:people:view directory already shows every member at all"],
+  ["GET /hr/reporting-manager-policy", "hr:employees:view: the org's reporting-manager policy settings and the one configured default manager, no employee list"],
+  ["GET /hr/recruitment/analytics", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/analytics/funnel.csv", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/automations", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/activity", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/assessments", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/bgv", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/calibration", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/documents", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/documents/:documentId/view", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/identity", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/reference-checks", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/referral", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/rollout-documents", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/sla", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/voice-screens", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/:candidateId/whatsapp", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/candidates/duplicates", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/email-sequences", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/email-sequences/:sequenceId/metrics", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/external-referrals", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/external-referrers", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/internal-jobs", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/jobs", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/jobs/:jobId/board-postings", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/jobs/:jobId/recruiters", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/jobs/:jobId/share", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/job-templates", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/messages", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/messages/threads", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/pipeline", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/recruiters", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/recruiters/activity", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/requisitions", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/sourcing/profiles/lookup", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/talent-pools", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/talent-pools/:poolId/members", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/vendors", notScopable("hr:requisitions:view")],
+  ["GET /hr/recruitment/diversity-report", notScopable("hr:sensitive:view")],
+  ["GET /hr/templates", notScopable("hr:templates:view")],
+  ["GET /hr/templates/variables", notScopable("hr:templates:view")],
+  ["GET /timesheets/billing/uninvoiced-entries", notScopable("timesheets:billing:view")],
+  ["GET /timesheets/periods/:periodId/approver", "timesheets:entries:view: previewApprover reads the period through ownedPeriodEntries, which refuses any period whose userMembershipId is not the caller's"],
+];
+
+const OPEN_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
+  ["GET /build/releases", "build:view: ProjectsReleasesService.listOrgReleases returns every release in the org with its creator's email and never asserts project visibility, while GET /build/:projectId/releases calls assertProjectAccess; owned by the Build lane"],
+];
+
 
 /**
  * The 31 unscoped collection reads the merge brought, pinned by name so raising the baseline
@@ -213,13 +290,33 @@ describe("BOLA sweep — export and search apply their sibling list's DataScope"
   it("NO-NEW-DRIFT: no permission key gains a scope-drifting sibling", () => {
     const unexpected = findings
       .map((f) => f.permissionKey)
-      .filter((k) => !DRIFTING_KEYS.includes(k));
+      .filter((k) => !DRIFTING_KEYS.includes(k) && !ADMITTED_KEYS_SINCE_BASELINE.has(k));
     expect(unexpected).toEqual([]);
   });
 
-  it("RATCHET: the drifting route count does not grow", () => {
-    const total = findings.reduce((sum, f) => sum + f.unscoped.length, 0);
-    expect(total).toBeLessThanOrEqual(UNSCOPED_ROUTE_BASELINE);
+  it("RATCHET: the drifting route count, less the routes admitted since c675b7ad9 by name with a reason, does not grow past 293 (the 336 baseline less the 43 routes that left since), so the open Build site keeps it red until it is fixed", () => {
+    const admitted = new Set(ADMITTED_SINCE_BASELINE.map(([route]) => route));
+    const counted = findings.flatMap((f) => f.unscoped).filter((route) => !admitted.has(route));
+    expect({ count: counted.length, open: OPEN_SINCE_BASELINE.filter(([route]) => counted.includes(route)) }).toEqual({
+      count: Math.min(counted.length, UNSCOPED_ROUTE_BASELINE),
+      open: [],
+    });
+  });
+
+  it("every route and key admitted since the baseline is still flagged, so an excuse cannot outlive the read it excuses", () => {
+    const unscoped = new Set(findings.flatMap((f) => f.unscoped));
+    expect(ADMITTED_SINCE_BASELINE.map(([route]) => route).filter((route) => !unscoped.has(route))).toEqual([]);
+    const keys = new Set(findings.map((f) => f.permissionKey));
+    expect([...ADMITTED_KEYS_SINCE_BASELINE.keys()].filter((key) => !keys.has(key))).toEqual([]);
+  });
+
+  it("FIXED: GET /payroll/readiness names other employees' pending periods, so it is refused below scope all like its scoped run siblings", () => {
+    const handler = loadRouteSurface().find((r) => r.verb === "GET" && r.path === "/payroll/readiness");
+    expect(handler).toBeDefined();
+    expect(handler && handlerScopeEvidence(handler, buildSourceIndex())).toBe(true);
+    expect(handler?.body).toContain("if (!read.unrestricted) throw new NotFoundException");
+    expect(findings.flatMap((f) => f.unscoped)).not.toContain("GET /payroll/readiness");
+    expect(findings.find((f) => f.permissionKey === "payroll:runs:view")?.scoped).toContain("GET /payroll/readiness");
   });
 
   /**
@@ -347,14 +444,14 @@ describe("BOLA sweep — export and search apply their sibling list's DataScope"
    * `GET /tasks/sequences` lists org-level sequence templates and
    * `GET /timesheets/billing/uninvoiced` is the org's billing queue.
    */
-  it("EXPECTED-CONSEQUENCE: a key becomes visible when one of its siblings starts scoping", () => {
+  it("EXPECTED-CONSEQUENCE: a key becomes visible when one of its siblings starts scoping, and the non-scopable billing queue now carries its entries read beside it", () => {
     const tasks = findings.find((f) => f.permissionKey === "tasks:read");
     expect(tasks?.scoped).toContain("GET /tasks");
     expect(tasks?.unscoped).toEqual(["GET /tasks/sequences"]);
 
     const billing = findings.find((f) => f.permissionKey === "timesheets:billing:view");
     expect(billing?.scoped).toContain("GET /timesheets/billing/rate-preview");
-    expect(billing?.unscoped).toEqual(["GET /timesheets/billing/uninvoiced"]);
+    expect(billing?.unscoped).toEqual(["GET /timesheets/billing/uninvoiced", "GET /timesheets/billing/uninvoiced-entries"]);
 
     /**
      * Same shape, from the certificate/audit fix: `GET /sign/envelopes/:envelopeId/audit`

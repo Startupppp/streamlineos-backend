@@ -18,7 +18,8 @@ function render(value: unknown): Rendered {
   return { sql: query.sql, params: [...query.params] };
 }
 
-const auth = { visiblePagePredicate: jest.fn().mockResolvedValue(undefined) } as unknown as never;
+const resolveStanding = jest.fn().mockResolvedValue({ accessibleSpaceIds: [] });
+const auth = { visiblePagePredicate: jest.fn().mockResolvedValue(undefined), resolveStanding } as unknown as never;
 
 const USER = { userId: "user-1", orgId: "org-1", isOrgOwner: false } as unknown as CurrentUserContext;
 
@@ -374,6 +375,7 @@ describe("KbAnalyticsService.citationReuse", () => {
     const visiblePagePredicate = jest.fn().mockResolvedValue(sql`1 = 1`);
     const svc = new KbAnalyticsService(db, {
       visiblePagePredicate,
+      resolveStanding,
     } as unknown as never);
 
     await svc.citationReuse(USER, {});
@@ -387,6 +389,7 @@ describe("KbAnalyticsService.citationReuse", () => {
       visiblePagePredicate: jest
         .fn()
         .mockResolvedValue(sql`${kbPages.visibility} = 'org'`),
+      resolveStanding,
     } as unknown as never);
 
     await svc.citationReuse(USER, {});
@@ -396,18 +399,23 @@ describe("KbAnalyticsService.citationReuse", () => {
     expect(rendered.sql).toContain(`"kb_pages"."visibility"`);
   });
 
-  it("leaves a non-page citation kind unaffected by the page-visibility guard", async () => {
+  it("guards a source citation by the source's own org and space fence instead of the page-visibility predicate, and names no other citation kind", async () => {
     const { db, executed } = citationHarness();
     const svc = new KbAnalyticsService(db, {
       visiblePagePredicate: jest
         .fn()
         .mockResolvedValue(sql`${kbPages.visibility} = 'org'`),
+      resolveStanding,
     } as unknown as never);
 
     await svc.citationReuse(USER, {});
 
     const rendered = render(executed[0]);
-    expect(rendered.sql.toLowerCase()).toContain("kind <> 'page'");
+    const lowered = rendered.sql.toLowerCase();
+    expect(lowered).not.toContain("kind <> 'page'");
+    expect(lowered).toMatch(/kind in \(/);
+    expect(rendered.sql).toContain('"kb_sources"."org_id"');
+    expect(rendered.sql).toContain('"kb_sources"."space_id" IS NULL');
   });
 
   it("scopes the page-existence check to the given space when spaceId is provided", async () => {
