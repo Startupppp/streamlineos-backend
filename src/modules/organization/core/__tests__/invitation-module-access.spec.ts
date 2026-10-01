@@ -549,8 +549,7 @@ describe("InvitationCreateService.invite() — invite-time authority check", () 
 });
 
 describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)", () => {
-  interface BulkHarness {
-    service: InvitationCreateService;
+  interface BulkWrites {
     moduleAccessInserts: Array<{
       orgId: string;
       invitationId: string;
@@ -561,9 +560,11 @@ describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)"
     invitationInserts: number;
   }
 
-  async function buildHarness(): Promise<BulkHarness> {
-    const harness: BulkHarness = {
-      service: undefined as unknown as InvitationCreateService,
+  async function buildHarness(): Promise<{
+    service: InvitationCreateService;
+    writes: BulkWrites;
+  }> {
+    const writes: BulkWrites = {
       moduleAccessInserts: [],
       moduleAccessDeletes: 0,
       invitationInserts: 0,
@@ -582,19 +583,19 @@ describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)"
         set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
       })),
       delete: jest.fn((table: unknown) => {
-        if (table === invitationModuleAccess) harness.moduleAccessDeletes += 1;
+        if (table === invitationModuleAccess) writes.moduleAccessDeletes += 1;
         return { where: jest.fn().mockResolvedValue(undefined) };
       }),
       insert: jest.fn((table: unknown) => ({
         values: jest.fn((input: unknown) => {
           const rows = Array.isArray(input) ? input : [input];
           if (table === invitationModuleAccess) {
-            harness.moduleAccessInserts.push(
-              ...(rows as BulkHarness["moduleAccessInserts"]),
+            writes.moduleAccessInserts.push(
+              ...(rows as BulkWrites["moduleAccessInserts"]),
             );
           }
           if (table === invitations) {
-            harness.invitationInserts += rows.length;
+            writes.invitationInserts += rows.length;
           }
           const returned = (
             rows as Array<{ id?: string; email?: string }>
@@ -667,8 +668,7 @@ describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)"
       ],
     }).compile();
 
-    harness.service = moduleRef.get(InvitationCreateService);
-    return harness;
+    return { service: moduleRef.get(InvitationCreateService), writes };
   }
 
   it("the schema accepts module standings on a bulk invite, with the single invite's limits", () => {
@@ -684,11 +684,11 @@ describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)"
   });
 
   it("attaches the validated standings to every invitation it creates", async () => {
-    const harness = await buildHarness();
+    const { service, writes } = await buildHarness();
     (resolveModuleStandingRole as jest.Mock).mockResolvedValue(resolvedRole);
     (assertMayAssignRole as jest.Mock).mockResolvedValue(undefined);
 
-    const { results } = await harness.service.bulkInvite(
+    const { results } = await service.bulkInvite(
       ORG_ID,
       actor,
       ["a@b.com", "c@d.com"],
@@ -699,7 +699,7 @@ describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)"
 
     const created = results.filter((row) => row.success);
     expect(created).toHaveLength(2);
-    expect(harness.moduleAccessInserts).toEqual(
+    expect(writes.moduleAccessInserts).toEqual(
       created.map((row) => ({
         orgId: ORG_ID,
         invitationId: row.invitationId,
@@ -711,36 +711,36 @@ describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)"
   });
 
   it("clears any standings already attached to a row it reuses, so the insert cannot collide", async () => {
-    const harness = await buildHarness();
+    const { service, writes } = await buildHarness();
     (resolveModuleStandingRole as jest.Mock).mockResolvedValue(resolvedRole);
     (assertMayAssignRole as jest.Mock).mockResolvedValue(undefined);
 
-    await harness.service.bulkInvite(ORG_ID, actor, ["a@b.com"], "MEMBER", "enqueue", [
+    await service.bulkInvite(ORG_ID, actor, ["a@b.com"], "MEMBER", "enqueue", [
       { moduleKey: "hr", standing: "ADMIN" },
     ]);
 
-    expect(harness.moduleAccessDeletes).toBe(1);
+    expect(writes.moduleAccessDeletes).toBe(1);
   });
 
   it("refuses the whole batch, creating nothing, when the actor may not grant a standing", async () => {
-    const harness = await buildHarness();
+    const { service, writes } = await buildHarness();
     (resolveModuleStandingRole as jest.Mock).mockResolvedValue(resolvedRole);
     (assertMayAssignRole as jest.Mock).mockRejectedValue(new ForbiddenException("not allowed"));
 
     await expect(
-      harness.service.bulkInvite(ORG_ID, actor, ["a@b.com"], "MEMBER", "enqueue", [{ moduleKey: "hr", standing: "ADMIN" }]),
+      service.bulkInvite(ORG_ID, actor, ["a@b.com"], "MEMBER", "enqueue", [{ moduleKey: "hr", standing: "ADMIN" }]),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(harness.invitationInserts).toBe(0);
-    expect(harness.moduleAccessInserts).toEqual([]);
+    expect(writes.invitationInserts).toBe(0);
+    expect(writes.moduleAccessInserts).toEqual([]);
   });
 
   it("still attaches no standings when none were asked for (positive pair)", async () => {
-    const harness = await buildHarness();
+    const { service, writes } = await buildHarness();
 
-    const { results } = await harness.service.bulkInvite(ORG_ID, actor, ["a@b.com"], "MEMBER");
+    const { results } = await service.bulkInvite(ORG_ID, actor, ["a@b.com"], "MEMBER");
 
     expect(results[0]?.success).toBe(true);
-    expect(harness.moduleAccessInserts).toEqual([]);
+    expect(writes.moduleAccessInserts).toEqual([]);
     expect(resolveModuleStandingRole).not.toHaveBeenCalled();
   });
 });
