@@ -20,7 +20,7 @@ import {
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { revokeStandingNowAndAfterCommit } from "../../../common/rbac/access-mutation-commit";
+import { scheduleStandingRevocation } from "../../../common/rbac/access-mutation-commit";
 import { SessionsService } from "../../sessions/sessions.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
@@ -343,6 +343,6 @@ export class OrgMembershipAccessRevocation {
     orgId: string,
     memberUserId: string,
   ): Promise<void> {
-    return revokeStandingNowAndAfterCommit(this.cache, memberUserId);
+    return scheduleStandingRevocation(this.cache, [memberUserId], { withSessions: true });
   }
 }

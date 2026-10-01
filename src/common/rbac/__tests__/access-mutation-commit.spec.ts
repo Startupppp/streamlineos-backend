@@ -1,6 +1,5 @@
 import {
   commitAccessChange,
-  revokeStandingNowAndAfterCommit,
   scheduleStandingRevocation,
   REVOCATION_PAGE_SIZE,
   type CommitAccessAudit,
@@ -429,14 +428,14 @@ describe("standing revocation outside a commit", () => {
     expect(cache.invalidate).not.toHaveBeenCalled();
   });
 
-  it("revokes now and again after commit for an immediate membership revocation", async () => {
+  it("defers a membership revocation's status and session bust to after commit, never busting before it", async () => {
     const cache = makeCache();
-    const { hooks } = await inRequest(() => revokeStandingNowAndAfterCommit(asCache(cache), "u-1"));
-    expect(cache.invalidate).toHaveBeenCalledTimes(1);
+    const { hooks } = await inRequest(() => scheduleStandingRevocation(asCache(cache), ["u-1"], { withSessions: true }));
+    expect(cache.invalidate).not.toHaveBeenCalled();
     expect(hooks).toHaveLength(1);
     await drain(hooks);
-    expect(cache.invalidate).toHaveBeenCalledTimes(2);
-    expect(bustMembershipStatusCache).toHaveBeenNthCalledWith(2, cache, "u-1");
+    expect(cache.invalidate).toHaveBeenCalledTimes(1);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "u-1");
   });
 });
 

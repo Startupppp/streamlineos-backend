@@ -545,7 +545,7 @@ function scanRepository() {
           line: hit.line,
           kind: "PRIVATE INVALIDATION PRIMITIVE",
           text: hit.text,
-          fix: "Use a MembershipMutations method, a commitAccessChange revoke intent, or scheduleStandingRevocation / revokeStandingNowAndAfterCommit from common/rbac/access-mutation-commit.",
+          fix: "Use a MembershipMutations method, a commitAccessChange revoke intent, or scheduleStandingRevocation from common/rbac/access-mutation-commit.",
         });
 
     if (!BUMP_EXEMPT.has(rel))

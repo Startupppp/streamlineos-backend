@@ -24,7 +24,6 @@ import {
 } from "../../auth/membership-state.service";
 import {
   commitAccessChange,
-  revokeStandingNowAndAfterCommit,
   scheduleStandingRevocation,
 } from "../../rbac/access-mutation-commit";
 import {
@@ -409,23 +408,23 @@ describe("transaction coupling", () => {
 });
 
 describe("invalidation-only entry points", () => {
-  it("revocation busts immediately and again after commit, carrying the session key both times", async () => {
+  it("membership revocation busts status and session only after commit so no pre-commit read can refill a stale entry", async () => {
     const cache = makeCache();
     const hooks: AfterCommitHook[] = [];
 
     await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: {} as never, afterCommit: hooks },
-      () => revokeStandingNowAndAfterCommit(cache, USER),
+      () => scheduleStandingRevocation(cache, [USER], { withSessions: true }),
     );
 
-    expect(bustMembershipStatusCache).toHaveBeenCalledTimes(1);
-    expect(cache.invalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession(USER));
+    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(cache.invalidate).not.toHaveBeenCalled();
     expect(hooks).toHaveLength(1);
 
     for (const hook of hooks) await hook();
 
-    expect(bustMembershipStatusCache).toHaveBeenCalledTimes(2);
-    expect(cache.invalidate).toHaveBeenCalledTimes(2);
+    expect(bustMembershipStatusCache).toHaveBeenCalledTimes(1);
+    expect(cache.invalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession(USER));
   });
 
   it("identity erasure busts every organisation the subject belongs to", async () => {

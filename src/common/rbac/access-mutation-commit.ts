@@ -224,12 +224,6 @@ async function scheduleRevocation(cache: CacheService, plan: RevocationPlan): Pr
   await afterCommitOrInline(() => bust(cache, keys, standing));
 }
 
-export async function revokeStandingNowAndAfterCommit(cache: CacheService, userId: string) {
-  const run = () => bust(cache, [CACHE_KEYS.userSession(userId)], [userId]);
-  await run();
-  registerAfterCommit(run);
-}
-
 export function scheduleStandingRevocation(
   cache: CacheService,
   userIds: readonly string[],
