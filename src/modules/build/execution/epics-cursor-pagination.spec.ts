@@ -5,7 +5,7 @@ import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../../modules/access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import type { BuildTicketCreationService } from "../core/tickets";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
 
 const ORG_ID = "org-epic-cursor";
 const ACTOR: CurrentUserContext = {
@@ -68,7 +68,12 @@ function makeDb(rows: ReturnType<typeof epicRow>[], captured: { where?: unknown;
 }
 
 function epicsService(db: Db): EpicsService {
-  return new EpicsService(db, stubService<BuildTicketCreationService>({}), stubService<AccessService>({}));
+  return new EpicsService(
+    db,
+    stubService<BuildTicketCreationService>({}),
+    stubService<ProjectsTicketsUpdateService>({}),
+    stubService<AccessService>({}),
+  );
 }
 
 describe("EpicsService — the epic list is a keyset page, not a capped array", () => {

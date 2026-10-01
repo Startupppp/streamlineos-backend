@@ -4,6 +4,8 @@ import { BuildTicketCreationService, ProjectsTicketsUpdateService, TicketVersion
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
 
 const ORG = "org-1";
 const PROJECT_ID = 5;
@@ -54,9 +56,9 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
     const db = makeDb({ id: EPIC_ID, version: VERSION });
     const ticketChange = makeTicketChange();
     const u = makeU();
-    const svc = new EpicsService(db, makeTicketCreation(), ticketChange);
+    const svc = new EpicsService(db, makeTicketCreation(), ticketChange, stubService<AccessService>({}));
 
-    await svc.updateEpic(u, PROJECT_ID, EPIC_ID, { version: VERSION, title: "New title" });
+    await svc.updateEpic(u, PROJECT_ID, EPIC_ID, { version: VERSION, title: "New title", startDate: undefined, dueDate: undefined });
 
     expect(ticketChange.updateTicket).toHaveBeenCalledTimes(1);
     expect(ticketChange.updateTicket).toHaveBeenCalledWith(
@@ -70,9 +72,9 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
   it("does not call db.update(tickets) directly — canonical path owns the write", async () => {
     const db = makeDb({ id: EPIC_ID, version: VERSION });
     const ticketChange = makeTicketChange();
-    const svc = new EpicsService(db, makeTicketCreation(), ticketChange);
+    const svc = new EpicsService(db, makeTicketCreation(), ticketChange, stubService<AccessService>({}));
 
-    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, title: "New title" });
+    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, title: "New title", startDate: undefined, dueDate: undefined });
 
     expect((db as unknown as { update: jest.Mock }).update).not.toHaveBeenCalled();
   });
@@ -80,10 +82,10 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
   it("throws NotFoundException when the epic does not exist before calling updateTicket", async () => {
     const db = makeDb(null);
     const ticketChange = makeTicketChange();
-    const svc = new EpicsService(db, makeTicketCreation(), ticketChange);
+    const svc = new EpicsService(db, makeTicketCreation(), ticketChange, stubService<AccessService>({}));
 
     await expect(
-      svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION }),
+      svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, startDate: undefined, dueDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(ticketChange.updateTicket).not.toHaveBeenCalled();
   });
@@ -92,19 +94,19 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
     const db = makeDb({ id: EPIC_ID, version: VERSION });
     const ticketChange = makeTicketChange();
     (ticketChange.updateTicket as jest.Mock).mockRejectedValue(new TicketVersionConflictException(VERSION + 1));
-    const svc = new EpicsService(db, makeTicketCreation(), ticketChange);
+    const svc = new EpicsService(db, makeTicketCreation(), ticketChange, stubService<AccessService>({}));
 
     await expect(
-      svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION }),
+      svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, startDate: undefined, dueDate: undefined }),
     ).rejects.toThrow(TicketVersionConflictException);
   });
 
   it("passes health field to updateTicket when provided", async () => {
     const db = makeDb({ id: EPIC_ID, version: VERSION });
     const ticketChange = makeTicketChange();
-    const svc = new EpicsService(db, makeTicketCreation(), ticketChange);
+    const svc = new EpicsService(db, makeTicketCreation(), ticketChange, stubService<AccessService>({}));
 
-    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, health: "at_risk" });
+    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, health: "at_risk", startDate: undefined, dueDate: undefined });
 
     expect(ticketChange.updateTicket).toHaveBeenCalledWith(
       expect.anything(),
@@ -117,9 +119,9 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
   it("converts null assigneeId to empty string so canonical path clears the assignee", async () => {
     const db = makeDb({ id: EPIC_ID, version: VERSION });
     const ticketChange = makeTicketChange();
-    const svc = new EpicsService(db, makeTicketCreation(), ticketChange);
+    const svc = new EpicsService(db, makeTicketCreation(), ticketChange, stubService<AccessService>({}));
 
-    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, assigneeId: null });
+    await svc.updateEpic(makeU(), PROJECT_ID, EPIC_ID, { version: VERSION, assigneeId: null, startDate: undefined, dueDate: undefined });
 
     expect(ticketChange.updateTicket).toHaveBeenCalledWith(
       expect.anything(),
