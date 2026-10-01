@@ -3,11 +3,12 @@ import { NotFoundException } from "@nestjs/common";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { assertTicketReadAccess, assertTicketWriteAccess } from "../project-crud/project-access";
 
 jest.mock("../project-crud/project-access", () => ({
   ...jest.requireActual("../project-crud/project-access"),
   assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
 }));
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -65,10 +66,11 @@ describe("ProjectsTicketRelationsService — cross-tenant isolation", () => {
 
   beforeEach(() => {
     jest.mocked(assertTicketReadAccess).mockResolvedValue(undefined as never);
+    jest.mocked(assertTicketWriteAccess).mockResolvedValue(undefined as never);
   });
 
-  it("assertTicketReadAccess throws NotFoundException when ticket not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
-    jest.mocked(assertTicketReadAccess).mockRejectedValueOnce(new NotFoundException("Ticket not found"));
+  it("assertTicketWriteAccess throws NotFoundException when ticket not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
+    jest.mocked(assertTicketWriteAccess).mockRejectedValueOnce(new NotFoundException("Ticket not found"));
     const db = {
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },

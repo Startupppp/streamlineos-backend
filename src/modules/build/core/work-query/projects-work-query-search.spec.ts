@@ -2,6 +2,10 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { eq, or, sql } from "drizzle-orm";
 import { projects, tickets } from "../../../../db/schema";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import type { AccessService } from "../../../access/access.service";
+import { MEMBER_STANDING, principalAccess } from "../project-crud/__tests__/project-access-doubles";
+
+const memberAccess = () => principalAccess(MEMBER_STANDING) as unknown as AccessService;
 import type { Db } from "../../../../db/drizzle.module";
 import type { AllWorkQuery } from "../dto/projects.schemas";
 
@@ -72,7 +76,7 @@ describe("ProjectsWorkQueryService — ticket-reference search (STRE-157)", () =
     "searching STRE-147 binds projects.key = STRE alongside ticket_number so WEB-147 cannot match",
     async () => {
       const { db, capturedTicketWhere } = makeMockedDb();
-      await new ProjectsWorkQueryService(db).getAllWork(makeUser(ORG), makeSearchQuery("STRE-147"));
+      await new ProjectsWorkQueryService(db, memberAccess()).getAllWork(makeUser(ORG), makeSearchQuery("STRE-147"));
       const { sql: text, params } = render(capturedTicketWhere.mock.calls[0]?.[0]);
       expect(text).toContain('"key"');
       expect(params).toContain("STRE");
@@ -84,7 +88,7 @@ describe("ProjectsWorkQueryService — ticket-reference search (STRE-157)", () =
     "searching bare 147 does not bind a project key, so the number search spans all allowed projects",
     async () => {
       const { db, capturedTicketWhere } = makeMockedDb();
-      await new ProjectsWorkQueryService(db).getAllWork(makeUser(ORG), makeSearchQuery("147"));
+      await new ProjectsWorkQueryService(db, memberAccess()).getAllWork(makeUser(ORG), makeSearchQuery("147"));
       const { sql: text, params } = render(capturedTicketWhere.mock.calls[0]?.[0]);
       expect(text).not.toContain('"key"');
       expect(params).toContain(147);
@@ -95,7 +99,7 @@ describe("ProjectsWorkQueryService — ticket-reference search (STRE-157)", () =
     "searching STRE-147 keeps the title ILIKE fallback so a ticket titled literally STRE-147 is still found",
     async () => {
       const { db, capturedTicketWhere } = makeMockedDb();
-      await new ProjectsWorkQueryService(db).getAllWork(makeUser(ORG), makeSearchQuery("STRE-147"));
+      await new ProjectsWorkQueryService(db, memberAccess()).getAllWork(makeUser(ORG), makeSearchQuery("STRE-147"));
       const { sql: text, params } = render(capturedTicketWhere.mock.calls[0]?.[0]);
       expect(text).toContain("ILIKE");
       expect(params).toContain("%STRE-147%");
@@ -106,7 +110,7 @@ describe("ProjectsWorkQueryService — ticket-reference search (STRE-157)", () =
     "searching bare #147 keeps the title ILIKE fallback so a ticket with 147 in the title is still found",
     async () => {
       const { db, capturedTicketWhere } = makeMockedDb();
-      await new ProjectsWorkQueryService(db).getAllWork(makeUser(ORG), makeSearchQuery("#147"));
+      await new ProjectsWorkQueryService(db, memberAccess()).getAllWork(makeUser(ORG), makeSearchQuery("#147"));
       const { sql: text, params } = render(capturedTicketWhere.mock.calls[0]?.[0]);
       expect(text).toContain("ILIKE");
       expect(params).toContain("%#147%");

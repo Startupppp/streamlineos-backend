@@ -6,6 +6,7 @@ import { AccessService } from "../../../access/access.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
@@ -17,6 +18,14 @@ const actor: CurrentUserContext = {
   isOrgOwner: true, sessionId: "session", tokenScopes: null,
   principal: humanSessionPrincipal(1, true),
 };
+
+function projectAccessChain() {
+  const rows = [projectAccessRow()];
+  const chain = {
+    from: jest.fn(() => chain), where: jest.fn(() => chain), limit: jest.fn().mockResolvedValue(rows),
+  };
+  return chain;
+}
 
 async function harness() {
   const scopeFor = jest.fn().mockResolvedValue("all");
@@ -36,7 +45,7 @@ async function harness() {
   const set = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) });
   let selectCount = 0;
   const db = {
-    select: jest.fn(() => { selectCount++; return selectCount === 1 ? ticketChain : emptyChain; }),
+    select: jest.fn(() => { selectCount++; return selectCount === 1 ? projectAccessChain() : selectCount === 2 ? ticketChain : emptyChain; }),
     update: jest.fn(() => ({ set })),
     execute: jest.fn().mockResolvedValue([]),
     query: {
@@ -78,7 +87,7 @@ async function archiveAggregateHarness(blockerRows: Array<{ parentTicketId: numb
   let selectCount = 0;
   const set = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) });
   const db = {
-    select: jest.fn(() => { selectCount++; return selectCount === 1 ? ticketChain : aggregateChain; }),
+    select: jest.fn(() => { selectCount++; return selectCount === 1 ? projectAccessChain() : selectCount === 2 ? ticketChain : aggregateChain; }),
     update: jest.fn(() => ({ set })),
     execute: jest.fn().mockResolvedValue([]),
     query: {

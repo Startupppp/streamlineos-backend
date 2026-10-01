@@ -6,6 +6,7 @@ import type { Db } from "../../../../db/drizzle.types";
 import { rankTicket } from "./projects-tickets-rank-utils";
 import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 import { rankTicketSchema } from "../dto/projects.schemas";
+import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111",
@@ -66,7 +67,8 @@ function makeDb(ticketVersion: number, updateReturning: unknown[]) {
   const db = {
     select: jest.fn().mockImplementation(() => {
       selectCallCount++;
-      return selectCallCount === 1
+      if (selectCallCount === 1) return { ...makeSelectChain([]), limit: jest.fn().mockResolvedValue([projectAccessRow()]) };
+      return selectCallCount === 2
         ? makeSelectChain(targetRows)
         : makeSelectChain([]);
     }),

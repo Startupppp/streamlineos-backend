@@ -2,6 +2,10 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../../../../db/schema";
 import { orgTicketSearchQuery } from "../project-crud/projects-search.service";
+import { resolveTicketVisibility } from "../project-crud/project-access";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { MEMBER_STANDING, principalAccess } from "../project-crud/__tests__/project-access-doubles";
 
 /**
  * Ticket search is one bounded, tenant-joined statement.
@@ -17,17 +21,35 @@ import { orgTicketSearchQuery } from "../project-crud/projects-search.service";
  *     no org predicate at all and only RLS stood between a search result and another
  *     tenant's project key and name.
  */
-function compile(orgId: string, userId: string, q: string, limit: number) {
+async function compile(orgId: string, userId: string, q: string, limit: number) {
   const db = drizzle(postgres("postgres://unused:unused@127.0.0.1:1/unused", { max: 1 }), {
     schema,
   });
-  return orgTicketSearchQuery(db, orgId, userId, q, limit).toSQL();
+  const actor: CurrentUserContext = {
+    orgId,
+    userId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
+  };
+  const visible = await resolveTicketVisibility(
+    principalAccess({ ...MEMBER_STANDING, "build:tickets:view": "own" }),
+    actor,
+  );
+  return orgTicketSearchQuery(db, orgId, visible, q, limit).toSQL();
 }
 
 describe("ProjectsSearchService — cross-tenant isolation and boundedness", () => {
   const ATTACKER_ORG = "org-attacker";
-  const compiled = compile(ATTACKER_ORG, "u1", "query", 10);
-  const lowered = compiled.sql.toLowerCase();
+  let compiled: { sql: string; params: unknown[] };
+  let lowered: string;
+
+  beforeAll(async () => {
+    compiled = await compile(ATTACKER_ORG, "u1", "query", 10);
+    lowered = compiled.sql.toLowerCase();
+  });
 
   it("binds the caller's org and user id as parameters, never as literals", () => {
     expect(compiled.params).toContain(ATTACKER_ORG);
@@ -36,18 +58,15 @@ describe("ProjectsSearchService — cross-tenant isolation and boundedness", () 
     expect(compiled.sql).not.toContain("u1");
   });
 
-  it("resolves project membership with a correlated EXISTS, not a materialised id list", () => {
-    expect(lowered).toContain("exists");
+  it("resolves project membership through the project-access relationship subquery, not a materialised id list", () => {
     expect(lowered).toContain('"project_members"');
     expect(lowered).toContain('"organization_members"');
-    expect(lowered).not.toContain(" in (");
+    expect(lowered).toContain('"project_team_assignments"');
     expect(lowered).not.toContain("= any(");
   });
 
-  it("correlates the membership subquery to the outer ticket row so it cannot be hoisted into an unbounded scan", () => {
-    expect(compiled.sql).toMatch(
-      /"project_members"\."project_id"\s*=\s*(?:"build"\.)?"tickets"\."project_id"/i,
-    );
+  it("correlates the reach subquery to the outer ticket row so it cannot be hoisted into an unbounded scan", () => {
+    expect(compiled.sql).toMatch(/(?:"build"\.)?"tickets"\."project_id" IN \(SELECT (?:"build"\.)?"projects"\."id"/i);
   });
 
   it("states an org predicate on the projects join instead of joining on id alone", () => {
@@ -66,8 +85,8 @@ describe("ProjectsSearchService — cross-tenant isolation and boundedness", () 
     expect(compiled.sql).toMatch(/"tickets"\."org_id"\s*=\s*\$\d+/);
   });
 
-  it("ranks an exact ticket key first, so a key typed in chat resolves past ACP-520..529", () => {
-    const exact = compile("org-1", "u1", "ACP-52", 20);
+  it("ranks an exact ticket key first, so a key typed in chat resolves past ACP-520..529", async () => {
+    const exact = await compile("org-1", "u1", "ACP-52", 20);
     const orderBy = exact.sql.slice(exact.sql.toLowerCase().lastIndexOf("order by"));
     expect(orderBy).toMatch(/^order by case when upper\(concat\((?:"build"\.)?"projects"\."key", '-', cast\((?:"build"\.)?"tickets"\."ticket_number" as text\)\)\) = upper\(\$\d+\) then 0 else 1 end, (?:"build"\.)?"tickets"\."updated_at" desc/i);
     expect(exact.params).toContain("ACP-52");

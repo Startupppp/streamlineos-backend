@@ -5,10 +5,9 @@ import {
 } from "../../../db/schema";
 import {
   MEMBERSHIP_ID,
-  ORG,
+  actor,
   PROD_ROW,
   PROJ_ROW,
-  USER,
   makeAccess,
   makeDb,
   makeResponses,
@@ -24,7 +23,7 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     ]));
 
     const result = await makeSvc(db, makeAccess("all")).resolveScopeDirectory(
-      ORG, USER, null, ["project:20"],
+      actor(null), ["project:20"],
     );
 
     expect(result).toHaveLength(1);
@@ -35,7 +34,7 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     const { db, calls } = makeDb(makeResponses());
 
     const result = await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
-      ORG, USER, null, ["project:20"],
+      actor(null), ["project:20"],
     );
 
     expect(result).toEqual([]);
@@ -49,7 +48,7 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     ]));
 
     await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["project:20"],
+      actor(MEMBERSHIP_ID), ["project:20"],
     );
 
     const projectCall = calls.find((c) => c.table === projects);
@@ -63,7 +62,7 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     ]));
 
     const result = await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["project:20"],
+      actor(MEMBERSHIP_ID), ["project:20"],
     );
 
     expect(result).toHaveLength(1);
@@ -76,7 +75,7 @@ describe("ScopeDirectoryService — project membership gate (BSN-02-005)", () =>
     ]));
 
     const result = await makeSvc(db, makeAccess(null)).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["project:20"],
+      actor(MEMBERSHIP_ID), ["project:20"],
     );
 
     expect(result).toEqual([]);
@@ -93,7 +92,7 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
     ]));
 
     const result = await makeSvc(db, makeAccess(null)).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["product:10"],
+      actor(MEMBERSHIP_ID), ["product:10"],
     );
 
     expect(result).toEqual([]);
@@ -109,7 +108,7 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
     ]));
 
     const result = await makeSvc(db, makeAccess("all")).resolveScopeDirectory(
-      ORG, USER, null, ["product:10"],
+      actor(null), ["product:10"],
     );
 
     expect(result).toHaveLength(1);
@@ -122,7 +121,7 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
     ]));
 
     await makeSvc(db, makeAccess("all")).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["product:10"],
+      actor(MEMBERSHIP_ID), ["product:10"],
     );
 
     expect(calls.find((c) => c.table === managedProductMemberships)).toBeUndefined();
@@ -138,14 +137,14 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
       [managedProducts, [[PROD_ROW]]],
     ]));
     await makeSvc(dbA, makeAccess(null)).resolveScopeDirectory(
-      ORG_A, USER, SHARED_MEMBERSHIP_ID, ["product:10"],
+      actor(SHARED_MEMBERSHIP_ID, ORG_A), ["product:10"],
     );
 
     const { db: dbB, calls: callsB } = makeDb(makeResponses([
       [managedProductMemberships, [[]]],
     ]));
     await makeSvc(dbB, makeAccess(null)).resolveScopeDirectory(
-      ORG_B, USER, SHARED_MEMBERSHIP_ID, ["product:10"],
+      actor(SHARED_MEMBERSHIP_ID, ORG_B), ["product:10"],
     );
 
     const memberCallA = callsA.find((c) => c.table === managedProductMemberships);
@@ -163,7 +162,7 @@ describe("ScopeDirectoryService — product membership gate (BSN-02-005 product 
     const { db, calls } = makeDb(makeResponses());
 
     const result = await makeSvc(db, makeAccess(null)).resolveScopeDirectory(
-      ORG, USER, null, ["product:10"],
+      actor(null), ["product:10"],
     );
 
     expect(result).toEqual([]);
@@ -181,7 +180,7 @@ describe("ScopeDirectoryService — product and project gates run independently 
     ]));
 
     const result = await makeSvc(db, makeAccess("own")).resolveScopeDirectory(
-      ORG, USER, MEMBERSHIP_ID, ["product:10", "project:20"],
+      actor(MEMBERSHIP_ID), ["product:10", "project:20"],
     );
 
     expect(result).toHaveLength(2);

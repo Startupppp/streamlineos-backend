@@ -7,7 +7,7 @@ export type StandingScopes = Partial<Record<string, DataScope>>;
 
 export function standingAccess(scopes: StandingScopes = {}) {
   const scopeFor = jest.fn(
-    async (_actor: CurrentUserContext, key: string): Promise<DataScope> => scopes[key] ?? "none",
+    async (_actor: CurrentUserContext, key: string) => scopes[key] ?? "none",
   );
   return {
     scopeFor,
@@ -43,7 +43,7 @@ export function projectAccessRow(overrides: Partial<ProjectAccessRow> = {}): Pro
 }
 
 export function principalAccess(memberGrants: StandingScopes = {}) {
-  const scopeFor = jest.fn(async (actor: CurrentUserContext, key: string): Promise<DataScope> =>
+  const scopeFor = jest.fn(async (actor: CurrentUserContext, key: string) =>
     resolvePrincipalScope(actor.principal, key, async (isOrgOwner) =>
       isOrgOwner ? "all" : (memberGrants[key] ?? "none"),
     ),

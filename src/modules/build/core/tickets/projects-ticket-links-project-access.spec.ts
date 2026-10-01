@@ -2,6 +2,7 @@ import { ForbiddenException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
+import { standingAccess } from "../project-crud/__tests__/project-access-doubles";
 
 type Chain = Record<string, unknown>;
 
@@ -32,10 +33,11 @@ function insider(): CurrentUserContext {
 }
 
 function accessDouble() {
-  return {
-    scopeFor: jest.fn().mockResolvedValue("all"),
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-  };
+  return standingAccess({ "build:view": "own", "build:tickets:view": "all" });
+}
+
+function ticketDecisionRow(reachable: boolean) {
+  return { projectId: OUTSIDER_PROJECT_ID, projectState: "ACTIVE", projectDeletedAt: null, reachable, inScope: true };
 }
 
 const leakedRow = {
@@ -50,14 +52,9 @@ const leakedRow = {
 
 function dbForOutsider(): Db {
   return {
-    query: {
-      projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 99 }) },
-    },
     select: jest
       .fn()
-      .mockReturnValueOnce(chain([{ id: TICKET_ID, projectId: OUTSIDER_PROJECT_ID, orgId: ORG, allowed: true }]))
-      .mockReturnValueOnce(chain([]))
-      .mockReturnValueOnce(chain([]))
+      .mockReturnValueOnce(chain([ticketDecisionRow(false)]))
       .mockReturnValue(chain([leakedRow])),
     insert: jest.fn().mockReturnValue({
       values: () => ({ returning: () => Promise.resolve([leakedRow]) }),
@@ -88,12 +85,9 @@ describe("ProjectsTicketLinksService — project membership gate on related link
 
   it("listRelatedLinks still answers a caller who does have access to the url project (control)", async () => {
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
       select: jest
         .fn()
-        .mockReturnValueOnce(chain([{ id: TICKET_ID, projectId: OUTSIDER_PROJECT_ID, orgId: ORG, allowed: true }]))
+        .mockReturnValueOnce(chain([ticketDecisionRow(true)]))
         .mockReturnValue(
           chain([
             { id: 1, orgId: ORG, ticketId: TICKET_ID, url: "https://ok", label: null, createdBy: "u-outsider", createdAt: new Date() },
