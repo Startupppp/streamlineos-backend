@@ -94,10 +94,15 @@ describe("BOLA sweep — payment webhooks verify a signature over the raw body",
     expect(controller).toContain("x-razorpay-signature");
   });
 
-  it("the signature is an HMAC over that raw body, compared in constant time", () => {
+  it("the signature is an HMAC over that raw body, compared in constant time through constantTimeEquals in razorpay-internals.ts", () => {
     const adapter = read("src/modules/billing/payments/adapters/razorpay.adapter.ts");
-    expect(adapter).toContain("timingSafeEqual");
-    expect(adapter).toMatch(/createHmac\("sha256", webhookSecret\)\s*\.update\(params\.rawBody\)/);
+    expect(adapter).toMatch(
+      /createHmac\("sha256", webhookSecret\)\s*\.update\(params\.rawBody\)\.digest\("hex"\);\s*return constantTimeEquals\(expected, params\.signature\);/,
+    );
+    expect(adapter).not.toMatch(/expected\s*===\s*params\.signature/);
+    const internals = read("src/modules/billing/payments/adapters/razorpay-internals.ts");
+    const helper = internals.slice(internals.indexOf("export function constantTimeEquals"));
+    expect(helper.slice(0, 400)).toContain("return timingSafeEqual(a, b);");
   });
 });
 
@@ -187,11 +192,11 @@ describe("BOLA sweep — GET /public/org/:orgId returns only org name, 404 for m
   const service = read("src/modules/public/org.service.ts");
 
   // Asserting a projection OMITS named columns is vacuous for any name the table lacks; count the keys instead.
-  it("the query projects exactly one column", () => {
+  it("the query projects exactly the two branding columns the public help centre header renders, name and logo", () => {
     const projection = /\.select\(\{([^}]*)\}\)/.exec(service)?.[1];
     expect(projection).toBeDefined();
     const keys = (projection ?? "").split(",").map((k) => k.trim()).filter((k) => k.length > 0);
-    expect(keys).toEqual(["name: organizations.name"]);
+    expect(keys).toEqual(["name: organizations.name", "logo: organizations.logo"]);
   });
 
   it("a missing org throws NotFoundException, not a silent 200 with null", () => {
@@ -221,9 +226,11 @@ describe("BOLA sweep — public whiteboard share token", () => {
     expect(service).toContain('throw new ForbiddenException("Link is view-only")');
   });
 
-  it("the token is scope-limited to the one board it names", () => {
+  it("the token is scope-limited to the one board it names, matched by its hash now that share tokens are hashed at rest", () => {
     const update = service.slice(service.indexOf("async updatePublicByToken"));
-    expect(update.slice(0, 700)).toContain("eq(projectWhiteboards.shareToken, token)");
+    expect(update.slice(0, 700)).toContain("const tokenHash = hashShareToken(token);");
+    expect(update.slice(0, 700)).toContain("eq(projectWhiteboards.shareToken, tokenHash)");
+    expect(update.slice(0, 700)).not.toContain("eq(projectWhiteboards.shareToken, token)");
     expect(update.slice(0, 700)).toContain("withPublicToken(this.db, token");
   });
 });
