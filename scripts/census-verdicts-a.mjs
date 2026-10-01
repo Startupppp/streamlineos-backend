@@ -153,6 +153,7 @@ export default [
     key: "modules/build/execution/iterations.controller.ts#listSprints",
     verdict: "VERIFIED",
     finding: "route-is-frozen-410",
+    projectRelationshipExempt: "frozen tombstone: SprintsService throws 410 GONE before any read, the sprints table is dropped, so no project-owned row is reachable and a project lookup would only add an existence oracle",
     summary:
       "GET /build/:projectId/sprints. The lead is vacuous: there is no query to bind. The sprints table was dropped when Build cut over to the Cycle model, and SprintsService is a tombstone — every method, listSprints included, throws GoneException with the FROZEN message declared at sprints.service.ts:7 and never touches the database. The static pass follows the handler into a service method that accepts _orgId and _projectId and never uses them, which is exactly the shape of PASSED-UNBOUND; it cannot tell a 410 stub from an unbound query. The live route is /build/:projectId/cycles.",
     blastRadius:
@@ -177,6 +178,7 @@ export default [
     key: "modules/build/execution/iterations.controller.ts#createSprint",
     verdict: "VERIFIED",
     finding: "route-is-frozen-410",
+    projectRelationshipExempt: "frozen tombstone: SprintsService throws 410 GONE before any read, the sprints table is dropped, so no project-owned row is reachable and a project lookup would only add an existence oracle",
     summary:
       "POST /build/:projectId/sprints. Same tombstone as listSprints: createSprint's entire body is a GoneException throw at sprints.service.ts:21, so no INSERT exists and the orgId and projectId the controller forwards are discarded parameters (_orgId, _projectId). The static pass reads unused forwarded parameters as PASSED-UNBOUND. Cycle creation, the live replacement, is POST /build/:projectId/cycles on CyclesController.",
     blastRadius:
@@ -195,6 +197,7 @@ export default [
     key: "modules/build/execution/iterations.controller.ts#deleteSprint",
     verdict: "VERIFIED",
     finding: "route-is-frozen-410",
+    projectRelationshipExempt: "frozen tombstone: SprintsService throws 410 GONE before any read, the sprints table is dropped, so no project-owned row is reachable and a project lookup would only add an existence oracle",
     summary:
       "DELETE /build/:projectId/sprints/:sprintId. Flagged on BOTH org and parent scoping, and both leads are vacuous for the same reason: deleteSprint's body is a single GoneException throw at sprints.service.ts:39. No DELETE statement exists, so neither orgId nor projectId can appear in a predicate. The static pass sees three forwarded-and-unused parameters and reports each unbound dimension.",
     blastRadius:
