@@ -7260,6 +7260,13 @@
       "when": 1803093652725,
       "tag": "1724_backfill_webhook_delivery_history",
       "breakpoints": true
+    },
+    {
+      "idx": 1165,
+      "version": "7",
+      "when": 1803093653725,
+      "tag": "1725_drop_build_webhook_legacy",
+      "breakpoints": true
     }
   ]
 }
