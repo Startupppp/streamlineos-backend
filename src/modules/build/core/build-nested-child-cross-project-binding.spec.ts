@@ -246,6 +246,7 @@ function makeFieldsService(store: Store) {
 
 function makeWebhooksService(store: Store, afterOwnershipCheck?: () => void) {
   const deleteStatements = jest.fn();
+  const deleteCredential = jest.fn(async () => undefined);
 
   const db = {
     select: jest.fn(() => ({
@@ -254,7 +255,7 @@ function makeWebhooksService(store: Store, afterOwnershipCheck?: () => void) {
           limit: async () => {
             const rows =
               table === projectWebhooks
-                ? store.webhooks.filter((row) => matches(where, row)).map((row) => ({ id: row.id }))
+                ? store.webhooks.filter((row) => matches(where, row)).map((row) => ({ id: row.id, integrationsEndpointId: row.id }))
                 : [];
             if (afterOwnershipCheck) afterOwnershipCheck();
             return rows;
@@ -263,16 +264,23 @@ function makeWebhooksService(store: Store, afterOwnershipCheck?: () => void) {
       }),
     })),
     delete: (table: unknown) => ({
-      where: async (where: unknown) => {
-        deleteStatements();
-        const hit = table === projectWebhooks ? store.webhooks.filter((row) => matches(where, row)) : [];
-        store.webhooks = store.webhooks.filter((row) => !hit.includes(row));
-      },
+      where: (where: unknown) => ({
+        returning: async () => {
+          deleteStatements();
+          const hit = table === projectWebhooks ? store.webhooks.filter((row) => matches(where, row)) : [];
+          store.webhooks = store.webhooks.filter((row) => !hit.includes(row));
+          return hit.map((row) => ({ id: row.id }));
+        },
+      }),
     }),
     transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(db),
   } as unknown as Db;
 
-  return { svc: new ProjectsWebhooksService(db, {} as unknown as WebhookEndpointService), deleteStatements };
+  return {
+    svc: new ProjectsWebhooksService(db, { deleteCredential } as unknown as WebhookEndpointService),
+    deleteStatements,
+    deleteCredential,
+  };
 }
 
 const rename = (name: string): UpdateCustomStateInput => ({ name });
@@ -508,12 +516,13 @@ describe("ProjectsWebhooksService — webhook deletion binds to the URL project"
 
   it("deleteWebhook deletes the webhook that belongs to the URL project (control)", async () => {
     const store = makeStore();
-    const { svc, deleteStatements } = makeWebhooksService(store);
+    const { svc, deleteStatements, deleteCredential } = makeWebhooksService(store);
 
     await expect(svc.deleteWebhook(ORG, PROJECT_A, HOOK_A)).resolves.toBeUndefined();
     expect(store.webhooks.some((row) => row.id === HOOK_A)).toBe(false);
     expect(store.webhooks.some((row) => row.id === HOOK_B)).toBe(true);
     expect(deleteStatements).toHaveBeenCalledTimes(1);
+    expect(deleteCredential).toHaveBeenCalledTimes(1);
   });
 
   it("deleteWebhook refuses a webhook in the caller's project from another organisation before issuing any DELETE", async () => {
@@ -527,15 +536,16 @@ describe("ProjectsWebhooksService — webhook deletion binds to the URL project"
     expect(deleteStatements).not.toHaveBeenCalled();
   });
 
-  it("deleteWebhook deletes nothing when the webhook leaves the URL project between the ownership check and the DELETE", async () => {
+  it("deleteWebhook answers 404 and keeps the signing credential when the webhook leaves the URL project between the ownership check and the DELETE", async () => {
     const store = makeStore();
     const move = () => {
       const row = store.webhooks.find((candidate) => candidate.id === HOOK_A);
       if (row) row.projectId = PROJECT_B;
     };
-    const { svc } = makeWebhooksService(store, move);
+    const { svc, deleteCredential } = makeWebhooksService(store, move);
 
-    await expect(svc.deleteWebhook(ORG, PROJECT_A, HOOK_A)).resolves.toBeUndefined();
+    await expect(svc.deleteWebhook(ORG, PROJECT_A, HOOK_A)).rejects.toThrow(NotFoundException);
     expect(store.webhooks.some((row) => row.id === HOOK_A)).toBe(true);
+    expect(deleteCredential).not.toHaveBeenCalled();
   });
 });
