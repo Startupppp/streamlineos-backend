@@ -1,5 +1,6 @@
 import type { CurrentUserContext } from "../../../../../common/auth/backend-claims";
 import type { DataScope } from "../../../../access/access.types";
+import { resolvePrincipalScope } from "../../../../access/access-principal-scope";
 import type { ProjectState } from "../project-access";
 
 export type StandingScopes = Partial<Record<string, DataScope>>;
@@ -39,4 +40,16 @@ export type ProjectAccessRow = {
 
 export function projectAccessRow(overrides: Partial<ProjectAccessRow> = {}): ProjectAccessRow {
   return { state: "ACTIVE", manages: false, memberRole: null, onTeam: false, ...overrides };
+}
+
+export function principalAccess(memberGrants: StandingScopes = {}) {
+  const scopeFor = jest.fn(async (actor: CurrentUserContext, key: string): Promise<DataScope> =>
+    resolvePrincipalScope(actor.principal, key, async (isOrgOwner) =>
+      isOrgOwner ? "all" : (memberGrants[key] ?? "none"),
+    ),
+  );
+  return {
+    scopeFor,
+    holds: jest.fn(async (actor: CurrentUserContext, key: string) => (await scopeFor(actor, key)) !== "none"),
+  };
 }
