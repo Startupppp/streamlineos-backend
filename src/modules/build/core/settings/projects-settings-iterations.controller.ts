@@ -41,7 +41,7 @@ export class ProjectsSettingsIterationsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.getSettings(u.orgId, projectId);
+    return this.service.getSettings(u, projectId);
   }
 
   @Patch(":projectId/settings/iterations")
@@ -53,6 +53,6 @@ export class ProjectsSettingsIterationsController {
     @Body() body: UpdateIterationSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.updateSettings(u.orgId, projectId, body);
+    return this.service.updateSettings(u, projectId, body);
   }
 }

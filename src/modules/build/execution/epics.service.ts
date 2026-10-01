@@ -17,18 +17,27 @@ import {
   microsecondCursorValue,
 } from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { assertProjectInOrg } from "../core";
+import {
+  assertProjectAccess,
+  authorizeTicketMutation,
+  readMutationTickets,
+} from "../core";
+import { assertProjectVisible } from "../core/project-crud/project-access";
 import { BuildTicketCreationService, TicketVersionConflictException } from "../core/tickets";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 @Injectable()
 export class EpicsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ticketCreation: BuildTicketCreationService,
+    private readonly access: AccessService,
   ) {}
 
-  async listEpics(orgId: string, projectId: number, query: EpicListQuery = {}) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async listEpics(actor: CurrentUserContext, projectId: number, query: EpicListQuery = {}) {
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const limit = Math.min(query.limit ?? PAGE_SIZE_CAP, PAGE_SIZE_CAP);
     const position = decodeTimestampCursor(query.cursor);
     const conditions: (SQL<unknown> | undefined)[] = [
@@ -104,8 +113,9 @@ export class EpicsService {
     }));
   }
 
-  async createEpic(orgId: string, userId: string, projectId: number, input: CreateEpicInput) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async createEpic(actor: CurrentUserContext, projectId: number, input: CreateEpicInput) {
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const { orgId, userId } = actor;
     const created = await this.ticketCreation.create({
       orgId,
       projectId,
@@ -126,7 +136,9 @@ export class EpicsService {
     return created.tickets[0];
   }
 
-  async updateEpic(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput) {
+  async updateEpic(actor: CurrentUserContext, projectId: number, epicId: number, input: UpdateEpicInput) {
+    await this.authorizeEpicMutation(actor, projectId, epicId);
+    const { orgId } = actor;
     const before = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, "EPIC"), isNull(tickets.deletedAt)),
       columns: { version: true },
@@ -156,7 +168,9 @@ export class EpicsService {
     return updated;
   }
 
-  async deleteEpic(orgId: string, projectId: number, epicId: number) {
+  async deleteEpic(actor: CurrentUserContext, projectId: number, epicId: number) {
+    await this.authorizeEpicMutation(actor, projectId, epicId);
+    const { orgId } = actor;
     const epic = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, epicId),
@@ -173,5 +187,10 @@ export class EpicsService {
       await tx.delete(tickets).where(and(eq(tickets.id, epicId), eq(tickets.orgId, orgId)));
     });
     return { success: true };
+  }
+
+  private async authorizeEpicMutation(actor: CurrentUserContext, projectId: number, epicId: number) {
+    const policy = await authorizeTicketMutation(this.db, this.access, actor, projectId);
+    await readMutationTickets(this.db, actor, projectId, [epicId], policy);
   }
 }

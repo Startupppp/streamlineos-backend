@@ -7,10 +7,14 @@ import { ModulesService } from "./execution/modules.service";
 import { ProjectsCustomFieldsService, ProjectsAnalyticsService } from "./core";
 import { CacheService } from "../../common/cache/cache.service";
 import type { Db } from "../../db/drizzle.module";
-import type { AccessService } from "../access/access.service";
+import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { lifecycleAuditDouble } from "./lifecycle/audit-double";
+import { WebhookEndpointService } from "../integrations/core/webhook-endpoint.service";
+import { BuildTicketCreationService } from "./core/tickets";
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../db/drizzle.constants";
 
 const EXECUTE_ROWS: Record<string, unknown>[] = [
   { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: "3", completed: "1" },
@@ -39,6 +43,18 @@ function makeDb(project: { id: number } | undefined) {
   } as unknown as Db;
 }
 
+async function epicsService(db: Db, access: AccessService): Promise<EpicsService> {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      EpicsService,
+      { provide: DRIZZLE, useValue: db },
+      { provide: BuildTicketCreationService, useValue: {} },
+      { provide: AccessService, useValue: access },
+    ],
+  }).compile();
+  return moduleRef.get(EpicsService);
+}
+
 describe("build — a project-scoped list refuses a projectId the org does not own", () => {
   const ATTACKER_ORG = "org-attacker";
 
@@ -58,10 +74,10 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   const cases: Array<[string, (db: Db) => Promise<unknown>]> = [
     ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess, lifecycleAuditDouble()).listReleases(releasesU, 1, listReleasesQuerySchema.parse({}))],
-    ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db).listWebhooks(ATTACKER_ORG, 1)],
-    ["GET /build/:projectId/epics", (db) => new EpicsService(db).listEpics(ATTACKER_ORG, 1)],
-    ["GET /build/:projectId/cycles", (db) => new CyclesService(db).listCycles(ATTACKER_ORG, 1, {} as never)],
-    ["GET /build/:projectId/modules", (db) => new ModulesService(db).listModules(ATTACKER_ORG, 1)],
+    ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db, new WebhookEndpointService(db)).listWebhooks(ATTACKER_ORG, 1)],
+    ["GET /build/:projectId/epics", async (db) => (await epicsService(db, releasesAccess)).listEpics(releasesU, 1)],
+    ["GET /build/:projectId/cycles", (db) => new CyclesService(db, releasesAccess).listCycles(releasesU, 1, {})],
+    ["GET /build/:projectId/modules", (db) => new ModulesService(db, releasesAccess).listModules(releasesU, 1)],
     [
       "GET /build/:projectId/custom-fields",
       (db) => new ProjectsCustomFieldsService(db, releasesAccess).listFields(ATTACKER_ORG, 1),

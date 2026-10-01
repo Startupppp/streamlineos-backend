@@ -164,7 +164,7 @@ export class CyclesController {
     @Query() query: CycleListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.cycles.listCycles(u.orgId, projectId, query);
+    return this.cycles.listCycles(u, projectId, query);
   }
 
   @Post()
@@ -178,7 +178,7 @@ export class CyclesController {
     @Body() body: CreateCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.cycles.createCycle(u.orgId, u.userId, projectId, body);
+    return this.cycles.createCycle(u, projectId, body);
   }
 
   @Patch(":cycleId")
@@ -191,7 +191,7 @@ export class CyclesController {
     @Body() body: UpdateCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.cycles.updateCycle(u.orgId, projectId, cycleId, body);
+    return this.cycles.updateCycle(u, projectId, cycleId, body);
   }
 
   @Delete(":cycleId")
@@ -204,7 +204,7 @@ export class CyclesController {
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.cycles.deleteCycle(u.orgId, projectId, cycleId);
+    return this.cycles.deleteCycle(u, projectId, cycleId);
   }
 }
 
@@ -223,7 +223,7 @@ export class ModulesController {
     @Query() query: ModuleListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.modules.listModules(u.orgId, projectId, query);
+    return this.modules.listModules(u, projectId, query);
   }
 
   @Post()
@@ -236,7 +236,7 @@ export class ModulesController {
     @Body() body: CreateModuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.modules.createModule(u.orgId, u.userId, projectId, body);
+    return this.modules.createModule(u, projectId, body);
   }
 
   @Patch(":moduleId")
@@ -249,7 +249,7 @@ export class ModulesController {
     @Body() body: UpdateModuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.modules.updateModule(u.orgId, projectId, moduleId, body);
+    return this.modules.updateModule(u, projectId, moduleId, body);
   }
 
   @Delete(":moduleId")
@@ -262,7 +262,7 @@ export class ModulesController {
     @Param("moduleId", ParseIntPipe) moduleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.modules.deleteModule(u.orgId, projectId, moduleId);
+    return this.modules.deleteModule(u, projectId, moduleId);
   }
 }
 
@@ -281,7 +281,7 @@ export class EpicsController {
     @Query() query: EpicListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.epics.listEpics(u.orgId, projectId, query);
+    return this.epics.listEpics(u, projectId, query);
   }
 
   @Post()
@@ -294,7 +294,7 @@ export class EpicsController {
     @Body() body: CreateEpicInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.epics.createEpic(u.orgId, u.userId, projectId, body);
+    return this.epics.createEpic(u, projectId, body);
   }
 
   @Patch(":epicId")
@@ -307,7 +307,7 @@ export class EpicsController {
     @Body() body: UpdateEpicInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.epics.updateEpic(u.orgId, projectId, epicId, body);
+    return this.epics.updateEpic(u, projectId, epicId, body);
   }
 
   @Delete(":epicId")
@@ -320,6 +320,6 @@ export class EpicsController {
     @Param("epicId", ParseIntPipe) epicId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.epics.deleteEpic(u.orgId, projectId, epicId);
+    return this.epics.deleteEpic(u, projectId, epicId);
   }
 }
