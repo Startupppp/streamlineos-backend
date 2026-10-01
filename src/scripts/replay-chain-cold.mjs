@@ -75,14 +75,25 @@ try {
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
       .filter(Boolean);
+    const concurrent = parts.some((stmt) =>
+      /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(stmt),
+    );
     try {
-      await sql.begin(async (tx) => {
-        await tx.unsafe("SET statement_timeout = 0");
-        await tx.unsafe("SET lock_timeout = '10s'");
-        await tx.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
-        for (const stmt of parts) await tx.unsafe(stmt);
-        await tx`INSERT INTO drizzle.__replay (tag) VALUES (${entry.tag}) ON CONFLICT DO NOTHING`;
-      });
+      if (concurrent) {
+        await sql.unsafe("SET statement_timeout = 0");
+        await sql.unsafe("SET lock_timeout = '10s'");
+        await sql.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
+        for (const stmt of parts) await sql.unsafe(stmt);
+        await sql`INSERT INTO drizzle.__replay (tag) VALUES (${entry.tag}) ON CONFLICT DO NOTHING`;
+      } else {
+        await sql.begin(async (tx) => {
+          await tx.unsafe("SET statement_timeout = 0");
+          await tx.unsafe("SET lock_timeout = '10s'");
+          await tx.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
+          for (const stmt of parts) await tx.unsafe(stmt);
+          await tx`INSERT INTO drizzle.__replay (tag) VALUES (${entry.tag}) ON CONFLICT DO NOTHING`;
+        });
+      }
       applied++;
       if (applied % 25 === 0)
         process.stdout.write(

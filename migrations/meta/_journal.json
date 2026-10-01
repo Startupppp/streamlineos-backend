@@ -7302,6 +7302,27 @@
       "when": 1803093658725,
       "tag": "1238_hr_leave_policy_template_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 1171,
+      "version": "7",
+      "when": 1803093659725,
+      "tag": "1347_kb_hr_documents_guard_scanned_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 1172,
+      "version": "7",
+      "when": 1803093660725,
+      "tag": "1427_kb_pages_contradiction_title_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1173,
+      "version": "7",
+      "when": 1803093661725,
+      "tag": "1431_kb_health_items_repair_action",
+      "breakpoints": true
     }
   ]
 }

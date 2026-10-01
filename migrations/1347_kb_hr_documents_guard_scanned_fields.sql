@@ -131,6 +131,7 @@ BEGIN
     WHERE n.nspname = 'public'
       AND c.relname = 'documents'
       AND t.tgname = 'trg_documents_unlink_when_unpublishable'
-      AND t.tgwhen = 0
-  ), '1347 post-check: trg_documents_unlink_when_unpublishable must be a AFTER trigger (tgwhen = 0) without a WHEN filter';
+      AND (t.tgtype & 2) = 0
+      AND t.tgqual IS NULL
+  ), '1347 post-check: trg_documents_unlink_when_unpublishable must be an AFTER trigger without a WHEN filter';
 END $$;
