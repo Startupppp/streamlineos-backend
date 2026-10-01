@@ -5,7 +5,13 @@ import type {
   INestApplication,
   Type,
 } from "@nestjs/common";
-import { APP_GUARD, DiscoveryService, MetadataScanner, Reflector } from "@nestjs/core";
+import {
+  APP_GUARD,
+  DiscoveryModule,
+  DiscoveryService,
+  MetadataScanner,
+  Reflector,
+} from "@nestjs/core";
 import { AccessService } from "src/modules/access/access.service";
 import { PermissionGuard } from "src/modules/access/permission.guard";
 import { ModuleGuard } from "src/common/rbac/module.guard";
@@ -16,33 +22,6 @@ import type { CurrentUserContext } from "src/common/auth/backend-claims";
 import type { DataScope } from "src/common/rbac/data-scope";
 import type { ModuleAvailabilityResult } from "src/common/rbac/module-availability";
 import { attachTestAuthContext } from "./module-guard-context";
-
-/**
- * A harness for DENY tests: it boots the real `PermissionGuard` and the real
- * `ModuleGuard` in front of real controllers, and lets one spec state exactly
- * which permission the caller is missing.
- *
- * WHY THE SHAPE MATTERS
- *
- * A deny test whose fixture denies everything proves only that *a* guard ran.
- * It stays green if the decorator names the wrong key, and it stays green if a
- * handler is gated on a key the caller could never hold anyway. So the default
- * fixture here is the opposite: the caller holds EVERY permission in the
- * catalogue except the one route under test (`denyOnly`). A 403 then means the
- * route demanded that specific key — the route's own gate is what refused.
- *
- * `PermissionGuard` answers 401, not 403, when no `AuthContext` is attached at
- * all (`authorize()` returns UNAUTHENTICATED). That is a different failure and
- * is not evidence of a working deny path, so this harness always attaches a
- * real `AuthContext` — built by `testAuthContext`, the same factory the guard
- * composition specs use — unless a spec explicitly asks for the unauthenticated
- * case via `withoutAuthContext()` to pin the 401/403 distinction.
- *
- * Services are auto-mocked. That is deliberate: the assertion is about the
- * guard, and a mocked service means a request that gets PAST the guard returns
- * something that is visibly not a 403 — which is what makes `expectAllowed()`
- * a real anti-vacuity floor rather than a decoration.
- */
 
 export interface AuthzHarness {
   readonly app: INestApplication;
@@ -85,11 +64,6 @@ export function actorOf(
   };
 }
 
-/**
- * A stand-in for any injected collaborator. Every property is a `jest.fn()`, so
- * a handler that gets past its guard runs to a non-403 answer instead of
- * exploding in a way that could be mistaken for a refusal.
- */
 function autoMock(): Record<string, unknown> {
   const made = new Map<string, unknown>();
   return new Proxy({} as Record<string, unknown>, {
@@ -155,6 +129,14 @@ export async function createAuthzHarness(
   };
 
   const moduleRef: TestingModule = await Test.createTestingModule({
+    /*
+     * `PermissionGuard` injects `DiscoveryService` and `MetadataScanner` to run
+     * the BE-29 sweep in `onApplicationBootstrap`. Without `DiscoveryModule`
+     * both are auto-mocked, `getControllers()` is not a function, and
+     * `app.init()` throws before a single request is made. Importing the real
+     * module also keeps the sweep itself live over the controllers under test.
+     */
+    imports: [DiscoveryModule],
     controllers: [...controllers] as Type<unknown>[],
     providers: [
       Reflector,

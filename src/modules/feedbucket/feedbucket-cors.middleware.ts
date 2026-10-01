@@ -49,7 +49,10 @@ export class FeedbucketCorsMiddleware implements NestMiddleware {
     if (originAllowed) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
-      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      // GET is in the list because the widget's first call is one:
+      // `GET :publicKey/config` reads the widget's name, theme and AI flag
+      // before it draws anything.
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     }
 

@@ -179,7 +179,11 @@ export class ApprovalsService {
         tenant: timesheetPeriods.orgId,
         scope: approvalQueueScope(membershipId),
         and: [
-          eq(timesheetPeriods.status, query.status),
+          // A period locked on approval carries LOCKED, so the APPROVED tab
+          // has to accept both or it empties out whenever lockAfterApproval is on.
+          query.status === "APPROVED"
+            ? inArray(timesheetPeriods.status, ["APPROVED", "LOCKED"])
+            : eq(timesheetPeriods.status, query.status),
           requestedMembershipId !== undefined
             ? eq(timesheetPeriods.userMembershipId, requestedMembershipId)
             : undefined,

@@ -72,11 +72,12 @@ for (const f of CATALOG) {
 const gated = new Map();
 for (const f of CODE) {
   const s = readFileSync(f, "utf8");
-  for (const m of s.matchAll(/@RequirePermission\(\s*"([^"]+)"/g)) {
-    if (!scopable.has(m[1])) continue;
-    if (!gated.has(m[1])) gated.set(m[1], new Set());
-    gated.get(m[1]).add(f);
-  }
+  for (const call of s.matchAll(/@RequirePermission\(([^)]*)\)/g))
+    for (const m of call[1].matchAll(/"([^"]+)"/g)) {
+      if (!scopable.has(m[1])) continue;
+      if (!gated.has(m[1])) gated.set(m[1], new Set());
+      gated.get(m[1]).add(f);
+    }
 }
 
 /*

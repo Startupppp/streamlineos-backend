@@ -19,6 +19,7 @@ import { PeriodsReadService } from "./periods-read.service";
 import { PeriodsSubmitService } from "./periods-submit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import {
+  ApprovalsService,
   lifecyclePayload,
   LIFECYCLE_RETURNING,
   membershipUserIds,
@@ -41,6 +42,7 @@ export class PeriodsService {
     private readonly submit: PeriodsSubmitService,
     private readonly audit: TimesheetsAuditService,
     private readonly notifications: NotificationDispatchService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   listPeriods(u: CurrentUserContext, query: PeriodsQuery) {
@@ -175,12 +177,21 @@ export class PeriodsService {
     return this.reader.mapPeriod(updated);
   }
 
+  /**
+   * reopen / lock / unlock each move a period through the same state machine
+   * that approve and reject do, so they carry the same assigned-approver guard
+   * (TS-SEC-002). Holding `timesheets:approvals:manage` previously let anyone
+   * reopen, lock or unlock any period in the org, including payroll-bound
+   * LOCKED rows routed to a different approver. The org owner override and the
+   * delegation path inside canActOnPeriod are unchanged.
+   */
   async reopenPeriod(u: CurrentUserContext, periodId: number) {
     const actorMembId = actingMembershipId(u.principal);
     const row = await this.reader.getPeriodWithUser(u.orgId, periodId);
     if (!row) throw new NotFoundException("Period not found");
     if (!["APPROVED", "LOCKED"].includes(row.status))
       throw new ConflictException("Only approved or locked periods can be reopened");
+    await this.approvals.assertCanActOnPeriod(u, row);
 
     await this.db.transaction(async (tx) => {
       await tx.update(timesheetPeriods)
@@ -221,6 +232,7 @@ export class PeriodsService {
     if (row.status !== "APPROVED") {
       throw new ConflictException("Only approved periods can be locked");
     }
+    await this.approvals.assertCanActOnPeriod(u, row);
 
     const owners = await membershipUserIds(this.db, u.orgId, [row.userMembershipId]);
     const ownerUserId = periodOwnerUserIdOrWarn(owners, row.userMembershipId, {
@@ -295,14 +307,27 @@ export class PeriodsService {
     const actorMembId = actingMembershipId(u.principal);
     const row = await this.reader.getPeriodWithUser(u.orgId, periodId);
     if (!row) throw new NotFoundException("Period not found");
-    if (row.status !== "LOCKED" && row.lockedAt == null) {
+    // Strictly LOCKED: the old compound condition only refused when the status
+    // was not LOCKED *and* lockedAt was null, so an APPROVED period carrying a
+    // stray lockedAt could be "unlocked" out of a state it was never in.
+    // Migration 1706 moved the rows that already had that shape onto LOCKED.
+    if (row.status !== "LOCKED") {
       throw new ConflictException("Period is not locked");
     }
+    await this.approvals.assertCanActOnPeriod(u, row);
 
     await this.db.transaction(async (tx) => {
-      await tx.update(timesheetPeriods)
+      const [transition] = await tx.update(timesheetPeriods)
         .set({ status: "APPROVED", lockedAt: null, updatedAt: new Date() })
-        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
+        .where(
+          and(
+            eq(timesheetPeriods.id, periodId),
+            eq(timesheetPeriods.orgId, u.orgId),
+            eq(timesheetPeriods.status, "LOCKED"),
+          ),
+        )
+        .returning({ id: timesheetPeriods.id });
+      if (!transition) throw new ConflictException("Period is not locked");
 
       await tx.update(timesheets)
         .set({ lockedAt: null, lockedByMembershipId: null, updatedAt: new Date() })

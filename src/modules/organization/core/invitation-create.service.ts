@@ -10,7 +10,7 @@ import { and, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { registerAfterCommit } from "../../../common/tenant";
+import { registerAfterCommit, type TenantTx } from "../../../common/tenant";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
@@ -116,6 +116,7 @@ export class InvitationCreateService {
     emails: string[],
     role: string,
     _delivery: InvitationDelivery = "enqueue",
+    moduleAccess?: Array<{ moduleKey: string; standing: ModuleStanding }>,
   ): Promise<{
     deliveryMode: InvitationDelivery;
     results: BulkInviteRowResult[];
@@ -392,6 +393,13 @@ export class InvitationCreateService {
             })),
           );
 
+          await this.replaceInvitationModuleAccess(
+            tx,
+            orgId,
+            successful.map((candidate) => candidate.invitationId),
+            validatedAccess,
+          );
+
           for (const candidate of successful) {
             results[candidate.index] = {
               email: candidate.email,
@@ -491,20 +499,12 @@ export class InvitationCreateService {
           actorMembershipId: null,
         });
 
-        await tx
-          .delete(invitationModuleAccess)
-          .where(eq(invitationModuleAccess.invitationId, pendingInvitation.id));
-
-        if (moduleAccessRows.length > 0) {
-          await tx.insert(invitationModuleAccess).values(
-            moduleAccessRows.map((row) => ({
-              orgId,
-              invitationId: pendingInvitation.id,
-              moduleKey: row.moduleKey,
-              standing: row.standing,
-            })),
-          );
-        }
+        await this.replaceInvitationModuleAccess(
+          tx,
+          orgId,
+          [pendingInvitation.id],
+          moduleAccessRows,
+        );
 
         return { pendingInvitation, rawToken };
       },
@@ -595,16 +595,12 @@ export class InvitationCreateService {
             actorMembershipId: actorMembership?.id ?? null,
           });
 
-          if (moduleAccessRows.length > 0) {
-            await tx.insert(invitationModuleAccess).values(
-              moduleAccessRows.map((row) => ({
-                orgId,
-                invitationId,
-                moduleKey: row.moduleKey,
-                standing: row.standing,
-              })),
-            );
-          }
+          await this.replaceInvitationModuleAccess(
+            tx,
+            orgId,
+            [invitationId],
+            moduleAccessRows,
+          );
 
           await this.seatLedger.recordSeatEvent(
             {
@@ -654,6 +650,35 @@ export class InvitationCreateService {
       organizationName: org.name,
       resent: false,
     };
+  }
+
+  private async replaceInvitationModuleAccess(
+    tx: TenantTx,
+    orgId: string,
+    invitationIds: readonly string[],
+    moduleAccessRows: ReadonlyArray<{
+      moduleKey: string;
+      standing: ModuleStanding;
+    }>,
+  ): Promise<void> {
+    if (invitationIds.length === 0) return;
+
+    await tx
+      .delete(invitationModuleAccess)
+      .where(inArray(invitationModuleAccess.invitationId, [...invitationIds]));
+
+    if (moduleAccessRows.length === 0) return;
+
+    await tx.insert(invitationModuleAccess).values(
+      invitationIds.flatMap((invitationId) =>
+        moduleAccessRows.map((row) => ({
+          orgId,
+          invitationId,
+          moduleKey: row.moduleKey,
+          standing: row.standing,
+        })),
+      ),
+    );
   }
 
   private async validateModuleAccess(

@@ -11,13 +11,12 @@ import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, projects, tickets } from "../../../db/schema";
-import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesReadService } from "./entries-read.service";
 import { EntriesPeriodService } from "./entries-period.service";
 import { roundHours } from "./lib/rounding";
-import { formatDateOnly, wholeDaysBetween } from "./lib/period.helpers";
+import { utcDateOnly, wholeDaysBetween } from "./lib/period.helpers";
 import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 
@@ -34,7 +33,6 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 export class EntriesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly access: AccessService,
     private readonly audit: TimesheetsAuditService,
     private readonly reader: EntriesReadService,
     private readonly periodService: EntriesPeriodService,
@@ -108,7 +106,7 @@ export class EntriesService {
       throw new BadRequestException("Hours must be greater than zero");
     }
 
-    const today = formatDateOnly(new Date());
+    const today = utcDateOnly(new Date());
     const allowFuture = settings?.allowFutureEntries ?? false;
     if (!allowFuture && input.date > today) {
       throw new BadRequestException("Future-dated entries are not allowed");
@@ -270,11 +268,11 @@ export class EntriesService {
     if (entry.submittedAt)
       throw new ConflictException("Submitted entries cannot be edited");
 
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const canManage =
-      perms.has("timesheets:approvals:manage") ||
-      u.isOrgOwner;
-    if (!canManage && entry.userMembershipId !== membershipId) {
+    // TS-SEC-005: rewriting another member's hours is not part of
+    // timesheets:approvals:manage, which grants "approve, reject, reopen and
+    // lock". An approver transitions a period; it is the org owner who may
+    // correct someone else's entry.
+    if (!u.isOrgOwner && entry.userMembershipId !== membershipId) {
       throw new ForbiddenException(
         "You can only edit your own time entries",
       );
@@ -375,11 +373,11 @@ export class EntriesService {
       throw new ConflictException("Invoiced entries cannot be voided");
     }
 
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const canManage =
-      perms.has("timesheets:approvals:manage") ||
-      u.isOrgOwner;
-    if (!canManage && entry.userMembershipId !== membershipId) {
+    // TS-SEC-005: rewriting another member's hours is not part of
+    // timesheets:approvals:manage, which grants "approve, reject, reopen and
+    // lock". An approver transitions a period; it is the org owner who may
+    // correct someone else's entry.
+    if (!u.isOrgOwner && entry.userMembershipId !== membershipId) {
       throw new ForbiddenException(
         "You can only void your own time entries",
       );

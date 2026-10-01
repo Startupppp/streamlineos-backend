@@ -105,26 +105,33 @@ export function parsePermissionConstants(src) {
   return constants;
 }
 
-// Extract @RequirePermission(...) usages from a single source file
+/**
+ * Extract @RequirePermission(...) usages from a single source file.
+ *
+ * The decorator is variadic: a route may name several keys the caller can
+ * satisfy any one of. Every argument becomes its own ref, because BE-112 is a
+ * per-key obligation — a second key missing from the frontend catalog is exactly
+ * as broken as a first one, and capturing only the first argument would have
+ * hidden it.
+ */
 export function parseRouteRefs(src, filePath, constants = new Map()) {
   const refs = [];
   const lines = src.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    const literal = lines[i].match(/@RequirePermission\(\s*["']([^"']+)["']\s*\)/);
-    if (literal) {
-      refs.push({ key: literal[1], identifier: null, file: filePath, line: i + 1, resolved: true });
-      continue;
+    const call = lines[i].match(/@RequirePermission\(([^)]*)\)/);
+    if (!call) continue;
+    for (const argument of call[1].split(",")) {
+      const trimmed = argument.trim();
+      if (trimmed === "") continue;
+      const literal = trimmed.match(/^["']([^"']+)["']$/);
+      if (literal) {
+        refs.push({ key: literal[1], identifier: null, file: filePath, line: i + 1, resolved: true });
+        continue;
+      }
+      if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(trimmed)) continue;
+      const key = constants.get(trimmed) ?? null;
+      refs.push({ key, identifier: trimmed, file: filePath, line: i + 1, resolved: key !== null });
     }
-    const ident = lines[i].match(/@RequirePermission\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\)/);
-    if (!ident) continue;
-    const key = constants.get(ident[1]) ?? null;
-    refs.push({
-      key,
-      identifier: ident[1],
-      file: filePath,
-      line: i + 1,
-      resolved: key !== null,
-    });
   }
   return refs;
 }

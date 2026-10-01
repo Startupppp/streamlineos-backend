@@ -49,7 +49,8 @@ function harness(opts: { existsOnFirstRead: boolean; insertWins: boolean }) {
     listPeriodEntries: async () => [],
     mapPeriod: (row: unknown) => row,
   };
-  const service = new PeriodsService(db, reader as never, {} as never, {} as never, {} as never);
+  // Last arg is ApprovalsService; this spec drives getOrCreatePeriod only.
+  const service = new PeriodsService(db, reader as never, {} as never, {} as never, {} as never, {} as never);
   return { service, insertValues, selects: () => selects, conflictTarget: () => conflictTarget };
 }
 
