@@ -143,7 +143,7 @@ export function approvalQueueScope(membershipId: number | null): OwnershipScope 
  * belong to this one key, and composing them here is what keeps the queue's rows
  * and the single-period read from disagreeing.
  *
- * The `own` arm is `approvalQueueScope`'s untouched, so an `own`-scoped holder -
+ * The `own` arm is `approvalQueueScope`'s, unchanged, so an `own`-scoped holder -
  * which is what `MANAGER_AUTHORITY_GRANTS` hands a reporting manager - gains
  * nothing from the team arm.
  */
