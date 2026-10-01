@@ -53,7 +53,7 @@ export class CommentDraftsController {
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(commentDraftWithTicketSchema))
   listMine(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.listMine(u.orgId, actingMembershipId(u.principal), u.userId);
+    return this.svc.listMine(u);
   }
 
   @Put("tickets/:ticketId")

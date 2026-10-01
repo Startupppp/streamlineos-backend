@@ -110,8 +110,8 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
-    const result = await svc.listMine("org-other", 42, "user-1");
+    const svc = new CommentDraftsService(db, stubService<AccessService>({ scopeFor: jest.fn().mockResolvedValue("all") }));
+    const result = await svc.listMine(actorIn("org-other"));
     expect(result).toEqual([]);
   });
 });
@@ -185,8 +185,8 @@ describe("CommentDraftsService — BSN-03-046: empty and low-confidence states s
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
-    const result = await svc.listMine("org-1", 42, "user-1");
+    const svc = new CommentDraftsService(db, stubService<AccessService>({ scopeFor: jest.fn().mockResolvedValue("all") }));
+    const result = await svc.listMine(actorIn("org-1"));
     expect(result).toEqual([]);
     expect(result).toHaveLength(0);
   });

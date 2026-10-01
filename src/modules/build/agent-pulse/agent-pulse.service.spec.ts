@@ -4,7 +4,9 @@ import { AgentPulseService } from "./agent-pulse.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { ProjectsTicketCommentsService } from "../core/tickets";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../../common/auth/principal";
+import { AccessService } from "../../access/access.service";
+import { MANAGER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const USER = "user-1";
@@ -60,13 +62,14 @@ describe("AgentPulseService", () => {
         AgentPulseService,
         { provide: DRIZZLE, useValue: { select: selectMock, delete: deleteMock } },
         { provide: ProjectsTicketCommentsService, useValue: { addComment: addCommentMock } },
+        { provide: AccessService, useValue: standingAccess(MANAGER_STANDING) },
       ],
     }).compile();
     svc = module.get(AgentPulseService);
   });
 
   it("returns null and makes no DB calls when membershipId is null", async () => {
-    const result = await svc.getTopSignal(ORG, USER, null);
+    const result = await svc.getTopSignal(makeUserCtx({ principal: ACCOUNT_ONLY_PRINCIPAL }));
     expect(result).toBeNull();
     expect(selectMock).not.toHaveBeenCalled();
   });
@@ -80,7 +83,7 @@ describe("AgentPulseService", () => {
     };
     selectMock.mockImplementationOnce(() => makeSelectChain([approvalRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result).not.toBeNull();
     expect(result?.type).toBe("overdue_approval");
@@ -101,7 +104,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([]))
       .mockImplementationOnce(() => makeSelectChain([milestoneRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("blocked_milestone");
     expect(result?.entityId).toBe(5);
@@ -122,7 +125,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(() => makeSelectChain([riskRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("delivery_risk");
     expect(result?.dueAt).toBeNull();
@@ -144,7 +147,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(() => makeSelectChain([depRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("dependency_change");
     expect(result?.entityId).toBe(55);
@@ -173,7 +176,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(() => makeSelectChain([draftRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("comment_draft");
     expect(result?.entityId).toBe(7);
@@ -207,7 +210,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(() => makeSelectChain([draftRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("comment_draft");
     expect(result?.evidence).toBeNull();
@@ -227,7 +230,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(empty);
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result).toBeNull();
     expect(selectMock).toHaveBeenCalledTimes(5);
@@ -242,7 +245,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(empty);
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result).toBeNull();
     expect(selectMock).toHaveBeenCalledTimes(5);
@@ -257,7 +260,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(empty);
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result).toBeNull();
     expect(selectMock).toHaveBeenCalledTimes(5);
@@ -272,7 +275,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(empty);
 
-    const result = await svc.getTopSignal("org-attacker", USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx({ orgId: "org-attacker" }));
 
     expect(result).toBeNull();
     expect(selectMock).toHaveBeenCalledTimes(5);
@@ -287,7 +290,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(empty)
       .mockImplementationOnce(empty);
 
-    const result = await svc.getTopSignal(ORG, "user-other", 9999);
+    const result = await svc.getTopSignal(makeUserCtx({ userId: "user-other", principal: humanSessionPrincipal(9999, false) }));
 
     expect(result).toBeNull();
     expect(selectMock).toHaveBeenCalledTimes(5);
@@ -302,7 +305,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([milestoneRow]))
       .mockImplementationOnce(() => makeSelectChain([riskRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("blocked_milestone");
     expect(selectMock).toHaveBeenCalledTimes(2);
@@ -318,7 +321,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([riskRow]))
       .mockImplementationOnce(() => makeSelectChain([depRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("delivery_risk");
     expect(selectMock).toHaveBeenCalledTimes(3);
@@ -339,7 +342,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([depRow]))
       .mockImplementationOnce(() => makeSelectChain([draftRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("dependency_change");
     expect(selectMock).toHaveBeenCalledTimes(4);
@@ -355,7 +358,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([approvalRow]))
       .mockImplementationOnce(() => makeSelectChain([milestoneRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.type).toBe("overdue_approval");
     expect(selectMock).toHaveBeenCalledTimes(1);
@@ -367,7 +370,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([]))
       .mockImplementationOnce(() => makeSelectChain([milestoneRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID);
+    const result = await svc.getTopSignal(makeUserCtx());
 
     expect(result?.projectId).toBe(77);
   });
@@ -378,7 +381,7 @@ describe("AgentPulseService", () => {
     const approvalRow = { entityId: 1, projectId: 5, title: "Budget approval", dueAt: new Date("2026-09-01T00:00:00Z") };
     selectMock.mockImplementationOnce(() => makeSelectChain([approvalRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID, { projectId: 5 });
+    const result = await svc.getTopSignal(makeUserCtx(), { projectId: 5 });
 
     expect(result?.type).toBe("overdue_approval");
     expect(result?.projectId).toBe(5);
@@ -389,7 +392,7 @@ describe("AgentPulseService", () => {
     const empty = () => makeSelectChain([]);
     for (let i = 0; i < 5; i++) selectMock.mockImplementationOnce(empty);
 
-    const result = await svc.getTopSignal(ORG, USER, MID, { managedProductId: 99 });
+    const result = await svc.getTopSignal(makeUserCtx(), { managedProductId: 99 });
 
     expect(result).toBeNull();
     expect(selectMock).toHaveBeenCalledTimes(5);
@@ -399,7 +402,7 @@ describe("AgentPulseService", () => {
     const empty = () => makeSelectChain([]);
     for (let i = 0; i < 5; i++) selectMock.mockImplementationOnce(empty);
 
-    const result = await svc.getTopSignal(ORG, USER, MID, {});
+    const result = await svc.getTopSignal(makeUserCtx(), {});
 
     expect(result).toBeNull();
     expect(selectMock).toHaveBeenCalledTimes(5);
@@ -411,7 +414,7 @@ describe("AgentPulseService", () => {
       .mockImplementationOnce(() => makeSelectChain([]))
       .mockImplementationOnce(() => makeSelectChain([milestoneRow]));
 
-    const result = await svc.getTopSignal(ORG, USER, MID, { projectId: 7 });
+    const result = await svc.getTopSignal(makeUserCtx(), { projectId: 7 });
 
     expect(result?.type).toBe("blocked_milestone");
     expect(result?.projectId).toBe(7);

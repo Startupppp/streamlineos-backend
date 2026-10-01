@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, eq, gt, gte, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql, type Column, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { pendingApprovalsForActorCondition } from "../approvals/build-inbox-count.service";
@@ -18,6 +18,8 @@ import { parseRecordIds } from "../comment-draft-record-ids";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { ProjectsTicketCommentsService } from "../core/tickets";
+import { AccessService } from "../../access/access.service";
+import { resolveProjectReach } from "../core/project-crud/project-access";
 
 const DEPENDENCY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 const COMMENT_DRAFT_MIN_CONFIDENCE = 50;
@@ -27,39 +29,46 @@ interface AgentPulseScope {
   readonly managedProductId?: number;
 }
 
+function onReachableProject(column: Column, orgId: string, reach: SQL): SQL {
+  return sql`${column} IN (SELECT ${projects.id} FROM ${projects} WHERE ${projects.orgId} = ${orgId} AND ${reach})`;
+}
+
 @Injectable()
 export class AgentPulseService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly comments: ProjectsTicketCommentsService,
+    private readonly access: AccessService,
   ) {}
 
-  async getTopSignal(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
-    scope: AgentPulseScope = {},
-  ): Promise<AgentPulseSignal | null> {
+  async getTopSignal(actor: CurrentUserContext, scope: AgentPulseScope = {}): Promise<AgentPulseSignal | null> {
+    const { orgId, userId } = actor;
+    const membershipId = actingMembershipId(actor.principal);
     if (membershipId === null) return null;
-    const overdueApproval = await this.findOverdueApproval(orgId, membershipId, scope);
+    const projectReach = await resolveProjectReach(this.access, actor);
+    if (projectReach.empty) return null;
+    const reach = projectReach.where;
+
+    const overdueApproval = await this.findOverdueApproval(orgId, membershipId, scope, reach);
     if (overdueApproval !== null) return overdueApproval;
 
-    const blockedMilestone = await this.findBlockedMilestone(orgId, membershipId, scope);
+    const blockedMilestone = await this.findBlockedMilestone(orgId, membershipId, scope, reach);
     if (blockedMilestone !== null) return blockedMilestone;
 
-    const deliveryRisk = await this.findDeliveryRisk(orgId, userId, scope);
+    const deliveryRisk = await this.findDeliveryRisk(orgId, userId, scope, reach);
     if (deliveryRisk !== null) return deliveryRisk;
 
-    const dependencyChange = await this.findDependencyChange(orgId, membershipId, scope);
+    const dependencyChange = await this.findDependencyChange(orgId, membershipId, scope, reach);
     if (dependencyChange !== null) return dependencyChange;
 
-    return this.findCommentDraft(orgId, membershipId, scope);
+    return this.findCommentDraft(orgId, membershipId, scope, reach);
   }
 
   private async findOverdueApproval(
     orgId: string,
     membershipId: number | null,
     scope: AgentPulseScope,
+    reach: SQL,
   ): Promise<AgentPulseSignal | null> {
     if (membershipId === null) return null;
     const now = new Date();
@@ -73,6 +82,7 @@ export class AgentPulseService {
       pendingApprovalsForActorCondition(orgId, membershipId),
       isNull(projectApprovals.deletedAt),
       lt(projectApprovals.dueAt, now),
+      onReachableProject(projectApprovals.projectId, orgId, reach),
     );
 
     if (scope.managedProductId !== undefined) {
@@ -93,6 +103,7 @@ export class AgentPulseService {
     orgId: string,
     membershipId: number | null,
     scope: AgentPulseScope,
+    reach: SQL,
   ): Promise<AgentPulseSignal | null> {
     if (membershipId === null) return null;
     const today = new Date().toISOString().slice(0, 10);
@@ -121,6 +132,7 @@ export class AgentPulseService {
           eq(projectMilestones.status, "PENDING"),
           lt(projectMilestones.targetDate, today),
           isNull(projectMilestones.deletedAt),
+          onReachableProject(projectMilestones.projectId, orgId, reach),
         ),
       )
       .orderBy(asc(projectMilestones.targetDate), asc(projectMilestones.id))
@@ -140,6 +152,7 @@ export class AgentPulseService {
     orgId: string,
     userId: string,
     scope: AgentPulseScope,
+    reach: SQL,
   ): Promise<AgentPulseSignal | null> {
     const sel = {
       entityId: projectRisks.id,
@@ -154,6 +167,7 @@ export class AgentPulseService {
       or(eq(projectRisks.probability, "high"), eq(projectRisks.impact, "high")),
       isNull(projectRisks.deletedAt),
       scope.projectId !== undefined ? eq(projectRisks.projectId, scope.projectId) : undefined,
+      onReachableProject(projectRisks.projectId, orgId, reach),
     );
 
     if (scope.managedProductId !== undefined) {
@@ -173,6 +187,7 @@ export class AgentPulseService {
     orgId: string,
     membershipId: number | null,
     scope: AgentPulseScope,
+    reach: SQL,
   ): Promise<AgentPulseSignal | null> {
     if (membershipId === null) return null;
     const cutoff = new Date(Date.now() - DEPENDENCY_LOOKBACK_MS);
@@ -189,6 +204,7 @@ export class AgentPulseService {
       isNull(tickets.deletedAt),
       isNotNull(tickets.projectId),
       scope.projectId !== undefined ? eq(tickets.projectId, scope.projectId) : undefined,
+      onReachableProject(tickets.projectId, orgId, reach),
     );
     const relCond = and(
       eq(workItemRelations.orgId, orgId),
@@ -261,6 +277,7 @@ export class AgentPulseService {
     orgId: string,
     membershipId: number | null,
     scope: AgentPulseScope,
+    reach: SQL,
   ): Promise<AgentPulseSignal | null> {
     if (membershipId === null) return null;
     const sel = {
@@ -281,6 +298,7 @@ export class AgentPulseService {
       isNull(tickets.deletedAt),
       isNotNull(tickets.projectId),
       scope.projectId !== undefined ? eq(tickets.projectId, scope.projectId) : undefined,
+      onReachableProject(tickets.projectId, orgId, reach),
     );
     const draftCond = and(
       eq(commentDrafts.orgId, orgId),
