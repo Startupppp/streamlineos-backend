@@ -12,7 +12,7 @@ import type { TenantTx } from "../../../db/drizzle.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { UNRESOLVED_FOLLOW_UP_STATUSES } from "./dto/incidents.schemas";
 import type {
   AddIncidentDecisionInput,
@@ -153,7 +153,7 @@ export class IncidentsService {
   }
 
   async createIncident(u: CurrentUserContext, projectId: number, input: CreateIncidentInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [incident] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
@@ -199,7 +199,7 @@ export class IncidentsService {
     incidentId: number,
     input: UpdateIncidentInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const current = await this.loadIncident(u.orgId, projectId, incidentId);
     const patch: IncidentPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -300,7 +300,7 @@ export class IncidentsService {
   }
 
   async deleteIncident(u: CurrentUserContext, projectId: number, incidentId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
     await this.db
       .update(projectIncidents)
@@ -328,7 +328,7 @@ export class IncidentsService {
     incidentId: number,
     input: AddIncidentUpdateInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const current = await this.loadIncident(u.orgId, projectId, incidentId);
 
     if (current.status === "closed" && input.newStatus !== undefined && input.newStatus !== "closed") {
@@ -399,7 +399,7 @@ export class IncidentsService {
     incidentId: number,
     input: AddIncidentDecisionInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
 
     const [decision] = await this.db
@@ -430,7 +430,7 @@ export class IncidentsService {
     incidentId: number,
     input: CreateFollowUpActionInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
 
     const [action] = await this.db
@@ -464,7 +464,7 @@ export class IncidentsService {
     followUpActionId: number,
     input: UpdateFollowUpActionInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
 
     const patch: Partial<typeof incidentFollowUpActions.$inferInsert> = {};

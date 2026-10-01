@@ -4,12 +4,13 @@ import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import type { Db } from "../../../../db/drizzle.types";
 import { ProjectsInvalidTicketStatusException } from "../../../../common/http/api-exceptions";
 import { assertTransitionAllowed, fetchTransitionsAndStatuses } from "./projects-tickets-workflow-utils";
-import type { readMutationTickets } from "../project-crud/project-access";
+import type { authorizeTicketMutation, readMutationTickets } from "../project-crud/project-access";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 
 type MutationRows = Awaited<ReturnType<typeof readMutationTickets>>;
+type MutationPolicy = Awaited<ReturnType<typeof authorizeTicketMutation>>;
 
-export async function validateBatchTransition(db: Db, actor: CurrentUserContext, projectId: number, rows: MutationRows, status: string, role: string | null) {
+export async function validateBatchTransition(db: Db, actor: CurrentUserContext, projectId: number, rows: MutationRows, status: string, policy: Pick<MutationPolicy, "role" | "bypassesWorkflow">) {
   const workflow = await fetchTransitionsAndStatuses(db, actor.orgId, projectId);
   if (!["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE", ...workflow.statuses.map((row) => row.name)].includes(status))
     throw new ProjectsInvalidTicketStatusException(status);
@@ -19,7 +20,7 @@ export async function validateBatchTransition(db: Db, actor: CurrentUserContext,
   const prefetched = { ...workflow, ticketFields: new Map(rows.map((row) => [row.id, row])), wipAlreadyChecked: true };
   for (const row of changed)
     await assertTransitionAllowed(db, actor.orgId, projectId, row.status, status, {
-      userId: actor.userId, userProjectRole: role, isOrgOwner: actor.isOrgOwner, ticketId: row.id,
+      userId: actor.userId, userProjectRole: policy.role, bypassesWorkflow: policy.bypassesWorkflow, ticketId: row.id,
     }, prefetched);
 }
 

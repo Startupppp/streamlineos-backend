@@ -1,10 +1,10 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { ticketComments, tickets } from "../../../../db/schema";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { assertTicketWriteAccess } from "../project-crud/project-access";
 import { ProjectsTicketsRestoreService } from "./projects-tickets-restore.service";
 
 jest.mock("../project-crud/project-access", () => ({
-  assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
 }));
 
 function chain(rows: unknown[]) {
@@ -72,7 +72,7 @@ function buildService(options: {
 }
 
 beforeEach(() => {
-  jest.mocked(assertTicketReadAccess).mockResolvedValue();
+  jest.mocked(assertTicketWriteAccess).mockResolvedValue();
 });
 
 describe("ProjectsTicketsRestoreService.restoreTicket", () => {

@@ -27,8 +27,8 @@ import {
   workItemRelations,
   users,
 } from "../../../../db/schema";
-import { actingMembershipId } from "../../../../common/auth/principal";
-import { reachableProjectsSql } from "../../reachability/project-reachability";
+import { AccessService } from "../../../access/access.service";
+import { resolveProjectReach } from "../project-crud/project-access";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
@@ -101,7 +101,7 @@ function personCountByProjectAndStatusSql(
 
 @Injectable()
 export class ProjectsWorkQueryService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db, private readonly access: AccessService) {}
 
   private watches(orgId: string, userId: string): SQL<unknown> {
     return sql`EXISTS (
@@ -148,11 +148,11 @@ export class ProjectsWorkQueryService {
         conditions.push(inArray(tickets.projectId, filterProjectIds));
       }
     } else {
-      const membershipId = actingMembershipId(u.principal);
-      if (membershipId === null) {
+      const reach = await resolveProjectReach(this.access, u);
+      if (reach.empty) {
         return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
       }
-      conditions.push(reachableProjectsSql(u.orgId, membershipId));
+      conditions.push(reach.where);
       if (filterProjectIds && filterProjectIds.length > 0) {
         conditions.push(inArray(tickets.projectId, filterProjectIds));
       }
@@ -436,10 +436,10 @@ export class ProjectsWorkQueryService {
       isNull(tickets.deletedAt),
     ];
 
-    const membershipId = actingMembershipId(u.principal);
-    if (membershipId === null)
+    const reach = await resolveProjectReach(this.access, u);
+    if (reach.empty)
       return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
-    baseConditions.push(reachableProjectsSql(u.orgId, membershipId));
+    baseConditions.push(reach.where);
     if (opts.projectIds && opts.projectIds.length > 0) {
       baseConditions.push(inArray(tickets.projectId, opts.projectIds));
     }
@@ -554,9 +554,9 @@ export class ProjectsWorkQueryService {
       isNull(tickets.deletedAt),
     ];
 
-    const membershipId = actingMembershipId(u.principal);
-    if (membershipId === null) return { byStatus: {}, total: 0 };
-    baseConditions.push(reachableProjectsSql(u.orgId, membershipId));
+    const reach = await resolveProjectReach(this.access, u);
+    if (reach.empty) return { byStatus: {}, total: 0 };
+    baseConditions.push(reach.where);
     if (opts.projectIds && opts.projectIds.length > 0) {
       baseConditions.push(inArray(tickets.projectId, opts.projectIds));
     }

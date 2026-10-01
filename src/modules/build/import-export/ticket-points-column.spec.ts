@@ -11,6 +11,7 @@ import { parseImportSource } from "./import-source";
 import { insertTicketBatch, type ImportActor } from "./ticket-import-batches";
 import { buildTicketImportPreview } from "./ticket-import-preview";
 import { TicketExportService } from "./ticket-export.service";
+import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const ORG = "org-points";
 const PROJECT = 42;
@@ -53,9 +54,14 @@ function makeExportDb(tableRow: Values) {
     orderBy: () => chain,
     limit: () => Promise.resolve([resolveRow(projection, tableRow)]),
   });
+  const projectChain = {
+    from: () => projectChain,
+    where: () => projectChain,
+    limit: async () => [projectAccessRow()],
+  };
   const db = {
-    query: { projects: { findFirst: async () => ({ managerMembershipId: null }) } },
     select: (selection: Values) => {
+      if ("manages" in selection) return projectChain;
       projection = selection;
       return chain;
     },

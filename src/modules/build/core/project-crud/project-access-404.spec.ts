@@ -1,43 +1,45 @@
 import { NotFoundException } from "@nestjs/common";
-import { assertProjectInOrg, resolveProjectAccess } from "./project-access";
-import type { Db } from "../../../../db/drizzle.types";
-import type { AccessService } from "../../../access/access.service";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { assertProjectInOrg, resolveProjectAccess } from "./project-access";
+import { projectAccessRow, principalAccess } from "./__tests__/project-access-doubles";
+import { queuedSelectDb } from "./__tests__/project-access-db";
 
 describe("build project access — a projectId outside the caller's org is a 404 even for an org owner", () => {
   const ATTACKER_ORG = "org-attacker";
 
-  function makeDb(project: { managerMembershipId: number | null } | undefined) {
-    return {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } },
-    } as unknown as Db;
-  }
-
-  const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as unknown as AccessService;
-
-  const owner = {
+  const owner: CurrentUserContext = {
     orgId: ATTACKER_ORG,
     userId: "u-1",
+    role: "OWNER",
     isOrgOwner: true,
-    principal: { kind: "human-session", membershipId: 3 },
-  } as unknown as CurrentUserContext;
+    sessionId: "s-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(3, true),
+  };
 
   it("resolveProjectAccess refuses a foreign project for an org owner rather than granting OWNER", async () => {
-    await expect(resolveProjectAccess(makeDb(undefined), access, owner, 1)).rejects.toThrow(NotFoundException);
+    const { db } = queuedSelectDb({ selects: [[]] });
+    await expect(resolveProjectAccess(db, principalAccess(), owner, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("resolveProjectAccess still grants the org owner access to a project the org owns (control)", async () => {
-    await expect(resolveProjectAccess(makeDb({ managerMembershipId: null }), access, owner, 1)).resolves.toEqual({
+    const { db } = queuedSelectDb({ selects: [[projectAccessRow()]] });
+    await expect(resolveProjectAccess(db, principalAccess(), owner, 1)).resolves.toEqual({
       hasAccess: true,
       role: "OWNER",
+      state: "ACTIVE",
+      bypassesWorkflow: true,
     });
   });
 
   it("assertProjectInOrg refuses a project the org does not own", async () => {
-    await expect(assertProjectInOrg(makeDb(undefined), ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
+    const { db } = queuedSelectDb({ inOrg: undefined });
+    await expect(assertProjectInOrg(db, ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("assertProjectInOrg passes for a project the org owns (control)", async () => {
-    await expect(assertProjectInOrg(makeDb({ managerMembershipId: null }), ATTACKER_ORG, 1)).resolves.toBeUndefined();
+    const { db } = queuedSelectDb({ inOrg: { id: 1 } });
+    await expect(assertProjectInOrg(db, ATTACKER_ORG, 1)).resolves.toBeUndefined();
   });
 });

@@ -3,21 +3,32 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import type { DataScope } from "../../../common/rbac/data-scope";
 import { FormsService } from "./forms.service";
 import { createFormSchema, updateFormSchema } from "./dto/forms.schemas";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+
+function rowsChain(rows: unknown[]) {
+  const chain = {
+    from: jest.fn(),
+    innerJoin: jest.fn(),
+    where: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn().mockResolvedValue(rows),
+  };
+  chain.from.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
+  return chain;
+}
+
+const orgAdminAccess = () => standingAccess({ "build:manage": "all" }) as unknown as AccessService;
 
 describe("FormsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
   const audit = { log: jest.fn() } as never;
-  const mockAccess = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
-
-  beforeEach(() => {
-    jest.mocked(mockAccess.resolveUserPermissions).mockResolvedValue(
-      new Map<string, DataScope>([["build:manage", "all"]]),
-    );
-  });
+  const mockAccess = orgAdminAccess();
 
   function makeU(orgId: string): CurrentUserContext {
     return {
@@ -34,9 +45,9 @@ describe("FormsService — cross-tenant isolation", () => {
   function makeDb(projectRow: unknown | null, formRow: unknown | null = null) {
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(projectRow) },
         projectForms: { findFirst: jest.fn().mockResolvedValue(formRow), findMany: jest.fn().mockResolvedValue([]) },
       },
+      select: jest.fn().mockReturnValue(rowsChain(projectRow === null ? [] : [projectAccessRow()])),
     } as unknown as Db;
   }
 
@@ -66,10 +77,8 @@ describe("FormsService — cross-tenant isolation", () => {
 describe("FormsService — project-membership gate (BOLA)", () => {
   const audit = { log: jest.fn() } as never;
 
-  function makeAccess(perms: Set<string> = new Set()): AccessService {
-    return {
-      resolveUserPermissions: jest.fn().mockResolvedValue(perms),
-    } as unknown as AccessService;
+  function makeAccess(): AccessService {
+    return standingAccess(MEMBER_STANDING) as unknown as AccessService;
   }
 
   function makeU(orgId: string): CurrentUserContext {
@@ -104,10 +113,9 @@ describe("FormsService — project-membership gate (BOLA)", () => {
   it("REJECTS a non-member before any form read or mutation", async () => {
     const mockDb = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn() },
       },
-      select: jest.fn().mockReturnValue(makeSelectChain([])),
+      select: jest.fn().mockReturnValue(makeSelectChain([projectAccessRow()])),
       update: jest.fn(),
     } as unknown as Db;
     const svc = new FormsService(mockDb, makeAccess(), audit);
@@ -123,12 +131,10 @@ describe("FormsService — project-membership gate (BOLA)", () => {
   it("ALLOWS a direct project member", async () => {
     const mockDb = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn() },
       },
       select: jest.fn()
-        .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
         .mockReturnValue(makeSelectChain([])),
     } as unknown as Db;
     const svc = new FormsService(mockDb, makeAccess(), audit);
@@ -244,15 +250,9 @@ describe("updateFormSchema — version field", () => {
 
 describe("FormsService — optimistic concurrency (dirty-version conflict)", () => {
   const audit = { log: jest.fn() } as never;
-  const mockAccess = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
+  const mockAccess = orgAdminAccess();
   const STORED_DATE = new Date("2024-01-15T10:00:00.000Z");
   const STALE_VERSION = "2024-01-14T09:00:00.000Z";
-
-  beforeEach(() => {
-    jest.mocked(mockAccess.resolveUserPermissions).mockResolvedValue(
-      new Map<string, DataScope>([["build:manage", "all"]]),
-    );
-  });
 
   function makeU(): CurrentUserContext {
     return {
@@ -290,9 +290,9 @@ describe("FormsService — optimistic concurrency (dirty-version conflict)", () 
   it("throws ConflictException when the provided version does not match stored updatedAt", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
       },
+      select: jest.fn().mockReturnValue(rowsChain([projectAccessRow()])),
     } as unknown as Db;
     const svc = new FormsService(db, mockAccess, audit);
 
@@ -310,9 +310,9 @@ describe("FormsService — optimistic concurrency (dirty-version conflict)", () 
 
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
       },
+      select: jest.fn().mockReturnValue(rowsChain([projectAccessRow()])),
       update: updateMock,
     } as unknown as Db;
     const svc = new FormsService(db, mockAccess, audit);
@@ -333,9 +333,9 @@ describe("FormsService — optimistic concurrency (dirty-version conflict)", () 
 
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectForms: { findFirst: jest.fn().mockResolvedValue(makeFormRow(STORED_DATE)) },
       },
+      select: jest.fn().mockReturnValue(rowsChain([projectAccessRow()])),
       update: updateMock,
     } as unknown as Db;
     const svc = new FormsService(db, mockAccess, audit);

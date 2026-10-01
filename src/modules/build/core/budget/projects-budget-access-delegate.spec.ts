@@ -46,10 +46,10 @@ describe("ProjectsBudgetService.getBudget delegates to canonical assertProjectAc
   });
 });
 
-describe("ProjectsBudgetService.updateBudget delegates to canonical assertProjectAccess", () => {
+describe("ProjectsBudgetService.updateBudget delegates to the canonical write decision assertProjectWriteAccess", () => {
   it("propagates NotFoundException from canonical when project is absent", async () => {
     const spy = jest
-      .spyOn(projectAccessModule, "assertProjectAccess")
+      .spyOn(projectAccessModule, "assertProjectWriteAccess")
       .mockRejectedValueOnce(new NotFoundException("Project not found"));
 
     const svc = new ProjectsBudgetService(makeDb(), ACCESS);

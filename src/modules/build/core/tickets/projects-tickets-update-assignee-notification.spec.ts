@@ -1,4 +1,5 @@
 import type { Db } from "../../../../db/drizzle.module";
+import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 
 /**
@@ -44,10 +45,12 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
       }),
     );
     return {
-      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
-      select: jest
-        .fn()
-        .mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn(() => Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([projectAccessRow()]) })),
+        }),
+      }),
       transaction: txFn,
     } as unknown as Db;
   }
@@ -58,7 +61,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
   const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { runForTicketEvent: jest.fn() } as never;
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;
-  const access = { holds: jest.fn().mockResolvedValue(true) } as never;
+  const access = { holds: jest.fn().mockResolvedValue(true), scopeFor: jest.fn().mockResolvedValue("all") } as never;
 
   it("has finished notifying the new assignee by the time updateTicket resolves", async () => {
     let settled = false;

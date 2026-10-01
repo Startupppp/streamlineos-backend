@@ -6,6 +6,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
 import { updateBugSchema } from "./dto/bugs.schemas";
+import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 function makeU(orgId: string): CurrentUserContext {
   return {
@@ -21,20 +22,11 @@ function makeU(orgId: string): CurrentUserContext {
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
-const mockAccessGranted = {
-  resolveUserPermissions: jest
-    .fn()
-    .mockResolvedValue(new Set(["build:manage"])),
-} as unknown as AccessService;
+const mockAccessGranted = principalAccess() as unknown as AccessService;
 
 function makeVersionedDb(ticketVersion: number, updateReturning: unknown[]) {
   const db = {
     query: {
-      projects: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValue({ managerMembershipId: null }),
-      },
       tickets: {
         findFirst: jest
           .fn()
@@ -49,7 +41,7 @@ function makeVersionedDb(ticketVersion: number, updateReturning: unknown[]) {
         findFirst: jest.fn().mockResolvedValue(undefined),
       },
     },
-    select: jest.fn(),
+    select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) })),
     transaction: jest
       .fn()
       .mockImplementation(async (cb: (tx: unknown) => unknown) => cb(db)),

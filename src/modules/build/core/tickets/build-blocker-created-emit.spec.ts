@@ -8,6 +8,7 @@ import type { AddRelationInput } from "../dto/ticket-subresources.schemas";
 
 jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn().mockResolvedValue(undefined),
+  assertTicketWriteAccess: jest.fn().mockResolvedValue(undefined),
 }));
 
 const ORG = "org-blocker-emit";

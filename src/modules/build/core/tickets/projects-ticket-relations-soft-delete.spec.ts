@@ -6,6 +6,7 @@ import { ProjectsTicketRelationsService } from "./projects-ticket-relations.serv
 
 jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn().mockResolvedValue(undefined),
+  assertTicketWriteAccess: jest.fn().mockResolvedValue(undefined),
 }));
 
 const dialect = new PgDialect();

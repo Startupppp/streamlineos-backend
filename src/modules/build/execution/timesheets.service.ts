@@ -34,7 +34,7 @@ import type {
   TimeEntryPaginationQuery,
   UpdateEntryInput,
 } from "./dto/timesheets.schemas";
-import { assertProjectAccess, assertProjectInOrg } from "../core";
+import { assertProjectInOrg, assertProjectWriteAccess } from "../core";
 
 @Injectable()
 export class TimesheetsService {
@@ -428,7 +428,7 @@ export class TimesheetsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    await assertProjectAccess(this.db, this.access, user, projectId);
+    await assertProjectWriteAccess(this.db, this.access, user, projectId);
 
     const entryDate = formatDateOnly(input.date);
     const settings = await this.periodService.loadSettings(user.orgId);

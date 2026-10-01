@@ -23,7 +23,7 @@ export default [
       {
         file: "src/modules/build/core/project-crud/project-access.ts",
         line: 359,
-        anchor: /const \{ hasAccess, role \} = await resolveProjectAccess\(db, access, u, projectId\);/,
+        anchor: /const projectAccess = await resolveProjectAccess\(db, access, u, projectId\);/,
         note: "the project lookup that makes a foreign :projectId a 404",
       },
       {
@@ -83,7 +83,7 @@ export default [
       {
         file: "src/modules/build/core/project-crud/project-access.ts",
         line: 270,
-        anchor: /const projectAccess = await resolveProjectAccess\(/,
+        anchor: /if \(!ticket\.reachable\) return \{ kind: "denied", reason: "NO_PROJECT_ACCESS", projectId: ticket\.projectId \};/,
         note: "the project-membership assertion that was entirely absent before",
       },
       {
@@ -119,7 +119,7 @@ export default [
       {
         file: "src/modules/build/core/project-crud/project-access.ts",
         line: 349,
-        anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/,
+        anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/,
         note: "the refusal the outsider now hits",
       },
     ],

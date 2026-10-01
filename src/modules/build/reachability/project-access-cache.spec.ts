@@ -1,85 +1,8 @@
-import { drizzle } from "drizzle-orm/postgres-js";
-import { PgDialect } from "drizzle-orm/pg-core";
-import postgres from "postgres";
-import * as schema from "../../../db/schema";
-import { reachableProjectsSql } from "./project-reachability";
 import { ProjectAccessCache, getOrCreateRequestCache } from "./project-access-cache";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import type { TenantTx } from "../../../db/drizzle.types";
 
 const ORG_ID = "org-reach-test";
-const MEMBERSHIP_ID = 99;
-
-function makeDb() {
-  return drizzle(
-    postgres("postgres://unused:unused@127.0.0.1:1/unused", { max: 1 }),
-    { schema },
-  );
-}
-
-const dialect = new PgDialect();
-
-function renderSql(value: unknown): { sql: string; params: unknown[] } {
-  const query = dialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]);
-  return { sql: query.sql, params: query.params };
-}
-
-describe("reachableProjectsSql — ACTIVE membership gate", () => {
-  const compiled = renderSql(reachableProjectsSql(ORG_ID, MEMBERSHIP_ID));
-  const lower = compiled.sql.toLowerCase();
-
-  it("direct-member branch: joins organization_members so a suspended membership cannot grant direct-member project access", () => {
-    expect(lower).toContain("organization_members");
-  });
-
-  it("binds 'ACTIVE' as a parameter so the organization_members join excludes inactive rows (positive: an active member remains reachable)", () => {
-    expect(compiled.params).toContain("ACTIVE");
-  });
-});
-
-describe("reachableProjectsSql — branch matrix", () => {
-  const compiled = renderSql(reachableProjectsSql(ORG_ID, MEMBERSHIP_ID));
-  const lower = compiled.sql.toLowerCase();
-
-  it("manager branch: references manager_membership_id so projects where the caller is manager are reachable", () => {
-    expect(lower).toContain("manager_membership_id");
-  });
-
-  it("direct-member branch: uses a subquery on project_members so direct members are reachable", () => {
-    expect(lower).toContain("project_members");
-  });
-
-  it("team-member branch: uses a subquery joining project_team_assignments and project_team_members so team members are reachable", () => {
-    expect(lower).toContain("project_team_assignments");
-    expect(lower).toContain("project_team_members");
-  });
-
-  it("binds orgId as a SQL parameter on both subquery branches (not inlined as a literal)", () => {
-    const orgBindings = compiled.params.filter((p) => p === ORG_ID).length;
-    expect(orgBindings).toBeGreaterThanOrEqual(2);
-    expect(compiled.sql).not.toContain(ORG_ID);
-  });
-
-  it("binds membershipId as a SQL parameter on all three branches (not inlined as a literal)", () => {
-    const midBindings = compiled.params.filter((p) => p === MEMBERSHIP_ID).length;
-    expect(midBindings).toBeGreaterThanOrEqual(3);
-    expect(compiled.sql).not.toContain(String(MEMBERSHIP_ID));
-  });
-
-  it("combines branches with OR so any single branch grants access", () => {
-    expect(lower).toContain(" or ");
-  });
-
-  it("uses IN (SELECT ...) for direct-member branch so unbounded project-id arrays are never materialized in JS", () => {
-    expect(lower).toContain("in (\n      select");
-    expect(lower).toContain("project_members");
-  });
-
-  it("uses IN (SELECT ...) for team-member branch so unbounded project-id arrays are never materialized in JS", () => {
-    expect(lower).toContain("project_team_assignments");
-    expect(lower.split("in (").length).toBeGreaterThanOrEqual(3);
-  });
-});
 
 describe("ProjectAccessCache", () => {
   it("returns the same promise for the same key, so the compute function is called exactly once", async () => {

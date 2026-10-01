@@ -12,6 +12,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
+import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 
 describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -47,8 +48,17 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     }));
-    const db = { query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } }, transaction: txFn } as unknown as Db;
-    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, transfer, webhooksDispatch, automationRunner, cache, access);
+    const db = {
+      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([projectAccessRow()]) }),
+        }),
+      }),
+      transaction: txFn,
+    } as unknown as Db;
+    const ownerAccess = { holds: jest.fn().mockResolvedValue(true), scopeFor: jest.fn().mockResolvedValue("all") } as never;
+    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, transfer, webhooksDispatch, automationRunner, cache, ownerAccess);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
     await expect(svc.updateTicket(u, 1, 1, { version: 1 })).resolves.not.toThrow();
   });

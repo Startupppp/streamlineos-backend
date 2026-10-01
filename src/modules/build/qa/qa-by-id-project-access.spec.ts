@@ -6,6 +6,11 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestManagementService } from "./test-management.service";
 import { TestRunsService } from "./test-runs.service";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  standingAccess,
+} from "../core/project-crud/__tests__/project-access-doubles";
 
 const MEMBERSHIP_ID = 7;
 const ORG = "org-1";
@@ -25,14 +30,12 @@ function makeU(): CurrentUserContext {
 }
 
 function makeAccessWithoutBuildManage() {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-  } as unknown as AccessService;
+  return standingAccess(MEMBER_STANDING) as unknown as AccessService;
 }
 
 const audit = { log: jest.fn() } as never;
 
-function membershipProbe(rows: Array<{ role: string }>) {
+function membershipProbe(rows: unknown[]) {
   const limit = jest.fn().mockResolvedValue(rows);
   const where = jest.fn().mockReturnValue({ limit });
   const innerJoin = jest
@@ -79,7 +82,7 @@ function makeNonMemberDb(): DeniedDb {
       testRuns: { findFirst: rowFindFirst },
       testRunResults: { findFirst: rowFindFirst },
     },
-    select: jest.fn().mockImplementation(() => membershipProbe([])),
+    select: jest.fn().mockImplementation(() => membershipProbe([projectAccessRow()])),
     update,
     insert,
     transaction,
@@ -91,9 +94,8 @@ function memberSelect(bodyChains: Array<() => unknown>) {
   let call = 0;
   return jest.fn().mockImplementation(() => {
     call += 1;
-    if (call === 1) return membershipProbe([{ role: "MEMBER" }]);
-    if (call === 2) return membershipProbe([]);
-    const chain = bodyChains[call - 3];
+    if (call === 1) return membershipProbe([projectAccessRow({ memberRole: "MEMBER" })]);
+    const chain = bodyChains[call - 2];
     return chain ? chain() : membershipProbe([]);
   });
 }

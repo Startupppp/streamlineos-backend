@@ -1,5 +1,5 @@
 const PA = /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/;
-const TICKET = /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId, \{/;
+const TICKET = /await assertTicketWriteAccess\(this\.db, this\.access, u, projectId, ticketId, \{/;
 
 export default [
   {

@@ -5,6 +5,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 
@@ -23,12 +24,11 @@ function buildDb(captured: Captured) {
     limit: jest.fn().mockResolvedValue([]),
   };
   return {
-    query: {
-      projects: {
-        findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }),
-      },
-    },
-    select: jest.fn().mockReturnValue(builder),
+    select: jest.fn((fields?: Record<string, unknown>) =>
+      fields !== undefined && "manages" in fields
+        ? { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) }
+        : builder,
+    ),
   } as unknown as Db;
 }
 
@@ -44,7 +44,9 @@ function makeOwner(orgId: string): CurrentUserContext {
   };
 }
 
-const mockAccess = {} as AccessService;
+const mockAccess = {
+  scopeFor: async (actor: CurrentUserContext) => (actor.isOrgOwner ? "all" : "none"),
+} as unknown as AccessService;
 const mockAudit = {} as AuditService;
 
 describe("ChangeRequestsService.listChangeRequests — search predicate shape (BE-49)", () => {

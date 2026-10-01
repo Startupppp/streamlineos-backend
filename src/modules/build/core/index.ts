@@ -4,16 +4,21 @@ export {
   assertProjectAccess,
   assertProjectAggregateAccess,
   assertProjectInOrg,
+  assertProjectWriteAccess,
   assertTicketInProject,
   assertTicketReadAccess,
+  authorizeApprovalDecision,
   authorizeProjectTicketRead,
   authorizeTicketMutation,
+  decideTicketRead,
+  resolveProjectReach,
+  resolveTicketVisibility,
   lockProjectTicketMutation,
   readMutationTickets,
   resolveProjectAccess,
-  resolveProjectAssignableMemberships,
   type TicketReadAccess,
 } from "./project-crud/project-access";
+export { resolveProjectAssignableMemberships } from "./project-crud/project-assignable-members";
 export {
   buildCycleListHref,
   buildFeedbucketHref,

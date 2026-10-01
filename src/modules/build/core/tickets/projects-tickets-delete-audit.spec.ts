@@ -5,7 +5,7 @@ import type { ProjectsWebhooksDispatchService } from "../webhooks/projects-webho
 import { ProjectsTicketsDeleteService } from "./projects-tickets-delete.service";
 
 jest.mock("../project-crud/project-access", () => ({
-  assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
 }));
 
 function makeActor(): CurrentUserContext {
@@ -41,7 +41,7 @@ function harness(existing: { id: number; projectId: number; title: string } | un
     db,
     { enqueue: jest.fn().mockResolvedValue(undefined) } as unknown as ProjectsWebhooksDispatchService,
     { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
-    { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+    { scopeFor: jest.fn() },
     { log } as never,
   );
   return { service, log };

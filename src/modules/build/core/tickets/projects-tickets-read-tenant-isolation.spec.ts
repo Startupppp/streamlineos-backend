@@ -1,22 +1,8 @@
-import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { resolveProjectAccess } from "../project-crud/project-access";
-
-function memberThenTeamChain(memberRows: unknown[], teamRows: unknown[]): jest.Mock {
-  const memberChain = {
-    innerJoin: jest.fn(() => ({
-      where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue(memberRows) })),
-    })),
-  };
-  const teamChain = {
-    innerJoin: jest.fn(() => ({
-      innerJoin: jest.fn(() => ({
-        where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue(teamRows) })),
-      })),
-    })),
-  };
-  return jest.fn().mockReturnValueOnce(memberChain).mockReturnValue(teamChain);
-}
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { queuedSelectDb } from "../project-crud/__tests__/project-access-db";
 
 function makeUser(orgId: string, membershipId: number): CurrentUserContext {
   return {
@@ -26,8 +12,8 @@ function makeUser(orgId: string, membershipId: number): CurrentUserContext {
     isOrgOwner: false,
     sessionId: "s1",
     tokenScopes: null,
-    principal: { kind: "human-session", membershipId, isOrgOwner: false },
-  } as unknown as CurrentUserContext;
+    principal: humanSessionPrincipal(membershipId, false),
+  };
 }
 
 describe("resolveProjectAccess — cross-tenant isolation", () => {
@@ -35,62 +21,41 @@ describe("resolveProjectAccess — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
 
   it("throws NotFoundException for a project in a different org (cross-tenant isolation)", async () => {
-    const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
-      select: jest.fn().mockReturnValue({ from: memberThenTeamChain([], []) }),
-    } as unknown as Db;
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as never;
-    const u = makeUser(ATTACKER_ORG, 1);
-    await expect(resolveProjectAccess(db, access, u, 99)).rejects.toThrow("Project not found");
+    const { db } = queuedSelectDb({ selects: [[]] });
+    const access = standingAccess({ "build:manage": "all" });
+    await expect(resolveProjectAccess(db, access, makeUser(ATTACKER_ORG, 1), 99)).rejects.toThrow("Project not found");
   });
 
-  it("returns hasAccess=true for the owning org when caller has build:manage (same-tenant control)", async () => {
-    const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
-      select: jest.fn().mockReturnValue({ from: memberThenTeamChain([], []) }),
-    } as unknown as Db;
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as never;
-    const u = makeUser(OWNER_ORG, 1);
-    const result = await resolveProjectAccess(db, access, u, 1);
+  it("returns hasAccess=true for the owning org when caller has build:manage at all scope (same-tenant control)", async () => {
+    const { db } = queuedSelectDb({ selects: [[projectAccessRow()]] });
+    const access = standingAccess({ "build:manage": "all" });
+    const result = await resolveProjectAccess(db, access, makeUser(OWNER_ORG, 1), 1);
     expect(result.hasAccess).toBe(true);
   });
 });
 
-describe("resolveProjectAccess — direct-member org-status gate", () => {
+describe("resolveProjectAccess — direct and team membership", () => {
   const ORG = "org-a";
   const PROJECT_ID = 5;
   const MEMBERSHIP_ID = 1;
-
-  function makeDb(memberRows: unknown[], teamRows: unknown[] = []) {
-    return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 99 }) },
-      },
-      select: jest.fn().mockReturnValue({ from: memberThenTeamChain(memberRows, teamRows) }),
-    } as unknown as Db;
-  }
-
-  const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as never;
+  const access = standingAccess(MEMBER_STANDING);
 
   it("denies a user with no project membership (DENY)", async () => {
-    const db = makeDb([]);
-    const u = makeUser(ORG, MEMBERSHIP_ID);
-    const result = await resolveProjectAccess(db, access, u, PROJECT_ID);
+    const { db } = queuedSelectDb({ selects: [[projectAccessRow()]] });
+    const result = await resolveProjectAccess(db, access, makeUser(ORG, MEMBERSHIP_ID), PROJECT_ID);
     expect(result.hasAccess).toBe(false);
   });
 
   it("grants access to a direct project member (CONTROL)", async () => {
-    const db = makeDb([{ id: 1, role: "CONTRIBUTOR" }]);
-    const u = makeUser(ORG, MEMBERSHIP_ID);
-    const result = await resolveProjectAccess(db, access, u, PROJECT_ID);
+    const { db } = queuedSelectDb({ selects: [[projectAccessRow({ memberRole: "CONTRIBUTOR" })]] });
+    const result = await resolveProjectAccess(db, access, makeUser(ORG, MEMBERSHIP_ID), PROJECT_ID);
     expect(result.hasAccess).toBe(true);
     expect(result.role).toBe("CONTRIBUTOR");
   });
 
   it("grants access via team membership when direct membership is absent (team branch)", async () => {
-    const db = makeDb([], [{ id: 7 }]);
-    const u = makeUser(ORG, MEMBERSHIP_ID);
-    const result = await resolveProjectAccess(db, access, u, PROJECT_ID);
+    const { db } = queuedSelectDb({ selects: [[projectAccessRow({ onTeam: true })]] });
+    const result = await resolveProjectAccess(db, access, makeUser(ORG, MEMBERSHIP_ID), PROJECT_ID);
     expect(result.hasAccess).toBe(true);
     expect(result.role).toBe("MEMBER");
   });

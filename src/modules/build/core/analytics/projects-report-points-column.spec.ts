@@ -9,6 +9,7 @@ import type { Db } from "../../../../db/drizzle.types";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { ProjectsReportsService } from "./projects-reports.service";
 import { computeCriticalPath } from "./projects-critical-path.util";
+import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 const ORG = "org-points";
@@ -73,6 +74,7 @@ function harness(rowsByKey: Record<string, Row[]>, executeRows: Row[] = []): Har
       },
     },
     select: (selection: Selection) => {
+      if ("memberRole" in selection) return chainFor([projectAccessRow()]);
       selections.push(selection);
       const key = Object.keys(rowsByKey).find((name) => name in selection);
       return chainFor(key === undefined ? [] : (rowsByKey[key] ?? []));

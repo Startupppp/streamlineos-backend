@@ -7,7 +7,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import type { CreateFormInput, ListFormsQuery, UpdateFormInput } from "./dto/forms.schemas";
 import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
 
@@ -104,7 +104,7 @@ export class FormsService {
   }
 
   async createForm(u: CurrentUserContext, projectId: number, input: CreateFormInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [form] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
@@ -141,7 +141,7 @@ export class FormsService {
   }
 
   async updateForm(u: CurrentUserContext, projectId: number, formId: number, input: UpdateFormInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const existing = await this.loadForm(u.orgId, projectId, formId);
     if (
       input.version !== undefined &&
@@ -180,7 +180,7 @@ export class FormsService {
   }
 
   async deleteForm(u: CurrentUserContext, projectId: number, formId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadForm(u.orgId, projectId, formId);
     await this.db
       .update(projectForms)

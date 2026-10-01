@@ -7,7 +7,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { buildCursorPage, decodeIntegerCursor } from "../../../common/pagination/cursor";
 import { keysetAfterIntValue } from "../../../common/pagination/keyset";
 import type { VisibilitySummaryQuery } from "./dto/client-portal.schemas";
@@ -87,7 +87,7 @@ export class ClientVisibilityService {
 
   async toggleTicketVisibility(u: CurrentUserContext, projectId: number, ticketId: number, clientVisible: boolean, version?: number) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const existing = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)),
       columns: { id: true, version: true },
@@ -121,7 +121,7 @@ export class ClientVisibilityService {
 
   async toggleMilestoneVisibility(u: CurrentUserContext, projectId: number, milestoneId: number, clientVisible: boolean) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const existing = await this.db.query.projectMilestones.findFirst({
       where: and(
         eq(projectMilestones.id, milestoneId),
@@ -149,7 +149,7 @@ export class ClientVisibilityService {
 
   async toggleCommentVisibility(u: CurrentUserContext, projectId: number, commentId: number, clientVisible: boolean) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [row] = await this.db
       .select({ id: ticketComments.id })
       .from(ticketComments)
@@ -179,7 +179,7 @@ export class ClientVisibilityService {
 
   async toggleAttachmentVisibility(u: CurrentUserContext, projectId: number, attachmentId: number, clientVisible: boolean) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [row] = await this.db
       .select({ id: ticketAttachments.id })
       .from(ticketAttachments)

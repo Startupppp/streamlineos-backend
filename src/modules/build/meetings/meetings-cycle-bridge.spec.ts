@@ -8,6 +8,7 @@ import * as projectAccessSeam from "../core";
 
 jest.mock("../core/project-crud/project-access", () => ({
   assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
   assertProjectInOrg: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -121,6 +122,7 @@ function makeHarness(opts: {
 beforeEach(() => {
   jest.clearAllMocks();
   (projectAccessSeam.assertProjectAccess as jest.Mock).mockResolvedValue(undefined);
+  (projectAccessSeam.assertProjectWriteAccess as jest.Mock).mockResolvedValue(undefined);
 });
 
 describe("MeetingsService.createMeeting — cycleId binding", () => {

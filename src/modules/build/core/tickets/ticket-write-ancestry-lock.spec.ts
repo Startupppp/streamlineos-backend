@@ -4,11 +4,7 @@ import { systemActor } from "../../../../common/auth/system-actor";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
-
-jest.mock("../project-crud/project-access", () => ({
-  ...jest.requireActual("../project-crud/project-access"),
-  resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "MEMBER" }),
-}));
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
 
 const TICKET_ID = 1;
 const PROPOSED_PARENT_ID = 2;
@@ -73,6 +69,13 @@ function makeDb(capturedExecuteValues: string[]) {
 
   return {
     query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } },
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([projectAccessRow({ memberRole: "MEMBER" })]),
+        }),
+      }),
+    }),
     transaction: txFn,
   } as unknown as Db;
 }
@@ -96,7 +99,7 @@ const transfer = { notifyAssignedTickets: jest.fn().mockResolvedValue(undefined)
 const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
 const automationRunner = { runForTicketEvent: jest.fn() } as never;
 const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;
-const access = { holds: jest.fn().mockResolvedValue(false) } as never;
+const access = standingAccess(MEMBER_STANDING) as never;
 
 describe("projects-tickets ancestry race — advisory lock serializes concurrent reparenting", () => {
   it("acquires the project mutation lock before checking the ancestry chain for a human-session user", async () => {

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, type SQL } from "drizzle-orm";
 import { type Db } from "../../../db/drizzle.module";
 import { projects, ticketRelatedLinks } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -6,7 +6,7 @@ import type {
   EntityActionResult,
   EntityActor,
 } from "../../entity-reference/entity-reference.types";
-import { isProjectMember, text } from "./build-entity-action-helpers";
+import { entityProjectWriteRefusal, text } from "./build-entity-action-helpers";
 import { BuildTicketCreationService } from "../core/tickets";
 import { appUrl } from "../../email/app-url";
 
@@ -39,9 +39,10 @@ export async function createTicketFromAction(
   actor: EntityActor,
   projectId: number,
   input: Record<string, unknown>,
+  reach: SQL,
 ): Promise<EntityActionResult> {
-  const allowed = await isProjectMember(db, actor, projectId);
-  if (!allowed) return { ok: false, reason: "forbidden" };
+  const refusal = await entityProjectWriteRefusal(db, actor, reach, projectId);
+  if (refusal !== null) return { ok: false, reason: refusal };
 
   const type = text(input, "type");
   if (!type || !isTicketType(type)) return { ok: false, reason: "invalid" };

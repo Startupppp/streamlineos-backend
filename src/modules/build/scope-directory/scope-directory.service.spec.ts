@@ -6,10 +6,10 @@ import {
 import { resolveScopeDirectorySchema } from "./dto/scope-directory.schemas";
 import {
   MEMBERSHIP_ID,
+  actor,
   ORG,
   PROD_ROW,
   PROJ_ROW,
-  USER,
   makeAccess,
   makeDb,
   makeResponses,
@@ -24,7 +24,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [projects, [[PROJ_ROW]]],
     ]));
 
-    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
+    const result = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), [
       "product:10",
       "project:20",
     ]);
@@ -61,7 +61,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
+    const result = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), [
       "workspace:ws-1",
       "project:20",
     ]);
@@ -88,7 +88,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
+    const result = await makeSvc(db, makeAccess(null)).resolveScopeDirectory(actor(MEMBERSHIP_ID), [
       "product:10",
       "product:999",
     ]);
@@ -101,7 +101,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [managedProducts, [[]]],
     ]));
 
-    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["product:99"]);
+    const result = await makeSvc(db).resolveScopeDirectory(actor(null), ["product:99"]);
 
     expect(result).toEqual([]);
   });
@@ -112,7 +112,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [projects, [[]]],
     ]));
 
-    await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
+    await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), [
       "product:10",
       "project:20",
     ]);
@@ -152,7 +152,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["product:10"]);
+    await makeSvc(db).resolveScopeDirectory(actor(null), ["product:10"]);
 
     const mainCalls = calls.filter(
       (c) => c.table === managedProducts || c.table === projects,
@@ -166,7 +166,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [projects, [[{ ...PROJ_ROW, clientMembershipId: 7 }]]],
     ]));
 
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
+    const [ref] = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), ["project:20"]);
 
     expect(ref?.clientPortalEnabled).toBe(true);
   });
@@ -176,7 +176,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [projects, [[{ ...PROJ_ROW, clientMembershipId: null }]]],
     ]));
 
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
+    const [ref] = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), ["project:20"]);
 
     expect(ref?.clientPortalEnabled).toBe(false);
   });
@@ -186,7 +186,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["product:10"]);
+    const [ref] = await makeSvc(db).resolveScopeDirectory(actor(null), ["product:10"]);
 
     expect(ref?.parentPath).toBeNull();
   });
@@ -197,7 +197,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
+    const [ref] = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), ["project:20"]);
 
     expect(ref?.parentPath).toBe("Atlas");
   });
@@ -208,7 +208,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [projects, [[projNoProduct]]],
     ]));
 
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
+    const [ref] = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), ["project:20"]);
 
     expect(ref?.parentPath).toBeNull();
   });
@@ -220,7 +220,7 @@ describe("ScopeDirectoryService.resolveScopeDirectory", () => {
       [projects, [[proj1, proj2]]],
     ]));
 
-    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
+    const result = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), [
       "project:20",
       "project:21",
     ]);
@@ -237,7 +237,7 @@ describe("ScopeDirectoryService — archived scopes", () => {
       [managedProducts, [[{ ...PROD_ROW, status: "archived" }]]],
     ]));
 
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, null, ["product:10"]);
+    const [ref] = await makeSvc(db).resolveScopeDirectory(actor(null), ["product:10"]);
 
     expect(ref?.isArchived).toBe(true);
   });
@@ -248,7 +248,7 @@ describe("ScopeDirectoryService — archived scopes", () => {
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
+    const [ref] = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), ["project:20"]);
 
     expect(ref?.isArchived).toBe(true);
   });
@@ -261,7 +261,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atlas", 25, undefined);
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "Atlas", 25, undefined);
 
     const prodCall = calls.find((c) => c.table === managedProducts);
     expect(prodCall).toBeDefined();
@@ -276,7 +276,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "At", 25, undefined);
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "At", 25, undefined);
 
     const prodCall = calls.find((c) => c.table === managedProducts);
     expect(prodCall).toBeDefined();
@@ -290,7 +290,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess("all")).searchScopeDirectory(ORG, USER, null, "Atlas", 25, undefined);
+    const result = await makeSvc(db, makeAccess("all")).searchScopeDirectory(actor(null), "Atlas", 25, undefined);
 
     expect(result.data).toHaveLength(1);
     expect(calls.find((c) => c.table === managedProductMemberships)).toBeUndefined();
@@ -299,7 +299,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
   it("returns empty data and no nextCursor when membershipId is null and build:manage is not all", async () => {
     const { db } = makeDb(makeResponses());
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, null, "x", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(null), "x", 25, undefined);
 
     expect(result.data).toEqual([]);
     expect(result.nextCursor).toBeNull();
@@ -311,7 +311,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atlas", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "Atlas", 25, undefined);
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).toMatchObject({
@@ -331,7 +331,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [managedProductMemberships, [[]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Nope", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "Nope", 25, undefined);
 
     expect(result.data).toEqual([]);
     expect(calls.find((c) => c.table === managedProducts)).toBeUndefined();
@@ -344,7 +344,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Lau", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "Lau", 25, undefined);
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).toMatchObject({
@@ -360,7 +360,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [projects, [[PROJ_ROW]]],
     ]));
 
-    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Lau", 25, undefined);
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "Lau", 25, undefined);
 
     const projectCall = calls.find((c) => c.table === projects);
     expect(projectCall).toBeDefined();
@@ -373,7 +373,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [managedProducts, [[PROD_ROW]]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atlas", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "Atlas", 25, undefined);
 
     expect(result.nextCursor).toBeNull();
   });
@@ -390,7 +390,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [managedProducts, [extraProdRows]],
     ]));
 
-    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Product", 25, undefined);
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "Product", 25, undefined);
 
     expect(result.nextCursor).not.toBeNull();
     expect(result.data).toHaveLength(25);
@@ -403,7 +403,7 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       [projects, [[PROJ_ROW]]],
     ]));
 
-    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "a", 25, undefined);
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(actor(MEMBERSHIP_ID), "a", 25, undefined);
 
     for (const call of calls)
       expect(renderParams(call.condition)).toContain(ORG);
@@ -417,7 +417,7 @@ describe("ScopeDirectoryService — projects without a managed product (BE-134)"
       [projects, [[projNoProduct]]],
     ]));
 
-    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
+    const result = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), ["project:20"]);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
@@ -440,7 +440,7 @@ describe("ScopeDirectoryService — projects without a managed product (BE-134)"
       [managedProducts, [[missingProductRow]]],
     ]));
 
-    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
+    const result = await makeSvc(db).resolveScopeDirectory(actor(MEMBERSHIP_ID), [
       "project:20",
       "project:21",
     ]);

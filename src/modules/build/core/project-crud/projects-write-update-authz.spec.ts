@@ -1,24 +1,28 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsWriteService } from "./projects-write.service";
+import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "./__tests__/project-access-doubles";
 
 const ORG = "org-authz-1";
 
-function makeAccess(hasManage: boolean) {
+function makeDb(projectRow: ProjectAccessRow | null) {
+  const limit = jest.fn().mockResolvedValue(projectRow ? [projectRow] : []);
   return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(
-      hasManage ? new Set(["build:manage"]) : new Set<string>(),
-    ),
-  } as never;
-}
-
-function makeDb(projectRow: unknown | null) {
-  return {
+    select: jest.fn(() => ({ from: jest.fn(() => ({ where: jest.fn(() => ({ limit })) })) })),
     query: {
-      projects: { findFirst: jest.fn().mockResolvedValue(projectRow) },
       organizationMembers: { findFirst: jest.fn() },
     },
+    transaction: jest.fn(),
   } as unknown as Db;
+}
+
+function makeService(db: Db) {
+  return new ProjectsWriteService(
+    db,
+    { log: jest.fn() } as never,
+    standingAccess(MEMBER_STANDING) as never,
+    { getProject: jest.fn().mockResolvedValue({ id: 42 }) } as never,
+  );
 }
 
 describe("ProjectsWriteService.updateProject — non-existent project authorization", () => {
@@ -30,59 +34,32 @@ describe("ProjectsWriteService.updateProject — non-existent project authorizat
   } as never;
 
   it("throws NotFoundException (not ForbiddenException) when non-admin requests an update on a non-existent project", async () => {
-    const db = makeDb(null);
-    const svc = new ProjectsWriteService(
-      db,
-      { log: jest.fn() } as never,
-      makeAccess(false),
-      { getProject: jest.fn() } as never,
-    );
-
     await expect(
-      svc.updateProject(user, 9999, { name: "new name" }),
+      makeService(makeDb(null)).updateProject(user, 9999, { name: "new name" }),
     ).rejects.toThrow(NotFoundException);
   });
 
   it("does not expose ForbiddenException for a missing project — that leaks existence to an attacker", async () => {
-    const db = makeDb(null);
-    const svc = new ProjectsWriteService(
-      db,
-      { log: jest.fn() } as never,
-      makeAccess(false),
-      { getProject: jest.fn() } as never,
-    );
-
     await expect(
-      svc.updateProject(user, 9999, { name: "new name" }),
+      makeService(makeDb(null)).updateProject(user, 9999, { name: "new name" }),
     ).rejects.not.toThrow(ForbiddenException);
   });
 
   it("still throws ForbiddenException when the project EXISTS but the caller is not the manager or admin", async () => {
-    const db = makeDb({ managerMembershipId: 1 });
-    (db as unknown as { query: { organizationMembers: { findFirst: jest.Mock } } }).query.organizationMembers.findFirst = jest.fn().mockResolvedValue(undefined);
-    const dbWithMembers = {
-      ...db,
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        innerJoin: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([]),
-      }),
-    } as unknown as Db;
-    (dbWithMembers as unknown as { query: { projects: { findFirst: jest.Mock }; organizationMembers: { findFirst: jest.Mock } } }).query = {
-      projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
-      organizationMembers: { findFirst: jest.fn() },
-    };
-
-    const svc = new ProjectsWriteService(
-      dbWithMembers,
-      { log: jest.fn() } as never,
-      makeAccess(false),
-      { getProject: jest.fn() } as never,
-    );
-
     await expect(
-      svc.updateProject(user, 42, { name: "new name" }),
+      makeService(makeDb(projectAccessRow({ memberRole: "CONTRIBUTOR" }))).updateProject(user, 42, { name: "new name" }),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it("refuses a field edit on an archived project the caller manages with PROJECT_LOCKED", async () => {
+    const attempt = makeService(makeDb(projectAccessRow({ manages: true, state: "ARCHIVED" }))).updateProject(user, 42, { name: "new name" });
+    await expect(attempt).rejects.toThrow(ConflictException);
+    await expect(attempt).rejects.toMatchObject({ response: { code: "PROJECT_LOCKED" } });
+  });
+
+  it("lets the manager of an archived project reopen it, because a status change is the way out of the lock", async () => {
+    const db = makeDb(projectAccessRow({ manages: true, state: "ARCHIVED" }));
+    (db as unknown as { transaction: jest.Mock }).transaction.mockResolvedValue(undefined);
+    await expect(makeService(db).updateProject(user, 42, { status: "ACTIVE" })).resolves.toEqual({ id: 42 });
   });
 });

@@ -10,7 +10,7 @@ import { resolvePeopleByName } from "../../../directory/person-seam";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadIdIs } from "../../../leads/lead-party-reader";
 import { ticketScope } from "../../../build/core/tickets";
-import { reachableTicketProjectsSql } from "../../../build/reachability/project-reachability";
+import { projectReachFor, ticketProjectReachableSql } from "../../../build/core/project-crud/project-relationship";
 import {
   defineTool,
   ambiguous,
@@ -143,7 +143,7 @@ export class WorkActionsTools implements AskOsToolProvider {
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), ticketProjectReachableSql(orgId, projectReachFor(ctx.readFor, orgId, membershipId))],
             },
             ({ sql: where }) =>
               this.db
@@ -202,7 +202,7 @@ export class WorkActionsTools implements AskOsToolProvider {
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), ticketProjectReachableSql(orgId, projectReachFor(ctx.readFor, orgId, membershipId))],
             },
             ({ sql: where }) =>
               this.db

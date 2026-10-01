@@ -19,14 +19,13 @@ import { ChatMessagesService } from "../../chat/chat-messages.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../common/auth/principal";
 import {
   assertOrganizationActor,
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
 import type { OrganizationActor } from "../../../common/organization/organization-actor";
-import { assertProjectAccess } from "../core";
+import { authorizeApprovalDecision, assertProjectWriteAccess } from "../core";
 import { loadApproval } from "./approval-lookup";
 import type {
   CreateApprovalInput,
@@ -83,7 +82,7 @@ export class ApprovalsService {
     if (input.approverId === userId) {
       throw new BadRequestException("Approver cannot be the requester");
     }
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
 
     let approverActor: OrganizationActor;
     try {
@@ -185,13 +184,7 @@ export class ApprovalsService {
     const { orgId, userId } = user;
     const approval = await loadApproval(this.db, orgId, projectId, approvalId);
 
-    const callerMid = actingMembershipId(user.principal);
-    if (approval.approverMembershipId !== callerMid || callerMid === null) {
-      if (!(await this.access.holds(user, "build:approvals:manage"))) {
-        throw new NotFoundException("Approval not found");
-      }
-      await assertProjectAccess(this.db, this.access, user, projectId);
-    }
+    await authorizeApprovalDecision(this.db, this.access, user, projectId, approval.approverMembershipId);
 
     if (!DECIDABLE.has(approval.status)) {
       throw new ConflictException("Approval has already been decided");
@@ -226,7 +219,7 @@ export class ApprovalsService {
     input: UpdateApprovalInput,
   ) {
     const { orgId, userId } = user;
-    await assertProjectAccess(this.db, this.access, user, projectId);
+    await assertProjectWriteAccess(this.db, this.access, user, projectId);
     await loadApproval(this.db, orgId, projectId, approvalId);
 
     const patch: ApprovalPatch = {};
@@ -284,7 +277,7 @@ export class ApprovalsService {
 
   async softDeleteApproval(user: CurrentUserContext, projectId: number, approvalId: number) {
     const { orgId, userId } = user;
-    await assertProjectAccess(this.db, this.access, user, projectId);
+    await assertProjectWriteAccess(this.db, this.access, user, projectId);
     await loadApproval(this.db, orgId, projectId, approvalId);
     await this.db
       .update(projectApprovals)

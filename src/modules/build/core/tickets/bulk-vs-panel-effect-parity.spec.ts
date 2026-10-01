@@ -10,7 +10,8 @@ import type { ProjectsActivityService } from "../activity/projects-activity.serv
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 
 jest.mock("../project-crud/project-access", () => ({
-  authorizeTicketMutation: jest.fn().mockResolvedValue({ role: "MEMBER", predicate: {} }),
+  authorizeTicketMutation: jest.fn().mockResolvedValue({ role: "MEMBER", bypassesWorkflow: false, predicate: {} }),
+  decideTicketChange: jest.fn().mockResolvedValue({ role: "OWNER", bypassesWorkflow: true, rowScoped: true }),
   lockProjectTicketMutation: jest.fn().mockResolvedValue(undefined),
   readMutationTickets: jest.fn().mockImplementation(
     (_db: unknown, _actor: unknown, _projectId: unknown, ids: number[]) =>
@@ -30,7 +31,9 @@ jest.mock("../project-crud/project-access", () => ({
         })),
       ),
   ),
-  resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }),
+}));
+
+jest.mock("../project-crud/project-assignable-members", () => ({
   resolveProjectAssignableMemberships: jest
     .fn()
     .mockResolvedValue(new Map([["assignee-2", 7]])),

@@ -5,6 +5,27 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  type ProjectAccessRow,
+} from "../core/project-crud/__tests__/project-access-doubles";
+
+function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
+  return jest.fn((fields?: Record<string, unknown>) =>
+    fields !== undefined && "manages" in fields
+      ? { from: () => ({ where: () => ({ limit: async () => rows }) }) }
+      : rest(fields),
+  );
+}
+
+
+const memberScopeAccess = {
+  scopeFor: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner ? "all" : (MEMBER_STANDING[key] ?? "none"),
+  holds: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner || (MEMBER_STANDING[key] ?? "none") !== "none",
+} as unknown as AccessService;
 
 function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
   return {
@@ -19,23 +40,19 @@ function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
 }
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
-const mockAccess = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-} as unknown as AccessService;
+const mockAccess = memberScopeAccess;
 
 beforeEach(() => {
   jest.resetAllMocks();
-  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
 describe("ClientVisibilityService — cross-tenant isolation (BOLA)", () => {
   it("throws NotFoundException when project belongs to a different org", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
         tickets: { findFirst: jest.fn() },
       },
-      select: jest.fn(),
+      select: projectGateSelect([]),
       update: jest.fn(),
     } as unknown as Db;
 
@@ -47,10 +64,9 @@ describe("ClientVisibilityService — cross-tenant isolation (BOLA)", () => {
   it("throws NotFoundException when toggling ticket visibility on a different org's project", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
         tickets: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
-      select: jest.fn(),
+      select: projectGateSelect([]),
       update: jest.fn(),
     } as unknown as Db;
 
@@ -65,33 +81,10 @@ describe("ClientVisibilityService — cross-tenant isolation (BOLA)", () => {
 describe("ClientVisibilityService — project membership gate (BOLA fix)", () => {
   const ORG = "org-1";
   const u = makeU(ORG);
-  const gateAccess = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
+  const gateAccess = memberScopeAccess;
 
   function makeNonMemberDb(): Db {
-    return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        }),
-    } as unknown as Db;
+    return { select: projectGateSelect([projectAccessRow()]) } as unknown as Db;
   }
 
   function makeMemberDb(): Db {
@@ -103,33 +96,9 @@ describe("ClientVisibilityService — project membership gate (BOLA fix)", () =>
       }),
     };
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        })
-        .mockReturnValue(listChain),
+      select: projectGateSelect([projectAccessRow({ memberRole: "MEMBER" })], jest.fn().mockReturnValue(listChain)),
     } as unknown as Db;
   }
-
-  beforeEach(() => {
-    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
-  });
 
   it("rejects non-member with ForbiddenException on getVisibilitySummary", async () => {
     const db = makeNonMemberDb();

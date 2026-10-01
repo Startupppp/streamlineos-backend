@@ -63,7 +63,7 @@ function makeDb(opts: { ticket: object | null; member: { id: number } | null }):
 function makeSvc(db: Db) {
   return new ProjectsTicketWatchersService(
     db,
-    { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+    { scopeFor: jest.fn() },
   );
 }
 

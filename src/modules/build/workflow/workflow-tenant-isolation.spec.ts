@@ -4,6 +4,11 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { WorkflowService } from "./workflow.service";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+
+function projectRowSelect() {
+  return { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) };
+}
 
 function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
   return {
@@ -21,26 +26,21 @@ describe("WorkflowService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
   const audit = { log: jest.fn() } as never;
-  const access = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
+  const access = principalAccess(MEMBER_STANDING) as unknown as AccessService;
 
   function makeDb(projectRow: unknown | null, transitionRows: unknown[]) {
-    const limit = jest.fn().mockResolvedValue(transitionRows);
+    const limit = jest.fn()
+      .mockResolvedValueOnce(projectRow === null ? [] : [projectAccessRow()])
+      .mockResolvedValue(transitionRows);
     const where = jest.fn().mockReturnValue({ limit });
     const from = jest.fn().mockReturnValue({ where });
     const select = jest.fn().mockReturnValue({ from });
     return {
       db: {
-        query: { projects: { findFirst: jest.fn().mockResolvedValue(projectRow) } },
         select,
       } as unknown as Db,
     };
   }
-
-  beforeEach(() => {
-    (access.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
-  });
 
   it("throws NotFoundException for listTransitions when project not in org (cross-tenant isolation)", async () => {
     const { db } = makeDb(null, []);
@@ -61,34 +61,13 @@ describe("WorkflowService — cross-tenant isolation", () => {
 describe("WorkflowService — project membership gate (BOLA fix)", () => {
   const ORG = "org-1";
   const audit = { log: jest.fn() } as never;
-  const access = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
+  const access = principalAccess(MEMBER_STANDING) as unknown as AccessService;
 
   const u = makeU(ORG);
 
   function makeNonMemberDb(): Db {
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        }),
+      select: jest.fn().mockReturnValue(projectRowSelect()),
     } as unknown as Db;
   }
 
@@ -99,33 +78,17 @@ describe("WorkflowService — project membership gate (BOLA fix)", () => {
       }),
     };
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
       select: jest.fn()
         .mockReturnValueOnce({
           from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([projectAccessRow({ memberRole: "MEMBER" })]),
             }),
           }),
         })
         .mockReturnValue(postGateChain),
     } as unknown as Db;
   }
-
-  beforeEach(() => {
-    (access.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
-  });
 
   it("rejects non-member with ForbiddenException on listTransitions", async () => {
     const db = makeNonMemberDb();
@@ -143,27 +106,24 @@ describe("WorkflowService — project membership gate (BOLA fix)", () => {
 describe("WorkflowService — list endpoints respect the 100-row hard cap", () => {
   const ORG = "org-cap";
   const audit = { log: jest.fn() } as never;
-  const access = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
+  const access = principalAccess(MEMBER_STANDING) as unknown as AccessService;
   const u = makeU(ORG, true);
 
   it("listTransitions passes 100 as the limit (not 500)", async () => {
     let capturedLimit: number | undefined;
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ORG }) },
-      },
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockImplementation((n: number) => {
-              capturedLimit = n;
-              return Promise.resolve([]);
+      select: jest.fn()
+        .mockReturnValueOnce(projectRowSelect())
+        .mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockImplementation((n: number) => {
+                capturedLimit = n;
+                return Promise.resolve([]);
+              }),
             }),
           }),
         }),
-      }),
     } as unknown as Db;
     const svc = new WorkflowService(db, access, audit);
     await svc.listTransitions(u, 1);
@@ -173,19 +133,18 @@ describe("WorkflowService — list endpoints respect the 100-row hard cap", () =
   it("getAllowedTransitions passes 100 as the limit (not 500)", async () => {
     let capturedLimit: number | undefined;
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ORG }) },
-      },
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockImplementation((n: number) => {
-              capturedLimit = n;
-              return Promise.resolve([]);
+      select: jest.fn()
+        .mockReturnValueOnce(projectRowSelect())
+        .mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockImplementation((n: number) => {
+                capturedLimit = n;
+                return Promise.resolve([]);
+              }),
             }),
           }),
         }),
-      }),
     } as unknown as Db;
     const svc = new WorkflowService(db, access, audit);
     await svc.getAllowedTransitions(u, 1, 5);
@@ -196,17 +155,15 @@ describe("WorkflowService — list endpoints respect the 100-row hard cap", () =
 describe("WorkflowService — wrong-project or cross-tenant statusId returns 404 not 400", () => {
   const ORG = "org-404-test";
   const audit = { log: jest.fn() } as never;
-  const access = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
+  const access = principalAccess(MEMBER_STANDING) as unknown as AccessService;
   const u = makeU(ORG, true);
 
   it("createTransition throws NotFoundException (not BadRequestException) when toStatusId is not in the project", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ORG, managerMembershipId: null }) },
         projectStatuses: { findFirst: jest.fn().mockResolvedValue(null) },
       },
+      select: jest.fn().mockReturnValue(projectRowSelect()),
     } as unknown as Db;
     const svc = new WorkflowService(db, access, audit);
     await expect(
@@ -217,9 +174,9 @@ describe("WorkflowService — wrong-project or cross-tenant statusId returns 404
   it("updateWipLimit throws NotFoundException (not BadRequestException) when statusId is not in the project", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: ORG, managerMembershipId: null }) },
         projectStatuses: { findFirst: jest.fn().mockResolvedValue(null) },
       },
+      select: jest.fn().mockReturnValue(projectRowSelect()),
     } as unknown as Db;
     const svc = new WorkflowService(db, access, audit);
     await expect(

@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { BuildEntityActions } from "./build-entity.actions";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -63,6 +63,9 @@ function makeTx() {
 
 const mockAudit = { log: jest.fn() };
 
+const REACH = sql`true`;
+const mockWriteDecision = jest.fn();
+
 let mockTx: ReturnType<typeof makeTx>;
 
 const mockDb = {
@@ -73,6 +76,7 @@ const mockDb = {
     organizationMembers: { findFirst: jest.fn() },
   },
   transaction: jest.fn(),
+  select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: mockWriteDecision }) }) })),
 };
 
 describe("BuildEntityActions", () => {
@@ -83,6 +87,9 @@ describe("BuildEntityActions", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 99 });
+    mockWriteDecision.mockResolvedValue([{ state: "ACTIVE", reachable: true }]);
+    mockDb.query.projects.findFirst.mockReset();
+    mockDb.query.projectMembers.findFirst.mockReset();
     mockTx = makeTx();
     mockDb.transaction.mockImplementation(
       async (cb: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => cb(mockTx),
@@ -111,18 +118,18 @@ describe("BuildEntityActions", () => {
 
   describe("access", () => {
     it("returns not-found for a non-integer id", async () => {
-      const result = await service.run(ACTOR, { type: "ticket", id: "abc" }, "status", {});
+      const result = await service.run(ACTOR, { type: "ticket", id: "abc" }, "status", {}, REACH);
       expect(result).toEqual({ ok: false, reason: "not-found" });
     });
 
     it("returns not-found for id zero", async () => {
-      const result = await service.run(ACTOR, { type: "ticket", id: "0" }, "status", {});
+      const result = await service.run(ACTOR, { type: "ticket", id: "0" }, "status", {}, REACH);
       expect(result).toEqual({ ok: false, reason: "not-found" });
     });
 
     it("returns not-found when the ticket does not exist", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(null);
-      const result = await service.run(ACTOR, TICKET_REF, "status", {});
+      const result = await service.run(ACTOR, TICKET_REF, "status", {}, REACH);
       expect(result).toEqual({ ok: false, reason: "not-found" });
     });
 
@@ -132,7 +139,7 @@ describe("BuildEntityActions", () => {
         { ...ACTOR, orgId: "org_other" },
         TICKET_REF,
         "status",
-        {},
+        {}, REACH,
       );
       expect(result).toEqual({ ok: false, reason: "not-found" });
     });
@@ -142,26 +149,46 @@ describe("BuildEntityActions", () => {
         ...STUB_TICKET,
         projectId: null,
       });
-      const result = await service.run(ACTOR, TICKET_REF, "status", {});
+      const result = await service.run(ACTOR, TICKET_REF, "status", {}, REACH);
       expect(result).toEqual({ ok: false, reason: "not-found" });
     });
 
     it("returns forbidden when the actor is not a project member", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
-      mockDb.query.projects.findFirst.mockResolvedValue(null);
+      mockWriteDecision.mockResolvedValue([{ state: "ACTIVE", reachable: false }]);
 
-      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" });
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "forbidden" });
     });
 
-    it("does not query project membership for an org owner", async () => {
+    it("returns forbidden when the ticket's project is archived, even for a project member", async () => {
+      mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
+      mockWriteDecision.mockResolvedValue([{ state: "ARCHIVED", reachable: true }]);
+
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
+
+      expect(result).toEqual({ ok: false, reason: "forbidden" });
+      expect(mockTicketChange.updateTicket).not.toHaveBeenCalled();
+    });
+
+    it("returns not-found when the ticket's project is gone", async () => {
+      mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
+      mockWriteDecision.mockResolvedValue([]);
+
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
+
+      expect(result).toEqual({ ok: false, reason: "not-found" });
+    });
+
+    it("decides an org owner's action through the same project write decision rather than a separate owner shortcut", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
 
-      const result = await service.run(OWNER, TICKET_REF, "status", { status: "IN_PROGRESS" });
+      const result = await service.run(OWNER, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
       expect(result).toMatchObject({ ok: true });
+      expect(mockWriteDecision).toHaveBeenCalledTimes(1);
       expect(mockDb.query.projects.findFirst).not.toHaveBeenCalled();
     });
   });
@@ -171,20 +198,20 @@ describe("BuildEntityActions", () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "delete", {});
+      const result = await service.run(ACTOR, TICKET_REF, "delete", {}, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
 
     it("returns invalid for a non-ticket, non-project-create reference type", async () => {
-      const result = await service.run(ACTOR, { type: "sprint", id: "1" }, "status", {});
+      const result = await service.run(ACTOR, { type: "sprint", id: "1" }, "status", {}, REACH);
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
 
     it("routes project + create-ticket to ticket creation without touching the ticket table", async () => {
-      mockDb.query.projects.findFirst.mockResolvedValue(null);
+      mockWriteDecision.mockResolvedValue([{ state: "ACTIVE", reachable: false }]);
 
-      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" });
+      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "forbidden" });
       expect(mockDb.query.tickets.findFirst).not.toHaveBeenCalled();
@@ -196,7 +223,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "TODO" });
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "TODO" }, REACH);
 
       expect(result).toEqual({
         ok: true,
@@ -211,7 +238,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "DONE"]));
 
-      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_REVIEW" });
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_REVIEW" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
       expect(mockTicketChange.updateTicket).not.toHaveBeenCalled();
@@ -221,7 +248,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "status", {});
+      const result = await service.run(ACTOR, TICKET_REF, "status", {}, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
@@ -231,7 +258,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
 
-      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" });
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
       expect(result).toMatchObject({
         ok: true,
@@ -253,7 +280,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
 
-      await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" });
+      await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
       expect(mockDb.transaction).not.toHaveBeenCalled();
     });
@@ -264,7 +291,7 @@ describe("BuildEntityActions", () => {
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
       mockTicketChange.updateTicket.mockRejectedValue(new TicketVersionConflictException(2));
 
-      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" });
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
@@ -275,7 +302,7 @@ describe("BuildEntityActions", () => {
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
       mockTicketChange.updateTicket.mockRejectedValue(new ForbiddenException());
 
-      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" });
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "forbidden" });
     });
@@ -286,7 +313,7 @@ describe("BuildEntityActions", () => {
       mockResolveStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
       mockTicketChange.updateTicket.mockRejectedValue(new NotFoundException());
 
-      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" });
+      const result = await service.run(ACTOR, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "not-found" });
     });
@@ -298,7 +325,7 @@ describe("BuildEntityActions", () => {
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", {
         assigneeId: "user_2",
-      });
+      }, REACH);
 
       expect(result.ok).toBe(true);
     });
@@ -310,7 +337,7 @@ describe("BuildEntityActions", () => {
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", {
         assigneeId: "someone-outside-the-project",
-      });
+      }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
       expect(mockTicketChange.updateTicket).not.toHaveBeenCalled();
@@ -322,7 +349,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "assign", {});
+      const result = await service.run(ACTOR, TICKET_REF, "assign", {}, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
@@ -331,7 +358,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "" });
+      const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
@@ -341,7 +368,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "user_2" });
+      const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "user_2" }, REACH);
 
       expect(result).toEqual({ ok: true, message: "Assignee updated", data: {} });
       expect(mockTicketChange.updateTicket).toHaveBeenCalledTimes(1);
@@ -360,7 +387,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
       mockTicketChange.updateTicket.mockRejectedValue(new TicketVersionConflictException(2));
 
-      const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "user_2" });
+      const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "user_2" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
@@ -371,7 +398,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "due-date", {});
+      const result = await service.run(ACTOR, TICKET_REF, "due-date", {}, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
@@ -380,7 +407,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "" });
+      const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
@@ -389,7 +416,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "2026-12-31" });
+      const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "2026-12-31" }, REACH);
 
       expect(result).toEqual({ ok: true, message: "Due date set to 2026-12-31", data: {} });
       expect(mockTicketChange.updateTicket).toHaveBeenCalledTimes(1);
@@ -407,17 +434,26 @@ describe("BuildEntityActions", () => {
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockTicketChange.updateTicket.mockRejectedValue(new TicketVersionConflictException(2));
 
-      const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "2026-12-31" });
+      const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "2026-12-31" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
   });
 
   describe("createTicket (project + create-ticket)", () => {
-    it("returns forbidden when the actor is not a project member", async () => {
-      mockDb.query.projects.findFirst.mockResolvedValue(null);
+    it("returns forbidden when the project is completed", async () => {
+      mockWriteDecision.mockResolvedValue([{ state: "COMPLETED", reachable: true }]);
 
-      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" });
+      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" }, REACH);
+
+      expect(result).toEqual({ ok: false, reason: "forbidden" });
+      expect(mockTicketCreation.createInTransaction).not.toHaveBeenCalled();
+    });
+
+    it("returns forbidden when the actor is not a project member", async () => {
+      mockWriteDecision.mockResolvedValue([{ state: "ACTIVE", reachable: false }]);
+
+      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "forbidden" });
     });
@@ -425,7 +461,7 @@ describe("BuildEntityActions", () => {
     it("returns invalid when the ticket type is not in the allowed set", async () => {
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
-      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "EPIC" });
+      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "EPIC" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
@@ -434,7 +470,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
       mockDb.query.projects.findFirst.mockResolvedValue(null);
 
-      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" });
+      const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", { type: "TASK" }, REACH);
 
       expect(result).toEqual({ ok: false, reason: "forbidden" });
     });
@@ -446,7 +482,7 @@ describe("BuildEntityActions", () => {
       const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", {
         type: "TASK",
         title: "Do something",
-      });
+      }, REACH);
 
       expect(result).toMatchObject({ ok: true });
       if (result.ok) {
@@ -470,7 +506,7 @@ describe("BuildEntityActions", () => {
         description: "from chat",
         sourceChannelId: 3,
         sourceMessageId: 9,
-      });
+      }, REACH);
 
       expect(result).toMatchObject({ ok: true });
       expect(mockTx.insert).toHaveBeenCalledTimes(1);
@@ -499,7 +535,7 @@ describe("BuildEntityActions", () => {
         type: "TASK",
         sourceChannelId: "https://evil.example",
         sourceMessageId: 9,
-      });
+      }, REACH);
 
       expect(mockTx.insert).not.toHaveBeenCalled();
       expect(mockTicketCreation.createInTransaction).toHaveBeenCalledTimes(1);
@@ -513,7 +549,7 @@ describe("BuildEntityActions", () => {
       const result = await service.run(ACTOR, PROJECT_REF, "create-ticket", {
         type: "BUG",
         description: "Fix login bug",
-      });
+      }, REACH);
 
       expect(result).toMatchObject({ ok: true });
     });

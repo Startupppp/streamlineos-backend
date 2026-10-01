@@ -2,7 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import * as actorSeam from "../../../../common/organization/organization-actor";
-import * as projectAccessSeam from "../project-crud/project-access";
+import * as projectAccessSeam from "../project-crud/project-assignable-members";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
@@ -13,8 +13,12 @@ jest.mock("../../../../common/organization/organization-actor", () => ({
   organizationActorHttpError: jest.fn(),
 }));
 
-jest.mock("../project-crud/project-access", () => ({
+jest.mock("../project-crud/project-assignable-members", () => ({
   resolveProjectAssignableMemberships: jest.fn(),
+}));
+
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectVisibleForWrite: jest.fn().mockResolvedValue(undefined),
   assertProjectVisible: jest.fn().mockResolvedValue(undefined),
   lockProjectTicketMutation: jest.fn().mockResolvedValue(undefined),
 }));

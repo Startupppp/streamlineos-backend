@@ -12,6 +12,7 @@ import { TestRunsService } from "../qa/test-runs.service";
 import { MilestonesService } from "../execution/workspace.service";
 import { WhiteboardsService } from "../execution/whiteboards.service";
 import { BugsService } from "../qa/bugs.service";
+import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const USER = "user-7";
@@ -36,9 +37,10 @@ function auditDouble(): { audit: AuditService; log: jest.Mock } {
 }
 
 function accessDouble(): AccessService {
-  const double: Pick<AccessService, "resolveUserPermissions" | "holds"> = {
+  const double: Pick<AccessService, "resolveUserPermissions" | "holds" | "scopeFor"> = {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>(["build:manage"])),
     holds: jest.fn().mockResolvedValue(true),
+    scopeFor: jest.fn().mockResolvedValue("all"),
   };
   return double as AccessService;
 }
@@ -70,8 +72,18 @@ function makeDb(
       ),
     },
     update: written.update,
+    select: jest.fn(() => projectRowChain()),
     ...extra,
   } as unknown as Db;
+}
+
+function projectRowChain() {
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    limit: async () => [projectAccessRow()],
+  };
+  return chain;
 }
 
 const DELETED = { deletedAt: new Date("2026-01-01T00:00:00Z") };
@@ -299,9 +311,9 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
     const { audit, log } = auditDouble();
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
         projectMilestones: { findFirst: jest.fn().mockResolvedValue(DELETED) },
       },
+      select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) })),
       update: written.update,
     } as unknown as Db;
     const svc = new MilestonesService(db, accessDouble(), audit);

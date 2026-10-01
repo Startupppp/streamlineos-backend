@@ -1,5 +1,9 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import type { AccessService } from "../../../access/access.service";
+import { MEMBER_STANDING, principalAccess } from "../project-crud/__tests__/project-access-doubles";
+
+const memberAccess = () => principalAccess(MEMBER_STANDING) as unknown as AccessService;
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { AllWorkQuery } from "../dto/projects.schemas";
 
@@ -56,7 +60,7 @@ function buildMockService() {
   const selectMock = jest.fn().mockReturnValue(makeChain([]));
   const executeMock = jest.fn().mockResolvedValue([]);
   const mockDb = { select: selectMock, execute: executeMock };
-  return { service: new ProjectsWorkQueryService(mockDb as never), selectMock };
+  return { service: new ProjectsWorkQueryService(mockDb as never, memberAccess()), selectMock };
 }
 
 describe("GET /build/all-work — created and subscribed scopes bypass the project-membership gate so a user's own tickets are never hidden", () => {
@@ -96,7 +100,7 @@ describe("GET /build/all-work — created and subscribed scopes bypass the proje
       .mockReturnValueOnce(rowChain)
       .mockReturnValueOnce(countChain);
     const mockDb = { select: selectMock, execute: jest.fn().mockResolvedValue([]) };
-    const service = new ProjectsWorkQueryService(mockDb as never);
+    const service = new ProjectsWorkQueryService(mockDb as never, memberAccess());
     const result = await service.getAllWork(ACTOR, minimalQuery("all"));
 
     expect(result.data).toHaveLength(0);

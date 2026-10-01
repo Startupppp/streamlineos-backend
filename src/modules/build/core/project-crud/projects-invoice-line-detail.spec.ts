@@ -9,6 +9,7 @@ import {
   updateProjectSchema,
 } from "../dto/projects.schemas";
 import { projectIdParams } from "../dto/build-params.schemas";
+import { MANAGER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "./__tests__/project-access-doubles";
 
 const ORG = "org-line-detail";
 
@@ -24,18 +25,22 @@ const owner = {
 } as never;
 
 function makeDb(
-  projectRow: unknown | null,
+  projectRow: ProjectAccessRow | null,
   settingRows: Array<{ invoiceLineDetail: "summary" | "raw" }>,
 ) {
-  const limit = jest.fn().mockResolvedValue(settingRows);
-  const where = jest.fn(() => ({ limit }));
-  const from = jest.fn(() => ({ where }));
-  const select = jest.fn(() => ({ from }));
+  const rowsFor = (rows: unknown[]) => {
+    const limit = jest.fn().mockResolvedValue(rows);
+    const where = jest.fn(() => ({ limit }));
+    return { from: jest.fn(() => ({ where })) };
+  };
+  const select = jest
+    .fn()
+    .mockImplementationOnce(() => rowsFor(projectRow ? [projectRow] : []))
+    .mockImplementation(() => rowsFor(settingRows));
   const update = jest.fn();
   return {
     db: {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(projectRow) },
         organizationMembers: { findFirst: jest.fn() },
       },
       select,
@@ -60,11 +65,7 @@ function makeService(db: Db, getProject = jest.fn()) {
   return new ProjectsWriteService(
     db,
     { log: jest.fn() } as never,
-    {
-      resolveUserPermissions: jest
-        .fn()
-        .mockResolvedValue(new Set(["build:manage"])),
-    } as never,
+    standingAccess(MANAGER_STANDING) as never,
     { getProject } as never,
   );
 }
@@ -119,7 +120,7 @@ describe("project invoice line detail exposure", () => {
 
   describe("reading the setting", () => {
     it("answers the project's stored value for a caller who can reach the project", async () => {
-      const { db } = makeDb({ managerMembershipId: 7 }, [
+      const { db } = makeDb(projectAccessRow({ manages: true }), [
         { invoiceLineDetail: "raw" },
       ]);
 
@@ -129,7 +130,7 @@ describe("project invoice line detail exposure", () => {
     });
 
     it("answers summary for a project that never touched the setting, because the column default is what the read returns", async () => {
-      const { db } = makeDb({ managerMembershipId: 7 }, [
+      const { db } = makeDb(projectAccessRow({ manages: true }), [
         { invoiceLineDetail: "summary" },
       ]);
 
@@ -142,19 +143,16 @@ describe("project invoice line detail exposure", () => {
       const { db, select } = makeDb(null, []);
       const service = makeService(db);
 
-      await expect(service.getInvoiceLineDetail(owner, 9999)).rejects.toThrow(
-        NotFoundException,
-      );
-      await expect(
-        service.getInvoiceLineDetail(owner, 9999),
-      ).rejects.not.toThrow(ForbiddenException);
-      expect(select).not.toHaveBeenCalled();
+      const attempt = service.getInvoiceLineDetail(owner, 9999);
+      await expect(attempt).rejects.toThrow(NotFoundException);
+      await expect(attempt).rejects.not.toThrow(ForbiddenException);
+      expect(select).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("writing the setting", () => {
     it("persists the chosen value on the project row", async () => {
-      const { db } = makeDb({ managerMembershipId: 7 }, []);
+      const { db } = makeDb(projectAccessRow({ manages: true }), []);
       const getProject = jest.fn().mockResolvedValue({ id: 12 });
 
       await makeService(db, getProject).updateProject(owner, 12, {
@@ -167,7 +165,7 @@ describe("project invoice line detail exposure", () => {
     });
 
     it("leaves the stored value untouched when the caller sends an update that does not mention it", async () => {
-      const { db } = makeDb({ managerMembershipId: 7 }, []);
+      const { db } = makeDb(projectAccessRow({ manages: true }), []);
       const getProject = jest.fn().mockResolvedValue({ id: 12 });
 
       await makeService(db, getProject).updateProject(owner, 12, {

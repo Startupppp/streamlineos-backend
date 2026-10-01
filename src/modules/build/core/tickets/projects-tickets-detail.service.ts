@@ -7,7 +7,7 @@ import { AccessService } from "../../../access/access.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
-import { resolveProjectAccess } from "../project-crud/project-access";
+import { decideTicketRead } from "../project-crud/project-access";
 import {
   ProjectsForbiddenTicketException,
   ProjectsTicketNotFoundException,
@@ -105,50 +105,19 @@ export class ProjectsTicketsDetailService {
       },
     });
     if (!ticket) throw new ProjectsTicketNotFoundException();
-    const projectAccess = await resolveProjectAccess(
-      this.db,
-      this.access,
-      u,
-      projectId,
-    );
-    if (!projectAccess.hasAccess) {
+    const decision = await decideTicketRead(this.db, this.access, u, ticket.id, { projectId });
+    if (decision.kind === "missing") throw new ProjectsTicketNotFoundException();
+    if (decision.kind === "denied") {
       this.audit.log({
         action: "ticket.access_denied",
         userId: u.userId,
         orgId: u.orgId,
         targetId: String(ticket.id),
         targetType: "ticket",
-        metadata: {
-          ticketId: ticket.id,
-          projectId,
-          reason: "NO_PROJECT_ACCESS",
-        },
+        metadata: { ticketId: ticket.id, projectId, reason: decision.reason },
         result: "FAILURE",
       });
       throw new ProjectsForbiddenTicketException();
-    }
-    if (!read.unrestricted) {
-      const isAssignee =
-        ticket.assignee?.user?.id === u.userId ||
-        ticket.assignees.some(
-          (assignment) => assignment.user?.userId === u.userId,
-        );
-      if (!isAssignee && ticket.reporterId !== u.userId) {
-        this.audit.log({
-          action: "ticket.access_denied",
-          userId: u.userId,
-          orgId: u.orgId,
-          targetId: String(ticket.id),
-          targetType: "ticket",
-          metadata: {
-            ticketId: ticket.id,
-            projectId: ticket.projectId,
-            reason: "RESTRICTED_SCOPE",
-          },
-          result: "FAILURE",
-        });
-        throw new ProjectsForbiddenTicketException();
-      }
     }
     const epic = ticket.epicId
       ? await read.read(

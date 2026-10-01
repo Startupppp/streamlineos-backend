@@ -1,5 +1,6 @@
 jest.mock("../core", () => ({
   assertProjectAccess: jest.fn(),
+  assertProjectWriteAccess: jest.fn(),
 }));
 
 jest.mock("../../../common/outbox/outbox-writer", () => ({
@@ -13,7 +14,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
@@ -69,6 +70,7 @@ function makeUpdateChain(returning: Record<string, unknown>[]) {
 beforeEach(() => {
   jest.resetAllMocks();
   jest.mocked(assertProjectAccess).mockResolvedValue(undefined);
+  jest.mocked(assertProjectWriteAccess).mockResolvedValue(undefined);
 });
 
 describe("IncidentsService — postmortem field round-trip: releaseId", () => {

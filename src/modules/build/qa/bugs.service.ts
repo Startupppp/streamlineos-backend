@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess, escapeLike } from "../core";
+import { assertProjectAccess, escapeLike, assertProjectWriteAccess } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
 import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
@@ -131,7 +131,7 @@ export class BugsService {
   }
 
   async createBug(u: CurrentUserContext, projectId: number, input: CreateBugInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
     const result = await this.db.transaction(async (tx) => {
       const assigneeMembershipId = input.assigneeId
@@ -219,7 +219,7 @@ export class BugsService {
     bugId: number,
     input: UpdateBugInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const existingTicket = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, bugId),
@@ -323,7 +323,7 @@ export class BugsService {
   }
 
   async deleteBug(u: CurrentUserContext, projectId: number, bugId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const existing = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, bugId),

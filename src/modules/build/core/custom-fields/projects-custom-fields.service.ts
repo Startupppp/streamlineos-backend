@@ -7,7 +7,7 @@ import { ticketCustomFieldValues } from "../../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "../dto/custom-fields.schemas";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
-import { assertProjectInOrg } from "../project-crud/project-access";
+import { assertProjectInOrg, assertTicketWriteAccess } from "../project-crud/project-access";
 import {
   assertTicketReadAccess,
   type TicketReadAccess,
@@ -234,7 +234,7 @@ export class ProjectsCustomFieldsService {
     ticketId: number,
     data: UpsertCustomFieldValuesInput,
   ) {
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId);
     const { orgId } = u;
 
     if (data.values.length === 0) return { success: true };

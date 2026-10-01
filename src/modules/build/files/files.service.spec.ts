@@ -6,6 +6,12 @@ import type { StorageService } from "../../storage/storage.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  standingAccess,
+  type StandingScopes,
+} from "../core/project-crud/__tests__/project-access-doubles";
 
 function makeSelectChain(rows: unknown[]) {
   const chain = {
@@ -39,9 +45,9 @@ function makeMockDb(): MockDb {
 }
 
 function makeAccess(perms: Set<string> = new Set()): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(perms),
-  } as unknown as AccessService;
+  const scopes: StandingScopes = { ...MEMBER_STANDING };
+  for (const key of perms) scopes[key] = "all";
+  return standingAccess(scopes) as unknown as AccessService;
 }
 
 function makeStorage(configured = true): StorageService {
@@ -71,10 +77,7 @@ beforeEach(() => jest.resetAllMocks());
 describe("FilesService.listFiles — cross-tenant isolation (BOLA)", () => {
   it("rejects a non-member with ForbiddenException before returning rows", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
-    db.select
-      .mockReturnValueOnce(makeSelectChain([]))
-      .mockReturnValueOnce(makeSelectChain([]));
+    db.select.mockReturnValueOnce(makeSelectChain([projectAccessRow()]));
     const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
 
     await expect(svc.listFiles(makeUser("org-1"), 1, {})).rejects.toThrow(ForbiddenException);
@@ -82,10 +85,8 @@ describe("FilesService.listFiles — cross-tenant isolation (BOLA)", () => {
 
   it("allows a project member and returns a cursor page", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
 
@@ -95,7 +96,6 @@ describe("FilesService.listFiles — cross-tenant isolation (BOLA)", () => {
 
   it("returns 404 when the project does not belong to the caller's org", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue(undefined);
     db.select.mockReturnValueOnce(makeSelectChain([]));
     const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
 
@@ -106,8 +106,7 @@ describe("FilesService.listFiles — cross-tenant isolation (BOLA)", () => {
 describe("FilesService.uploadFile — storage and tenant isolation", () => {
   it("throws ServiceUnavailableException when storage is not configured", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
-    db.select.mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]));
+    db.select.mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]));
     const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage(false));
 
     const input = { fileName: "test.pdf", mimeType: "application/pdf" as const, contentBase64: "JVBER" };
@@ -117,8 +116,7 @@ describe("FilesService.uploadFile — storage and tenant isolation", () => {
 
   it("stores the caller's membershipId as uploadedByMembershipId", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
-    db.select.mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]));
+    db.select.mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]));
 
     const PDF_MAGIC = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]);
     const contentBase64 = PDF_MAGIC.toString("base64");
@@ -157,7 +155,6 @@ describe("FilesService.uploadFile — storage and tenant isolation", () => {
 
   it("throws NotFoundException when project is not in the caller's org", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue(undefined);
     db.select.mockReturnValueOnce(makeSelectChain([]));
     const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
 
@@ -183,10 +180,8 @@ describe("FilesService.softDeleteFile — soft-delete and author ownership", () 
 
   it("allows the uploader to delete their own file", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(
         makeSelectChain([{ id: 5, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]),
       );
@@ -201,9 +196,8 @@ describe("FilesService.softDeleteFile — soft-delete and author ownership", () 
 
   it("rejects a non-uploader without build:files:manage from deleting another member's file", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(
         makeSelectChain([{ id: 5, uploadedByMembershipId: 99, storageKey: "build/1/files/f.pdf" }]),
       );
@@ -214,8 +208,9 @@ describe("FilesService.softDeleteFile — soft-delete and author ownership", () 
 
   it("checks project access before loading the file so a manage key cannot delete across inaccessible projects", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
-    db.select.mockReturnValue(makeSelectChain([]));
+    db.select
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow()]))
+      .mockReturnValue(makeSelectChain([]));
     const svc = new FilesService(
       db as unknown as Db,
       makeAccess(new Set(["build:files:manage"])),
@@ -231,10 +226,8 @@ describe("FilesService.softDeleteFile — soft-delete and author ownership", () 
 describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) and projectId", () => {
   it("second soft-delete call throws NotFoundException because loadFile filters deletedAt=null — loadFile and UPDATE share the isNull invariant", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([{ id: 5, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]));
     const updateChain = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(undefined) };
     db.update.mockReturnValue(updateChain);
@@ -242,10 +235,8 @@ describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) 
     const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
     await svc.softDeleteFile(makeUser("org-1", 7), 1, 5);
 
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([]));
 
     await expect(svc.softDeleteFile(makeUser("org-1", 7), 1, 5)).rejects.toThrow(NotFoundException);
@@ -254,10 +245,8 @@ describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) 
 
   it("UPDATE is called exactly once — not a no-op before and after the ownership check", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([{ id: 5, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]));
     const updateChain = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(undefined) };
     db.update.mockReturnValue(updateChain);
@@ -273,10 +262,8 @@ describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) 
 describe("FilesService.getSignedUrl — access gate", () => {
   it("returns a signed URL that expires in 120s, because a pre-signed URL is a bearer capability that outlives a revoked project grant", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(
         makeSelectChain([{ id: 3, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]),
       );
@@ -290,10 +277,7 @@ describe("FilesService.getSignedUrl — access gate", () => {
 
   it("throws ForbiddenException for a non-member trying to get a signed URL", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
-    db.select
-      .mockReturnValueOnce(makeSelectChain([]))
-      .mockReturnValueOnce(makeSelectChain([]));
+    db.select.mockReturnValueOnce(makeSelectChain([projectAccessRow()]));
     const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
 
     await expect(svc.getSignedUrl(makeUser("org-1"), 1, 3)).rejects.toThrow(ForbiddenException);

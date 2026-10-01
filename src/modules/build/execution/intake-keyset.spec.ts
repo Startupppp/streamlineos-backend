@@ -15,6 +15,10 @@ const owner: CurrentUserContext = {
 };
 import { encodeCursor } from "../../../common/pagination/cursor";
 import { intakeListSchema } from "./dto/workspace-response.schemas";
+import { projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import type { AccessService } from "../../access/access.service";
+
+const ownerAccess = standingAccess({ "build:manage": "all" }) as unknown as AccessService;
 
 const dialect = new PgDialect();
 
@@ -38,7 +42,7 @@ function buildDb(captured: Captured, rows: unknown[] = []) {
       captured.orderBy = cols;
       return builder;
     }),
-    limit: jest.fn().mockResolvedValue(rows),
+    limit: jest.fn().mockResolvedValueOnce([projectAccessRow()]).mockResolvedValue(rows),
   };
   (builder.from as jest.Mock).mockReturnValue(builder);
   return {
@@ -69,7 +73,7 @@ function intakeRow(id: number) {
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new IntakeService(buildDb(captured), {} as never, {} as never);
+  const svc = new IntakeService(buildDb(captured), {} as never, ownerAccess);
   await svc.listIntake(owner, 42, { cursor, limit: 50 });
   return captured;
 }
@@ -105,7 +109,7 @@ describe("IntakeService.listIntake — keyset matches the sort", () => {
 
 describe("IntakeService.listIntake — response envelope matches intakeListSchema", () => {
   it("keys the array under data, not items, when empty", async () => {
-    const svc = new IntakeService(buildDb({ where: undefined, orderBy: [] }, []), {} as never, {} as never);
+    const svc = new IntakeService(buildDb({ where: undefined, orderBy: [] }, []), {} as never, ownerAccess);
     const result = await svc.listIntake(owner, 42, { cursor: undefined, limit: 50 });
     expect(result).not.toHaveProperty("items");
     expect(result).toEqual({ data: [], pagination: { limit: 50, hasMore: false, nextCursor: null } });
@@ -114,7 +118,7 @@ describe("IntakeService.listIntake — response envelope matches intakeListSchem
 
   it("keys the array under data, not items, when populated below the page limit", async () => {
     const rows = [intakeRow(1), intakeRow(2)];
-    const svc = new IntakeService(buildDb({ where: undefined, orderBy: [] }, rows), {} as never, {} as never);
+    const svc = new IntakeService(buildDb({ where: undefined, orderBy: [] }, rows), {} as never, ownerAccess);
     const result = await svc.listIntake(owner, 42, { cursor: undefined, limit: 50 });
     expect(result).not.toHaveProperty("items");
     expect(result.data).toHaveLength(2);
@@ -124,7 +128,7 @@ describe("IntakeService.listIntake — response envelope matches intakeListSchem
 
   it("sets hasMore and a nextCursor when a sentinel row over the limit is fetched", async () => {
     const rows = [intakeRow(1), intakeRow(2), intakeRow(3)];
-    const svc = new IntakeService(buildDb({ where: undefined, orderBy: [] }, rows), {} as never, {} as never);
+    const svc = new IntakeService(buildDb({ where: undefined, orderBy: [] }, rows), {} as never, ownerAccess);
     const result = await svc.listIntake(owner, 42, { cursor: undefined, limit: 2 });
     expect(result).not.toHaveProperty("items");
     expect(result.data).toHaveLength(2);

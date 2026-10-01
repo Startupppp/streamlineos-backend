@@ -5,6 +5,16 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.module";
 import type { DataScope } from "../../../access/access.types";
+
+const allowedTicketDecision = () => ({
+  from: () => ({
+    leftJoin: () => ({
+      where: () => ({
+        limit: async () => [{ projectId: 42, projectState: "ACTIVE", projectDeletedAt: null, reachable: true, inScope: true }],
+      }),
+    }),
+  }),
+});
 import { TICKETS_PERMISSION } from "../lib/tickets-scope";
 
 const ORG_ID = "org-ticket-key";
@@ -52,10 +62,9 @@ describe("getTicketByKey — ticket beyond the first hundred opens", () => {
     const findFirstMock = jest.fn().mockResolvedValue(ticket);
 
     const db = {
-      select: jest.fn(),
+      select: jest.fn(allowedTicketDecision),
       execute: jest.fn(),
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         tickets: {
           findMany: findManyMock,
           findFirst: findFirstMock,
@@ -101,10 +110,9 @@ describe("getTicketByKey — ticket beyond the first hundred opens", () => {
 
   it("throws NotFoundException for an unknown key", async () => {
     const db = {
-      select: jest.fn(),
+      select: jest.fn(allowedTicketDecision),
       execute: jest.fn(),
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         tickets: {
           findMany: jest.fn(),
           findFirst: jest.fn().mockResolvedValue(null),

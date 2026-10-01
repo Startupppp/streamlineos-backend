@@ -4,7 +4,8 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { projectStatuses, projectWebhooks, tickets } from "../../../db/schema";
+import { projectStatuses, projectWebhooks, projects, tickets } from "../../../db/schema";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "./project-crud/__tests__/project-access-doubles";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
 import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";
@@ -144,9 +145,7 @@ function makeU(orgId: string = ORG): CurrentUserContext {
 }
 
 function makeAccess(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>(["build:manage"])),
-  } as unknown as AccessService;
+  return standingAccess(MANAGER_STANDING) as unknown as AccessService;
 }
 
 function makeStatesService(store: Store, afterFirstLookup?: () => void) {
@@ -155,6 +154,12 @@ function makeStatesService(store: Store, afterFirstLookup?: () => void) {
 
   const selectChain = () => ({
     from: (table: unknown) => {
+      if (table === projects)
+        return {
+          where: (where: unknown) => ({
+            limit: async () => store.projects.filter((row) => matches(where, row)).map(() => projectAccessRow()),
+          }),
+        };
       if (table !== projectStatuses) throw new Error(`unexpected select from ${String(table)}`);
       return {
         where: (where: unknown) => {

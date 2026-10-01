@@ -1,5 +1,6 @@
 jest.mock("../core", () => ({
   assertProjectAccess: jest.fn(),
+  assertProjectWriteAccess: jest.fn(),
 }));
 
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
@@ -12,7 +13,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { projectIncidents } from "../../../db/schema";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import {
   addIncidentUpdateSchema,
   incidentChildrenQuerySchema,
@@ -83,6 +84,7 @@ function makeSelectChain(rows: unknown[]) {
 beforeEach(() => {
   jest.resetAllMocks();
   jest.mocked(assertProjectAccess).mockResolvedValue(undefined);
+  jest.mocked(assertProjectWriteAccess).mockResolvedValue(undefined);
 });
 
 const BASE_INCIDENT = {
@@ -591,7 +593,7 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
   });
 
   it("REJECTS a non-member (addUpdate) with ForbiddenException", async () => {
-    jest.mocked(assertProjectAccess).mockRejectedValueOnce(
+    jest.mocked(assertProjectWriteAccess).mockRejectedValueOnce(
       new ForbiddenException("You do not have access to this project"),
     );
     const mockDb = {
@@ -604,7 +606,7 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
 
   it("REJECTS a non-member update before loading the incident", async () => {
     const denied = new NotFoundException("Project not found");
-    jest.mocked(assertProjectAccess).mockRejectedValueOnce(denied);
+    jest.mocked(assertProjectWriteAccess).mockRejectedValueOnce(denied);
     const findFirst = jest.fn();
     const mockDb = {
       query: { projectIncidents: { findFirst } },
@@ -617,7 +619,7 @@ describe("IncidentsService — project-membership gate (BOLA)", () => {
 
   it("REJECTS a non-member delete before loading the incident", async () => {
     const denied = new NotFoundException("Project not found");
-    jest.mocked(assertProjectAccess).mockRejectedValueOnce(denied);
+    jest.mocked(assertProjectWriteAccess).mockRejectedValueOnce(denied);
     const findFirst = jest.fn();
     const mockDb = {
       query: { projectIncidents: { findFirst } },

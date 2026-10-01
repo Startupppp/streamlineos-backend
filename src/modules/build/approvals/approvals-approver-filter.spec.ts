@@ -1,8 +1,10 @@
 import { ApprovalsReadService } from "./approvals-read.service";
-import { organizationMembers, projectApprovals } from "../../../db/schema";
+import { organizationMembers, projectApprovals, projects } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT = 42;
@@ -40,27 +42,29 @@ function makeDb(memberships: unknown[], whereCalls: unknown[]): Db {
     chain["orderBy"] = jest.fn().mockImplementation(() => chain);
     chain["limit"] = jest
       .fn()
-      .mockResolvedValue(table === organizationMembers ? memberships : []);
+      .mockResolvedValue(
+        table === organizationMembers ? memberships : table === projects ? [projectAccessRow()] : [],
+      );
     return chain;
   };
   return {
-    query: {
-      projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-    },
     select: jest.fn().mockImplementation(() => ({
       from: jest.fn().mockImplementation((table: unknown) => builderFor(table)),
     })),
   } as unknown as Db;
 }
 
-const CALLER = {
+const CALLER: CurrentUserContext = {
   orgId: ORG,
   userId: "user-caller",
+  role: "owner",
   isOrgOwner: true,
-  principal: { kind: "user", userId: "user-caller" },
-} as unknown as CurrentUserContext;
+  sessionId: "s1",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
+};
 
-const ACCESS = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
+const ACCESS = standingAccess(MANAGER_STANDING) as unknown as AccessService;
 
 describe("listApprovals — filtering by approver", () => {
   it("filters on the approver membership id, because the query carries a user id and the column stores a membership id", async () => {

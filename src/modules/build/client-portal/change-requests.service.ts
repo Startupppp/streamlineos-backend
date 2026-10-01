@@ -19,7 +19,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess, escapeLike } from "../core";
+import { assertProjectAccess, escapeLike, assertProjectWriteAccess } from "../core";
 import type {
   CreateChangeRequestInput,
   ListCrQuery,
@@ -178,7 +178,7 @@ export class ChangeRequestsService {
     input: CreateChangeRequestInput,
   ) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [cr] = await this.db.transaction(async (tx) => {
       const nextNumber = await nextChangeRequestNumber(tx, orgId, projectId);
       return tx
@@ -224,7 +224,7 @@ export class ChangeRequestsService {
     input: UpdateChangeRequestInput,
   ) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [existing] = await this.db
       .select({
         id: changeRequests.id,
@@ -320,7 +320,7 @@ export class ChangeRequestsService {
     crId: number,
   ): Promise<void> {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [existing] = await this.db
       .select({ id: changeRequests.id })
       .from(changeRequests)
