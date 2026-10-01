@@ -1,6 +1,10 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, eq, gt, ilike, or } from "drizzle-orm";
-import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { and, asc, count, eq, gt, ilike, or, sql, type SQL } from "drizzle-orm";
+import {
+  buildCursorPageWithTotal,
+  decodeCursor,
+  type CursorPageWithTotal,
+} from "../../../common/pagination/cursor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -156,7 +160,7 @@ export class PayrollRunEmployeesService {
     read: ScopedRead,
     runId: number,
     query: ListRunEmployeesQuery,
-  ): Promise<CursorPage<{
+  ): Promise<CursorPageWithTotal<{
     id: number; userId: string | null; workerType: string; currency: string;
     gross: string; totalDeductions: string; net: string; status: string;
     holdReason: string | null; userName: string | null; userEmail: string;
@@ -173,50 +177,65 @@ export class PayrollRunEmployeesService {
     const pageLimit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
 
-    return read.read(
-      {
-        tenant: payrollRunEmployees.orgId,
-        scope: { columns: { ownerColumn: payrollRunEmployees.userId } },
-        and: [
-          eq(payrollRunEmployees.runId, runId),
-          query.status ? eq(payrollRunEmployees.status, query.status) : undefined,
-          query.workerType ? eq(payrollRunEmployees.workerType, query.workerType) : undefined,
-          query.search
-            ? or(ilike(users.name, `%${query.search}%`), ilike(users.email, `%${query.search}%`))
-            : undefined,
-          pos
-            ? or(
-                gt(users.name, pos.sortValue),
-                and(eq(users.name, pos.sortValue), gt(payrollRunEmployees.id, Number(pos.id))),
-              )
-            : undefined,
-        ],
-      },
-      async ({ sql: where }) => {
-        const rows = await this.db
-          .select({
-            id: payrollRunEmployees.id,
-            userId: payrollRunEmployees.userId,
-            workerType: payrollRunEmployees.workerType,
-            currency: payrollRunEmployees.currency,
-            gross: payrollRunEmployees.gross,
-            totalDeductions: payrollRunEmployees.totalDeductions,
-            net: payrollRunEmployees.net,
-            status: payrollRunEmployees.status,
-            holdReason: payrollRunEmployees.holdReason,
-            userName: users.name,
-            userEmail: users.email,
-          })
-          .from(payrollRunEmployees)
-          .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
-          .where(where)
-          .orderBy(asc(users.name), asc(payrollRunEmployees.id))
-          .limit(pageLimit + 1);
+    const filters: readonly (SQL | undefined)[] = [
+      eq(payrollRunEmployees.runId, runId),
+      query.status ? eq(payrollRunEmployees.status, query.status) : undefined,
+      query.workerType ? eq(payrollRunEmployees.workerType, query.workerType) : undefined,
+      query.search
+        ? or(ilike(users.name, `%${query.search}%`), ilike(users.email, `%${query.search}%`))
+        : undefined,
+    ];
 
-        return buildCursorPage(rows, pageLimit, (row) => ({ sortValue: row.userName ?? "", id: String(row.id) }));
-      },
-      () => buildCursorPage([], pageLimit, () => ({ sortValue: "", id: "" })),
-    );
+    const position = pos
+      ? or(
+          gt(users.name, pos.sortValue),
+          and(eq(users.name, pos.sortValue), gt(payrollRunEmployees.id, Number(pos.id))),
+        )
+      : undefined;
+
+    const scopedWhere = (clauses: readonly (SQL | undefined)[]): SQL =>
+      read.compose(
+        {
+          tenant: payrollRunEmployees.orgId,
+          scope: { columns: { ownerColumn: payrollRunEmployees.userId } },
+          and: clauses,
+        },
+        ({ sql: where }) => where,
+        () => sql`false`,
+      );
+
+    const rowsQuery = this.db
+      .select({
+        id: payrollRunEmployees.id,
+        userId: payrollRunEmployees.userId,
+        workerType: payrollRunEmployees.workerType,
+        currency: payrollRunEmployees.currency,
+        gross: payrollRunEmployees.gross,
+        totalDeductions: payrollRunEmployees.totalDeductions,
+        net: payrollRunEmployees.net,
+        status: payrollRunEmployees.status,
+        holdReason: payrollRunEmployees.holdReason,
+        userName: users.name,
+        userEmail: users.email,
+      })
+      .from(payrollRunEmployees)
+      .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
+      .where(scopedWhere([...filters, position]))
+      .orderBy(asc(users.name), asc(payrollRunEmployees.id))
+      .limit(pageLimit + 1);
+
+    const totalQuery = this.db
+      .select({ value: count() })
+      .from(payrollRunEmployees)
+      .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
+      .where(scopedWhere(filters));
+
+    const [rows, totalRows] = await Promise.all([rowsQuery, totalQuery]);
+
+    return buildCursorPageWithTotal(rows, pageLimit, Number(totalRows[0]?.value ?? 0), (row) => ({
+      sortValue: row.userName ?? "",
+      id: String(row.id),
+    }));
   }
 
   async getRunEmployee(orgId: string, runId: number, runEmployeeId: number) {

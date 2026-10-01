@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageWithTotalSchema } from "../../../../common/openapi/response-envelopes";
 import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const runListItemSchema = z.object({
@@ -136,7 +136,7 @@ export const runEmployeeDetailSchema = z.object({
   userEmail: z.string(),
 });
 
-export const runListEmployeesResponseSchema = cursorPageSchema(runEmployeeListItemSchema);
+export const runListEmployeesResponseSchema = cursorPageWithTotalSchema(runEmployeeListItemSchema);
 
 const varianceRunSummarySchema = z.object({
   id: z.number().int(),
