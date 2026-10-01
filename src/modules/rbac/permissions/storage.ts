@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const STORAGE_PERMISSIONS: Permission[] = [
+export const STORAGE_PERMISSIONS = definePermissions([
   {
     name: "storage:quarantine:view",
     resource: "storage:quarantine",
@@ -19,4 +19,4 @@ export const STORAGE_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Initiate and complete presigned multipart uploads on behalf of the organization",
   },
-];
+]);

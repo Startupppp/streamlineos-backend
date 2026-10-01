@@ -12,6 +12,7 @@ export const permissionResponseSchema = z
     description: z.string().min(1).max(500),
     scopable: z.boolean().optional(),
     baselineScope: z.enum(["own", "all"]).optional(),
+    sensitive: z.literal(true).optional(),
   })
   .strict();
 

@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const CALENDAR_PERMISSIONS: Permission[] = [
+export const CALENDAR_PERMISSIONS = definePermissions([
   {
     name: "calendar:read",
     resource: "calendar",
@@ -31,4 +31,4 @@ export const CALENDAR_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Configure organisation-wide calendar settings and sources",
   },
-];
+]);

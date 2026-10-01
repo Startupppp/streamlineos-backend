@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const PARTY_PERMISSIONS: Permission[] = [
+export const PARTY_PERMISSIONS = definePermissions([
   {
     name: "party:parties:view",
     resource: "party:parties",
@@ -89,4 +89,4 @@ export const PARTY_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Declare and change the subject types the organisation transacts",
   },
-];
+]);

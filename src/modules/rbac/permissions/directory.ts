@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const DIRECTORY_PERMISSIONS: Permission[] = [
+export const DIRECTORY_PERMISSIONS = definePermissions([
   {
     name: "directory:people:view",
     resource: "directory:people",
@@ -43,4 +43,4 @@ export const DIRECTORY_PERMISSIONS: Permission[] = [
     action: "terminate",
     description: "Terminate workforce workers",
   },
-];
+]);

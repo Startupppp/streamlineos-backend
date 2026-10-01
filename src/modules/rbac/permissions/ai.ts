@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const AI_SUMMARIES_PERMISSIONS: Permission[] = [
+export const AI_SUMMARIES_PERMISSIONS = definePermissions([
   {
     name: "ai:summaries:view",
     resource: "ai:summaries",
@@ -13,9 +13,9 @@ export const AI_SUMMARIES_PERMISSIONS: Permission[] = [
     action: "create",
     description: "Persist AI-generated summary snapshots",
   },
-];
+]);
 
-export const EXECUTIVE_BRIEF_PERMISSIONS: Permission[] = [
+export const EXECUTIVE_BRIEF_PERMISSIONS = definePermissions([
   {
     name: "ai:executive-brief:view",
     resource: "ai:executive-brief",
@@ -28,9 +28,9 @@ export const EXECUTIVE_BRIEF_PERMISSIONS: Permission[] = [
     action: "generate",
     description: "Trigger generation of a new executive brief",
   },
-];
+]);
 
-export const AI_USAGE_PERMISSIONS: Permission[] = [
+export const AI_USAGE_PERMISSIONS = definePermissions([
   {
     name: "ai:usage:view",
     resource: "ai:usage",
@@ -38,4 +38,4 @@ export const AI_USAGE_PERMISSIONS: Permission[] = [
     description:
       "View organization-wide AI usage, spend, latency and acceptance",
   },
-];
+]);

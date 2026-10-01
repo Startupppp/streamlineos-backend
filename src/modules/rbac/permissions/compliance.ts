@@ -1,4 +1,4 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
 /**
  * The compliance namespace.
@@ -23,7 +23,7 @@ import type { Permission } from "./types";
  * fails closed. The permission exists so an administrator can take the surface
  * AWAY from a role, which the operator list cannot express.
  */
-export const COMPLIANCE_PERMISSIONS: Permission[] = [
+export const COMPLIANCE_PERMISSIONS = definePermissions([
   {
     name: "compliance:subject-requests:view",
     resource: "compliance:subject-requests",
@@ -38,4 +38,4 @@ export const COMPLIANCE_PERMISSIONS: Permission[] = [
     description:
       "Run a data subject erasure or export across every region. Also requires being named as a subject request operator for this deployment",
   },
-];
+]);

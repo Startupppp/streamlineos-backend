@@ -39,7 +39,7 @@ describe("kb permission keys are reachable through a role template", () => {
   });
 
   it("does not grant a kb key that the catalogue never declared", () => {
-    const catalogued = new Set(KB_PERMISSIONS.map((p) => p.name));
+    const catalogued = new Set<string>(KB_PERMISSIONS.map((p) => p.name));
     const granted = [...keysGrantedByAnyTemplate()].filter((key) =>
       key.startsWith("kb:"),
     );

@@ -26,6 +26,7 @@ const permissionItemSchema = z.object({
   description: z.string().optional(),
   scopable: z.boolean().optional(),
   baselineScope: z.string().optional(),
+  sensitive: z.literal(true).optional(),
 });
 
 export const grantablePermissionsSchema = z.array(permissionItemSchema);

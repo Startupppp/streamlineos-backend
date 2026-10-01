@@ -49,7 +49,7 @@ import { MAIL_PERMISSIONS } from "./mail";
 import { COMPLIANCE_PERMISSIONS } from "./compliance";
 import { STORAGE_PERMISSIONS } from "./storage";
 
-export const PERMISSIONS: Permission[] = [
+const CATALOG = [
   ...MODULE_ACCESS_PERMISSIONS,
   ...SIGN_PERMISSIONS,
   ...NOTIFICATIONS_PERMISSIONS,
@@ -99,6 +99,10 @@ export const PERMISSIONS: Permission[] = [
   ...COMPLIANCE_PERMISSIONS,
   ...STORAGE_PERMISSIONS,
 ];
+
+export type PermissionKey = (typeof CATALOG)[number]["name"];
+
+export const PERMISSIONS: Permission[] = CATALOG;
 
 export const ALL_PERMISSION_NAMES: string[] = PERMISSIONS.map((p) => p.name);
 

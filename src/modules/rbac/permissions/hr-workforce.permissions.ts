@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const HR_WORKFORCE_PERMISSIONS: Permission[] = [
+export const HR_WORKFORCE_PERMISSIONS = definePermissions([
   {
     name: "hr:leaves:read",
     resource: "hr:leaves",
@@ -293,4 +293,4 @@ export const HR_WORKFORCE_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage workforce plans, hiring plans, and headcount budgets",
   },
-];
+]);

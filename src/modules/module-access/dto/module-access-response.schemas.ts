@@ -70,6 +70,7 @@ const permissionItemSchema = z.object({
   description: z.string(),
   scopable: z.boolean().optional(),
   baselineScope: z.enum(["own", "all"]).optional(),
+  sensitive: z.literal(true).optional(),
 });
 
 /** `ModuleAccessService.listCatalog` — filtered permission catalog for one module. */

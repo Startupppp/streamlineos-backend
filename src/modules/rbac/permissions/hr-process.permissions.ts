@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const HR_PROCESS_PERMISSIONS: Permission[] = [
+export const HR_PROCESS_PERMISSIONS = definePermissions([
   {
     name: "hr:automations:view",
     resource: "hr:automations",
@@ -85,4 +85,4 @@ export const HR_PROCESS_PERMISSIONS: Permission[] = [
     action: "approve",
     description: "Approve or reject offers submitted for approval",
   },
-];
+]);

@@ -57,7 +57,7 @@ describe("accounting permission scopability", () => {
      * Anti-vacuity. Without this the assertion above would also pass if the
      * keys were deleted, or renamed, or the file emptied.
      */
-    const names = new Set(ACCOUNTING_PERMISSIONS.map((permission) => permission.name));
+    const names = new Set<string>(ACCOUNTING_PERMISSIONS.map((permission) => permission.name));
     for (const key of [
       "accounting:journal:read",
       "accounting:receivables:read",

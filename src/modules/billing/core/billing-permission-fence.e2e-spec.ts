@@ -238,8 +238,8 @@ const SERVICE_OVERRIDES = [
   { provide: PaymentManualMethodsService, useValue: stubManualMethods },
 ];
 
-const BILLING_CATALOG_KEYS = new Set(BILLING_PERMISSIONS.map((p) => p.name));
-const PAYMENTS_CATALOG_KEYS = new Set(PAYMENTS_PERMISSIONS.map((p) => p.name));
+const BILLING_CATALOG_KEYS = new Set<string>(BILLING_PERMISSIONS.map((p) => p.name));
+const PAYMENTS_CATALOG_KEYS = new Set<string>(PAYMENTS_PERMISSIONS.map((p) => p.name));
 
 type MutationCase = readonly [method: string, path: string, key: string, body: Record<string, unknown>, happyStatus: number];
 
