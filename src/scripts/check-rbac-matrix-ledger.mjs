@@ -1,117 +1,135 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { resolve, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 const JEST_BIN = join(BACKEND_ROOT, "node_modules", "jest", "bin", "jest.js");
+const SPEC = "test/security/rbac-matrix/matrix\\.spec\\.ts$";
+const ARTIFACT_DIR = join(BACKEND_ROOT, ".artifacts");
+export const LEDGER_PATH = join(ARTIFACT_DIR, "rbac-matrix-ledger.json");
+const EXECUTABLE_FLOOR = 60;
+const DECLARED_FLOOR = 25;
+const TAG = "[check:rbac-matrix-ledger]";
 
-const args = process.argv.slice(2);
-const SELF_TEST = args.includes("--self-test");
-
-const LEDGER_LINE_RE =
-  /RBAC Matrix Ledger:\s*proven=(\d+)\s+failed=(\d+)\s+unrun=(\d+)\s+externally-covered=(\d+)\s+total=(\d+)/g;
-
-const MIN_CELLS = 1;
-
-function runJest(pattern) {
+function runMatrix(ledgerPath, plantFailure) {
+  rmSync(ledgerPath, { force: true });
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
   const env = {
     ...process.env,
     NODE_ENV: "test",
-    NODE_OPTIONS: "--max-old-space-size=4096",
+    NODE_OPTIONS: "--max-old-space-size=6144",
+    RBAC_MATRIX_LEDGER_OUT: ledgerPath,
+    RBAC_MATRIX_PLANT_FAILURE: plantFailure ? "1" : "0",
   };
   delete env.DATABASE_URL;
   delete env.DATABASE_URL_UNPOOLED;
-
-  return spawnSync(
+  const result = spawnSync(
     process.execPath,
-    [JEST_BIN, `--testPathPattern=${pattern}`, "--no-coverage", "--forceExit"],
-    { cwd: BACKEND_ROOT, encoding: "utf8", env, maxBuffer: 10 * 1024 * 1024 },
+    [JEST_BIN, `--testPathPattern=${SPEC}`, "--no-coverage", "--forceExit"],
+    { cwd: BACKEND_ROOT, encoding: "utf8", env, maxBuffer: 32 * 1024 * 1024 },
   );
+  if (result.error) throw result.error;
+  if (!existsSync(ledgerPath)) {
+    process.stderr.write(`${TAG} INCONCLUSIVE: the matrix run wrote no ledger\n`);
+    process.stderr.write(`${(result.stdout ?? "") + (result.stderr ?? "")}`.slice(-3000));
+    return null;
+  }
+  return JSON.parse(readFileSync(ledgerPath, "utf8"));
 }
 
-function parseLedgerLines(output) {
-  const lines = [];
-  let match;
-  LEDGER_LINE_RE.lastIndex = 0;
-  while ((match = LEDGER_LINE_RE.exec(output)) !== null) {
-    lines.push({
-      proven: Number(match[1]),
-      failed: Number(match[2]),
-      unrun: Number(match[3]),
-      externallyCovered: Number(match[4]),
-      total: Number(match[5]),
-    });
+export function evaluate(ledger) {
+  const entries = ledger.entries;
+  const failed = entries.filter((entry) => entry.status === "failed");
+  const unrun = entries.filter((entry) => entry.status === "unrun");
+  const requiredUnrun = unrun.filter((entry) => entry.required);
+  const executable = entries.filter((entry) => entry.kind === "executable").length;
+  const declared = entries.filter((entry) => entry.kind === "declared").length;
+  const problems = [];
+  if (failed.length > 0) problems.push(`${failed.length} failed cell(s)`);
+  if (requiredUnrun.length > 0) problems.push(`${requiredUnrun.length} required cell(s) unrun`);
+  if (executable < EXECUTABLE_FLOOR) problems.push(`only ${executable} executable cell(s), floor ${EXECUTABLE_FLOOR}`);
+  if (declared < DECLARED_FLOOR) problems.push(`only ${declared} declared cell(s), floor ${DECLARED_FLOOR}`);
+  return { ok: problems.length === 0, problems, failed, unrun, requiredUnrun, executable, declared };
+}
+
+function report(ledger, verdict) {
+  const out = [
+    "",
+    "RBAC Matrix Ledger",
+    `  proven  : ${ledger.proven}`,
+    `  failed  : ${ledger.failed}`,
+    `  unrun   : ${ledger.unrun}`,
+    `  total   : ${ledger.total}  (executable ${verdict.executable}, declared ${verdict.declared})`,
+    "",
+  ];
+  for (const entry of verdict.failed) out.push(`  FAILED  ${entry.id}: ${entry.detail}`);
+  if (verdict.unrun.length > 0) {
+    out.push(`  UNRUN (${verdict.unrun.length}) — not executed by this run; evidence lives elsewhere:`);
+    for (const entry of verdict.unrun)
+      out.push(`    ${entry.required ? "REQUIRED " : ""}${entry.id}${entry.evidenceSuite ? ` -> ${entry.evidenceSuite}` : ""}`);
   }
-  return lines;
+  process.stdout.write(`${out.join("\n")}\n`);
+}
+
+function selfTest() {
+  const checks = [];
+  const check = (label, ok) => {
+    checks.push(ok);
+    process.stdout.write(`  ${ok ? "PASS" : "FAIL"}  ${label}\n`);
+  };
+
+  const clean = runMatrix(LEDGER_PATH, false);
+  check("a clean matrix run writes a ledger", clean !== null);
+  if (clean) {
+    const verdict = evaluate(clean);
+    check("a clean matrix run passes the gate", verdict.ok);
+    check("a clean matrix run has zero failed cells", clean.failed === 0);
+    check("declared suites are visible as unrun", verdict.unrun.length > 0 && verdict.requiredUnrun.length === 0);
+  }
+
+  const plantedPath = join(ARTIFACT_DIR, "rbac-matrix-ledger.planted.json");
+  const planted = runMatrix(plantedPath, true);
+  check("a planted-failure run writes a ledger", planted !== null);
+  if (planted) {
+    const verdict = evaluate(planted);
+    check("a planted failed cell fails the gate", !verdict.ok);
+    check("the planted cell is the one reported failed", verdict.failed.some((entry) => entry.id === "planted-failure"));
+  }
+  rmSync(plantedPath, { force: true });
+
+  if (clean) {
+    const withRequiredUnrun = {
+      ...clean,
+      entries: clean.entries.map((entry, index) =>
+        index === clean.entries.findIndex((candidate) => candidate.required)
+          ? { ...entry, status: "unrun", detail: null }
+          : entry,
+      ),
+    };
+    check("a required cell left unrun fails the gate", !evaluate(withRequiredUnrun).ok);
+  }
+
+  const passed = checks.every(Boolean);
+  process.stdout.write(`${TAG} self-test ${passed ? "PASS" : "FAIL"} (${checks.filter(Boolean).length}/${checks.length})\n`);
+  return passed ? 0 : 1;
 }
 
 function run() {
-  const pattern =
-    "test/security/rbac-matrix/(matrix|bola-matrix)\\.spec\\.ts$";
-
-  const result = runJest(pattern);
-  const output = (result.stdout ?? "") + (result.stderr ?? "");
-
-  if (result.error) {
-    process.stderr.write(`[check:rbac-matrix-ledger] spawn error: ${result.error.message}\n`);
-    process.exit(2);
+  const ledger = runMatrix(LEDGER_PATH, false);
+  if (ledger === null) return 2;
+  const verdict = evaluate(ledger);
+  report(ledger, verdict);
+  process.stdout.write(`${TAG} ledger written to ${relative(BACKEND_ROOT, LEDGER_PATH)}\n`);
+  if (!verdict.ok) {
+    process.stderr.write(`${TAG} FAIL: ${verdict.problems.join("; ")}\n`);
+    return 1;
   }
-
-  const ledgers = parseLedgerLines(output);
-
-  if (ledgers.length === 0) {
-    process.stderr.write(`[check:rbac-matrix-ledger] jest produced no ledger output\n`);
-    process.stderr.write(output.slice(-2000));
-    process.exit(2);
-  }
-
-  const totals = ledgers.reduce(
-    (acc, l) => ({
-      proven: acc.proven + l.proven,
-      failed: acc.failed + l.failed,
-      unrun: acc.unrun + l.unrun,
-      externallyCovered: acc.externallyCovered + l.externallyCovered,
-      total: acc.total + l.total,
-    }),
-    { proven: 0, failed: 0, unrun: 0, externallyCovered: 0, total: 0 },
-  );
-
-  if (totals.total < MIN_CELLS) {
-    process.stderr.write(
-      `[check:rbac-matrix-ledger] INCONCLUSIVE: only ${totals.total} cell(s) (floor=${MIN_CELLS})\n`,
-    );
-    process.exit(2);
-  }
-
-  process.stdout.write(`\nRBAC Matrix Ledger\n`);
-  process.stdout.write(`  proven            : ${totals.proven}\n`);
-  process.stdout.write(`  failed            : ${totals.failed}\n`);
-  process.stdout.write(`  unrun             : ${totals.unrun}\n`);
-  process.stdout.write(`  externally-covered: ${totals.externallyCovered}\n`);
-  process.stdout.write(`  total             : ${totals.total}\n\n`);
-
-  if (totals.unrun > 0) {
-    process.stdout.write(
-      `[check:rbac-matrix-ledger] NOTE: ${totals.unrun} unrun cell(s) (non-required, covered by external suites is OK)\n`,
-    );
-  }
-
-  if (SELF_TEST) {
-    process.stdout.write("[check:rbac-matrix-ledger] self-test PASS\n");
-    process.exit(0);
-  }
-
-  if (totals.failed > 0) {
-    process.stderr.write(
-      `[check:rbac-matrix-ledger] FAIL: ${totals.failed} cell(s) failed\n`,
-    );
-    process.exit(1);
-  }
-
-  process.stdout.write("[check:rbac-matrix-ledger] PASS: no cells failed\n");
-  process.exit(0);
+  process.stdout.write(`${TAG} PASS: no failed cells, no required cell unrun\n`);
+  return 0;
 }
 
-run();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  process.exit(process.argv.includes("--self-test") ? selfTest() : run());
