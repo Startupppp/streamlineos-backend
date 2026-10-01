@@ -9,6 +9,7 @@ import { EngagementController } from "./engagement.controller";
 import { EngagementExtrasController } from "./engagement-extras.controller";
 import { EngagementBadgesController } from "./engagement-badges.controller";
 import { DocumentsController } from "./documents.controller";
+import { SelfDocumentAcknowledgementsController } from "./self-document-acknowledgements.controller";
 import { DocumentClassificationController } from "./document-classification.controller";
 import { DocumentKbLinkController } from "./document-kb-link.controller";
 import { DocumentVersionsController } from "./document-versions.controller";
@@ -45,6 +46,7 @@ import { SuccessionService } from "./succession.service";
     EngagementExtrasController,
     EngagementBadgesController,
     DocumentsController,
+    SelfDocumentAcknowledgementsController,
     DocumentClassificationController,
     DocumentKbLinkController,
     DocumentVersionsController,
