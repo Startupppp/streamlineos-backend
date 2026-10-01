@@ -68,7 +68,7 @@ const MIN_FILES = 1500;
  * of those 279 call sites. Lower it whenever the real count drops — the gate says so on every run
  * that comes in under it.
  */
-const TIER2_RATCHET = 279;
+const TIER2_RATCHET = 270;
 
 // --- TIER 1: banned shapes -------------------------------------------------
 const VOID_EMIT_RE = /\bvoid\s+(?:this\.\w+\s*\.\s*emit|[\w.]+\s*\.\s*emit)\s*\(/;

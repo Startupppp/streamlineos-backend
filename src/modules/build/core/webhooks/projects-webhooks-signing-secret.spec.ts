@@ -2,9 +2,8 @@ import type { Db } from "../../../../db/drizzle.module";
 import { postSafeWebhook } from "../../../../common/outbound/safe-webhook-transport";
 import {
   MISSING_SIGNING_SECRET_ERROR,
-  ProjectsWebhooksDispatchService,
-} from "./projects-webhooks-dispatch.service";
-import { INTEGRATIONS_WEBHOOK_DELIVERY_EVENT } from "../../../integrations/core/webhook-delivery.service";
+} from "../../../integrations/core/webhook-delivery.service";
+import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
 
 jest.mock("../../../../common/outbound/safe-webhook-transport", () => {
   const actual = jest.requireActual("../../../../common/outbound/safe-webhook-transport");
@@ -23,21 +22,15 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 jest.mock("../../../../common/outbox/outbox-writer", () => ({
-  OutboxWriter: { emit: jest.fn().mockResolvedValue(undefined) },
+  OutboxWriter: { emit: jest.fn().mockResolvedValue(undefined), emitMany: jest.fn().mockResolvedValue(undefined) },
 }));
 
 const post = postSafeWebhook as jest.MockedFunction<typeof postSafeWebhook>;
 
-function dispatchServiceWith(
+function endpointServiceWith(
   signingSecret: string | null,
-  integrationsEndpointId: number | null = signingSecret !== null ? 5 : null,
+  credentialId: number | null = signingSecret !== null ? 5 : null,
 ) {
-  const endpointRow = {
-    id: 5,
-    url: "https://hooks.example.test/build",
-    orgId: "org-1",
-    integrationsEndpointId,
-  };
   const credentialRow = signingSecret !== null ? { signingSecret } : undefined;
   const set = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
   const db = {
@@ -46,14 +39,8 @@ function dispatchServiceWith(
       .mockReturnValueOnce({
         from: () => ({
           where: () => ({
-            limit: () =>
-              Promise.resolve(integrationsEndpointId !== null ? [endpointRow] : [endpointRow]),
+            limit: () => Promise.resolve(credentialRow ? [credentialRow] : []),
           }),
-        }),
-      })
-      .mockReturnValueOnce({
-        from: () => ({
-          where: () => ({ limit: () => Promise.resolve(credentialRow ? [credentialRow] : []) }),
         }),
       })
       .mockReturnValue({
@@ -63,71 +50,76 @@ function dispatchServiceWith(
       }),
     update: jest.fn().mockReturnValue({ set }),
   } as unknown as Db;
-  return { service: new ProjectsWebhooksDispatchService(db), set };
+  return { service: new WebhookEndpointService(db), set, credentialId };
 }
 
-describe("ProjectsWebhooksDispatchService signing secret", () => {
+describe("WebhookEndpointService interactive test delivery", () => {
   beforeEach(() => post.mockReset());
 
   it("signs and sends when the endpoint has a signing secret in the credentials store", async () => {
-    const { service } = dispatchServiceWith("s3cret");
+    const { service, credentialId } = endpointServiceWith("s3cret");
     post.mockResolvedValue({ statusCode: 204, responseBody: "" });
 
-    const result = await service.sendTest("org-1", 9, 5);
+    const result = await service.sendTestDelivery("org-1", 5, credentialId, "https://hooks.example.test/build", {
+      id: 5, projectId: 9, actor: "system", timestamp: new Date().toISOString(),
+    });
 
     expect(post).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, responseCode: 204 });
   });
 
   it("sends a non-empty hex signature header when the endpoint has a signing secret", async () => {
-    const { service } = dispatchServiceWith("s3cret");
+    const { service, credentialId } = endpointServiceWith("s3cret");
     post.mockResolvedValue({ statusCode: 204, responseBody: "" });
 
-    await service.sendTest("org-1", 9, 5);
+    await service.sendTestDelivery("org-1", 5, credentialId, "https://hooks.example.test/build", {
+      id: 5, projectId: 9, actor: "system", timestamp: new Date().toISOString(),
+    });
 
     const headers = post.mock.calls[0]![2] as Record<string, string>;
     expect(headers["X-StreamlineOS-Signature"]).toMatch(/^sha256=[0-9a-f]{64}$/);
   });
 
-  it("refuses to deliver and records the error when the endpoint has no integrations_endpoint_id", async () => {
-    const { service } = dispatchServiceWith(null, null);
+  it("refuses to deliver and records the error when credentialId is null so no secret can be fetched", async () => {
+    const { service, set } = endpointServiceWith(null, null);
 
-    const result = await service.sendTest("org-1", 9, 5);
-
-    expect(post).not.toHaveBeenCalled();
-    expect(result.success).toBe(false);
-  });
-
-  it("refuses to deliver when the credentials store returns no row for the endpoint", async () => {
-    const { service } = dispatchServiceWith(null, 5);
-
-    const result = await service.sendTest("org-1", 9, 5);
+    const result = await service.sendTestDelivery("org-1", 5, null, "https://hooks.example.test/build", {
+      id: 5, projectId: 9, actor: "system", timestamp: new Date().toISOString(),
+    });
 
     expect(post).not.toHaveBeenCalled();
     expect(result.success).toBe(false);
-  });
-
-  it("records a readable failure reason on the delivery row instead of a silent drop", async () => {
-    const { service, set } = dispatchServiceWith(null, null);
-
-    await service.sendTest("org-1", 9, 5);
-
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({ status: "failed", lastError: MISSING_SIGNING_SECRET_ERROR }),
     );
   });
 
-  it("emits the delivery outbox event with the integrations event type, not the legacy build type", async () => {
+  it("refuses to deliver when the credentials store returns no row for the credential id", async () => {
+    const { service } = endpointServiceWith(null, 5);
+
+    const result = await service.sendTestDelivery("org-1", 5, 5, "https://hooks.example.test/build", {
+      id: 5, projectId: 9, actor: "system", timestamp: new Date().toISOString(),
+    });
+
+    expect(post).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+  });
+
+  it("does not emit an outbox event so the test endpoint receives exactly one delivery and never a background retry", async () => {
     const { OutboxWriter } = jest.requireMock(
       "../../../../common/outbox/outbox-writer",
-    ) as { OutboxWriter: { emit: jest.Mock } };
+    ) as { OutboxWriter: { emit: jest.Mock; emitMany: jest.Mock } };
     OutboxWriter.emit.mockClear();
-    const { service } = dispatchServiceWith("s3cret");
+    OutboxWriter.emitMany.mockClear();
+
+    const { service, credentialId } = endpointServiceWith("s3cret");
     post.mockResolvedValue({ statusCode: 204, responseBody: "" });
 
-    await service.sendTest("org-1", 9, 5);
+    await service.sendTestDelivery("org-1", 5, credentialId, "https://hooks.example.test/build", {
+      id: 5, projectId: 9, actor: "system", timestamp: new Date().toISOString(),
+    });
 
-    const emittedEvent = OutboxWriter.emit.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(emittedEvent?.eventType).toBe(INTEGRATIONS_WEBHOOK_DELIVERY_EVENT);
+    expect(OutboxWriter.emit).not.toHaveBeenCalled();
+    expect(OutboxWriter.emitMany).not.toHaveBeenCalled();
   });
 });
