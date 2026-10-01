@@ -31,6 +31,7 @@ import {
   resolveArticleOwnerFilter,
 } from "./kb-article-owner-scope";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
+import { assertRequestedSourcesVisible, sourceSpaceFilter } from "./kb-requested-sources";
 import {
   kbDocumentKey,
   KB_ASK_CONTEXT_BUDGET,
@@ -512,6 +513,10 @@ export class KbSearchRetrievalService {
   ): Promise<RetrievalChannelOutcome<RetrievedSourceDocument>> {
     const q = query.trim();
     if (!q) return { kind: "disabled", results: [] };
+    if (sourceIds && sourceIds.length > 0) {
+      const { accessibleSpaceIds } = await this.auth.resolveStanding(user);
+      await assertRequestedSourcesVisible(this.db, user.orgId, accessibleSpaceIds, sourceIds);
+    }
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) {
       return { kind: "disabled", results: [] };
     }
@@ -529,13 +534,7 @@ export class KbSearchRetrievalService {
         return { kind: "empty", results: [] };
       }
 
-      const spaceFilter =
-        accessibleSpaceIds.length > 0
-          ? or(
-              isNull(kbSources.spaceId),
-              inArray(kbSources.spaceId, accessibleSpaceIds),
-            )
-          : isNull(kbSources.spaceId);
+      const spaceFilter = sourceSpaceFilter(accessibleSpaceIds);
 
       const conditions: SQL[] = [
         eq(kbArticleChunks.orgId, user.orgId),

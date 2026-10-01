@@ -1,5 +1,7 @@
+import { NotFoundException } from "@nestjs/common";
 import { sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { kbSources } from "../../../db/schema";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbCandidateService } from "./kb-candidate.service";
@@ -65,8 +67,12 @@ function makeCaptureDb(): { db: Db; getCond: () => SQL } {
   const chain = makeSelectChain((cond) => {
     capturedCond = cond;
   });
+  const ownedSources = [...SOURCE_IDS_READABLE, SOURCE_ID_READABLE].map((id) => ({ id }));
+  const ownershipRead = { from: () => ({ where: () => Promise.resolve(ownedSources) }) };
   const db = {
-    select: jest.fn().mockReturnValue(chain),
+    select: jest.fn((projection: Record<string, unknown> = {}) =>
+      projection.id === kbSources.id ? ownershipRead : chain,
+    ),
     execute: jest.fn().mockResolvedValue([]),
   } as unknown as Db;
   return { db, getCond: () => capturedCond as SQL };
@@ -211,20 +217,18 @@ describe("KB ask scope — sourceIds are honoured in retrieveTopSources", () => 
 });
 
 describe("KB ask scope — an unreadable sourceId is not silently widened to all sources", () => {
-  it("when sourceIds contains an id the actor cannot read the IN filter is still applied so the result is the empty intersection not a full unscoped search", async () => {
+  it("when sourceIds contains an id the actor cannot read the ask is refused with 404 before any retrieval, neither widened to all sources nor narrowed to an empty intersection", async () => {
     const { db, getCond } = makeCaptureDb();
     const candidates = makeCandidates(db);
     const svc = makeSearchRetrieval(db, candidates);
 
-    await svc.retrieveTopSources(makeUser(), QUERY, 4, [SOURCE_ID_INACCESSIBLE], {
-      vectorLiteral: VECTOR,
-    });
+    await expect(
+      svc.retrieveTopSources(makeUser(), QUERY, 4, [SOURCE_ID_READABLE, SOURCE_ID_INACCESSIBLE], {
+        vectorLiteral: VECTOR,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
 
-    const cond = getCond();
-    expect(cond).toBeDefined();
-    const rendered = dialect.sqlToQuery(cond);
-    expect(rendered.params).toContain(SOURCE_ID_INACCESSIBLE);
-    expect(rendered.params).toContain(ORG);
+    expect(getCond()).toBeUndefined();
   });
 
   it("CONTROL: a readable sourceId also produces an IN filter and org constraint, proving the inaccessible-id assertion is not vacuous", async () => {

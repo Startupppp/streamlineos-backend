@@ -101,6 +101,8 @@ const REPAIRED_FAIL_WHOLE: readonly string[] = [
   "SurveyParticipantService.remind",
   "KbTagsService.setArticleTags",
   "ApprovalsBulkService.bulkReject",
+  "KbSearchRetrievalService.retrieveTopSourcesWithOutcome",
+  "KbPageTrashQueryService.purgeImpact",
 ];
 
 /**
@@ -177,10 +179,8 @@ const ADMITTED_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
 ];
 
 const OPEN_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
-  ["KbSearchRetrievalService.retrieveTopSourcesWithOutcome", "POST /kb/ask body sourceIds: a foreign source id is dropped and the answer is built from the caller's own sources"],
   ["TicketExportService.exportTickets", "GET /build/:projectId/import-export/tickets/export?ticketIds: foreign ids are dropped from the export without a 404"],
   ["ProjectsTicketsTransferService.exportTickets", "GET /build/:projectId/tickets/export ticketIds: foreign ids are dropped from the export without a 404"],
-  ["KbPageTrashQueryService.purgeImpact", "POST /kb/pages/trash/purge-impact pageIds: the preview counts only visible ids and names none it dropped"],
 ];
 
 const source = (rel: string): string => readFileSync(join(BACKEND_ROOT, rel), "utf8");
@@ -331,7 +331,7 @@ describe("BOLA sweep — bulk endpoints refuse a mixed-tenant id list", () => {
     expect(reference).toContain("rows.some((row) => !row.allowed)");
   });
 
-  it("RATCHET: no bulk site beyond the 2026-09-12 baseline appears without a count check, excusing only the sixteen admitted since with a recorded reason, so the four open silent-subset sites keep it red until they are fixed", () => {
+  it("RATCHET: no bulk site beyond the 2026-09-12 baseline appears without a count check, excusing only the sixteen admitted since with a recorded reason, so the two open Build export silent-subset sites keep it red until they are fixed", () => {
     const admitted = new Set(ADMITTED_SINCE_BASELINE.map(([site]) => site));
     const counted = noCountCheck.filter((s) => !admitted.has(name(s)));
     expect(sites.length).toBeGreaterThanOrEqual(BULK_SITE_FLOOR);
