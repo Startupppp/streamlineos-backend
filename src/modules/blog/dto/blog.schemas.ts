@@ -1,68 +1,44 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
-import { blogPostStatusEnum } from "../../../db/schema/common/enums";
-import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
-export const adminPostListQuerySchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20),
-  search: z.string().trim().min(1).max(200).optional(),
-  status: z.enum(blogPostStatusEnum.enumValues).optional(),
+const slugField = z.string().trim().min(1).max(256).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+const tagField = z.string().trim().min(1).max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+
+/** Numbered archive pages. A page past the end is an empty page the site turns into a 404. */
+export const postListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  limit: z.coerce.number().int().min(1).max(24).default(12),
+  category: slugField.optional(),
+  tag: tagField.optional(),
+  author: slugField.optional(),
+  featured: z.enum(["true"]).optional(),
 }).strict();
 
-export const postCreateSchema = z.object({
-  title: z.string().min(1).max(256),
-  excerpt: z.string().min(1).max(500),
-  content: z.string().min(1),
-  contentJson: z.record(z.string(), z.unknown()).optional().nullable(),
-  coverImage: z.string().min(1),
-  categoryId: z.string().uuid().optional().nullable(),
-  authorId: z.string().uuid().optional().nullable(),
-  status: z.enum(["draft", "published", "archived"]).default("draft"),
-  isFeatured: z.boolean().default(false),
-  tags: z.array(z.string()).default([]),
-  metaTitle: z.string().max(256).optional().nullable(),
-  metaDescription: z.string().max(320).optional().nullable(),
-  slug: z.string().max(256).optional(),
+export const searchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(200),
+  limit: z.coerce.number().int().min(1).max(20).default(20),
 }).strict();
 
-export const postUpdateSchema = postCreateSchema.partial().strict();
-
-export const categoryCreateSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(2000).optional().nullable(),
-  color: z
-    .string()
-    .regex(/^#([0-9a-fA-F]{6})$/, "Color must be a hex value like #3B82F6")
-    .optional()
-    .nullable(),
+export const sitemapQuerySchema = z.object({
+  cursor: z.string().regex(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\|[0-9a-f-]{36}$/).optional(),
 }).strict();
 
-export const categoryUpdateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().max(2000).optional().nullable(),
-  color: z
-    .string()
-    .regex(/^#([0-9a-fA-F]{6})$/, "Color must be a hex value like #3B82F6")
-    .optional()
-    .nullable(),
+export const redirectQuerySchema = z.object({
+  path: z.string().min(8).max(600).regex(/^\/blogs\/[^?#\s]*$/),
 }).strict();
 
-export const feedSchema = z.object({
-  limit: optionalPageSizeField(50),
-  cursor: z.string().optional(),
-  category: z.string().optional(),
-  tag: z.string().optional(),
-  search: z.string().optional(),
-  featured: z
-    .string()
-    .optional()
-    .transform((v) => (v === "true" ? true : v === "false" ? false : undefined)),
+export const slugParamsSchema = z.object({ slug: slugField }).strict();
+export const categorySlugParamsSchema = z.object({ categorySlug: slugField }).strict();
+export const authorSlugParamsSchema = z.object({ authorSlug: slugField }).strict();
+
+/** Body of the signed notification the blog admin sends after publish, rename or withdraw. */
+export const invalidationBodySchema = z.object({
+  eventId: z.string().uuid(),
+  postId: z.string().uuid(),
+  generation: z.number().int().min(0),
+  reason: z.enum(["publish", "unpublish", "rename", "update", "delete"]),
 }).strict();
 
-export type PostCreateInput = z.infer<typeof postCreateSchema>;
-export type PostUpdateInput = z.infer<typeof postUpdateSchema>;
-export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
-export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
-export type FeedInput = z.infer<typeof feedSchema>;
-export type AdminPostListQuery = z.infer<typeof adminPostListQuerySchema>;
+export type PostListQuery = z.infer<typeof postListQuerySchema>;
+export type SearchQuery = z.infer<typeof searchQuerySchema>;
+export type SitemapQuery = z.infer<typeof sitemapQuerySchema>;
+export type InvalidationBody = z.infer<typeof invalidationBodySchema>;
