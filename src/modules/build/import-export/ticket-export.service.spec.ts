@@ -9,6 +9,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { parseCsvRows } from "./csv-source";
 import { parseImportSource } from "./import-source";
 import { TicketExportService, TICKET_EXPORT_COLUMNS } from "./ticket-export.service";
+import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const PROJECT = 42;
@@ -47,7 +48,7 @@ interface Capture {
   queries: number;
 }
 
-function makeDb(rows: unknown[], project: unknown = { managerMembershipId: null }) {
+function makeDb(rows: unknown[], project: ProjectAccessRow | null = projectAccessRow()) {
   const capture: Capture = { where: undefined, limit: undefined, queries: 0 };
   const chain: Record<string, unknown> = {};
   Object.assign(chain, {
@@ -62,9 +63,14 @@ function makeDb(rows: unknown[], project: unknown = { managerMembershipId: null 
       return Promise.resolve(rows);
     },
   });
+  const projectChain = {
+    from: () => projectChain,
+    where: () => projectChain,
+    limit: async () => (project === null ? [] : [project]),
+  };
   const db = {
-    query: { projects: { findFirst: jest.fn(async () => project) } },
-    select: jest.fn(() => {
+    select: jest.fn((fields?: Record<string, unknown>) => {
+      if (fields !== undefined && "manages" in fields) return projectChain;
       capture.queries += 1;
       return chain;
     }),
@@ -72,12 +78,8 @@ function makeDb(rows: unknown[], project: unknown = { managerMembershipId: null 
   return { db: db as unknown as Db, capture };
 }
 
-function makeAccess(scope: DataScope = "all") {
-  return {
-    resolveUserPermissions: jest.fn(async () => new Map<string, DataScope>()),
-    scopeFor: jest.fn(async () => scope),
-    holds: jest.fn(async () => scope !== "none"),
-  } as unknown as AccessService;
+function makeAccess(ticketScope: DataScope = "all") {
+  return standingAccess({ "build:manage": "all", "build:view": "all", "build:tickets:view": ticketScope }) as unknown as AccessService;
 }
 
 describe("TicketExportService", () => {
@@ -90,7 +92,7 @@ describe("TicketExportService", () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("returns nothing and issues no query when the caller's scope is none", async () => {
+  it("returns nothing and issues no ticket query when the caller's ticket scope is none", async () => {
     const { db, capture } = makeDb([ticketRow]);
     const service = new TicketExportService(db, makeAccess("none"));
 

@@ -6,6 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { BuildTicketCreationService } from "../core/tickets";
 import { IntakeService, ViewsService } from "./workspace.service";
 import { createIntakeSchema, createViewSchema } from "./dto/workspace.schemas";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 1;
@@ -21,9 +22,7 @@ const actor: CurrentUserContext = {
   principal: humanSessionPrincipal(MEMBERSHIP_ID, false),
 };
 
-const access = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-} as unknown as AccessService;
+const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
 
 const row = {
   id: 3,
@@ -43,7 +42,9 @@ function makeDb(isProjectManager: boolean) {
   const chain: Record<string, jest.Mock> = {};
   const self = () => chain;
   for (const step of ["from", "innerJoin", "leftJoin", "where", "orderBy"]) chain[step] = jest.fn(self);
-  chain["limit"] = jest.fn(() => Promise.resolve(isProjectManager ? [row] : []));
+  chain["limit"] = jest.fn(() =>
+    Promise.resolve(isProjectManager ? [{ ...row, ...projectAccessRow({ manages: true }) }] : [projectAccessRow()]),
+  );
   const returning = jest.fn(() => Promise.resolve([row]));
   const insert = jest.fn(() => ({ values: () => ({ returning }) }));
   const update = jest.fn(() => ({ set: () => ({ where: () => ({ returning }) }) }));

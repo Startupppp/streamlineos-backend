@@ -235,35 +235,18 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
   });
 
   it("throws NotFoundException for wrong-org project (cross-tenant)", async () => {
-    const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
-      select: jest.fn(),
-    } as unknown as Db;
+    const rest = jest.fn();
+    const db = { select: projectGateSelect([], rest) } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.getProjectOverview(makeU("org-attacker", true), 1)).rejects.toThrow(NotFoundException);
+    expect(rest).not.toHaveBeenCalled();
   });
 
   it("throws ForbiddenException when employee has no project membership (right org, no access)", async () => {
     const db = {
       query: {
       },
-      select: projectGateSelect([projectAccessRow()], jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        })),
+      select: projectGateSelect([projectAccessRow()]),
     } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.getProjectOverview(makeU("org-1", false), 1)).rejects.toThrow(ForbiddenException);
@@ -276,10 +259,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
       limit: jest.fn().mockResolvedValue([]),
     };
     const selectMock = jest.fn().mockReturnValue(projectSelectChain);
-    const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
-      select: selectMock,
-    } as unknown as Db;
+    const db = { select: projectGateSelect([projectAccessRow()], selectMock) } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.getProjectOverview(u, 1)).rejects.toThrow(NotFoundException);
     const projection = (selectMock.mock.calls[0] as [Record<string, unknown>])[0];
@@ -317,11 +297,10 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
       limit: jest.fn().mockResolvedValue([]),
     };
     const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
-      select: jest.fn()
+      select: projectGateSelect([projectAccessRow()], jest.fn()
         .mockReturnValueOnce(projectSelectChain)
         .mockReturnValueOnce(grantSelectChain)
-        .mockReturnValue(parallelChain),
+        .mockReturnValue(parallelChain)),
     } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await svc.getProjectOverview(u, 1);

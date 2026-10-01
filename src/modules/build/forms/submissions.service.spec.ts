@@ -8,6 +8,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { Test } from "@nestjs/testing";
 import { encodeTupleCursor } from "../../../common/pagination/cursor";
+import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
@@ -45,8 +46,17 @@ function makeSubmission(overrides: Record<string, unknown> = {}) {
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 const mockAccess = {
-  resolveUserPermissions: async () => new Set(["build:manage"]),
+  scopeFor: async (_actor: CurrentUserContext, key: string) => (key === "build:manage" ? "all" : "none"),
 };
+
+function accessChain() {
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    limit: async () => [projectAccessRow()],
+  };
+  return chain;
+}
 const actor: CurrentUserContext = {
   userId: USER_ID,
   orgId: ORG_ID,
@@ -67,8 +77,8 @@ describe("SubmissionsService.createSubmission", () => {
     mockTicketCreation = { createInTransaction: jest.fn(), publish: jest.fn() };
 
     mockDb = {
+      select: jest.fn(() => accessChain()),
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
@@ -358,8 +368,8 @@ describe("SubmissionsService.updateSubmission", () => {
     mockTicketCreation = { createInTransaction: jest.fn(), publish: jest.fn() };
 
     mockDb = {
+      select: jest.fn(() => accessChain()),
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
@@ -446,8 +456,8 @@ describe("SubmissionsService.submitPublicForm", () => {
     mockTicketCreation = { createInTransaction: jest.fn(), publish: jest.fn() };
 
     mockDb = {
+      select: jest.fn(() => accessChain()),
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
@@ -571,8 +581,8 @@ describe("SubmissionsService.listSubmissions", () => {
     mockTicketCreation = { createInTransaction: jest.fn(), publish: jest.fn() };
 
     mockDb = {
+      select: jest.fn(() => accessChain()),
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 1 }) },
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
@@ -609,7 +619,7 @@ describe("SubmissionsService.listSubmissions", () => {
     const mockOrderBy = jest.fn().mockReturnValue({ limit: mockLimit });
     const mockWhere = jest.fn().mockReturnValue({ orderBy: mockOrderBy });
     const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
-    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
+    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValueOnce(accessChain()).mockReturnValue({ from: mockFrom });
 
     const result = await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, {});
     expect(result.data).toEqual(submissions);
@@ -624,7 +634,7 @@ describe("SubmissionsService.listSubmissions", () => {
     const mockOrderBy = jest.fn().mockReturnValue({ limit: mockLimit });
     const mockWhere = jest.fn().mockReturnValue({ orderBy: mockOrderBy });
     const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
-    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
+    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValueOnce(accessChain()).mockReturnValue({ from: mockFrom });
 
     await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, { status: "submitted" });
     expect(mockWhere).toHaveBeenCalledTimes(1);
@@ -638,7 +648,7 @@ describe("SubmissionsService.listSubmissions", () => {
     const mockOrderBy = jest.fn().mockReturnValue({ limit: mockLimit });
     const mockWhere = jest.fn().mockReturnValue({ orderBy: mockOrderBy });
     const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
-    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValue({ from: mockFrom });
+    (mockDb as Record<string, unknown>)["select"] = jest.fn().mockReturnValueOnce(accessChain()).mockReturnValue({ from: mockFrom });
 
     await svc.listSubmissions(actor, PROJECT_ID, FORM_ID, {
       cursor: encodeTupleCursor(["2026-01-01T00:00:00.000Z", "30"]),

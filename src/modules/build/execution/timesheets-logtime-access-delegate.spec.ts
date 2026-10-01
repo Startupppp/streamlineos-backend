@@ -59,26 +59,26 @@ function makeService(ticketRow: unknown) {
   return { svc: new TimesheetsService(db as never, cache, access, periodService), findProject };
 }
 
-describe("TimesheetsService.logTicketTime — delegates project access to assertProjectAccess", () => {
+describe("TimesheetsService.logTicketTime — delegates project write access to assertProjectWriteAccess, so an archived project refuses time logs", () => {
   afterEach(() => { jest.restoreAllMocks(); });
 
-  it("calls assertProjectAccess with the URL projectId and propagates ForbiddenException (403, not pass)", async () => {
+  it("calls assertProjectWriteAccess with the URL projectId and propagates ForbiddenException (403, not pass)", async () => {
     const { svc } = makeService({ projectId: PROJECT_A });
-    jest.spyOn(projectAccess, "assertProjectAccess").mockRejectedValue(new ForbiddenException());
+    jest.spyOn(projectAccess, "assertProjectWriteAccess").mockRejectedValue(new ForbiddenException());
 
     await expect(svc.logTicketTime(makeU(), PROJECT_A, TICKET_A, LOG)).rejects.toBeInstanceOf(ForbiddenException);
-    expect(projectAccess.assertProjectAccess).toHaveBeenCalledWith(expect.anything(), expect.anything(), makeU(), PROJECT_A);
+    expect(projectAccess.assertProjectWriteAccess).toHaveBeenCalledWith(expect.anything(), expect.anything(), makeU(), PROJECT_A);
   });
 
-  it("succeeds when assertProjectAccess passes (control)", async () => {
+  it("succeeds when assertProjectWriteAccess passes (control)", async () => {
     const { svc } = makeService({ projectId: PROJECT_A });
-    jest.spyOn(projectAccess, "assertProjectAccess").mockResolvedValue(undefined);
+    jest.spyOn(projectAccess, "assertProjectWriteAccess").mockResolvedValue(undefined);
 
     await expect(svc.logTicketTime(makeU(), PROJECT_A, TICKET_A, LOG)).resolves.toBeDefined();
-    expect(projectAccess.assertProjectAccess).toHaveBeenCalledWith(expect.anything(), expect.anything(), makeU(), PROJECT_A);
+    expect(projectAccess.assertProjectWriteAccess).toHaveBeenCalledWith(expect.anything(), expect.anything(), makeU(), PROJECT_A);
   });
 
-  it("raises NotFoundException before reaching assertProjectAccess when the ticket is absent", async () => {
+  it("raises NotFoundException before reaching assertProjectWriteAccess when the ticket is absent", async () => {
     const { svc, findProject } = makeService(undefined);
 
     await expect(svc.logTicketTime(makeU(), PROJECT_A, TICKET_A, LOG)).rejects.toBeInstanceOf(NotFoundException);

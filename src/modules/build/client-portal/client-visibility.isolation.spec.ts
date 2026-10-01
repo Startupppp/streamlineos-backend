@@ -84,27 +84,7 @@ describe("ClientVisibilityService — project membership gate (BOLA fix)", () =>
   const gateAccess = memberScopeAccess;
 
   function makeNonMemberDb(): Db {
-    return {
-      query: {
-      },
-      select: projectGateSelect([projectAccessRow()], jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        })),
-    } as unknown as Db;
+    return { select: projectGateSelect([projectAccessRow()]) } as unknown as Db;
   }
 
   function makeMemberDb(): Db {
@@ -116,31 +96,9 @@ describe("ClientVisibilityService — project membership gate (BOLA fix)", () =>
       }),
     };
     return {
-      query: {
-      },
-      select: projectGateSelect([projectAccessRow()], jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        })
-        .mockReturnValue(listChain)),
+      select: projectGateSelect([projectAccessRow({ memberRole: "MEMBER" })], jest.fn().mockReturnValue(listChain)),
     } as unknown as Db;
   }
-
-  beforeEach(() => {
-  });
 
   it("rejects non-member with ForbiddenException on getVisibilitySummary", async () => {
     const db = makeNonMemberDb();

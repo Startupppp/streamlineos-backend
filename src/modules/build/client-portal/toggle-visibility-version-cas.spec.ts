@@ -41,18 +41,15 @@ function makeVersionedVisibilityDb(
 ) {
   return {
     query: {
-      projects: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValue({ managerMembershipId: null }),
-      },
       tickets: {
         findFirst: jest
           .fn()
           .mockResolvedValue({ id: 99, version: ticketVersion }),
       },
     },
-    select: jest.fn(),
+    select: jest.fn(() => ({
+      from: () => ({ where: () => ({ limit: async (): Promise<ProjectAccessRow[]> => [projectAccessRow()] }) }),
+    })),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({

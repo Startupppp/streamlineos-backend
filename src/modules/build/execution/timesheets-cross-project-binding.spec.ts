@@ -6,7 +6,8 @@ import type { CacheService } from "../../../common/cache/cache.service";
 import type { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { tickets, timesheets } from "../../../db/schema";
+import { projects, tickets, timesheets } from "../../../db/schema";
+import { projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 import { TimesheetsService } from "./timesheets.service";
 import type { LogTimeInput } from "./dto/timesheets.schemas";
 
@@ -144,16 +145,23 @@ function makeService(store: Store) {
     query: { tickets: { findFirst: findTicket }, projects: { findFirst: findProject } },
     select: jest.fn(() => ({
       from: (table: unknown) => ({
-        where: async (where: unknown) =>
-          table === timesheets
-            ? [
-                {
-                  total: store.entries
+        where: (where: unknown) => {
+          const rows =
+            table === timesheets
+              ? [
+                  {
+                    total: store.entries
+                      .filter((row) => matches(where, row))
+                      .reduce((sum, row) => sum + Number(row.hours), 0),
+                  },
+                ]
+              : table === projects
+                ? store.projects
                     .filter((row) => matches(where, row))
-                    .reduce((sum, row) => sum + Number(row.hours), 0),
-                },
-              ]
-            : [],
+                    .map((row) => ({ ...projectAccessRow(), id: row.id }))
+                : [];
+          return Object.assign(Promise.resolve(rows), { limit: async () => rows });
+        },
       }),
     })),
     update: updateBuilder,
@@ -162,10 +170,7 @@ function makeService(store: Store) {
   } as unknown as Db;
 
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService;
-  const access = {
-    holds: jest.fn().mockResolvedValue(true),
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
-  } as unknown as AccessService;
+  const access = standingAccess({ "build:manage": "all" }) as unknown as AccessService;
   const periodService = {
     loadSettings: jest.fn().mockResolvedValue({ workWeekStart: 1 }),
     getOrCreatePeriod: jest.fn().mockResolvedValue(PERIOD_ID),

@@ -16,6 +16,7 @@ import { VALIDATION_SCHEMAS } from "../../../common/validation/validate.decorato
 import { RESPONSE_SCHEMA } from "../../../common/openapi/zod-operation-contracts";
 import { PermissionGuard } from "../../access/permission.guard";
 import type { AccessService } from "../../access/access.service";
+import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 import type { DataScope } from "../../access/access.types";
 import type { Db } from "../../../db/drizzle.types";
 import type { BuildTicketCreationService } from "../core/tickets";
@@ -46,7 +47,7 @@ function handler(name: keyof TicketImportExportController): () => unknown {
 }
 
 interface DbOptions {
-  project?: { managerMembershipId: number | null } | null;
+  project?: ProjectAccessRow | null;
   failEveryInsert?: boolean;
   exportRows?: unknown[];
 }
@@ -74,14 +75,11 @@ function makeDb(options: DbOptions = {}) {
   };
 
   const db: Record<string, unknown> = {
-    query: {
-      projects: {
-        findFirst: jest.fn(async () =>
-          "project" in options ? options.project : { managerMembershipId: null },
-        ),
-      },
-    },
     select: jest.fn((projection: Record<string, unknown>) => {
+      if ("manages" in projection) {
+        const project = "project" in options ? options.project : projectAccessRow();
+        return chainFor(project === null || project === undefined ? [] : [project]);
+      }
       state.selects += 1;
       const field = Object.keys(projection)[0];
       if (field === "name") return chainFor(STATUSES.map((name) => ({ name })));
@@ -110,12 +108,13 @@ function makeDb(options: DbOptions = {}) {
   return { db: db as unknown as Db, state };
 }
 
-function makeAccess(scope: DataScope = "all") {
-  return {
-    resolveUserPermissions: jest.fn(async () => new Map<string, DataScope>()),
-    scopeFor: jest.fn(async () => scope),
-    holds: jest.fn(async () => scope !== "none"),
-  } as unknown as AccessService;
+function makeAccess(createScope: DataScope = "all") {
+  return standingAccess({
+    "build:manage": "all",
+    "build:view": "all",
+    "build:tickets:view": "all",
+    [IMPORT_PERMISSION]: createScope,
+  }) as unknown as AccessService;
 }
 
 function makeFences() {

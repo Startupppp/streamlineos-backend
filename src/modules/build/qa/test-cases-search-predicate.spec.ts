@@ -4,6 +4,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 const dialect = new PgDialect();
@@ -22,13 +23,9 @@ function buildDb(captured: Captured) {
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([]),
   };
+  const projectRow = { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) };
   return {
-    query: {
-      projects: {
-        findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }),
-      },
-    },
-    select: jest.fn().mockReturnValue(builder),
+    select: jest.fn().mockReturnValueOnce(projectRow).mockReturnValue(builder),
   } as unknown as Db;
 }
 
@@ -44,7 +41,7 @@ function makeOwner(orgId: string): CurrentUserContext {
   };
 }
 
-const mockAccess = {} as AccessService;
+const mockAccess = principalAccess() as unknown as AccessService;
 
 describe("TestManagementService.listCases — search predicate shape (BE-49)", () => {
   it("uses a trailing-wildcard pattern, not a leading wildcard, so the test case title column can use a prefix index rather than a full scan over the suite", async () => {

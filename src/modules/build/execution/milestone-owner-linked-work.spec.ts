@@ -7,6 +7,13 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService } from "./workspace.service";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core/project-crud/project-access";
+
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual("../core/project-crud/project-access"),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
+}));
 
 const ORG = "org-1";
 const PROJECT_ID = 1;
@@ -305,5 +312,24 @@ describe("MilestonesService — updateMilestone projects the real counts, so a c
     const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).updateMilestone(makeU(), PROJECT_ID, 1, { version: 1, name: "M1" });
     expect(result.linkedTicketCount).toBe(0);
     expect(result.completedTicketCount).toBe(0);
+  });
+});
+
+describe("MilestonesService — every milestone surface asks the project-access decision for the URL project", () => {
+  it("listMilestones reads through assertProjectAccess and updateMilestone writes through assertProjectWriteAccess", async () => {
+    const reads = jest.mocked(assertProjectAccess);
+    const writes = jest.mocked(assertProjectWriteAccess);
+    reads.mockClear();
+    writes.mockClear();
+    const c = milestoneChain([]);
+    const db = {
+      query: { projectMilestones: { findFirst: jest.fn().mockResolvedValue(undefined) } },
+      select: jest.fn().mockReturnValue(c),
+    } as unknown as Db;
+    const svc = new MilestonesService(db, mockAccess, lifecycleAuditDouble());
+    await svc.listMilestones(makeU(), PROJECT_ID, listMilestonesQuerySchema.parse({}));
+    expect(reads).toHaveBeenCalledWith(db, mockAccess, makeU(), PROJECT_ID);
+    await svc.updateMilestone(makeU(), PROJECT_ID, 1, { version: 1, name: "M1" }).catch(() => undefined);
+    expect(writes).toHaveBeenCalledWith(db, mockAccess, makeU(), PROJECT_ID);
   });
 });

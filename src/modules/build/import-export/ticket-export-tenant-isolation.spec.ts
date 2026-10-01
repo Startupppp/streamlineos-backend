@@ -6,6 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.types";
 import { TicketExportService } from "./ticket-export.service";
+import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
 
 const OWNER_ORG = "org-owner";
 const ATTACKER_ORG = "org-attacker";
@@ -25,7 +26,7 @@ function makeUser(orgId: string): CurrentUserContext {
   };
 }
 
-function makeDb(projectRow: unknown | null, ticketRows: unknown[] = []) {
+function makeDb(projectRow: ProjectAccessRow | null, ticketRows: unknown[] = []) {
   let capturedWhere: SQL | undefined;
   let selectCallCount = 0;
   const chain: Record<string, unknown> = {};
@@ -38,9 +39,14 @@ function makeDb(projectRow: unknown | null, ticketRows: unknown[] = []) {
     orderBy: () => chain,
     limit: () => Promise.resolve(ticketRows),
   });
+  const projectChain = {
+    from: () => projectChain,
+    where: () => projectChain,
+    limit: async () => (projectRow === null ? [] : [projectRow]),
+  };
   const db = {
-    query: { projects: { findFirst: jest.fn(async () => projectRow) } },
-    select: jest.fn(() => {
+    select: jest.fn((fields?: Record<string, unknown>) => {
+      if (fields !== undefined && "manages" in fields) return projectChain;
       selectCallCount += 1;
       return chain;
     }),
@@ -53,11 +59,7 @@ function makeDb(projectRow: unknown | null, ticketRows: unknown[] = []) {
 }
 
 function makeAccess() {
-  return {
-    resolveUserPermissions: jest.fn(async () => new Set<string>()),
-    scopeFor: jest.fn(async () => "all" as const),
-    holds: jest.fn(async () => true),
-  } as unknown as AccessService;
+  return standingAccess({ "build:manage": "all", "build:view": "all", "build:tickets:view": "all" }) as unknown as AccessService;
 }
 
 describe("TicketExportService — cross-tenant isolation", () => {
@@ -98,7 +100,7 @@ describe("TicketExportService — cross-tenant isolation", () => {
       clientVisible: false,
       link: null,
     };
-    const { db } = makeDb({ managerMembershipId: null }, [ticketRow]);
+    const { db } = makeDb(projectAccessRow(), [ticketRow]);
     const svc = new TicketExportService(db, makeAccess());
     const owner = makeUser(OWNER_ORG);
 
@@ -109,7 +111,7 @@ describe("TicketExportService — cross-tenant isolation", () => {
   });
 
   it("binds the caller's own org to the ticket WHERE clause and never the attacker org (org-scoping predicate reaches the db layer)", async () => {
-    const { db, getCapturedWhere } = makeDb({ managerMembershipId: null }, []);
+    const { db, getCapturedWhere } = makeDb(projectAccessRow(), []);
     const svc = new TicketExportService(db, makeAccess());
     const owner = makeUser(OWNER_ORG);
 

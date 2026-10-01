@@ -39,7 +39,7 @@ describe("entity cards and actions use the project-access reach rule", () => {
     const service = new BuildEntityReadsService(db);
     const [resolution] = await service.resolveWith(
       MEMBER,
-      [{ module: "build", type: "ticket", id: "5" }],
+      [{ type: "ticket", id: "5" }],
       grants([["build:view", "own"], ["build:tickets:view", "all"]]),
     );
     expect(resolution?.status).toBe("resolved");
@@ -53,7 +53,7 @@ describe("entity cards and actions use the project-access reach rule", () => {
     const service = new BuildEntityReadsService(db);
     const [resolution] = await service.resolveWith(
       MEMBER,
-      [{ module: "build", type: "ticket", id: "5" }],
+      [{ type: "ticket", id: "5" }],
       grants([["build:tickets:view", "all"]]),
     );
     expect(resolution?.status).not.toBe("resolved");

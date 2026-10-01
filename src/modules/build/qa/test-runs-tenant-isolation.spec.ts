@@ -5,7 +5,18 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestRunsService } from "./test-runs.service";
 
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+
 const MEMBERSHIP_ID = 7;
+
+function gatedSelect(row: object | null, after: () => unknown) {
+  let first = true;
+  return jest.fn(() => {
+    if (!first) return after();
+    first = false;
+    return { from: () => ({ where: () => ({ limit: async () => (row === null ? [] : [row]) }) }) };
+  });
+}
 
 function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
   return {
@@ -20,7 +31,7 @@ function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
 }
 
 function makeAccess() {
-  return { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+  return standingAccess({ "build:manage": "all" }) as unknown as AccessService;
 }
 
 describe("TestRunsService — cross-tenant isolation", () => {
@@ -34,10 +45,9 @@ describe("TestRunsService — cross-tenant isolation", () => {
     const from = jest.fn().mockReturnValue({ innerJoin });
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
         testRuns: { findFirst: jest.fn().mockResolvedValue(runRow) },
       },
-      select: jest.fn().mockReturnValue({ from }),
+      select: gatedSelect(projectAccessRow(), () => ({ from })),
     } as unknown as Db;
   }
 
@@ -66,22 +76,14 @@ describe("TestRunsService — project membership gate (assertProjectAccess)", ()
     const from = jest.fn().mockReturnValue({ innerJoin, where });
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         testRuns: { findFirst: jest.fn() },
         testRunResults: { findFirst: jest.fn() },
       },
-      select: jest.fn().mockReturnValue({ from }),
+      select: gatedSelect(projectAccessRow(), () => ({ from })),
     } as unknown as Db;
   }
 
   function makeMemberDb() {
-    let callCount = 0;
-    const makeLimitChain = (rows: unknown[]) => {
-      const limit = jest.fn().mockResolvedValue(rows);
-      const where = jest.fn().mockReturnValue({ limit });
-      const innerJoin = jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }), where });
-      return { from: jest.fn().mockReturnValue({ innerJoin, where }) };
-    };
     const runsChain = {
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
@@ -91,29 +93,23 @@ describe("TestRunsService — project membership gate (assertProjectAccess)", ()
     };
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         testRuns: { findFirst: jest.fn() },
         testRunResults: { findFirst: jest.fn() },
       },
-      select: jest.fn().mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) return makeLimitChain([{ role: "MEMBER" }]);
-        if (callCount === 2) return makeLimitChain([]);
-        return runsChain;
-      }),
+      select: gatedSelect(projectAccessRow({ memberRole: "MEMBER" }), () => runsChain),
     } as unknown as Db;
   }
 
   it("rejects a non-member with ForbiddenException", async () => {
     const db = makeNonMemberDb();
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new TestRunsService(db, access, audit);
     await expect(svc.listRuns(makeU("org-1"), 1, {})).rejects.toThrow(ForbiddenException);
   });
 
   it("allows a direct project member through the gate", async () => {
     const db = makeMemberDb();
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new TestRunsService(db, access, audit);
     await expect(svc.listRuns(makeU("org-1"), 1, {})).resolves.toEqual({
       data: [],
@@ -155,10 +151,9 @@ describe("TestRunsService — listRuns cursor pagination", () => {
     };
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG, managerMembershipId: null }) },
         testRuns: { findFirst: jest.fn() },
       },
-      select: jest.fn().mockImplementation(() => {
+      select: gatedSelect(projectAccessRow(), () => {
         selectCall++;
         return selectCall === 1 ? runsChain : countsChain;
       }),
@@ -181,8 +176,8 @@ describe("TestRunsService — listRunResults cross-tenant isolation", () => {
     const db = {
       query: {
         testRuns: { findFirst: jest.fn().mockResolvedValue(null) },
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
+      select: gatedSelect(projectAccessRow(), () => undefined),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
@@ -205,9 +200,8 @@ describe("TestRunsService — listRunResults cross-tenant isolation", () => {
     const db = {
       query: {
         testRuns: { findFirst: jest.fn().mockResolvedValue(run) },
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
-      select: jest.fn().mockReturnValue(resultsChain),
+      select: gatedSelect(projectAccessRow(), () => resultsChain),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
@@ -225,8 +219,8 @@ describe("TestRunsService — updateResult idempotency", () => {
       query: {
         testRunResults: { findFirst: jest.fn().mockResolvedValue(existingResult) },
         testRuns: { findFirst: jest.fn() },
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
+      select: gatedSelect(projectAccessRow(), () => undefined),
       update: jest.fn(),
     } as unknown as Db;
   }
@@ -284,8 +278,8 @@ describe("TestRunsService — updateResult idempotency", () => {
       query: {
         testRunResults: { findFirst: jest.fn().mockResolvedValue(existingResult) },
         testRuns: { findFirst: jest.fn() },
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
+      select: gatedSelect(projectAccessRow(), () => undefined),
       update: updateMock,
     } as unknown as Db;
 
@@ -301,8 +295,8 @@ describe("TestRunsService — updateResult idempotency", () => {
       query: {
         testRunResults: { findFirst: jest.fn().mockResolvedValue(null) },
         testRuns: { findFirst: jest.fn() },
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
+      select: gatedSelect(projectAccessRow(), () => undefined),
       update: jest.fn(),
     } as unknown as Db;
 
@@ -332,8 +326,8 @@ describe("TestRunsService — run completion atomicity", () => {
     const db = {
       query: {
         testRuns: { findFirst: jest.fn().mockResolvedValue(existing) },
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
+      select: gatedSelect(projectAccessRow(), () => undefined),
       update: updateMock,
     } as unknown as Db;
 
@@ -362,8 +356,8 @@ describe("TestRunsService — run completion atomicity", () => {
     const db = {
       query: {
         testRuns: { findFirst: jest.fn().mockResolvedValue(existing) },
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
+      select: gatedSelect(projectAccessRow(), () => undefined),
       update: updateMock,
     } as unknown as Db;
 

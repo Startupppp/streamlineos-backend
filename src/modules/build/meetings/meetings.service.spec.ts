@@ -7,6 +7,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
 
 function makeActionItemsTicketCreation() {
   return {
@@ -114,13 +115,11 @@ describe("MeetingsService.listMeetings — cursor pagination", () => {
       groupBy: jest.fn().mockResolvedValue([]),
       limit: jest.fn().mockResolvedValue(overflow),
     };
+    const projectRow = { from: () => projectRow, where: () => projectRow, limit: async () => [projectAccessRow()] };
     const mockDb = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-      },
-      select: jest.fn().mockReturnValue(meetingQuery),
+      select: jest.fn().mockReturnValueOnce(projectRow).mockReturnValue(meetingQuery),
     } as unknown as Db;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+    const mockAccess = standingAccess({ "build:manage": "all" }) as unknown as AccessService;
 
     const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     const result = await svc.listMeetings(makeU("org-1"), 1, { limit: 25 });
@@ -335,25 +334,20 @@ describe("MeetingsService.listMeetings — server-side full-text search predicat
 
   function makeMeetingsMockDb() {
     return {
-      query: { projects: { findFirst: jest.fn() } },
-      select: jest.fn().mockReturnValue(makeChain([{ role: "MEMBER" }])),
+      select: jest.fn().mockReturnValue(makeChain([])),
     };
   }
 
   function makeSearchAccessService(): AccessService {
-    return {
-      resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-    } as unknown as AccessService;
+    return standingAccess(MEMBER_STANDING) as unknown as AccessService;
   }
 
   function setupSearchMocks(
     mockDb: ReturnType<typeof makeMeetingsMockDb>,
     meetingChain: ReturnType<typeof makeChain>,
   ) {
-    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     mockDb.select
-      .mockReturnValueOnce(makeChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(meetingChain);
   }
 
@@ -399,13 +393,12 @@ describe("MeetingsService.listMeetings — server-side full-text search predicat
 
 describe("MeetingsService — project membership gate (assertProjectAccess)", () => {
   function makeNonMemberDb() {
-    const limit = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockResolvedValue([projectAccessRow()]);
     const where = jest.fn().mockReturnValue({ limit });
     const innerJoin = jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }), where });
     const from = jest.fn().mockReturnValue({ innerJoin, where });
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectMeetings: { findFirst: jest.fn() },
       },
       select: jest.fn().mockReturnValue({ from }),
@@ -429,13 +422,11 @@ describe("MeetingsService — project membership gate (assertProjectAccess)", ()
     };
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         projectMeetings: { findFirst: jest.fn() },
       },
       select: jest.fn().mockImplementation(() => {
         callCount++;
-        if (callCount === 1) return makeLimitChain([{ role: "MEMBER" }]);
-        if (callCount === 2) return makeLimitChain([]);
+        if (callCount === 1) return makeLimitChain([projectAccessRow({ memberRole: "MEMBER" })]);
         return meetingsChain;
       }),
     } as unknown as Db;
@@ -443,14 +434,14 @@ describe("MeetingsService — project membership gate (assertProjectAccess)", ()
 
   it("rejects a non-member with ForbiddenException", async () => {
     const db = makeNonMemberDb();
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new MeetingsService(db, access, mockAudit);
     await expect(svc.listMeetings(makeU("org-1"), 1, { limit: 25 })).rejects.toThrow(ForbiddenException);
   });
 
   it("allows a direct project member through the gate", async () => {
     const db = makeMemberDb();
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new MeetingsService(db, access, mockAudit);
     await expect(svc.listMeetings(makeU("org-1"), 1, { limit: 25 })).resolves.toMatchObject({
       data: [],

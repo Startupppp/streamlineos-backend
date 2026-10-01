@@ -5,6 +5,7 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { BugsService } from "../bugs.service";
 import { bugRowSchema } from "../dto/qa-response.schemas";
 import { tickets, workItemQaDetails } from "../../../../db/schema";
+import { projectAccessRow, standingAccess } from "../../core/project-crud/__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 3;
@@ -22,9 +23,7 @@ function makeU(): CurrentUserContext {
 }
 
 function makeAccess(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
-  } as unknown as AccessService;
+  return standingAccess({ "build:manage": "all" }) as unknown as AccessService;
 }
 
 const audit = { log: jest.fn() } as never;
@@ -70,7 +69,8 @@ function sidecarLessBugRow() {
 function listDb(rows: unknown[]) {
   const joinArgs: unknown[] = [];
   const projections: unknown[] = [];
-  const select = jest.fn().mockImplementation((projection: unknown) => {
+  const projectRow = { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) };
+  const select = jest.fn().mockImplementationOnce(() => projectRow).mockImplementation((projection: unknown) => {
     projections.push(projection);
     return {
       from: jest.fn().mockImplementation((table: unknown) => ({
@@ -86,9 +86,6 @@ function listDb(rows: unknown[]) {
     };
   });
   const db = {
-    query: {
-      projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-    },
     select,
   } as unknown as Db;
   return { db, joinArgs, projections };

@@ -38,6 +38,7 @@ function makeIntakeTicketCreation() {
 jest.mock("../core/project-crud/project-access", () => ({
   ...jest.requireActual("../core/project-crud/project-access"),
   assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../core/lib/allocate-ticket-number", () => ({
   allocateTicketNumbers: jest.fn(async () => 1),

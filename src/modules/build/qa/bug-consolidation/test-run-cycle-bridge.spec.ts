@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { TestRunsService } from "../test-runs.service";
 import { cycles, testRuns } from "../../../../db/schema";
+import { projectAccessRow, standingAccess } from "../../core/project-crud/__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 4;
@@ -23,9 +24,7 @@ function makeU(): CurrentUserContext {
 }
 
 function makeAccess(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
-  } as unknown as AccessService;
+  return standingAccess({ "build:manage": "all" }) as unknown as AccessService;
 }
 
 const audit = { log: jest.fn() } as never;
@@ -80,10 +79,7 @@ function createRunDb(selectResults: unknown[][], calls: SelectCall[], created: u
   };
   const transaction = jest.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
   const db = {
-    query: {
-      projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-    },
-    select: sequencedSelect(selectResults, calls),
+    select: sequencedSelect([[projectAccessRow()], ...selectResults], calls),
     transaction,
   } as unknown as Db;
   return { db, transaction, insertedValues, insertedTables };
@@ -93,18 +89,21 @@ function updateDb(cycleRows: unknown[], updated: unknown) {
   const setObjects: Record<string, unknown>[] = [];
   const db = {
     query: {
-      projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
       testRuns: {
         findFirst: jest
           .fn()
           .mockResolvedValue({ id: 5, status: "in_progress", startedAt: new Date(), completedAt: null }),
       },
     },
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(cycleRows) }),
+    select: jest.fn()
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }),
+      })
+      .mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(cycleRows) }),
+        }),
       }),
-    }),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockImplementation((setObj: Record<string, unknown>) => {
         setObjects.push(setObj);
