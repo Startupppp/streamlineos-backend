@@ -155,7 +155,7 @@ function buildService(db: unknown): AccessService {
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
-    new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
+    new AccessVersionCache(wrappedDb),
     membershipStubFromDb(db),
   );
 }

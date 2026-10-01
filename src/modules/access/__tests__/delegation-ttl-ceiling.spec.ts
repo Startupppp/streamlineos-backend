@@ -66,10 +66,7 @@ function makeAccessService(
     cacheOverride as unknown as CacheService,
     entitlements,
     makeMfaPolicyStub(),
-    new AccessVersionCache(
-      database as unknown as Db,
-      cacheOverride as unknown as CacheService,
-    ),
+    new AccessVersionCache(database as unknown as Db),
     membership,
   );
 }

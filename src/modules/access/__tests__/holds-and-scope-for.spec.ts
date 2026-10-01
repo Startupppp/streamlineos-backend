@@ -61,7 +61,7 @@ function buildService(resolved: Map<string, DataScope>): {
     isCoreModule: jest.fn().mockReturnValue(false),
   } as unknown as EntitlementsService;
 
-  const service = new AccessService(db, cache, entitlements, makeMfaPolicyStub(), new AccessVersionCache(db, cache), makeMembershipStateStub());
+  const service = new AccessService(db, cache, entitlements, makeMfaPolicyStub(), new AccessVersionCache(db), makeMembershipStateStub());
   const resolveSpy = jest
     .spyOn(service, "resolveUserPermissions")
     .mockResolvedValue(resolved);

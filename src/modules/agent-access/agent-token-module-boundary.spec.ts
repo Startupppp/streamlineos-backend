@@ -210,7 +210,7 @@ describe("agent token cross-module boundary (AgentTokenGuard + PermissionGuard)"
       cache,
       entitlements,
       makeMfaPolicyStub(),
-      new AccessVersionCache(mockDb as unknown as Db, cache),
+      new AccessVersionCache(mockDb as unknown as Db),
       membershipStubFromDb(mockDb),
     );
     jest
