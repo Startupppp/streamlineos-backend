@@ -295,7 +295,19 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
       expect(syncStructuralRoleAssignment).toHaveBeenCalledTimes(2);
       expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(txMock, ORG, 1, "ORG_ADMIN");
       expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(txMock, ORG, 2, "OWNER");
-      expect(commitAccessChange).toHaveBeenCalledWith(txMock, ORG);
+      expect(commitAccessChange).toHaveBeenCalledWith(
+        txMock,
+        ORG,
+        expect.objectContaining({
+          audit: expect.objectContaining({ action: "ownership.transfer_accepted" }),
+          revoke: expect.objectContaining({
+            loses: [{ kind: "standing", userIds: expect.arrayContaining([expect.any(String)]) }],
+          }),
+          notify: expect.objectContaining({
+            events: [expect.objectContaining({ eventKey: "ownership.transfer.accepted" })],
+          }),
+        }),
+      );
     });
 
     it("writes the owner_membership_id repoint and the transfer's ACCEPTED stamp on that same handle", async () => {
@@ -345,7 +357,19 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
       expect(txMock.insert).toHaveBeenCalledTimes(1);
       expect(revokeModuleOwnerRole).toHaveBeenCalledWith(txMock, ORG, "hr", 1);
       expect(assertModuleOwnerRoleAssigned).toHaveBeenCalledWith(txMock, ORG, "hr", 2);
-      expect(commitAccessChange).toHaveBeenCalledWith(txMock, ORG);
+      expect(commitAccessChange).toHaveBeenCalledWith(
+        txMock,
+        ORG,
+        expect.objectContaining({
+          audit: expect.objectContaining({ action: "ownership.transfer_accepted" }),
+          revoke: expect.objectContaining({
+            loses: [{ kind: "standing", userIds: expect.arrayContaining([expect.any(String)]) }],
+          }),
+          notify: expect.objectContaining({
+            events: [expect.objectContaining({ eventKey: "ownership.transfer.accepted" })],
+          }),
+        }),
+      );
     });
 
     it("leaves the org's structural roles untouched — a module handover is not an org handover", async () => {

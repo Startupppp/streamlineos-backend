@@ -12,6 +12,7 @@ import { OwnershipTransferResponseService } from "../ownership-transfer-response
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { auditLogs } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -27,6 +28,14 @@ type SelectChain = {
   for: jest.Mock;
   returning: jest.Mock;
 };
+
+function makeUserIdChain(userIds: readonly string[]) {
+  return {
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue(userIds.map((userId) => ({ userId }))),
+    }),
+  };
+}
 
 function makeSelectChain(result: unknown[]): SelectChain {
   const chain: SelectChain = {
@@ -84,6 +93,8 @@ function makeInsertChain(result: unknown[]): InsertChain {
 
 describe("OwnershipService — access / business-rule logic", () => {
   let ownership: OwnershipService;
+  let cache: CacheService;
+  let dispatch: NotificationDispatchService;
   let transfers: OwnershipTransfersService;
   let responses: OwnershipTransferResponseService;
   let mockDb: {
@@ -142,6 +153,8 @@ describe("OwnershipService — access / business-rule logic", () => {
           useValue: {
             invalidate: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateMany: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
             invalidateForOrg: jest.fn().mockResolvedValue(undefined),
             invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
             cached: jest.fn(),
@@ -166,6 +179,8 @@ describe("OwnershipService — access / business-rule logic", () => {
       ],
     }).compile();
     ownership = moduleRef.get(OwnershipService);
+    cache = moduleRef.get(CacheService);
+    dispatch = moduleRef.get(NotificationDispatchService);
     transfers = moduleRef.get(OwnershipTransfersService);
     responses = moduleRef.get(OwnershipTransferResponseService);
   });
@@ -282,7 +297,8 @@ describe("OwnershipService — access / business-rule logic", () => {
         .mockReturnValueOnce(makeSelectChain([targetMembership]))
         .mockReturnValueOnce(makeSelectChain([prevOwnership]))
         .mockReturnValueOnce(makeSelectChain([ownerRole]))
-        .mockReturnValueOnce(makeSelectChain([ownerRole]));
+        .mockReturnValueOnce(makeSelectChain([ownerRole]))
+        .mockReturnValueOnce(makeUserIdChain([TARGET_USER, "u-previous-owner"]));
       mockDb.insert.mockReturnValue(makeInsertChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
       mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
@@ -291,6 +307,51 @@ describe("OwnershipService — access / business-rule logic", () => {
 
       expect(result).toMatchObject({ success: true });
       expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("revokes both owners' sessions and notifies them through the commit, inside the transaction", async () => {
+      const targetMembership = { id: 5, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+      const ownerRole = { id: 777 };
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([targetMembership]))
+        .mockReturnValueOnce(makeSelectChain([{ ownerMembershipId: 3 }]))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]))
+        .mockReturnValueOnce(makeSelectChain([ownerRole]))
+        .mockReturnValueOnce(makeUserIdChain([TARGET_USER, "u-previous-owner"]));
+      mockDb.insert.mockReturnValue(makeInsertChain([]));
+      mockDb.update.mockReturnValue(makeUpdateChain());
+      mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
+
+      await ownership.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 });
+
+      expect(cache.invalidateMany).toHaveBeenCalledWith([
+        `user:session:${TARGET_USER}`,
+        "user:session:u-previous-owner",
+      ]);
+      expect(dispatch.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventKey: "ownership.module_owner.changed",
+          targetUserIds: [TARGET_USER, "u-previous-owner"],
+        }),
+      );
+    });
+
+    it("does not notify or revoke anyone when the transaction rolls back", async () => {
+      const targetMembership = { id: 5, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([targetMembership]))
+        .mockReturnValueOnce(makeSelectChain([{ ownerMembershipId: 3 }]));
+      mockDb.insert.mockReturnValue(makeInsertChain([]));
+      mockDb.update.mockImplementation(() => {
+        throw new Error("rolled back");
+      });
+
+      await expect(
+        ownership.forceSetModuleOwner(ORG, ACTOR_USER, "hr", { ownerMembershipId: 5 }),
+      ).rejects.toThrow("rolled back");
+      expect(dispatch.emit).not.toHaveBeenCalled();
+      expect(cache.invalidateMany).not.toHaveBeenCalled();
+      expect(cache.invalidateForOrg).not.toHaveBeenCalled();
     });
   });
 
@@ -543,7 +604,8 @@ describe("OwnershipService — access / business-rule logic", () => {
 
       expect(result).toMatchObject({ success: true });
       expect(mockDb.delete).toHaveBeenCalledTimes(1);
-      expect(mockDb.insert).toHaveBeenCalledTimes(3);
+      expect(mockDb.insert).toHaveBeenCalledTimes(4);
+      expect(mockDb.insert).toHaveBeenCalledWith(auditLogs);
     });
 
     it("throws BadRequestException when the MODULE_OWNER role is not seeded (prevents half-apply)", async () => {
@@ -679,7 +741,8 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.select
         .mockReturnValueOnce(makeSelectChain([targetMembership]))
         .mockReturnValueOnce(makeSelectChain([]))
-        .mockReturnValueOnce(makeSelectChain([ownerRole]));
+        .mockReturnValueOnce(makeSelectChain([ownerRole]))
+        .mockReturnValueOnce(makeUserIdChain([TARGET_USER]));
       mockDb.insert.mockReturnValue(makeInsertChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
       mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });
@@ -697,7 +760,8 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.select
         .mockReturnValueOnce(makeSelectChain([targetMembership]))
         .mockReturnValueOnce(makeSelectChain([prevOwnership]))
-        .mockReturnValueOnce(makeSelectChain([ownerRole]));
+        .mockReturnValueOnce(makeSelectChain([ownerRole]))
+        .mockReturnValueOnce(makeUserIdChain([TARGET_USER]));
       mockDb.insert.mockReturnValue(makeInsertChain([]));
       mockDb.update.mockReturnValue(makeUpdateChain());
       mockDb.delete.mockReturnValue({ where: jest.fn().mockResolvedValue([]) });

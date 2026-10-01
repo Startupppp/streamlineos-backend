@@ -8,9 +8,16 @@ import type { SubjectFileKey } from "../storage/storage-key-catalog";
 import type { TenantTx } from "../../db/drizzle.types";
 import { gdprExportJobs, organizationMembers, users } from "../../db/schema";
 
-jest.mock("../../common/rbac/access-mutation-commit", () => ({
-  commitAccessChange: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-invalidate", () => ({
+  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
 }));
+
+jest.mock("../../common/rbac/access-mutation-commit", () => {
+  const actual = jest.requireActual<typeof import("../../common/rbac/access-mutation-commit")>(
+    "../../common/rbac/access-mutation-commit",
+  );
+  return { ...actual, commitAccessChange: jest.fn(actual.commitAccessChange) };
+});
 
 jest.mock("../../common/auth/membership-state.service", () => ({
   bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
@@ -441,7 +448,16 @@ describe("GdprSubjectErasureService — cache invalidation", () => {
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(commitAccessChange).toHaveBeenCalledWith(txMocks.tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(
+      txMocks.tx,
+      ORG,
+      expect.objectContaining({
+        audit: expect.objectContaining({ action: "subject.erasure.started" }),
+        revoke: expect.objectContaining({
+          loses: [expect.objectContaining({ kind: "identity", userId: SUBJECT })],
+        }),
+      }),
+    );
   });
 
   it("calls bustMembershipStatusCache after the transaction commits", async () => {
@@ -776,8 +792,6 @@ describe("GdprSubjectErasureService — AI and chat content erasure", () => {
 // adds each id to a sorted set keyed by expiry for future pruning.
 // JwtAuthGuard reads only the Redis tombstone — NOT the DB isRevoked flag — so
 // a token remains invalid as long as the tombstone key is present.
-// Calling revokeAllForUser after the transaction ensures the DB write is
-// durable before any session is invalidated.
 
 describe("GdprSubjectErasureService — session revocation", () => {
   it("calls revokeAllForUser with the subject userId after the transaction completes", async () => {
@@ -827,10 +841,7 @@ describe("GdprSubjectErasureService — session revocation", () => {
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(SUBJECT);
   });
 
-  it("revokeAllForUser is called AFTER the transaction so the erasure is durable before tokens are killed", async () => {
-    // Mechanism: the spy order — db.transaction resolves first, then revokeAllForUser.
-    // If revokeAllForUser were called inside the transaction callback, the order would
-    // be inverted relative to the transaction promise resolution.
+  it("revokeAllForUser runs inside the erasure transaction so no session outlives a committed erasure", async () => {
     const { db } = makeDb({});
     const callOrder: string[] = [];
 
@@ -851,7 +862,21 @@ describe("GdprSubjectErasureService — session revocation", () => {
     const svc = buildService(db, sessions);
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(callOrder).toEqual(["transaction", "revokeAllForUser"]);
+    expect(callOrder).toEqual(["revokeAllForUser", "transaction"]);
+  });
+
+  it("a tombstone failure aborts the erasure transaction instead of leaving live sessions behind", async () => {
+    const { db } = makeDb({});
+    const sessions = {
+      revokeAllForUser: jest.fn().mockRejectedValue(new Error("redis down")),
+    };
+    const svc = buildService(db, sessions);
+
+    await expect(svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false })).rejects.toThrow(
+      "redis down",
+    );
+    expect(sessions.revokeAllForUser).toHaveBeenCalledWith(SUBJECT);
+    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
   });
 });
 

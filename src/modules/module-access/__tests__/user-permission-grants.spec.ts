@@ -13,7 +13,7 @@ const txCalls = {
   versionBumped: 0,
   writeTx: null as unknown,
   bumpTx: null as unknown,
-  lastAuditOpts: null as { audit?: Record<string, unknown> } | null,
+  lastAuditOpts: null as { audit?: Record<string, unknown>; revoke?: unknown } | null,
 };
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
@@ -47,7 +47,11 @@ jest.mock("../module-access.helpers", () => ({
 }));
 
 jest.mock("../../../common/rbac/access-mutation-commit", () => ({
-  commitAccessChange: (tx: unknown, _orgId: unknown, opts: { audit?: Record<string, unknown> }) => {
+  commitAccessChange: (
+    tx: unknown,
+    _orgId: unknown,
+    opts: { audit?: Record<string, unknown>; revoke?: unknown },
+  ) => {
     txCalls.versionBumped += 1;
     txCalls.bumpTx = tx;
     txCalls.lastAuditOpts = opts ?? null;
@@ -397,22 +401,24 @@ describe("platform billing stays out of reach", () => {
   });
 });
 
-describe("target user session is invalidated so their next request re-resolves", () => {
-  it("invalidates the target user session after setGrants", async () => {
+describe("target user session is revoked through the commit so their next request re-resolves", () => {
+  it("declares the target user's permission loss on the setGrants commit instead of busting directly", async () => {
     const { service, cacheInvalidate } = build({});
     await service.setGrants(ACTOR, "hr", 7, {
       items: [{ permissionKey: "hr:employees:view", scope: "all" }],
     });
-    expect(cacheInvalidate).toHaveBeenCalledWith(
-      expect.stringContaining("u-target"),
-    );
+    expect(txCalls.lastAuditOpts).toMatchObject({
+      revoke: { loses: [{ kind: "permissions", userIds: ["u-target"] }] },
+    });
+    expect(cacheInvalidate).not.toHaveBeenCalled();
   });
 
-  it("invalidates the target user session after removeGrant", async () => {
+  it("declares the target user's permission loss on the removeGrant commit instead of busting directly", async () => {
     const { service, cacheInvalidate } = build({});
     await service.removeGrant(ACTOR, "hr", 7, "hr:employees:view");
-    expect(cacheInvalidate).toHaveBeenCalledWith(
-      expect.stringContaining("u-target"),
-    );
+    expect(txCalls.lastAuditOpts).toMatchObject({
+      revoke: { loses: [{ kind: "permissions", userIds: ["u-target"] }] },
+    });
+    expect(cacheInvalidate).not.toHaveBeenCalled();
   });
 });

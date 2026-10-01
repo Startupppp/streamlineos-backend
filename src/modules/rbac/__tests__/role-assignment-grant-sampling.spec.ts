@@ -2,7 +2,6 @@ import { ForbiddenException } from "@nestjs/common";
 import { assertMayAssignRole } from "../assert-role-assignment";
 import { RoleMemberService } from "../role-member.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AccessService } from "../../access/access.service";
@@ -194,7 +193,6 @@ describe("RoleMemberService.addRoleMember — the caller inherits the complete r
     return new RoleMemberService(
       makeDb(grantKeys, p),
       { invalidateMany: jest.fn(), invalidate: jest.fn() } as unknown as CacheService,
-      { log: jest.fn() } as unknown as AuditService,
       {} as unknown as NotificationDispatchService,
       makeAccess(held),
     );

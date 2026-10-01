@@ -2,7 +2,12 @@ jest.mock("../../auth/membership-state.service", () => ({
   bustMembershipStatusCache: jest.fn(),
   bustMembershipStatusCacheMany: jest.fn(),
 }));
-jest.mock("../../rbac/access-mutation-commit", () => ({ commitAccessChange: jest.fn() }));
+jest.mock("../../rbac/access-mutation-commit", () => ({
+  ...jest.requireActual<typeof import("../../rbac/access-mutation-commit")>(
+    "../../rbac/access-mutation-commit",
+  ),
+  commitAccessChange: jest.fn(),
+}));
 jest.mock("../../rbac/sync-structural-role", () => ({
   syncStructuralRoleAssignment: jest.fn(),
   syncStructuralRoleAssignments: jest.fn(),
@@ -15,7 +20,6 @@ import {
 } from "../membership-mutations";
 import {
   bustMembershipAfterIdentityErasure,
-  bustMembershipAfterOwnershipChange,
   bustMembershipsAfterOrgTeardown,
   revokeMembershipAccessCaches,
 } from "../membership-bust";
@@ -83,7 +87,7 @@ describe("createMembership", () => {
     expect(inserts[0]?.params).toEqual(expect.arrayContaining([ORG, USER, "MEMBER"]));
     expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "MEMBER");
     expect(bustMembershipStatusCache).toHaveBeenCalledTimes(1);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });
 
   it("skips the conflict, returns null and does not sync a role that was never granted", async () => {
@@ -123,7 +127,7 @@ describe("createOwnerMembership", () => {
     const inserts = statementsOn(captured, 'insert into "organization_members"');
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.params).toEqual(expect.arrayContaining([7, ORG, USER, "OWNER", true]));
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });
 
   it("refuses an allocation that did not return an integer id", async () => {
@@ -156,7 +160,7 @@ describe("changeRole", () => {
     expect(updates).toHaveLength(1);
     expect(updates[0]?.params).toEqual(expect.arrayContaining(["ORG_ADMIN", ORG, USER]));
     expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "ORG_ADMIN");
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });
 });
 
@@ -187,7 +191,7 @@ describe("setLifecycleStatus", () => {
       ORG,
     ]);
     expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });
 
   it("reactivation stamps activated_at and clears both tombstones", async () => {
@@ -230,7 +234,7 @@ describe("deleteMembership", () => {
 
     expect(statementsOn(captured, 'delete from "organization_members"')).toHaveLength(1);
     expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });
 
   it("deleteMembershipsById scopes to the organisation and does not bump the version", async () => {
@@ -249,7 +253,7 @@ describe("deleteMembership", () => {
     expect(deletes).toHaveLength(1);
     expect(deletes[0]?.params).toEqual(expect.arrayContaining([ORG, 3, 4]));
     expect(commitAccessChange).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });
 });
 
@@ -387,7 +391,7 @@ describe("transaction coupling", () => {
 
     for (const hook of hooks) await hook();
 
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
+    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });
 
   it("falls back to an inline bust outside an ambient transaction", async () => {
@@ -428,14 +432,5 @@ describe("invalidation-only entry points", () => {
     await bustMembershipAfterIdentityErasure(cache, USER);
 
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
-  });
-
-  it("an ownership change clears the session key and schedules the membership bust", async () => {
-    const cache = makeCache();
-
-    await bustMembershipAfterOwnershipChange(cache, ORG, USER);
-
-    expect(cache.invalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession(USER));
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER, ORG);
   });
 });

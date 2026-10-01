@@ -1,9 +1,7 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import type { CacheService } from "../../common/cache/cache.service";
 import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
-import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import {
   userDelegationPermissions,
   userDelegations,
@@ -20,9 +18,6 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 jest.mock("../../common/rbac/access-mutation-commit", () => ({
   commitAccessChange: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock("../../common/tenant/tenant-context", () => ({
-  registerAfterCommit: jest.fn().mockReturnValue(true),
 }));
 jest.mock("./lib/delegation-listing", () => {
   const actual = jest.requireActual<typeof import("./lib/delegation-listing")>("./lib/delegation-listing");
@@ -121,11 +116,14 @@ describe("DelegationsService normalized permission grants", () => {
       delegateeId: "delegatee-1",
       permissions: ["hr:employees:view", "hr:employees:manage"],
     });
-    expect(commitAccessChange).toHaveBeenCalledWith(db, actor.orgId, expect.any(Object));
-    expect(cache.invalidate).toHaveBeenCalledWith(
-      CACHE_KEYS.userSession("delegatee-1"),
+    expect(commitAccessChange).toHaveBeenCalledWith(
+      db,
+      actor.orgId,
+      expect.objectContaining({
+        revoke: { cache, loses: [{ kind: "permissions", userIds: ["delegatee-1"] }] },
+      }),
     );
-    expect(registerAfterCommit).toHaveBeenCalledTimes(1);
+    expect(cache.invalidate).not.toHaveBeenCalled();
   });
 
   it("hydrates API-compatible permission collections and participant names", async () => {

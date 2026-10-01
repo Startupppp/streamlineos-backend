@@ -9,7 +9,10 @@ import {
 import { getObservabilityContext } from "../observability/observability-context";
 import { getImpersonationContext } from "../impersonation/impersonation-context";
 import { registerAfterCommit } from "../tenant/tenant-context";
-import { bustMembershipStatusCacheMany } from "../auth/membership-state.service";
+import {
+  bustMembershipStatusCache,
+  bustMembershipStatusCacheMany,
+} from "../auth/membership-state.service";
 import type { CacheService } from "../cache/cache.service";
 import { CACHE_KEYS, type ExactCacheKey } from "../cache/cache-keys";
 import { bumpPermissionsVersion, type DbOrTx } from "./access-invalidate";
@@ -225,12 +228,27 @@ interface RevocationPlan {
   listKeys: readonly ExactCacheKey[];
 }
 
+async function bustKeys(cache: CacheService, keys: readonly ExactCacheKey[]): Promise<void> {
+  const [only] = keys;
+  if (keys.length === 1 && only !== undefined) await cache.invalidate(only);
+  else if (keys.length > 1) await cache.invalidateMany(keys);
+}
+
+async function bustStanding(cache: CacheService, userIds: readonly string[]): Promise<void> {
+  const [only] = userIds;
+  if (userIds.length === 1 && only !== undefined) await bustMembershipStatusCache(cache, only);
+  else if (userIds.length > 1) await bustMembershipStatusCacheMany(cache, userIds);
+}
+
 async function scheduleRevocation(cache: CacheService, plan: RevocationPlan): Promise<void> {
-  const keys = [...plan.listKeys, ...plan.sessions.map((id) => CACHE_KEYS.userSession(id))];
-  if (keys.length === 0 && plan.standing.length === 0) return;
+  const keys = [
+    ...new Set([...plan.listKeys, ...plan.sessions.map((id) => CACHE_KEYS.userSession(id))]),
+  ];
+  const standing = [...new Set(plan.standing)];
+  if (keys.length === 0 && standing.length === 0) return;
   await afterCommitOrInline(async () => {
-    if (keys.length > 0) await cache.invalidateMany(keys);
-    await bustMembershipStatusCacheMany(cache, plan.standing);
+    await bustKeys(cache, keys);
+    await bustStanding(cache, standing);
   });
 }
 
@@ -238,7 +256,7 @@ export function scheduleStandingRevocation(
   cache: CacheService,
   userIds: readonly string[],
 ): Promise<void> {
-  return scheduleRevocation(cache, { standing: userIds, sessions: userIds, listKeys: [] });
+  return scheduleRevocation(cache, { standing: userIds, sessions: [], listKeys: [] });
 }
 
 async function revokeAccess(
@@ -255,14 +273,16 @@ async function revokeAccess(
       continue;
     }
     if (loss.kind === "standing") {
-      for (const userId of loss.userIds) standingUsers.add(userId);
+      for (const userId of loss.userIds) {
+        standingUsers.add(userId);
+        sessionUsers.add(userId);
+      }
       continue;
     }
     const userIds =
       loss.kind === "permissions" ? loss.userIds : await resolveLosers(tx, orgId, loss);
     for (const userId of userIds) sessionUsers.add(userId);
   }
-  for (const userId of standingUsers) sessionUsers.add(userId);
   await scheduleRevocation(revocation.cache, {
     standing: [...standingUsers],
     sessions: [...sessionUsers],

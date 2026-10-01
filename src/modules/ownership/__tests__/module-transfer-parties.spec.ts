@@ -159,6 +159,8 @@ describe("module transfer — three-party scenario (from ≠ initiator)", () => 
           useValue: {
             invalidate: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateMany: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
             invalidateForOrg: jest.fn().mockResolvedValue(undefined),
             invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
             cachedVersionedForOrg: jest.fn().mockResolvedValue(undefined),
