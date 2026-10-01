@@ -7246,6 +7246,62 @@
       "when": 1803093650725,
       "tag": "1707_timesheets_work_log_unique_excludes_voided",
       "breakpoints": true
+    },
+    {
+      "idx": 1163,
+      "version": "7",
+      "when": 1803093651725,
+      "tag": "1231_hr_reporting_manager_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 1164,
+      "version": "7",
+      "when": 1803093652725,
+      "tag": "1232_hr_reporting_line_bulk_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 1165,
+      "version": "7",
+      "when": 1803093653725,
+      "tag": "1233_hr_reporting_manager_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 1166,
+      "version": "7",
+      "when": 1803093654725,
+      "tag": "1234_hr_reporting_lines_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 1167,
+      "version": "7",
+      "when": 1803093655725,
+      "tag": "1235_hr_reporting_lines_one_current_primary",
+      "breakpoints": true
+    },
+    {
+      "idx": 1168,
+      "version": "7",
+      "when": 1803093656725,
+      "tag": "1236_hr_top_level_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1169,
+      "version": "7",
+      "when": 1803093657725,
+      "tag": "1237_app_org_business_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 1170,
+      "version": "7",
+      "when": 1803093658725,
+      "tag": "1238_hr_leave_policy_template_dismissals",
+      "breakpoints": true
     }
   ]
 }
