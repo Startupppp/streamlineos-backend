@@ -23,13 +23,13 @@ const actor: CurrentUserContext = {
 
 function linkDb(project: ProjectAccessRow | null) {
   const projectChain = {
-    from: jest.fn(() => projectChain),
-    where: jest.fn(() => projectChain),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => (project === null ? [] : [project])),
   };
   const productChain = {
-    from: jest.fn(() => productChain),
-    where: jest.fn(() => productChain),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => [{ managedProductId: 3 }]),
   };
   const returning = jest.fn(async () => [{ id: 5, orgId: ORG, name: "P", key: "P", managedProductId: 3 }]);

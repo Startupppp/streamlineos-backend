@@ -18,13 +18,13 @@ function render(where: SQL | undefined) {
 
 function linkDb(project: ProjectAccessRow | null) {
   const containerChain = {
-    from: jest.fn(() => containerChain),
-    where: jest.fn(() => containerChain),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => [{ id: 1, orgId: ORG, name: "Container" }]),
   };
   const projectChain = {
-    from: jest.fn(() => projectChain),
-    where: jest.fn(() => projectChain),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => (project === null ? [] : [project])),
   };
   const onConflictDoNothing = jest.fn(async () => undefined);
@@ -41,26 +41,26 @@ function linkDb(project: ProjectAccessRow | null) {
 }
 
 function captureLinkedProjectsWhere() {
-  const captured: { where?: SQL } = {};
   const containerChain = {
-    from: jest.fn(() => containerChain),
-    where: jest.fn(() => containerChain),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => [{ id: 1, orgId: ORG, name: "Container" }]),
   };
+  const linkedWhereResult = {
+    orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn(async () => []),
+  };
   const linkedChain = {
-    from: jest.fn(() => linkedChain),
-    innerJoin: jest.fn(() => linkedChain),
-    where: jest.fn((where: SQL) => {
-      captured.where = where;
-      return linkedChain;
-    }),
-    orderBy: jest.fn(() => linkedChain),
+    from: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    where: jest.fn<typeof linkedWhereResult, [SQL]>(() => linkedWhereResult),
+    orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => []),
   };
   const programsChain = {
-    from: jest.fn(() => programsChain),
-    where: jest.fn(() => programsChain),
-    orderBy: jest.fn(() => programsChain),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => []),
   };
   const select = jest.fn((fields?: Record<string, unknown>) => {
@@ -68,7 +68,7 @@ function captureLinkedProjectsWhere() {
     if ("key" in fields) return linkedChain;
     return programsChain;
   });
-  return { db: { select }, captured };
+  return { db: { select }, linkedWhere: () => linkedChain.where.mock.calls[0]?.[0] };
 }
 
 const managedProject = projectAccessRow({ manages: true });
@@ -121,32 +121,32 @@ describe.each([
 
 describe("portfolio and program detail list only projects the caller can reach", () => {
   it("binds the caller's project membership into the portfolio's linked-projects page for a member", async () => {
-    const { db, captured } = captureLinkedProjectsWhere();
+    const { db, linkedWhere } = captureLinkedProjectsWhere();
     const svc = await portfoliosService(db, { log: jest.fn() }, MEMBER_STANDING);
 
     await svc.getPortfolio(actorIn(ORG, "user-1", 7), 1, { projectsLimit: 20, programsLimit: 20 });
 
-    const { sql: text, params } = render(captured.where);
+    const { sql: text, params } = render(linkedWhere());
     expect(text).toMatch(/project_members/);
     expect(params).toContain(7);
   });
 
   it("does not narrow the portfolio's linked-projects page for an org-wide manager", async () => {
-    const { db, captured } = captureLinkedProjectsWhere();
+    const { db, linkedWhere } = captureLinkedProjectsWhere();
     const svc = await portfoliosService(db);
 
     await svc.getPortfolio(actorIn(ORG, "user-1", 7), 1, { projectsLimit: 20, programsLimit: 20 });
 
-    expect(render(captured.where).sql).not.toMatch(/project_members/);
+    expect(render(linkedWhere()).sql).not.toMatch(/project_members/);
   });
 
   it("binds the caller's project membership into the program's linked-projects page for a member", async () => {
-    const { db, captured } = captureLinkedProjectsWhere();
+    const { db, linkedWhere } = captureLinkedProjectsWhere();
     const svc = await programsService(db, { log: jest.fn() }, MEMBER_STANDING);
 
     await svc.getProgram(actorIn(ORG, "user-1", 7), 1, { projectsLimit: 20 });
 
-    const { sql: text, params } = render(captured.where);
+    const { sql: text, params } = render(linkedWhere());
     expect(text).toMatch(/project_members/);
     expect(params).toContain(7);
   });

@@ -41,14 +41,14 @@ function exportRow(ticketNumber: number) {
 
 function exportDb(ticketRows: unknown[]) {
   const projectChain = {
-    from: jest.fn(() => projectChain),
-    where: jest.fn(() => projectChain),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => [projectAccessRow()]),
   };
   const ticketChain = {
-    from: jest.fn(() => ticketChain),
-    where: jest.fn(() => ticketChain),
-    orderBy: jest.fn(() => ticketChain),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn(async (_cap: number) => ticketRows),
   };
   const select = jest.fn((fields?: Record<string, unknown>) =>

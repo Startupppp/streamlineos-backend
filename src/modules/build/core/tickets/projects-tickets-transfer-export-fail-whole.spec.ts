@@ -49,10 +49,10 @@ function exportRow(number: number) {
 
 function exportDb(rows: unknown[]) {
   const chain = {
-    from: jest.fn(() => chain),
-    leftJoin: jest.fn(() => chain),
-    where: jest.fn(() => chain),
-    orderBy: jest.fn(() => chain),
+    from: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn(async () => rows),
   };
   return { select: jest.fn(() => chain), chain };
