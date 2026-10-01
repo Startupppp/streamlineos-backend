@@ -152,9 +152,7 @@ export class ClientPortalService {
     return grantRow ?? null;
   }
 
-  async getProjectOverview(u: CurrentUserContext, projectId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
-
+  private async loadProjectHeader(orgId: string, projectId: number) {
     const [project] = await this.db
       .select({
         id: projects.id,
@@ -165,10 +163,15 @@ export class ClientPortalService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
+    return project;
+  }
 
+  async getProjectOverview(u: CurrentUserContext, projectId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const project = await this.loadProjectHeader(u.orgId, projectId);
     const capabilities = (await this.resolveActiveGrant(u.orgId, projectId)) ?? INACTIVE_CAPABILITIES;
     const data = await buildPortalProjection(this.db, u.orgId, projectId, capabilities);
     return { project, ...data };
@@ -176,21 +179,7 @@ export class ClientPortalService {
 
   async getPortalPreview(u: CurrentUserContext, projectId: number) {
     await assertProjectAccess(this.db, this.access, u, projectId);
-
-    const [project] = await this.db
-      .select({
-        id: projects.id,
-        name: projects.name,
-        key: projects.key,
-        status: projects.status,
-        startDate: projects.startDate,
-        targetEndDate: projects.endDate,
-      })
-      .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)))
-      .limit(1);
-    if (!project) throw new NotFoundException("Project not found");
-
+    const project = await this.loadProjectHeader(u.orgId, projectId);
     const grant = await this.resolveActiveGrant(u.orgId, projectId);
     if (!grant) throw new NotFoundException("No active portal grant for this project");
     const data = await buildPortalProjection(this.db, u.orgId, projectId, grant);
