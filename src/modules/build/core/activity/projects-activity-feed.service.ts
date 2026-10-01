@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import {
   organizationMembers,
   organizationPeople,
@@ -11,7 +11,9 @@ import {
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { assertProjectInOrg } from "../project-crud/project-access";
+import { authorizeProjectTicketRead } from "../project-crud/project-access";
+import { ticketScope } from "../lib/tickets-scope";
+import { AccessService } from "../../../access/access.service";
 import {
   buildCursorPage,
   decodeCursor,
@@ -41,7 +43,10 @@ function actionLabel(action: string): string {
 
 @Injectable()
 export class ProjectsActivityFeedService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   async getProjectActivity(
     actor: CurrentUserContext,
@@ -49,7 +54,12 @@ export class ProjectsActivityFeedService {
     opts: { limit: number; cursor?: string },
   ) {
     const orgId = actor.orgId;
-    await assertProjectInOrg(this.db, orgId, projectId);
+    const read = await authorizeProjectTicketRead(this.db, this.access, actor, projectId);
+    const readableTickets = read.compose(
+      { tenant: tickets.orgId, scope: ticketScope(read.orgId, read.actorId) },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
 
     const position = decodeCursor(opts.cursor);
     const rawId = position !== null ? Number(position.sortValue) : NaN;
@@ -58,6 +68,7 @@ export class ProjectsActivityFeedService {
     const conditions = [
       eq(ticketActivityLog.orgId, orgId),
       eq(ticketActivityLog.projectId, projectId),
+      readableTickets,
     ];
     if (beforeId !== undefined) {
       conditions.push(lt(ticketActivityLog.id, beforeId));

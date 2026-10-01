@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import {
   projectWhiteboardShares,
   projectWhiteboards,
@@ -26,7 +26,10 @@ import type {
   UpdateWhiteboardInput,
 } from "./dto/workspace.schemas";
 import { loadShares, type BoardRow, type ShareEntry } from "./whiteboard-board-helpers";
-import { assertProjectInOrg } from "../core/project-crud/project-access";
+import { assertProjectAccess, resolveProjectAccess } from "../core/project-crud/project-access";
+import { resolveProjectsScope } from "../core/project-crud/projects-scope";
+import { reachableProjectsSql } from "../reachability/project-reachability";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
 import { keysetInteger, keysetTimestamp } from "../../../common/pagination/keyset";
 
@@ -40,6 +43,11 @@ export class WhiteboardsService {
 
   async hasManagePermission(user: CurrentUserContext): Promise<boolean> {
     return this.access.holds(user, "build:whiteboards:manage");
+  }
+
+  private async hasProjectAccess(user: CurrentUserContext, projectId: number): Promise<boolean> {
+    const { hasAccess } = await resolveProjectAccess(this.db, this.access, user, projectId);
+    return hasAccess;
   }
 
   private buildDto(
@@ -76,6 +84,7 @@ export class WhiteboardsService {
     projectId: number,
     whiteboardId: number,
   ): Promise<{ board: BoardRow; access: WhiteboardAccessLevel }> {
+    const hasProjectAccess = await this.hasProjectAccess(u, projectId);
     const rows = await this.db
       .select({
         board: projectWhiteboards,
@@ -108,13 +117,14 @@ export class WhiteboardsService {
       shareRole: row.shareRole ?? null,
       user: { userId: u.userId, isOrgOwner: u.isOrgOwner},
       hasManagePermission: hasManage,
+      hasProjectAccess,
     });
 
     return { board: row.board, access };
   }
 
   async listWhiteboards(u: CurrentUserContext, projectId: number, query: ListWhiteboardsQuery) {
-    await assertProjectInOrg(this.db, u.orgId, projectId);
+    const hasProjectAccess = await this.hasProjectAccess(u, projectId);
 
     const { limit, cursor } = query;
     const pos = cursor ? decodeCursor(cursor) : null;
@@ -123,7 +133,8 @@ export class WhiteboardsService {
       u.isOrgOwner
         ? undefined
         : or(
-            ne(projectWhiteboards.visibility, "private"),
+            eq(projectWhiteboards.visibility, "public"),
+            hasProjectAccess ? eq(projectWhiteboards.visibility, "project") : undefined,
             eq(projectWhiteboards.createdBy, u.userId),
             isNotNull(projectWhiteboardShares.role),
           );
@@ -194,11 +205,22 @@ export class WhiteboardsService {
   }
 
   async listAllWhiteboards(u: CurrentUserContext) {
+    const projectsRead = await resolveProjectsScope(this.access, u);
+    const membershipId = actingMembershipId(u.principal);
+    const reachableProject = projectsRead.compose(
+      {
+        tenant: projects.orgId,
+        scope: { own: membershipId !== null ? reachableProjectsSql(u.orgId, membershipId) : sql`false` },
+      },
+      ({ sql: where }) => where,
+      () => sql`false`,
+    );
     const visibilityFilter =
       u.isOrgOwner
         ? undefined
         : or(
-            ne(projectWhiteboards.visibility, "private"),
+            eq(projectWhiteboards.visibility, "public"),
+            and(eq(projectWhiteboards.visibility, "project"), reachableProject),
             eq(projectWhiteboards.createdBy, u.userId),
             isNotNull(projectWhiteboardShares.role),
           );
@@ -240,7 +262,6 @@ export class WhiteboardsService {
   }
 
   async getWhiteboard(u: CurrentUserContext, projectId: number, whiteboardId: number) {
-    await assertProjectInOrg(this.db, u.orgId, projectId);
     const { board, access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
     if (access === "none") throw new NotFoundException("Whiteboard not found");
     const shares = access === "manage" ? await loadShares(this.db, whiteboardId) : null;
@@ -252,7 +273,7 @@ export class WhiteboardsService {
     projectId: number,
     input: CreateWhiteboardInput,
   ) {
-    await assertProjectInOrg(this.db, u.orgId, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [board] = await this.db
       .insert(projectWhiteboards)
       .values({
@@ -272,7 +293,6 @@ export class WhiteboardsService {
     whiteboardId: number,
     input: UpdateWhiteboardInput,
   ) {
-    await assertProjectInOrg(this.db, u.orgId, projectId);
     const { board: _, access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
 
     if (access === "none") throw new NotFoundException("Whiteboard not found");
@@ -304,7 +324,6 @@ export class WhiteboardsService {
   }
 
   async deleteWhiteboard(u: CurrentUserContext, projectId: number, whiteboardId: number) {
-    await assertProjectInOrg(this.db, u.orgId, projectId);
     const { access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
 
     if (access === "none") throw new NotFoundException("Whiteboard not found");
@@ -335,7 +354,7 @@ export class WhiteboardsService {
   }
 
   async restoreWhiteboard(u: CurrentUserContext, projectId: number, whiteboardId: number) {
-    await assertProjectInOrg(this.db, u.orgId, projectId);
+    const hasProjectAccess = await this.hasProjectAccess(u, projectId);
     const existing = await this.db.query.projectWhiteboards.findFirst({
       where: and(
         eq(projectWhiteboards.id, whiteboardId),
@@ -350,6 +369,7 @@ export class WhiteboardsService {
       shareRole: null,
       user: { userId: u.userId, isOrgOwner: u.isOrgOwner },
       hasManagePermission: await this.hasManagePermission(u),
+      hasProjectAccess,
     });
     if (access !== "manage")
       throw new ForbiddenException("Only board managers can restore whiteboards");

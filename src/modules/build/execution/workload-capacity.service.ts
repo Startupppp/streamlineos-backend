@@ -14,14 +14,20 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { computeCapacity } from "./capacity.lib";
-import { assertProjectInOrg } from "../core";
+import { assertProjectVisible } from "../core/project-crud/project-access";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 @Injectable()
 export class WorkloadCapacityService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  async capacity(orgId: string, projectId: number, start: string, end: string, teamId?: number) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async capacity(actor: CurrentUserContext, projectId: number, start: string, end: string, teamId?: number) {
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
 
     const [settings] = await this.db
       .select({ expectedDailyHours: timesheetSettings.expectedDailyHours })

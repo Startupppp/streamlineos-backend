@@ -1,12 +1,31 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { WhiteboardSharingService } from "./whiteboard-sharing.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
+
+function actorIn(orgId: string, isOrgOwner: boolean): CurrentUserContext {
+  return {
+    userId: "u1",
+    orgId,
+    role: isOrgOwner ? "OWNER" : "MEMBER",
+    isOrgOwner,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, isOrgOwner),
+  };
+}
 
 describe("WhiteboardSharingService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
-  const access = { holds: jest.fn().mockResolvedValue(true) } as never;
+  const access = stubService<AccessService>({
+    holds: jest.fn().mockResolvedValue(true),
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+  });
 
   function makeDb(projectRow: unknown | null, boardRows: unknown[]) {
     const limit = jest.fn().mockResolvedValue(boardRows);
@@ -24,15 +43,15 @@ describe("WhiteboardSharingService — cross-tenant isolation", () => {
   it("throws NotFoundException when whiteboard project not found for different org (cross-tenant isolation)", async () => {
     const db = makeDb(null, []);
     const svc = new WhiteboardSharingService(db, access);
-    const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
+    const u = actorIn(ATTACKER_ORG, false);
     await expect(svc.updateSharing(u, 1, 99, {} as never)).rejects.toThrow(NotFoundException);
   });
 
   it("throws NotFoundException when board not found for different org (cross-tenant isolation)", async () => {
-    const project = { id: 1, orgId: OWNER_ORG };
+    const project = { id: 1, orgId: OWNER_ORG, managerMembershipId: 1 };
     const db = makeDb(project, []);
     const svc = new WhiteboardSharingService(db, access);
-    const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
+    const u = actorIn(ATTACKER_ORG, false);
     await expect(svc.updateSharing(u, 1, 99, {} as never)).rejects.toThrow(NotFoundException);
   });
 
@@ -49,7 +68,7 @@ describe("WhiteboardSharingService — cross-tenant isolation", () => {
       update,
     } as unknown as Db;
     const svc = new WhiteboardSharingService(db, access);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = actorIn(OWNER_ORG, true);
     await expect(svc.updateSharing(u, 1, 1, { visibility: "public" } as never)).resolves.not.toThrow();
   });
 });

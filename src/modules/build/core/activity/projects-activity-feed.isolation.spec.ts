@@ -1,6 +1,10 @@
 import { ProjectsActivityFeedService } from "./projects-activity-feed.service";
 import { decodeCursor } from "../../../../common/pagination/cursor";
 import type { Db } from "../../../../db/drizzle.module";
+import { stubService } from "../../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../../access/access.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
 function hasColumnName(node: unknown, name: string): boolean {
   if (!node || typeof node !== "object") return false;
@@ -48,17 +52,27 @@ function makeDb(found: boolean, rows: unknown[]) {
   } as unknown as Db;
 }
 
-const actor = {
+const actor: CurrentUserContext = {
   userId: "user-1",
   orgId: ORG_ID,
-  isOrgOwner: false,
-  principal: {},
-} as never;
+  role: "OWNER",
+  isOrgOwner: true,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
+};
+
+function feedService(db: Db): ProjectsActivityFeedService {
+  return new ProjectsActivityFeedService(
+    db,
+    stubService<AccessService>({ scopeFor: jest.fn().mockResolvedValue("all") }),
+  );
+}
 
 describe("ProjectsActivityFeedService — tenant isolation", () => {
-  it("calls assertProjectInOrg with the caller orgId so cross-tenant project IDs are rejected as 404", async () => {
+  it("rejects a cross-tenant project id as 404 before reading the feed", async () => {
     const db = makeDb(false, []);
-    const svc = new ProjectsActivityFeedService(db);
+    const svc = feedService(db);
 
     await expect(
       svc.getProjectActivity(actor, PROJECT_ID, { limit: 20 }),
@@ -67,7 +81,7 @@ describe("ProjectsActivityFeedService — tenant isolation", () => {
 
   it("returns an empty first page when the project exists but has no activity", async () => {
     const db = makeDb(true, []);
-    const svc = new ProjectsActivityFeedService(db);
+    const svc = feedService(db);
 
     const result = await svc.getProjectActivity(actor, PROJECT_ID, { limit: 20 });
 
@@ -100,7 +114,7 @@ describe("ProjectsActivityFeedService — tenant isolation", () => {
     };
 
     const db = makeDb(true, [row]);
-    const svc = new ProjectsActivityFeedService(db);
+    const svc = feedService(db);
 
     const result = await svc.getProjectActivity(actor, PROJECT_ID, { limit: 20 });
 
@@ -139,7 +153,7 @@ describe("ProjectsActivityFeedService — tenant isolation", () => {
     };
 
     const db = makeDb(true, [row]);
-    const svc = new ProjectsActivityFeedService(db);
+    const svc = feedService(db);
 
     const result = await svc.getProjectActivity(actor, PROJECT_ID, { limit: 20 });
 
@@ -171,7 +185,7 @@ describe("ProjectsActivityFeedService — tenant isolation", () => {
       select: jest.fn().mockReturnValue({ from: fromMock }),
     } as unknown as Db;
 
-    const svc = new ProjectsActivityFeedService(db);
+    const svc = feedService(db);
     await svc.getProjectActivity(actor, PROJECT_ID, { limit: 20 });
 
     expect(capturedWhere).toBeDefined();
@@ -203,7 +217,7 @@ describe("ProjectsActivityFeedService — tenant isolation", () => {
 
     const rows = [makeRow(5), makeRow(4), makeRow(3)];
     const db = makeDb(true, rows);
-    const svc = new ProjectsActivityFeedService(db);
+    const svc = feedService(db);
 
     const result = await svc.getProjectActivity(actor, PROJECT_ID, { limit: 2 });
 
@@ -241,7 +255,7 @@ describe("ProjectsActivityFeedService — cursor paging yields each entry exactl
   it("nextCursor encodes the id of the last returned row so the next call knows the exact position to continue from", async () => {
     const rows = [makeActivityRow(10), makeActivityRow(9), makeActivityRow(8)];
     const db = makeDb(true, rows);
-    const svc = new ProjectsActivityFeedService(db);
+    const svc = feedService(db);
 
     const page1 = await svc.getProjectActivity(actor, PROJECT_ID, { limit: 2 });
 
@@ -256,7 +270,7 @@ describe("ProjectsActivityFeedService — cursor paging yields each entry exactl
   it("page 2 WHERE clause contains an id predicate when a cursor is supplied so the boundary row is excluded from the following page", async () => {
     const rows1 = [makeActivityRow(10), makeActivityRow(9), makeActivityRow(8)];
     const db1 = makeDb(true, rows1);
-    const svc1 = new ProjectsActivityFeedService(db1);
+    const svc1 = feedService(db1);
     const page1 = await svc1.getProjectActivity(actor, PROJECT_ID, { limit: 2 });
 
     const cursor = page1.pagination.nextCursor;
@@ -286,7 +300,7 @@ describe("ProjectsActivityFeedService — cursor paging yields each entry exactl
       select: jest.fn().mockReturnValue({ from: fromMock2 }),
     } as unknown as Db;
 
-    const svc2 = new ProjectsActivityFeedService(db2);
+    const svc2 = feedService(db2);
     await svc2.getProjectActivity(actor, PROJECT_ID, {
       limit: 2,
       cursor: cursor!,
@@ -299,7 +313,7 @@ describe("ProjectsActivityFeedService — cursor paging yields each entry exactl
   it("row ids from page 1 are all absent from page 2 when the cursor from page 1 is passed so the keyset is a strict partition with no duplicates", async () => {
     const rows1 = [makeActivityRow(10), makeActivityRow(9), makeActivityRow(8)];
     const db1 = makeDb(true, rows1);
-    const svc1 = new ProjectsActivityFeedService(db1);
+    const svc1 = feedService(db1);
     const page1 = await svc1.getProjectActivity(actor, PROJECT_ID, { limit: 2 });
 
     expect(page1.data.map((r) => r.id)).toEqual([10, 9]);
@@ -310,7 +324,7 @@ describe("ProjectsActivityFeedService — cursor paging yields each entry exactl
 
     const rows2 = [makeActivityRow(8), makeActivityRow(7)];
     const db2 = makeDb(true, rows2);
-    const svc2 = new ProjectsActivityFeedService(db2);
+    const svc2 = feedService(db2);
     const page2 = await svc2.getProjectActivity(actor, PROJECT_ID, {
       limit: 2,
       cursor,

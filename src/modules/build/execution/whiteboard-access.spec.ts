@@ -20,6 +20,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: null,
           user: { userId: MEMBER_ID, isOrgOwner: true},
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("manage");
     });
@@ -32,6 +33,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: null,
           user: { userId: CREATOR_ID, isOrgOwner: false},
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("manage");
     });
@@ -43,6 +45,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: null,
           user: { userId: MEMBER_ID, isOrgOwner: false},
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("manage");
     });
@@ -56,6 +59,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: "editor",
           user: regularUser,
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("edit");
     });
@@ -67,6 +71,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: "viewer",
           user: regularUser,
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("view");
     });
@@ -78,6 +83,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: "editor",
           user: regularUser,
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("edit");
     });
@@ -91,6 +97,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: null,
           user: regularUser,
           hasManagePermission: true,
+          hasProjectAccess: true,
         }),
       ).toBe("edit");
     });
@@ -102,6 +109,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: null,
           user: regularUser,
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("view");
     });
@@ -113,6 +121,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: null,
           user: regularUser,
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("view");
     });
@@ -124,6 +133,7 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: null,
           user: regularUser,
           hasManagePermission: false,
+          hasProjectAccess: true,
         }),
       ).toBe("none");
     });
@@ -135,8 +145,59 @@ describe("resolveWhiteboardAccess", () => {
           shareRole: null,
           user: regularUser,
           hasManagePermission: true,
+          hasProjectAccess: true,
         }),
       ).toBe("none");
+    });
+  });
+
+  describe("project visibility means access to the board's project", () => {
+    it("returns none for a project-visible board when the caller cannot access the project", () => {
+      expect(
+        resolveWhiteboardAccess({
+          board: projectBoardByOther,
+          shareRole: null,
+          user: regularUser,
+          hasManagePermission: true,
+          hasProjectAccess: false,
+        }),
+      ).toBe("none");
+    });
+
+    it("returns view for the same project-visible board once the caller can access the project", () => {
+      expect(
+        resolveWhiteboardAccess({
+          board: projectBoardByOther,
+          shareRole: null,
+          user: regularUser,
+          hasManagePermission: false,
+          hasProjectAccess: true,
+        }),
+      ).toBe("view");
+    });
+
+    it("still honours a direct share on a project-visible board for a caller outside the project", () => {
+      expect(
+        resolveWhiteboardAccess({
+          board: projectBoardByOther,
+          shareRole: "viewer",
+          user: regularUser,
+          hasManagePermission: false,
+          hasProjectAccess: false,
+        }),
+      ).toBe("view");
+    });
+
+    it("keeps a public board viewable for a caller outside the project", () => {
+      expect(
+        resolveWhiteboardAccess({
+          board: publicBoard,
+          shareRole: null,
+          user: regularUser,
+          hasManagePermission: false,
+          hasProjectAccess: false,
+        }),
+      ).toBe("view");
     });
   });
 });
