@@ -13,6 +13,7 @@ import {
   type Row,
   type Subselect,
 } from "./world-db-sql";
+import { aggregated, groupedRows } from "./world-db-aggregate";
 
 export { UnsupportedQuery, type Row };
 export type WorldRows = ReadonlyMap<Table, readonly Row[]>;
@@ -59,7 +60,10 @@ function knownTable(table: unknown): Table {
 }
 
 function subselectOver(rows: WorldRows): Subselect {
-  return Object.assign(legacySubselect(rows), { rowsOf: (table: Table) => rows.get(table) ?? [] });
+  return Object.assign(legacySubselect(rows), {
+    rowsOf: (table: Table) => rows.get(table) ?? [],
+    tableNamed: (name: string) => [...SCHEMA_TABLES].find((candidate) => getTableName(candidate) === name),
+  });
 }
 
 function legacySubselect(rows: WorldRows): Subselect {
@@ -124,6 +128,7 @@ class SelectQuery implements PromiseLike<unknown[]> {
   private readonly order: unknown[] = [];
   private cap = Number.POSITIVE_INFINITY;
   private skip = 0;
+  private grouping: unknown[] | null = null;
 
   constructor(
     private readonly rows: WorldRows,
@@ -157,8 +162,9 @@ class SelectQuery implements PromiseLike<unknown[]> {
     return this;
   }
 
-  groupBy(): this {
-    throw new UnsupportedQuery("groupBy");
+  groupBy(...keys: unknown[]): this {
+    this.grouping = keys.flat();
+    return this;
   }
 
   limit(cap: number): this {
@@ -196,6 +202,14 @@ class SelectQuery implements PromiseLike<unknown[]> {
     const table = this.table;
     if (table === undefined) throw new UnsupportedQuery("select without from");
     this.reads.push({ table: getTableName(table), where: this.predicate });
+    if (this.grouping !== null || aggregated(this.fields)) {
+      if (this.distinct) throw new UnsupportedQuery("distinct over a grouped select");
+      const subselect = subselectOver(this.rows);
+      return groupedRows({ combos: this.combos(), grouping: this.grouping, fields: this.fields, order: this.order, lookupOf: lookupIn, subselect }).slice(
+        this.skip,
+        this.skip + this.cap,
+      );
+    }
     const keys = this.order.map(orderKey);
     const sorted = [...this.combos()].sort((left, right) => {
       for (const key of keys) {
