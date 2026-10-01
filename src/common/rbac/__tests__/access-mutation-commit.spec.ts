@@ -322,7 +322,8 @@ describe("commitAccessChange — ownership intent (standing loss)", () => {
     );
 
     expect(inserted[0]?.row).toMatchObject({ action: "ownership.transfer_accepted" });
-    expect(notifier.emitInTx).toHaveBeenCalledWith(tx, event);
+    expect(notifier.emitInTx).toHaveBeenCalledTimes(1);
+    expect(notifier.emitInTx).toHaveBeenCalledWith(tx, [event]);
     expect(bustMembershipStatusCacheMany).not.toHaveBeenCalled();
 
     await drain(hooks);

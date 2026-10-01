@@ -79,17 +79,20 @@ export class NotificationDispatchService {
   async emit(input: DispatchEventInput): Promise<DispatchResult> {
     const ambient = getTenantContext();
     if (!ambient || ambient.orgId !== input.orgId) return this.emitNow(input);
-    return this.emitInTx(ambient.tx, input);
+    await this.emitInTx(ambient.tx, [input]);
+    return this.deferredResult(input);
   }
 
-  async emitInTx(tx: Db | TenantTx, input: DispatchEventInput): Promise<DispatchResult> {
-    const chunks = this.chunkRecipients(input.targetUserIds);
-    const chunkData = chunks.map((chunkIds, i) => {
-      const chunkInput: DispatchEventInput = { ...input, targetUserIds: chunkIds };
-      const baseKey = buildNotifOutboxDedupeKey(chunkInput);
-      const dedupeKey = i > 0 ? `${baseKey}:c${i}` : baseKey;
-      return { chunkInput, dedupeKey };
-    });
+  async emitInTx(tx: Db | TenantTx, inputs: readonly DispatchEventInput[]): Promise<void> {
+    const chunkData = inputs.flatMap((input) =>
+      this.chunkRecipients(input.targetUserIds).map((chunkIds, i) => {
+        const chunkInput: DispatchEventInput = { ...input, targetUserIds: chunkIds };
+        const baseKey = buildNotifOutboxDedupeKey(chunkInput);
+        const dedupeKey = i > 0 ? `${baseKey}:c${i}` : baseKey;
+        return { chunkInput, dedupeKey };
+      }),
+    );
+    if (chunkData.length === 0) return;
 
     await tx
       .insert(notificationOutbox)
@@ -123,10 +126,12 @@ export class NotificationDispatchService {
         // `replayKey`, not `dedupeKey`: this is the outbox row's identity, and passing
         // it as a caller dedupe key is what overrode the event's declared window.
         await this.emitNow({ ...chunkInput, replayKey: dedupeKey });
-        await this.markIntentProcessed(input.orgId, dedupeKey);
+        await this.markIntentProcessed(chunkInput.orgId, dedupeKey);
       });
     }
+  }
 
+  private deferredResult(input: DispatchEventInput): DispatchResult {
     return {
       eventKey: input.eventKey,
       notified: 0,

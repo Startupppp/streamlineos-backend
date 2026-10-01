@@ -43,7 +43,7 @@ export type AccessLoss =
   | { kind: "memberships"; membershipIds: readonly number[] }
   | { kind: "group-members"; groupId: string }
   | { kind: "standing"; userIds: readonly string[] }
-  | { kind: "identity"; userId: string; sessions: SessionTombstones };
+  | { kind: "identity"; userId: string; sessions: SessionTombstones; sessionIds?: readonly string[] };
 
 export interface AccessRevocation {
   cache: CacheService;
@@ -54,7 +54,7 @@ export interface AccessRevocation {
 export interface CommitAccessOpts<E = never> {
   audit?: CommitAccessAudit;
   revoke?: AccessRevocation;
-  notify?: { via: { emitInTx(tx: DbOrTx, event: E): Promise<unknown> }; events: readonly E[] };
+  notify?: { via: { emitInTx(tx: DbOrTx, events: readonly E[]): Promise<unknown> }; events: readonly E[] };
   afterCommit?: () => Promise<void>;
 }
 
@@ -235,13 +235,19 @@ export function scheduleStandingRevocation(
 
 async function revokeSessions(
   tx: DbOrTx,
-  userId: string,
-  sessions: SessionTombstones,
+  { userId, sessions, sessionIds: only }: Extract<AccessLoss, { kind: "identity" }>,
 ): Promise<void> {
+  if (only?.length === 0) return;
   const revoked = await tx
     .update(userSessions)
     .set({ isRevoked: true })
-    .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)))
+    .where(
+      and(
+        eq(userSessions.userId, userId),
+        eq(userSessions.isRevoked, false),
+        only ? inArray(userSessions.id, [...only]) : undefined,
+      ),
+    )
     .returning({ id: userSessions.id });
   if (revoked.length === 0) return;
   const sessionIds = revoked.map((row) => row.id);
@@ -257,7 +263,7 @@ async function revokeAccess(
   const standingUsers = new Set<string>();
   for (const loss of revocation.loses) {
     if (loss.kind === "identity") {
-      await revokeSessions(tx, loss.userId, loss.sessions);
+      await revokeSessions(tx, loss);
       standingUsers.add(loss.userId);
       continue;
     }
@@ -287,7 +293,6 @@ export async function commitAccessChange<E = never>(
   await bumpPermissionsVersion(tx, orgId);
   if (opts?.audit) await writeAudit(tx, orgId, opts.audit);
   if (opts?.revoke) await revokeAccess(tx, orgId, opts.revoke);
-  if (opts?.notify)
-    for (const event of opts.notify.events) await opts.notify.via.emitInTx(tx, event);
+  if (opts?.notify?.events.length) await opts.notify.via.emitInTx(tx, opts.notify.events);
   if (opts?.afterCommit) await afterCommitOrInline(opts.afterCommit);
 }

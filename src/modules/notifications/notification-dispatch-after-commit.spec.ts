@@ -258,11 +258,10 @@ describe("NotificationDispatchService durability", () => {
     const afterCommit: AfterCommitHook[] = [];
     const passed = makePassedTx();
 
-    const result = await inRequestTransaction(afterCommit, () =>
-      svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], input),
+    await inRequestTransaction(afterCommit, () =>
+      svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], [input]),
     );
 
-    expect(result.deferred).toBe(true);
     expect(passed.rows).toHaveLength(1);
     expect(passed.rows[0]).toMatchObject({ orgId: ORG, eventKey: input.eventKey });
     expect(insertedValues).toHaveLength(0);
@@ -276,15 +275,33 @@ describe("NotificationDispatchService durability", () => {
   it("emitInTx outside a request context still records the intent on the tx and never dispatches inline over the network", async () => {
     const passed = makePassedTx();
 
-    const result = await svc.emitInTx(
-      passed.tx as unknown as Parameters<typeof svc.emitInTx>[0],
-      input,
-    );
+    await svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], [input]);
 
-    expect(result.deferred).toBe(true);
     expect(passed.rows).toHaveLength(1);
     expect(resolveDefinition).not.toHaveBeenCalled();
     expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("emitInTx records several events in one outbox insert and drains each after commit", async () => {
+    const afterCommit: AfterCommitHook[] = [];
+    const passed = makePassedTx();
+    const second: DispatchEventInput = { ...input, targetUserIds: ["user-2"] };
+
+    await inRequestTransaction(afterCommit, () =>
+      svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], [input, second]),
+    );
+
+    expect(passed.tx.insert).toHaveBeenCalledTimes(1);
+    expect(passed.rows).toHaveLength(2);
+    expect(afterCommit).toHaveLength(2);
+  });
+
+  it("emitInTx writes nothing when given no events", async () => {
+    const passed = makePassedTx();
+
+    await svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], []);
+
+    expect(passed.tx.insert).not.toHaveBeenCalled();
   });
 
   it("does not queue a hook outside a request transaction", () => {

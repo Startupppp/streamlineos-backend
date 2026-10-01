@@ -328,13 +328,12 @@ describe("OwnershipService — access / business-rule logic", () => {
         `user:session:${TARGET_USER}`,
         "user:session:u-previous-owner",
       ]);
-      expect(dispatch.emitInTx).toHaveBeenCalledWith(
-        mockDb,
+      expect(dispatch.emitInTx).toHaveBeenCalledWith(mockDb, [
         expect.objectContaining({
           eventKey: "ownership.module_owner.changed",
           targetUserIds: [TARGET_USER, "u-previous-owner"],
         }),
-      );
+      ]);
     });
 
     it("does not notify or revoke anyone when the transaction rolls back", async () => {
