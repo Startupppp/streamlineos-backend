@@ -20,7 +20,7 @@ import { AccessService } from "../../access/access.service";
 import type { ScopedRead } from "../../access/scoped-read";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
-  approvalQueueScope,
+  approvalQueueTeamScope,
   membershipTeamScope,
   resolveApprovalScope,
   resolveEntriesScope,
@@ -248,8 +248,11 @@ export class PeriodsReadService {
    *
    * A reporting manager holds `timesheets:approvals:view` at `own` and no team
    * key, so nothing in the entries scope can justify the row they were sent to
-   * approve. Asking `approvalQueueScope` - the predicate that listed the period
-   * in their queue - keeps the detail read and the queue inseparable.
+   * approve. Asking `approvalQueueTeamScope` - the predicate behind both the
+   * approvals queue and the overdue queue - keeps the detail read and those
+   * queues inseparable at every scope the key can be held at, including `team`,
+   * where the overdue queue reaches direct reports whose unsubmitted periods
+   * have no assigned approver to match on.
    */
   private async periodInApprovalScope(u: CurrentUserContext, periodId: number): Promise<boolean> {
     const read = await resolveApprovalScope(this.access, u);
@@ -257,7 +260,7 @@ export class PeriodsReadService {
     return read.read(
       {
         tenant: timesheetPeriods.orgId,
-        scope: approvalQueueScope(membershipId),
+        scope: approvalQueueTeamScope(u.orgId, u.userId, membershipId),
         and: [eq(timesheetPeriods.id, periodId)],
       },
       async ({ sql: where }) =>
