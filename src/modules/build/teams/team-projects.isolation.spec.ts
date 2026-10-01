@@ -63,7 +63,7 @@ describe("TeamProjectsService — cross-tenant isolation (BOLA)", () => {
   it("listTeamProjects throws NotFoundException when team belongs to a different org (DENY)", async () => {
     const db = makeDb();
     const svc = new TeamProjectsService(db, makeTeams(ATTACKER_ORG), mockAudit, stubService<AccessService>({}));
-    await expect(svc.listTeamProjects(ATTACKER_ORG, TEAM_ID)).rejects.toThrow(NotFoundException);
+    await expect(svc.listTeamProjects(actorIn(ATTACKER_ORG), TEAM_ID)).rejects.toThrow(NotFoundException);
   });
 
   it("addProject throws NotFoundException when team belongs to a different org — cross-org isolation", async () => {
@@ -96,8 +96,13 @@ describe("TeamProjectsService.listTeamProjects — soft-deleted project exclusio
       insert: jest.fn(),
     } as unknown as Db;
 
-    const svc = new TeamProjectsService(captureDb, makeTeams(), mockAudit, stubService<AccessService>({}));
-    await svc.listTeamProjects("org-1", TEAM_ID);
+    const svc = new TeamProjectsService(
+      captureDb,
+      makeTeams(),
+      mockAudit,
+      stubService<AccessService>({ scopeFor: jest.fn().mockResolvedValue("all") }),
+    );
+    await svc.listTeamProjects(actorIn("org-1"), TEAM_ID);
 
     const rendered = render(capturedWhere);
     expect(rendered).toMatch(/deleted_at" is null/i);
