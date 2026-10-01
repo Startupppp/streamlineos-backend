@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, type Table } from "drizzle-orm";
 import { candidateApplications, candidateSlaTracking, candidates, scheduledReports } from "src/db/schema";
-import { worldDb } from "./world-db";
+import { worldDb, type Row } from "./world-db";
 import { evaluate, scalar, type Lookup } from "./world-db-sql";
 import { UnsupportedQuery } from "./world-db-values";
 
@@ -83,7 +83,7 @@ describe("world-db value expressions", () => {
 
   it("resolves a raw-named, aliased, correlated count subquery and refuses a raw table it cannot tell apart or does not know", async () => {
     const world = worldDb(
-      new Map([
+      new Map<Table, Row[]>([
         [candidates, [{ id: 7, orgId: "a" }]],
         [
           candidateApplications,
