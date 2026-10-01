@@ -8,6 +8,7 @@ import { SignBulkSendController } from "src/modules/e-sign/sign-bulk-send.contro
 import { SignBulkSendService } from "src/modules/e-sign/sign-bulk-send.service";
 import { SignEnvelopeSweepsService } from "src/modules/e-sign/sign-envelope-sweeps.service";
 import type { StorageService } from "src/modules/storage/storage.service";
+import type { SignAuditService } from "src/modules/e-sign/sign-audit.service";
 import type { Observation } from "../matrix.types";
 import { ORG_A, type Standing } from "../standings";
 import { boundValues, standIn, type Row, type WorldDb } from "../world-db";
@@ -20,7 +21,7 @@ export const tokenHash = (token: string): string => `h:${token}`;
 const minted: Array<{ readonly orgId: string; readonly key: string }> = [];
 const outcomes: string[] = [];
 
-const recordingAudit = standIn({ record: async () => undefined });
+const recordingAudit = standIn<SignAuditService>({ record: async () => undefined });
 
 export const rateLimitChecks: Array<readonly [string, string]> = [];
 
