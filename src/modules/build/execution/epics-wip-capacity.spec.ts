@@ -1,7 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EpicsService } from "./epics.service";
-import { BuildTicketCreationService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { ProjectsWebhooksDispatchService } from "../core";
 import { BuildAutomationRunnerService } from "../core/automation/build-automation-runner.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -38,6 +38,7 @@ it("refuses an epic when its destination column has no remaining capacity", asyn
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: {} },
   ] }).compile();
   try {
     await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
@@ -66,6 +67,7 @@ it.each([false, true])("refuses a missing destination with configured workflow=%
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: {} },
   ] }).compile();
   try {
     await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
@@ -96,6 +98,7 @@ it("permits an existing unlimited destination", async () => {
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: {} },
   ] }).compile();
   try {
     await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))

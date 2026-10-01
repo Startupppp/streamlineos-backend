@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { BuildTicketCreationService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { CyclesService } from "./cycles.service";
 import { EpicsService } from "./epics.service";
 import { ModulesService } from "./modules.service";
@@ -66,6 +66,7 @@ function makeDb(standing: ProjectStanding, row: Record<string, unknown> = { id: 
 async function build(standing: ProjectStanding) {
   const db = makeDb(standing);
   const ticketCreation = { create: jest.fn().mockResolvedValue({ tickets: [{ id: 5 }], command: {} }) };
+  const ticketChange = { updateTicket: jest.fn().mockResolvedValue(undefined) };
   const access = {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
     scopeFor: jest.fn().mockResolvedValue("all"),
@@ -78,11 +79,13 @@ async function build(standing: ProjectStanding) {
       { provide: DRIZZLE, useValue: db },
       { provide: AccessService, useValue: access },
       { provide: BuildTicketCreationService, useValue: ticketCreation },
+      { provide: ProjectsTicketsUpdateService, useValue: ticketChange },
     ],
   }).compile();
   return {
     db,
     ticketCreation,
+    ticketChange,
     cycles: moduleRef.get(CyclesService),
     epics: moduleRef.get(EpicsService),
     modules: moduleRef.get(ModulesService),
@@ -93,10 +96,6 @@ type Built = Awaited<ReturnType<typeof build>>;
 
 const MUTATIONS: Array<[string, (built: Built) => Promise<unknown>]> = [
   ["POST /build/:projectId/epics", ({ epics }) => epics.createEpic(caller, PROJECT_ID, createEpicSchema.parse({ title: "Epic" }))],
-  [
-    "PATCH /build/:projectId/epics/:epicId",
-    ({ epics }) => epics.updateEpic(caller, PROJECT_ID, 5, updateEpicSchema.parse({ title: "Renamed", version: 1 })),
-  ],
   ["DELETE /build/:projectId/epics/:epicId", ({ epics }) => epics.deleteEpic(caller, PROJECT_ID, 5)],
   [
     "POST /build/:projectId/cycles",
@@ -172,5 +171,28 @@ describe("epic, cycle and module lists conceal a project the caller cannot see",
   it.each(READS)("%s lists for the project's manager", async (_route, call) => {
     const built = await build("member");
     await expect(call(built)).resolves.toBeDefined();
+  });
+});
+
+describe("PATCH /build/:projectId/epics/:epicId is authorized by the canonical ticket update", () => {
+  const input = updateEpicSchema.parse({ title: "Renamed", version: 1 });
+
+  it("answers 404 for an epic outside the caller's tenant without reaching the ticket update", async () => {
+    const built = await build("foreign");
+    built.db.query.tickets.findFirst.mockResolvedValue(undefined);
+    await expect(built.epics.updateEpic(caller, PROJECT_ID, 5, input)).rejects.toThrow(NotFoundException);
+    expect(built.ticketChange.updateTicket).not.toHaveBeenCalled();
+  });
+
+  it("propagates the canonical update's 403 for a caller who cannot mutate the project's tickets", async () => {
+    const built = await build("non-member");
+    built.ticketChange.updateTicket.mockRejectedValue(new ForbiddenException("Not authorized to update this project"));
+    await expect(built.epics.updateEpic(caller, PROJECT_ID, 5, input)).rejects.toThrow(ForbiddenException);
+  });
+
+  it("hands the caller to the canonical update and returns the re-read epic", async () => {
+    const built = await build("member");
+    await expect(built.epics.updateEpic(caller, PROJECT_ID, 5, input)).resolves.toMatchObject({ id: 5 });
+    expect(built.ticketChange.updateTicket).toHaveBeenCalledWith(caller, PROJECT_ID, 5, { version: 1, title: "Renamed" });
   });
 });

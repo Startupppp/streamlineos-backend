@@ -1,18 +1,12 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { BuildTicketCreationService, TicketVersionConflictException } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService, TicketVersionConflictException } from "../core/tickets";
 import { CyclesService } from "./cycles.service";
 import { ModulesService } from "./modules.service";
 import { EpicsService } from "./epics.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-
-jest.mock("../core/project-crud/project-access", () => ({
-  ...jest.requireActual<object>("../core/project-crud/project-access"),
-  authorizeTicketMutation: jest.fn().mockResolvedValue({ role: "OWNER", predicate: undefined }),
-  readMutationTickets: jest.fn().mockResolvedValue([]),
-}));
 
 const ACTOR: CurrentUserContext = {
   userId: "u-owner",
@@ -78,24 +72,26 @@ async function modulesService(moduleRow: Record<string, unknown> | undefined, up
   return { service: module.get(ModulesService), module, update };
 }
 
-async function epicsService(ticketRow: Record<string, unknown> | undefined, updateReturnRows: Record<string, unknown>[] = []) {
-  const update = makeUpdateMock(updateReturnRows);
+async function epicsService(storedVersion: number) {
+  const epicRow = { id: 30, orgId: "org-1", projectId: 1, title: "Big epic", type: "EPIC", version: storedVersion + 1 };
   const db = {
-    update,
-    select: makeSelectChain(ticketRow ? [ticketRow] : []),
     query: {
-      tickets: { findFirst: makeFindFirst(ticketRow) },
+      tickets: { findFirst: jest.fn().mockResolvedValue(epicRow) },
     },
   };
+  const updateTicket = jest.fn(async (_u: unknown, _projectId: number, _ticketId: number, input: { version: number }) => {
+    if (input.version !== storedVersion) throw new TicketVersionConflictException(storedVersion);
+  });
   const module = await Test.createTestingModule({
     providers: [
       EpicsService,
       { provide: DRIZZLE, useValue: db },
       { provide: BuildTicketCreationService, useValue: { createInTransaction: jest.fn(), publish: jest.fn() } },
+      { provide: ProjectsTicketsUpdateService, useValue: { updateTicket } },
       { provide: AccessService, useValue: {} },
     ],
   }).compile();
-  return { service: module.get(EpicsService), module, update };
+  return { service: module.get(EpicsService), module, updateTicket };
 }
 
 it("cycle stale token returns 409 with currentVersion in details (ticket-13)", async () => {
@@ -133,18 +129,17 @@ it("module matching token does not throw TicketVersionConflictException and runs
 });
 
 it("epic stale token returns 409 with currentVersion in details (ticket-13)", async () => {
-  const { service, module } = await epicsService({ version: 7 });
+  const { service, module } = await epicsService(7);
   const error = await service.updateEpic(ACTOR, 1, 30, { version: 2, title: "Big epic", startDate: undefined, dueDate: undefined }).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(TicketVersionConflictException);
-  expect((error as TicketVersionConflictException).getResponse()).toMatchObject({ details: { currentVersion: 7 } });
+  expect(error instanceof TicketVersionConflictException ? error.getResponse() : null).toMatchObject({ details: { currentVersion: 7 } });
   await module.close();
 });
 
-it("epic matching token does not throw TicketVersionConflictException and runs the update query (BE-141 positive pair)", async () => {
-  const epicRow = { id: 30, orgId: "org-1", projectId: 1, title: "Big epic", type: "EPIC", version: 8, status: "TODO", priority: "MEDIUM", ticketNumber: 1, cycleId: null, epicId: null, assigneeMembershipId: null, points: null, storyPoints: null, startDate: null, dueDate: null, estimate: null, completionPercentage: 0, rank: "a", timeSpent: "0", deletedAt: null, createdAt: new Date(), updatedAt: new Date(), reporterId: null, description: null, moduleId: null };
-  const { service, module, update } = await epicsService({ version: 7 }, [epicRow]);
+it("epic matching token does not throw TicketVersionConflictException and runs the canonical ticket update (BE-141 positive pair)", async () => {
+  const { service, module, updateTicket } = await epicsService(7);
   const error = await service.updateEpic(ACTOR, 1, 30, { version: 7, title: "Big epic", startDate: undefined, dueDate: undefined }).catch((e: unknown) => e);
   expect(error).not.toBeInstanceOf(TicketVersionConflictException);
-  expect(update).toHaveBeenCalled();
+  expect(updateTicket).toHaveBeenCalledWith(ACTOR, 1, 30, { version: 7, title: "Big epic" });
   await module.close();
 });
