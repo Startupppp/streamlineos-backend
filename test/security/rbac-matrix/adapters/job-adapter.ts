@@ -79,6 +79,7 @@ export async function releaseNotificationJob(
       calls.push(input);
       return { delivered: input.targetUserIds.length };
     },
+    emitInTx: async () => undefined,
   });
   const registry = new OutboxConsumerRegistry();
   new BuildReleasePublishedConsumerService(world.db, dispatch, registry).onModuleInit();

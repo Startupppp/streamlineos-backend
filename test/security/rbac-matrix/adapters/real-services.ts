@@ -40,7 +40,7 @@ export function signingStorage(signed: SignedObject[]): StorageService {
 }
 
 export function roleMemberService(world: WorldDb): RoleMemberService {
-  const dispatch = standIn<NotificationDispatchService>({ emit: async () => ({ delivered: 0 }) });
+  const dispatch = standIn<NotificationDispatchService>({ emit: async () => ({ delivered: 0 }), emitInTx: async () => undefined });
   return new RoleMemberService(world.db, cache, dispatch, accessFor(world));
 }
 
