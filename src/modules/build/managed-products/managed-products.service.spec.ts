@@ -1,3 +1,4 @@
+import { productAccessProvider, productActorIn } from "./__tests__/managed-products-spec-fixtures";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -65,6 +66,7 @@ describe("ManagedProductsService", () => {
         ManagedProductsService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
+        productAccessProvider(),
       ],
     }).compile();
     svc = module.get(ManagedProductsService);
@@ -340,7 +342,7 @@ describe("ManagedProductsService", () => {
       const { selectChain } = makeSelectChain([]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
-      await expect(svc.getProductInsights(ORG_ID, 99)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.getProductInsights(productActorIn(ORG_ID), 99)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("sums project and submission counts grouped by status", async () => {
@@ -362,7 +364,7 @@ describe("ManagedProductsService", () => {
         .mockReturnValueOnce(makeGroupedSelectChain([], true))
         .mockReturnValueOnce(makeGroupedSelectChain([], true));
 
-      const result = await svc.getProductInsights(ORG_ID, 1);
+      const result = await svc.getProductInsights(productActorIn(ORG_ID), 1);
 
       expect(result.linkedProjectCount).toBe(4);
       expect(result.projectsByStatus).toEqual({ active: 3, completed: 1, archived: 0 });
@@ -384,7 +386,7 @@ describe("ManagedProductsService", () => {
         .mockReturnValueOnce(makeGroupedSelectChain([], true))
         .mockReturnValueOnce(makeGroupedSelectChain([], true));
 
-      const result = await svc.getProductInsights(ORG_ID, 1);
+      const result = await svc.getProductInsights(productActorIn(ORG_ID), 1);
 
       expect(result.linkedProjectCount).toBe(0);
       expect(result.projectsByStatus).toEqual({ active: 0, completed: 0, archived: 0 });
@@ -432,7 +434,7 @@ describe("ManagedProductsService", () => {
         .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain)
         .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain);
 
-      await svc.getProductInsights(ORG_ID, 1, { range: "7d" });
+      await svc.getProductInsights(productActorIn(ORG_ID), 1, { range: "7d" });
 
       const sql = renderSql(getCapturedWhere());
       expect(sql).toMatch(/created_at/);
@@ -451,7 +453,7 @@ describe("ManagedProductsService", () => {
         .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain)
         .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain);
 
-      await svc.getProductInsights(ORG_ID, 1, {});
+      await svc.getProductInsights(productActorIn(ORG_ID), 1, {});
 
       const sql = renderSql(getCapturedWhere());
       expect(sql).not.toMatch(/created_at.*>=|>= .* created_at/i);
@@ -470,7 +472,7 @@ describe("ManagedProductsService", () => {
         .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain)
         .mockReturnValueOnce(makeCapturableGroupedChain([], true).chain);
 
-      await svc.getProductInsights(ORG_ID, 1, { range: "7d" });
+      await svc.getProductInsights(productActorIn(ORG_ID), 1, { range: "7d" });
 
       const after = new Date();
       const expected7dAgo = before.getTime() - 7 * 24 * 60 * 60 * 1000;
@@ -693,6 +695,7 @@ describe("ManagedProductsService.getManagedProduct — resolved owner projection
           useValue: { select, insert: jest.fn(), update: jest.fn(), query: {} },
         },
         { provide: AuditService, useValue: mockAudit },
+        productAccessProvider(),
       ],
     }).compile();
     svc = module.get(ManagedProductsService);

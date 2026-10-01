@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
@@ -52,6 +52,7 @@ export class TicketExportService {
   ): Promise<TicketExportResult> {
     const read = await authorizeProjectTicketRead(this.db, this.access, u, projectId);
     const limit = Math.min(Math.max(input.limit ?? EXPORT_MAX_ROWS, 1), EXPORT_MAX_ROWS);
+    const requestedIds = [...new Set(input.ticketIds ?? [])];
 
     const rows = await read.read(
       {
@@ -60,7 +61,7 @@ export class TicketExportService {
         and: [
           eq(tickets.projectId, projectId),
           isNull(tickets.deletedAt),
-          ...(input.ticketIds?.length ? [inArray(tickets.id, input.ticketIds)] : []),
+          ...(requestedIds.length > 0 ? [inArray(tickets.id, requestedIds)] : []),
         ],
       },
       (where) =>
@@ -84,18 +85,21 @@ export class TicketExportService {
           .from(tickets)
           .where(and(where.sql))
           .orderBy(asc(tickets.ticketNumber))
-          .limit(limit),
+          .limit(Math.max(limit, requestedIds.length)),
       () => [] as TicketExportRecord[],
     );
+    if (requestedIds.length > 0 && rows.length !== requestedIds.length)
+      throw new NotFoundException("One or more ticket IDs not found in this project");
 
     const records = rows as TicketExportRecord[];
+    const exported = records.slice(0, limit);
     return {
       format: input.format,
       filename: `build-project-${projectId}-tickets.${input.format}`,
       contentType: input.format === "csv" ? "text/csv" : "application/json",
-      rowCount: records.length,
+      rowCount: exported.length,
       content:
-        input.format === "csv" ? this.toCsvContent(records) : JSON.stringify(records, null, 2),
+        input.format === "csv" ? this.toCsvContent(exported) : JSON.stringify(exported, null, 2),
     };
   }
 

@@ -15,6 +15,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
 import {
   buildCursorPage,
   buildTupleCursorPage,
@@ -29,7 +31,8 @@ import {
   keysetBeforeValue,
   microsecondCursorValue,
 } from "../../../common/pagination/keyset";
-import { assertProjectInOrg } from "../core";
+import { assertCanManageProject, resolveProjectReach } from "../core";
+import { reachableProjectIdsSql } from "./reachable-linked-projects";
 import type {
   CreateProgramInput,
   LinkedProjectsQuery,
@@ -89,6 +92,7 @@ export class ProgramsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   private async loadProgram(
@@ -137,7 +141,10 @@ export class ProgramsService {
     return rows.map((row) => Number(row["id"]));
   }
 
-  async listPrograms(orgId: string, query: ListProgramsQuery) {
+  async listPrograms(u: CurrentUserContext, query: ListProgramsQuery) {
+    const { orgId } = u;
+    const reach = await resolveProjectReach(this.access, u);
+    const reachableProjectIds = reachableProjectIdsSql(orgId, reach.where);
     const program = alias(projectPrograms, "program");
     const {
       cursor,
@@ -191,6 +198,7 @@ export class ProgramsService {
               AND filtered_link.org_id = ${program.orgId}
               AND filtered_link.org_id = ${orgId}
               AND filtered_link.project_id = ${query.projectId}
+              AND filtered_link.project_id IN ${reachableProjectIds}
           )`
         : undefined,
       cursorCondition,
@@ -222,6 +230,7 @@ export class ProgramsService {
             AND linked_project.deleted_at IS NULL
           WHERE link.program_id = program.id
             AND link.org_id = program.org_id
+            AND link.project_id IN ${reachableProjectIds}
         )`,
       })
       .from(program)
@@ -248,6 +257,7 @@ export class ProgramsService {
   private async pageProgramProjects(
     orgId: string,
     programId: number,
+    reach: SQL,
     query: LinkedProjectsQuery,
   ) {
     const { cursor, limit } = query;
@@ -273,6 +283,7 @@ export class ProgramsService {
           eq(programProjects.programId, programId),
           eq(programProjects.orgId, orgId),
           isNull(projects.deletedAt),
+          reach,
           pos ? keysetBeforeId(programProjects.createdAt, projects.id, pos) : undefined,
         ),
       )
@@ -285,9 +296,13 @@ export class ProgramsService {
     }));
   }
 
-  async getProgram(orgId: string, programId: number, query: ProgramDetailQuery) {
-    const program = await this.loadProgram(orgId, programId);
-    const projects = await this.pageProgramProjects(orgId, programId, {
+  async getProgram(u: CurrentUserContext, programId: number, query: ProgramDetailQuery) {
+    const { orgId } = u;
+    const [program, reach] = await Promise.all([
+      this.loadProgram(orgId, programId),
+      resolveProjectReach(this.access, u),
+    ]);
+    const projects = await this.pageProgramProjects(orgId, programId, reach.where, {
       cursor: query.projectsCursor,
       limit: query.projectsLimit,
     });
@@ -388,13 +403,13 @@ export class ProgramsService {
   }
 
   async linkProject(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     programId: number,
     input: LinkProjectInput,
   ) {
+    const { orgId, userId } = u;
     await this.loadProgram(orgId, programId);
-    await assertProjectInOrg(this.db, orgId, input.projectId);
+    await assertCanManageProject(this.db, this.access, u, input.projectId);
     await this.db
       .insert(programProjects)
       .values({ orgId, programId, projectId: input.projectId })
@@ -411,12 +426,13 @@ export class ProgramsService {
   }
 
   async unlinkProject(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     programId: number,
     projectId: number,
   ) {
+    const { orgId, userId } = u;
     await this.loadProgram(orgId, programId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
     await this.db
       .delete(programProjects)
       .where(

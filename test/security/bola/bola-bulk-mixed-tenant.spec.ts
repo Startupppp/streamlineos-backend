@@ -103,6 +103,8 @@ const REPAIRED_FAIL_WHOLE: readonly string[] = [
   "ApprovalsBulkService.bulkReject",
   "KbSearchRetrievalService.retrieveTopSourcesWithOutcome",
   "KbPageTrashQueryService.purgeImpact",
+  "TicketExportService.exportTickets",
+  "ProjectsTicketsTransferService.exportTickets",
 ];
 
 /**
@@ -179,8 +181,6 @@ const ADMITTED_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
 ];
 
 const OPEN_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
-  ["TicketExportService.exportTickets", "GET /build/:projectId/import-export/tickets/export?ticketIds: foreign ids are dropped from the export without a 404"],
-  ["ProjectsTicketsTransferService.exportTickets", "GET /build/:projectId/tickets/export ticketIds: foreign ids are dropped from the export without a 404"],
 ];
 
 const source = (rel: string): string => readFileSync(join(BACKEND_ROOT, rel), "utf8");

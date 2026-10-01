@@ -1,6 +1,6 @@
+import { managedProductsService } from "./__tests__/managed-products-spec-fixtures";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ManagedProductsService } from "./managed-products.service";
-import { AuditService } from "../../../common/audit/audit.service";
 import type { Db } from "../../../db/drizzle.module";
 import { encodeCursor } from "../../../common/pagination/cursor";
 
@@ -34,7 +34,7 @@ function buildDb(captured: Captured) {
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new ManagedProductsService(buildDb(captured), {} as AuditService);
+  const svc = (await managedProductsService(buildDb(captured)));
   await svc.listManagedProducts("org-1", { cursor, limit: 20 }, 1);
   return captured;
 }
@@ -63,7 +63,7 @@ describe("ManagedProductsService.listManagedProducts — keyset matches the sort
   });
 
   it("rejects a malformed cursor instead of silently returning the first page", async () => {
-    const svc = new ManagedProductsService(buildDb({ where: undefined, orderBy: [] }), {} as AuditService);
+    const svc = (await managedProductsService(buildDb({ where: undefined, orderBy: [] })));
     await expect(svc.listManagedProducts("org-1", { cursor: "not-a-cursor", limit: 20 }, 1)).rejects.toThrow(
       "Invalid pagination cursor",
     );

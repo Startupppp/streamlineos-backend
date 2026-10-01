@@ -3,6 +3,10 @@ jest.mock("../core", () => ({
   assertProjectWriteAccess: jest.fn(),
 }));
 
+jest.mock("../../../common/tenant/org-membership", () => ({
+  assertUsersInOrg: jest.fn(),
+}));
+
 jest.mock("../../../common/outbox/outbox-writer", () => ({
   OutboxWriter: { emit: jest.fn() },
 }));

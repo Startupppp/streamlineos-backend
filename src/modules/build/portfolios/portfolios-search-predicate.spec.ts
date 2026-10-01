@@ -1,3 +1,4 @@
+import { actorIn, portfoliosService } from "./__tests__/portfolio-spec-fixtures";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { PortfoliosService } from "./portfolios.service";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -27,8 +28,8 @@ const mockAudit = {} as AuditService;
 describe("PortfoliosService.listPortfolios — search predicate shape (BE-49)", () => {
   it("uses a trailing-wildcard pattern, not a leading wildcard, so the portfolio name column can use a prefix index rather than a full scan", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new PortfoliosService(buildDb(captured), mockAudit);
-    await svc.listPortfolios("org-1", { limit: 20, q: "strategic" });
+    const svc = (await portfoliosService(buildDb(captured), mockAudit));
+    await svc.listPortfolios(actorIn("org-1"), { limit: 20, q: "strategic" });
     const { sql, params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).toContain("ilike");
     const likeParams = params.filter((p): p is string => typeof p === "string" && p.includes("%"));
@@ -38,8 +39,8 @@ describe("PortfoliosService.listPortfolios — search predicate shape (BE-49)", 
 
   it("appends a trailing % so a search for 'strategic' finds 'Strategic Growth' because the name starts with the typed prefix", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new PortfoliosService(buildDb(captured), mockAudit);
-    await svc.listPortfolios("org-1", { limit: 20, q: "strategic" });
+    const svc = (await portfoliosService(buildDb(captured), mockAudit));
+    await svc.listPortfolios(actorIn("org-1"), { limit: 20, q: "strategic" });
     const { params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     const likeParam = params.find((p): p is string => typeof p === "string" && p.endsWith("%"));
     expect(likeParam).toBe("strategic%");
@@ -47,8 +48,8 @@ describe("PortfoliosService.listPortfolios — search predicate shape (BE-49)", 
 
   it("omits the ilike predicate when no q is given so all portfolios are visible to the caller", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new PortfoliosService(buildDb(captured), mockAudit);
-    await svc.listPortfolios("org-1", { limit: 20 });
+    const svc = (await portfoliosService(buildDb(captured), mockAudit));
+    await svc.listPortfolios(actorIn("org-1"), { limit: 20 });
     const { sql } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).not.toContain("ilike");
   });

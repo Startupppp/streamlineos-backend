@@ -56,7 +56,7 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { ProjectsCustomStatesService } from "../custom-states/projects-custom-states.service";
 import { ProjectsLabelsService } from "../lib/projects-labels.service";
 import { escapeLike } from "../lib/escape-like";
-import { assertProjectAccess, assertCanManageProject } from "../project-crud/project-access";
+import { assertProjectAccess, assertCanManageProject, resolveProjectReach } from "../project-crud/project-access";
 
 @Injectable()
 export class ProjectsMembersService {
@@ -393,8 +393,9 @@ export class ProjectsMembersService {
     return this.statesService.listCustomStates(u.orgId, projectId);
   }
 
-  listOrgCustomStates(u: CurrentUserContext) {
-    return this.statesService.listOrgCustomStates(u.orgId);
+  async listOrgCustomStates(u: CurrentUserContext) {
+    const reach = await resolveProjectReach(this.access, u);
+    return this.statesService.listOrgCustomStates(u.orgId, reach.where);
   }
 
   async createCustomState(

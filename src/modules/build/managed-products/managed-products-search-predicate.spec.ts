@@ -1,3 +1,4 @@
+import { managedProductsService } from "./__tests__/managed-products-spec-fixtures";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ManagedProductsService } from "./managed-products.service";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -27,7 +28,7 @@ const mockAudit = {} as AuditService;
 describe("ManagedProductsService.listManagedProducts — search predicate shape (BE-49)", () => {
   it("uses a trailing-wildcard pattern, not a leading wildcard, so the product name column can use a prefix index instead of scanning every row", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new ManagedProductsService(buildDb(captured), mockAudit);
+    const svc = (await managedProductsService(buildDb(captured), mockAudit));
     await svc.listManagedProducts("org-1", { limit: 20, search: "platform" }, null);
     const { sql, params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).toContain("ilike");
@@ -38,7 +39,7 @@ describe("ManagedProductsService.listManagedProducts — search predicate shape 
 
   it("appends a trailing % so a search for 'platform' finds 'Platform X' because the name begins with the typed term", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new ManagedProductsService(buildDb(captured), mockAudit);
+    const svc = (await managedProductsService(buildDb(captured), mockAudit));
     await svc.listManagedProducts("org-1", { limit: 20, search: "platform" }, null);
     const { params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     const likeParam = params.find((p): p is string => typeof p === "string" && p.endsWith("%"));
@@ -47,7 +48,7 @@ describe("ManagedProductsService.listManagedProducts — search predicate shape 
 
   it("omits the ilike predicate when no search is given so all products are listed regardless of name", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new ManagedProductsService(buildDb(captured), mockAudit);
+    const svc = (await managedProductsService(buildDb(captured), mockAudit));
     await svc.listManagedProducts("org-1", { limit: 20 }, null);
     const { sql } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).not.toContain("ilike");

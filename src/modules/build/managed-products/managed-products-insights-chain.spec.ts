@@ -1,3 +1,5 @@
+import { MEMBER_STANDING } from "../core/project-crud/__tests__/project-access-doubles";
+import { managedProductsService, productActorIn } from "./__tests__/managed-products-spec-fixtures";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { ManagedProductsService } from "./managed-products.service";
@@ -97,8 +99,8 @@ function makeInsightsDb(loadRow: object | null): { db: Db; capture: Capture } {
 
 const audit = { log: jest.fn() } as unknown as AuditService;
 
-function makeService(db: Db): ManagedProductsService {
-  return new ManagedProductsService(db, audit);
+function makeService(db: Db): Promise<ManagedProductsService> {
+  return managedProductsService(db, audit);
 }
 
 describe("getProductInsights — discovery chain SQL binding", () => {
@@ -107,25 +109,25 @@ describe("getProductInsights — discovery chain SQL binding", () => {
   describe("submissions subquery binds orgId AND managedProductId (cross-tenant isolation)", () => {
     it("binds the caller orgId in the submissions WHERE predicate", async () => {
       const { db, capture } = makeInsightsDb(loadRow);
-      await makeService(db).getProductInsights(ORG, PRODUCT_ID);
+      await (await makeService(db)).getProductInsights(productActorIn(ORG), PRODUCT_ID);
       expect(renderParams(capture.submissions.where)).toContain(ORG);
     });
 
     it("binds managedProductId in the submissions WHERE predicate", async () => {
       const { db, capture } = makeInsightsDb(loadRow);
-      await makeService(db).getProductInsights(ORG, PRODUCT_ID);
+      await (await makeService(db)).getProductInsights(productActorIn(ORG), PRODUCT_ID);
       expect(renderParams(capture.submissions.where)).toContain(PRODUCT_ID);
     });
 
     it("binds orgId in the JOIN ON clause so a cross-tenant widget cannot satisfy the join", async () => {
       const { db, capture } = makeInsightsDb(loadRow);
-      await makeService(db).getProductInsights(ORG, PRODUCT_ID);
+      await (await makeService(db)).getProductInsights(productActorIn(ORG), PRODUCT_ID);
       expect(renderSql(capture.submissions.joinOn)).toMatch(/org_id/);
     });
 
     it("throws 404 before executing any aggregate query when the product is foreign (no write)", async () => {
       const { db, capture } = makeInsightsDb(null);
-      await expect(makeService(db).getProductInsights(ORG, PRODUCT_ID)).rejects.toThrow(
+      await expect((await makeService(db)).getProductInsights(productActorIn(ORG), PRODUCT_ID)).rejects.toThrow(
         "Managed product not found",
       );
       expect(capture.submissions.where).toBeUndefined();
@@ -135,15 +137,33 @@ describe("getProductInsights — discovery chain SQL binding", () => {
   describe("projects subquery binds orgId AND managedProductId", () => {
     it("binds orgId in the projects WHERE predicate", async () => {
       const { db, capture } = makeInsightsDb(loadRow);
-      await makeService(db).getProductInsights(ORG, PRODUCT_ID);
+      await (await makeService(db)).getProductInsights(productActorIn(ORG), PRODUCT_ID);
       expect(renderParams(capture.projects.where)).toContain(ORG);
     });
 
     it("binds managedProductId in the projects WHERE predicate", async () => {
       const { db, capture } = makeInsightsDb(loadRow);
-      await makeService(db).getProductInsights(ORG, PRODUCT_ID);
+      await (await makeService(db)).getProductInsights(productActorIn(ORG), PRODUCT_ID);
       expect(renderParams(capture.projects.where)).toContain(PRODUCT_ID);
     });
+  });
+});
+
+describe("getProductInsights — project aggregates count only projects the caller can reach", () => {
+  const loadRow = { id: PRODUCT_ID, orgId: ORG, deletedAt: null };
+
+  it("binds the caller's project membership into the project aggregate for a member without org-wide standing", async () => {
+    const { db, capture } = makeInsightsDb(loadRow);
+    const svc = await managedProductsService(db, audit, MEMBER_STANDING);
+    await svc.getProductInsights(productActorIn(ORG, 7), PRODUCT_ID);
+    expect(renderSql(capture.projects.where)).toMatch(/project_members/);
+    expect(renderParams(capture.projects.where)).toContain(7);
+  });
+
+  it("leaves the project aggregate org-wide for a caller with org-wide project standing", async () => {
+    const { db, capture } = makeInsightsDb(loadRow);
+    await (await makeService(db)).getProductInsights(productActorIn(ORG, 7), PRODUCT_ID);
+    expect(renderSql(capture.projects.where)).not.toMatch(/project_members/);
   });
 });
 

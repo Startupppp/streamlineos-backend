@@ -30,6 +30,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
 import {
   buildCursorPage,
   decodeCursor,
@@ -46,7 +48,8 @@ import type {
   UpdateManagedProductInput,
 } from "./dto/managed-products.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
-import { TicketVersionConflictException, escapeLike } from "../core";
+import { TicketVersionConflictException, escapeLike, resolveProjectReach } from "../core";
+import { foldProductInsights } from "./managed-product-insights";
 
 type ManagedProductRow = typeof managedProducts.$inferSelect;
 type ManagedProductPatch = Partial<typeof managedProducts.$inferInsert>;
@@ -56,6 +59,7 @@ export class ManagedProductsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   private async loadProduct(
@@ -285,11 +289,13 @@ export class ManagedProductsService {
   }
 
   async getProductInsights(
-    orgId: string,
+    u: CurrentUserContext,
     managedProductId: number,
     query: ProductInsightsQuery = {},
   ) {
+    const { orgId } = u;
     await this.loadProduct(orgId, managedProductId);
+    const { where: reach } = await resolveProjectReach(this.access, u);
 
     const rangeStart = this.computeRangeStart(query.range);
 
@@ -303,6 +309,7 @@ export class ManagedProductsService {
               eq(projects.orgId, orgId),
               eq(projects.managedProductId, managedProductId),
               isNull(projects.deletedAt),
+              reach,
               rangeStart ? gte(projects.createdAt, rangeStart) : undefined,
             ),
           )
@@ -341,6 +348,7 @@ export class ManagedProductsService {
               eq(projects.id, roadmapItems.projectId),
               eq(projects.managedProductId, managedProductId),
               isNull(projects.deletedAt),
+              reach,
             ),
           )
           .where(
@@ -377,6 +385,7 @@ export class ManagedProductsService {
               eq(projects.id, roadmapItems.projectId),
               eq(projects.managedProductId, managedProductId),
               isNull(projects.deletedAt),
+              reach,
             ),
           )
           .where(
@@ -390,67 +399,7 @@ export class ManagedProductsService {
           .groupBy(feedbackPosts.status),
       ]);
 
-    const projectsByStatus = { active: 0, completed: 0, archived: 0 };
-    for (const row of projectRows) {
-      const n = Number(row.tally);
-      if (row.status === "ACTIVE") projectsByStatus.active = n;
-      else if (row.status === "COMPLETED") projectsByStatus.completed = n;
-      else if (row.status === "ARCHIVED") projectsByStatus.archived = n;
-    }
-
-    const submissionsByStatus = {
-      open: 0,
-      in_progress: 0,
-      resolved: 0,
-      archived: 0,
-    };
-    for (const row of submissionRows) {
-      const n = Number(row.tally);
-      const key = row.status as keyof typeof submissionsByStatus;
-      if (key in submissionsByStatus) submissionsByStatus[key] = n;
-    }
-
-    const roadmapItemsByStatus = {
-      planned: 0,
-      in_progress: 0,
-      completed: 0,
-      cancelled: 0,
-    };
-    for (const row of roadmapRows) {
-      const key = row.status as keyof typeof roadmapItemsByStatus;
-      if (key in roadmapItemsByStatus)
-        roadmapItemsByStatus[key] = Number(row.tally);
-    }
-
-    const feedbackByStatus = {
-      open: 0,
-      planned: 0,
-      in_progress: 0,
-      completed: 0,
-      declined: 0,
-    };
-    let linkedFeedbackVoteCount = 0;
-    for (const row of feedbackRows) {
-      const key = row.status as keyof typeof feedbackByStatus;
-      if (key in feedbackByStatus) feedbackByStatus[key] = Number(row.tally);
-      linkedFeedbackVoteCount += Number(row.votes ?? 0);
-    }
-
-    return {
-      linkedProjectCount:
-        projectsByStatus.active +
-        projectsByStatus.completed +
-        projectsByStatus.archived,
-      projectsByStatus,
-      submissionsByStatus,
-      roadmapItemCount: Object.values(roadmapItemsByStatus).reduce(
-        (total, value) => total + value,
-        0,
-      ),
-      roadmapItemsByStatus,
-      feedbackByStatus,
-      linkedFeedbackVoteCount,
-    };
+    return foldProductInsights({ projectRows, submissionRows, roadmapRows, feedbackRows });
   }
 
   async deleteManagedProduct(

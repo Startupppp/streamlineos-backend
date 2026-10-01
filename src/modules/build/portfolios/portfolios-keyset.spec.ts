@@ -1,6 +1,6 @@
+import { actorIn, portfoliosService } from "./__tests__/portfolio-spec-fixtures";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { PortfoliosService } from "./portfolios.service";
-import { AuditService } from "../../../common/audit/audit.service";
 import type { Db } from "../../../db/drizzle.module";
 import { encodeCursor } from "../../../common/pagination/cursor";
 
@@ -56,8 +56,8 @@ function buildDbCapturingSelect(captured: SelectCaptured) {
 
 async function capture(cursor: string | undefined, q?: string): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new PortfoliosService(buildDb(captured), {} as AuditService);
-  await svc.listPortfolios("org-1", { cursor, limit: 20, q });
+  const svc = (await portfoliosService(buildDb(captured)));
+  await svc.listPortfolios(actorIn("org-1"), { cursor, limit: 20, q });
   return captured;
 }
 
@@ -91,8 +91,8 @@ describe("PortfoliosService.listPortfolios — keyset matches the sort", () => {
   });
 
   it("rejects a malformed cursor instead of silently returning the first page", async () => {
-    const svc = new PortfoliosService(buildDb({ where: undefined, orderBy: [] }), {} as AuditService);
-    await expect(svc.listPortfolios("org-1", { cursor: "not-a-cursor", limit: 20 })).rejects.toThrow(
+    const svc = (await portfoliosService(buildDb({ where: undefined, orderBy: [] })));
+    await expect(svc.listPortfolios(actorIn("org-1"), { cursor: "not-a-cursor", limit: 20 })).rejects.toThrow(
       "Invalid pagination cursor",
     );
   });
@@ -106,11 +106,8 @@ describe("PortfoliosService.listPortfolios — keyset matches the sort", () => {
 describe("PortfoliosService.listPortfolios — projectCount subquery excludes soft-deleted projects", () => {
   it("projectCount expression references deleted_at so soft-deleted projects are not counted", async () => {
     const captured: SelectCaptured = { projection: {} };
-    const svc = new PortfoliosService(
-      buildDbCapturingSelect(captured) as unknown as Db,
-      {} as AuditService,
-    );
-    await svc.listPortfolios("org-1", { cursor: undefined, limit: 20 });
+    const svc = (await portfoliosService(buildDbCapturingSelect(captured)));
+    await svc.listPortfolios(actorIn("org-1"), { cursor: undefined, limit: 20 });
     const expr = captured.projection["projectCount"];
     const rendered = render(expr);
     expect(rendered.toLowerCase()).toContain("deleted_at");

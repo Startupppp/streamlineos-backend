@@ -57,7 +57,7 @@ export class ProgramsController {
     @Query() query: ListProgramsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listPrograms(u.orgId, query);
+    return this.svc.listPrograms(u, query);
   }
 
   @Get("programs/:programId")
@@ -69,7 +69,7 @@ export class ProgramsController {
     @Query() query: ProgramDetailQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getProgram(u.orgId, programId, query);
+    return this.svc.getProgram(u, programId, query);
   }
 
   @Post("programs")
@@ -118,7 +118,7 @@ export class ProgramsController {
     @Body() body: LinkProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.linkProject(u.orgId, u.userId, programId, body);
+    return this.svc.linkProject(u, programId, body);
   }
 
   @Delete("programs/:programId/projects/:projectId")
@@ -131,6 +131,6 @@ export class ProgramsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.unlinkProject(u.orgId, u.userId, programId, projectId);
+    return this.svc.unlinkProject(u, programId, projectId);
   }
 }
