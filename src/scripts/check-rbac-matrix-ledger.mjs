@@ -21,13 +21,13 @@
  *   node src/scripts/check-rbac-matrix-ledger.mjs --self-test
  */
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
-const JEST_BIN = join(BACKEND_ROOT, "node_modules", ".bin", "jest");
+const JEST_BIN = join(BACKEND_ROOT, "node_modules", "jest", "bin", "jest.js");
 
 const args = process.argv.slice(2);
 const SELF_TEST = args.includes("--self-test");
@@ -36,37 +36,38 @@ const LEDGER_LINE_RE = /RBAC Matrix Ledger:\s*proven=(\d+)\s+failed=(\d+)\s+unru
 const MIN_CELLS = 1;
 
 function run() {
-  let output = "";
-  try {
-    output = execFileSync(
-      process.execPath,
-      [
-        JEST_BIN,
-        "--testPathPattern=test/security/rbac-matrix/matrix\\.spec\\.ts",
-        "--no-coverage",
-        "--forceExit",
-      ],
-      {
-        cwd: BACKEND_ROOT,
-        encoding: "utf8",
-        stdio: ["inherit", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          DATABASE_URL: undefined,
-          DATABASE_URL_UNPOOLED: undefined,
-          NODE_ENV: "test",
-        },
-      },
-    );
-  } catch (err) {
-    const execError = err;
-    output = (execError.stdout ?? "") + (execError.stderr ?? "");
-    // Jest exits non-zero when tests fail; we handle that below after parsing
-    if (!output.includes("RBAC Matrix Ledger")) {
-      process.stderr.write(`[check:rbac-matrix-ledger] jest produced no ledger output\n`);
-      process.stderr.write(output.slice(-2000));
-      process.exit(2);
-    }
+  const env = { ...process.env, NODE_ENV: "test", NODE_OPTIONS: "--max-old-space-size=4096" };
+  delete env.DATABASE_URL;
+  delete env.DATABASE_URL_UNPOOLED;
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      JEST_BIN,
+      "--testPathPattern=test/security/rbac-matrix/matrix\\.spec\\.ts",
+      "--no-coverage",
+      "--forceExit",
+    ],
+    {
+      cwd: BACKEND_ROOT,
+      encoding: "utf8",
+      env,
+      maxBuffer: 10 * 1024 * 1024,
+    },
+  );
+
+  // Jest routes console.log to stderr; combine both streams to find the ledger line
+  const output = (result.stdout ?? "") + (result.stderr ?? "");
+
+  if (result.error) {
+    process.stderr.write(`[check:rbac-matrix-ledger] spawn error: ${result.error.message}\n`);
+    process.exit(2);
+  }
+
+  if (!output.includes("RBAC Matrix Ledger")) {
+    process.stderr.write(`[check:rbac-matrix-ledger] jest produced no ledger output\n`);
+    process.stderr.write(output.slice(-2000));
+    process.exit(2);
   }
 
   const match = output.match(LEDGER_LINE_RE);
