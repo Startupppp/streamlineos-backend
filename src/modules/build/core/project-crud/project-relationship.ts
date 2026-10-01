@@ -15,7 +15,6 @@ export type ProjectRelationship = {
   manages: SQL;
   memberRole: SQL<string | null>;
   onTeam: SQL;
-  any: SQL;
 };
 
 function directMemberRows(orgId: string, membershipId: number): SQL {
@@ -41,34 +40,47 @@ function teamMemberRows(orgId: string, membershipId: number): SQL {
         AND ${projectTeamMembers.membershipId} = ${membershipId}`;
 }
 
-export function projectRelationship(orgId: string, membershipId: number | null): ProjectRelationship {
-  if (membershipId === null)
-    return { manages: sql`false`, memberRole: sql<string | null>`NULL`, onTeam: sql`false`, any: sql`false` };
-  const manages = sql`${projects.managerMembershipId} = ${membershipId}`;
-  const direct = directMemberRows(orgId, membershipId);
-  const onTeam = sql`${projects.id} IN (
+function managesSql(membershipId: number): SQL {
+  return sql`${projects.managerMembershipId} = ${membershipId}`;
+}
+
+function onTeamSql(orgId: string, membershipId: number): SQL {
+  return sql`${projects.id} IN (
       SELECT ${projectTeamAssignments.projectId}
       ${teamMemberRows(orgId, membershipId)}
     )`;
+}
+
+export function projectRelationship(orgId: string, membershipId: number | null): ProjectRelationship {
+  if (membershipId === null)
+    return { manages: sql`false`, memberRole: sql<string | null>`NULL`, onTeam: sql`false` };
   return {
-    manages,
-    memberRole: sql<string | null>`(SELECT ${projectMembers.role} ${direct} AND ${projectMembers.projectId} = ${projects.id} LIMIT 1)`,
-    onTeam,
-    any: sql`(
-    ${manages}
+    manages: managesSql(membershipId),
+    memberRole: sql<string | null>`(SELECT ${projectMembers.role} ${directMemberRows(orgId, membershipId)} AND ${projectMembers.projectId} = ${projects.id} LIMIT 1)`,
+    onTeam: onTeamSql(orgId, membershipId),
+  };
+}
+
+export function reachableProjectsSql(orgId: string, membershipId: number | null): SQL {
+  if (membershipId === null) return sql`false`;
+  return sql`(
+    ${managesSql(membershipId)}
     OR ${projects.id} IN (
       SELECT ${projectMembers.projectId}
-      ${direct}
+      ${directMemberRows(orgId, membershipId)}
     )
-    OR ${onTeam}
-  )`,
-  };
+    OR ${onTeamSql(orgId, membershipId)}
+  )`;
+}
+
+export function reachableTicketProjectsSql(orgId: string, membershipId: number | null): SQL {
+  return sql`${tickets.projectId} IN (SELECT ${projects.id} FROM ${projects} WHERE ${projects.orgId} = ${orgId} AND ${reachableProjectsSql(orgId, membershipId)})`;
 }
 
 export function projectReachSql(standing: ScopedRead, orgId: string, membershipId: number | null): SQL {
   if (standing.unrestricted) return sql`true`;
   if (standing.denied) return sql`false`;
-  return projectRelationship(orgId, membershipId).any;
+  return reachableProjectsSql(orgId, membershipId);
 }
 
 export function projectReachFor(

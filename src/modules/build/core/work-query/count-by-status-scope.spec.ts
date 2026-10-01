@@ -6,7 +6,7 @@ import * as schema from "../../../../db/schema";
 import { projects, tickets } from "../../../../db/schema";
 import { allCountByStatusQuery, ProjectsWorkQueryService } from "./projects-work-query.service";
 import { mineCountByStatusSql } from "./work-scope-union";
-import { projectRelationship } from "../project-crud/project-relationship";
+import { reachableProjectsSql } from "../project-crud/project-relationship";
 import { MANAGER_STANDING, MEMBER_STANDING, standingAccess } from "../project-crud/__tests__/project-access-doubles";
 import type { AccessService } from "../../../access/access.service";
 import type { Db } from "../../../../db/drizzle.module";
@@ -69,8 +69,8 @@ function makeUserNoMembership(orgId: string): CurrentUserContext {
   } as unknown as CurrentUserContext;
 }
 
-describe("projectRelationship — the shared reach predicate structure", () => {
-  const compiled = renderSql(projectRelationship(ORG_ID, MEMBERSHIP_ID).any);
+describe("reachableProjectsSql — the shared reach predicate structure", () => {
+  const compiled = renderSql(reachableProjectsSql(ORG_ID, MEMBERSHIP_ID));
 
   it("binds the caller org_id as a parameter rather than inlining it as a literal", () => {
     expect(compiled.params).toContain(ORG_ID);

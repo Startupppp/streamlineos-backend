@@ -23,7 +23,7 @@ import { AccessService } from "../../../access/access.service";
 import type { ScopedRead } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { resolveProjectAccess } from "./project-access";
-import { projectRelationship } from "./project-relationship";
+import { reachableProjectsSql } from "./project-relationship";
 import { accountableMembershipId } from "../../../../common/auth/principal";
 import { resolveProjectsScope } from "./projects-scope";
 import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
@@ -87,7 +87,7 @@ export class ProjectsQueryService {
       domain.push(eq(organizationMembers.userId, managerId));
     }
 
-    const ownProjects = projectRelationship(orgId, membershipId).any;
+    const ownProjects = reachableProjectsSql(orgId, membershipId);
 
     if (search?.trim()) {
       const match = or(

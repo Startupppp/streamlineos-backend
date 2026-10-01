@@ -1209,6 +1209,8 @@ const PROJECT_DECISION_FNS = new Set([
   "projectRelationship",
   "projectReachFor",
   "assertCanDeleteProject",
+  "reachableProjectsSql",
+  "reachableTicketProjectsSql",
 ]);
 const TENANT_ONLY_FNS = new Set(["assertProjectInOrg"]);
 const CLIENT_GRANT_RELATIONSHIP = "projectClientGrants";

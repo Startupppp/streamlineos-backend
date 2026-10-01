@@ -5,6 +5,8 @@ import {
   projectReachFor,
   projectReachSql,
   projectRelationship,
+  reachableProjectsSql,
+  reachableTicketProjectsSql,
   ticketProjectReachableSql,
   ticketVisibleSql,
 } from "./project-relationship";
@@ -22,7 +24,7 @@ const read = (scope: "all" | "own" | "team" | "none") => ScopedRead.of(ORG_ID, "
 
 describe("projectRelationship — the one membership rule both the list and the per-row decision read", () => {
   const relationship = projectRelationship(ORG_ID, MEMBERSHIP_ID);
-  const any = render(relationship.any);
+  const any = render(reachableProjectsSql(ORG_ID, MEMBERSHIP_ID));
 
   it("covers the manager, direct-member and team-member branches combined with OR", () => {
     expect(any.sql).toContain("manager_membership_id");
@@ -50,9 +52,15 @@ describe("projectRelationship — the one membership rule both the list and the 
     expect(render(relationship.onTeam).sql).toContain("project_team_assignments");
   });
 
+  it("keeps the canonical ticket form scoped to reachable projects of the caller's org", () => {
+    const ticketForm = render(reachableTicketProjectsSql(ORG_ID, MEMBERSHIP_ID));
+    expect(ticketForm.sql).toContain("project_members");
+    expect(ticketForm.params).toContain(ORG_ID);
+  });
+
   it("reaches nothing for a principal with no membership rather than matching a NULL manager", () => {
     const none = projectRelationship(ORG_ID, null);
-    expect(render(none.any).sql).toBe("false");
+    expect(render(reachableProjectsSql(ORG_ID, null)).sql).toBe("false");
     expect(render(none.manages).sql).toBe("false");
   });
 });
@@ -81,7 +89,7 @@ describe("projectReachSql — standing decides whether the relationship is consu
 });
 
 describe("ticketVisibleSql — a ticket is visible only inside both the ticket scope and a reachable project", () => {
-  const reach = projectRelationship(ORG_ID, MEMBERSHIP_ID).any;
+  const reach = reachableProjectsSql(ORG_ID, MEMBERSHIP_ID);
 
   it("requires the ticket's project to be reachable unless the ticket has no project", () => {
     const visible = render(ticketVisibleSql(read("all"), reach));
