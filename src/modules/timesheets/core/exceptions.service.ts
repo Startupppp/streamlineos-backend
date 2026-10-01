@@ -13,7 +13,7 @@ import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveEntriesScope, membershipScope } from "./timesheets-core-scope";
+import { resolveEntriesScope, membershipTeamScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import type {
   DismissExceptionInput,
@@ -57,7 +57,7 @@ export class TimesheetExceptionsService {
     return read.read(
       {
         tenant: timesheetExceptions.orgId,
-        scope: membershipScope(membershipId, timesheetExceptions.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, membershipId, timesheetExceptions.userMembershipId),
         and: [
           requestedMembershipId !== undefined ? eq(timesheetExceptions.userMembershipId, requestedMembershipId) : undefined,
           query.status ? eq(timesheetExceptions.status, query.status) : undefined,
@@ -175,7 +175,7 @@ export class TimesheetExceptionsService {
     const rows = await read.read(
       {
         tenant: timesheetExceptions.orgId,
-        scope: membershipScope(membershipId, timesheetExceptions.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, membershipId, timesheetExceptions.userMembershipId),
         and: [],
       },
       ({ sql: where }) =>

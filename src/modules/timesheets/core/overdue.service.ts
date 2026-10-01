@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { organizationMembers, timesheetPeriods, timesheetSettings, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { membershipScope, resolveApprovalScope } from "./timesheets-core-scope";
+import { membershipTeamScope, resolveApprovalScope } from "./timesheets-core-scope";
 import { dueDateFor, resolveReminderRules } from "./dto/reminder-rules.schemas";
 import { wholeDaysBetween } from "./lib/period.helpers";
 import type { OverdueQuery } from "./dto/overdue.schemas";
@@ -71,7 +71,7 @@ export class TimesheetOverdueService {
       read.compose(
         {
           tenant: timesheetPeriods.orgId,
-          scope: membershipScope(actingMembershipId(u.principal), timesheetPeriods.userMembershipId),
+          scope: membershipTeamScope(u.orgId, u.userId, actingMembershipId(u.principal), timesheetPeriods.userMembershipId),
           and: [
             inArray(timesheetPeriods.status, [...UNSETTLED]),
             lte(timesheetPeriods.periodEnd, cutoff),
