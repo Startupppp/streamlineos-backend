@@ -303,7 +303,7 @@ describe("TeamService — cross-tenant isolation", () => {
 describe("EntriesService — cross-tenant isolation", () => {
   it("delegates listEntries to reader with caller's orgId (cross-tenant isolation contract)", async () => {
     const mockReader = { listEntries: jest.fn().mockResolvedValue([]) };
-    const svc = new EntriesService({} as Db, mockAccess as never, mockAudit as never, mockReader as never, {} as never);
+    const svc = new EntriesService({} as Db, mockAudit as never, mockReader as never, {} as never);
     const u = { orgId: ATTACKER_ORG, userId: "attacker" } as never;
     await svc.listEntries(u, { page: 1, limit: 25 } as never);
     expect(mockReader.listEntries).toHaveBeenCalledWith(u, expect.anything());
@@ -311,7 +311,7 @@ describe("EntriesService — cross-tenant isolation", () => {
 
   it("returns empty for own org (control — same-tenant delegation)", async () => {
     const mockReader = { listEntries: jest.fn().mockResolvedValue([]) };
-    const svc = new EntriesService({} as Db, mockAccess as never, mockAudit as never, mockReader as never, {} as never);
+    const svc = new EntriesService({} as Db, mockAudit as never, mockReader as never, {} as never);
     const u = { orgId: OWNER_ORG, userId: "u" } as never;
     const result = await svc.listEntries(u, { page: 1, limit: 25 } as never);
     expect(result).toHaveLength(0);
