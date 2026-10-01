@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emptyToUndefined, optionalUrl } from "./env-schema-helpers";
+import { deploymentSecret, emptyToUndefined, optionalUrl } from "./env-schema-helpers";
 import { KNOWN_CHAT_MODEL_IDS, isKnownChatModelId } from "../modules/ai/core/billing/ai-model-pricing.constants";
 
 export const providerEnvShape = {
@@ -63,6 +63,12 @@ export const providerEnvShape = {
     R2_ENDPOINT: optionalUrl,
     NEXT_PUBLIC_R2_PUBLIC_URL: optionalUrl,
     R2_KB_PUBLIC_URL: optionalUrl,
+    // Standalone blog admin (Startupppp/blogs). The secret signs its post-publish notification to
+    // POST /blog/internal/invalidate; _PREVIOUS keeps the old value valid during a rotation.
+    BLOG_INVALIDATION_SECRET: z.preprocess(emptyToUndefined, deploymentSecret),
+    BLOG_INVALIDATION_SECRET_PREVIOUS: z.preprocess(emptyToUndefined, deploymentSecret),
+    // Canonical public origin for blog links in RSS. Falls back to APP_URL.
+    BLOG_SITE_ORIGIN: optionalUrl,
     TWILIO_ACCOUNT_SID: z.preprocess(emptyToUndefined, z.string().optional()),
     TWILIO_AUTH_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
     TWILIO_FROM_NUMBER: z.preprocess(emptyToUndefined, z.string().optional()),
