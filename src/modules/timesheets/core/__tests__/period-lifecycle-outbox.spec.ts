@@ -1,4 +1,4 @@
-import { ConflictException } from "@nestjs/common";
+import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { outboxEvents } from "../../../../db/schema/common/outbox";
 import {
@@ -65,6 +65,18 @@ const APPROVER = {
   sessionId: "s2",
   tokenScopes: null,
   principal: humanSessionPrincipal(APPROVER_MEMBERSHIP, false),
+} as unknown as CurrentUserContext;
+
+// Holds timesheets:approvals:manage but is not the assigned approver, not the
+// period owner and not the org owner (TS-SEC-002).
+const UNRELATED_MANAGER = {
+  userId: "usr-other-manager",
+  orgId: ORG,
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s3",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(99, false),
 } as unknown as CurrentUserContext;
 
 const PERIOD_ROW = {
@@ -226,8 +238,23 @@ function makeDb(script: Script, outbox: OutboxRow[]) {
     insert: txInsert,
   };
 
+  // Delegation lookup: this script grants none, so a non-assigned actor is
+  // refused on the guard rather than on a missing double.
+  const selectDistinct = () => {
+    const node: Record<string, unknown> = {};
+    node.from = () => node;
+    node.innerJoin = () => node;
+    node.leftJoin = () => node;
+    node.where = () => node;
+    node.limit = () => node;
+    node.then = (ok: (v: unknown) => unknown, err: (e: unknown) => unknown) =>
+      Promise.resolve([]).then(ok, err);
+    return node;
+  };
+
   const db = {
     select: selectChain,
+    selectDistinct,
     update,
     insert: () => {
       throw new Error("outbox write escaped the transition transaction");
@@ -314,7 +341,7 @@ function makeRouting(decision: TimesheetRoutingDecision) {
 function periodsService(db: Db, notifications: NotificationDispatchService, decision: TimesheetRoutingDecision = ROUTED_TO_MANAGER) {
   const reader = new PeriodsReadService(db, access);
   const submit = new PeriodsSubmitService(db, reader, entriesService, audit, makeRouting(decision), rateResolver);
-  return new PeriodsService(db, reader, submit, audit, notifications);
+  return new PeriodsService(db, reader, submit, audit, notifications, approvalsService(db, notifications));
 }
 
 function approvalsService(db: Db, notifications: NotificationDispatchService) {
@@ -572,6 +599,49 @@ describe("TS-24 period lifecycle durable rows", () => {
       await expect(
         periodsService(db, makeNotifications([])).unlockPeriod(APPROVER, PERIOD_ID),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe("period admin is still bound by the assigned approver (TS-SEC-002)", () => {
+    it("refuses a lock from a manage holder who is not the assigned approver", async () => {
+      const { db, periodUpdates } = makeDb(lockScript(6), []);
+
+      await expect(
+        periodsService(db, makeNotifications([])).lockPeriod(UNRELATED_MANAGER, PERIOD_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(periodUpdates()).toEqual([]);
+    });
+
+    it("refuses an unlock from a manage holder who is not the assigned approver", async () => {
+      const { db, periodUpdates } = makeDb(
+        unlockScript("LOCKED", new Date("2026-09-09T00:00:00.000Z")),
+        [],
+      );
+
+      await expect(
+        periodsService(db, makeNotifications([])).unlockPeriod(UNRELATED_MANAGER, PERIOD_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(periodUpdates()).toEqual([]);
+    });
+
+    it("refuses a reopen from a manage holder who is not the assigned approver", async () => {
+      const { db, periodUpdates } = makeDb(
+        unlockScript("APPROVED", null),
+        [],
+      );
+
+      await expect(
+        periodsService(db, makeNotifications([])).reopenPeriod(UNRELATED_MANAGER, PERIOD_ID),
+      ).rejects.toThrow(ForbiddenException);
+      expect(periodUpdates()).toEqual([]);
+    });
+
+    it("still lets the assigned approver reopen", async () => {
+      const { db, periodUpdates } = makeDb(unlockScript("APPROVED", null), []);
+
+      await periodsService(db, makeNotifications([])).reopenPeriod(APPROVER, PERIOD_ID);
+
+      expect(periodUpdates()[0]).toMatchObject({ status: "DRAFT", lockedAt: null });
     });
   });
 
