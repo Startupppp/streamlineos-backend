@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable, Inject } from "@nestjs/common";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollExceptions, payrollRuns, payrollRunEvents } from "../../../db/schema";
 import { users } from "../../../db/schema";
 import type { ResolveExceptionInput, OverrideExceptionInput, ExceptionFilterInput } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
-import { buildCursorPage } from "../../../common/pagination/cursor";
+import { buildCursorPageWithTotal } from "../../../common/pagination/cursor";
 import {
   decodePayrollTextTimestampCursor,
   payrollCursorPosition,
@@ -50,16 +50,23 @@ export class ExceptionsService {
 
     if (!runCheck[0]) return null;
 
-    const conditions = [eq(payrollExceptions.runId, runId), eq(payrollExceptions.orgId, orgId)];
-    if (severity) conditions.push(eq(payrollExceptions.severity, severity));
-    if (status) conditions.push(eq(payrollExceptions.status, status));
+    const filters = [eq(payrollExceptions.runId, runId), eq(payrollExceptions.orgId, orgId)];
+    if (severity) filters.push(eq(payrollExceptions.severity, severity));
+    if (status) filters.push(eq(payrollExceptions.status, status));
+
+    const conditions = [...filters];
     if (position) {
       conditions.push(
         sql`(${payrollExceptions.severity}, ${payrollExceptions.createdAt}, ${payrollExceptions.id}) > (${sql.param(position.textValue, payrollExceptions.severity)}, ${sql.param(position.createdAt, payrollExceptions.createdAt)}, ${position.id})`,
       );
     }
 
-    const rows = await this.db
+    const totalQuery = this.db
+      .select({ value: count() })
+      .from(payrollExceptions)
+      .where(and(...filters));
+
+    const rowsQuery = this.db
       .select({
         id: payrollExceptions.id,
         code: payrollExceptions.code,
@@ -85,7 +92,9 @@ export class ExceptionsService {
       )
       .limit(cap + 1);
 
-    return buildCursorPage(rows, cap, (row) =>
+    const [rows, totalRows] = await Promise.all([rowsQuery, totalQuery]);
+
+    return buildCursorPageWithTotal(rows, cap, Number(totalRows[0]?.value ?? 0), (row) =>
       payrollCursorPosition(
         cursorScope,
         [row.severity, row.createdAt.toISOString()],

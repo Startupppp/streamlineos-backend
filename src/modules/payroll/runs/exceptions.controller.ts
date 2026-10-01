@@ -28,7 +28,7 @@ import {
 } from "./dto/runs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { successSchema, cursorPageSchema } from "../../../common/openapi/response-envelopes";
+import { successSchema, cursorPageWithTotalSchema } from "../../../common/openapi/response-envelopes";
 import { exceptionItemSchema } from "./dto/runs-response.schemas";
 import { z } from "zod";
 
@@ -44,7 +44,7 @@ export class ExceptionsController {
   @Get()
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdParams, query: exceptionFilterSchema })
-  @ResponseSchema(cursorPageSchema(exceptionItemSchema))
+  @ResponseSchema(cursorPageWithTotalSchema(exceptionItemSchema))
   async list(
     @Param("runId", ParseIntPipe) runId: number,
     @Query() query: ExceptionFilterInput,
