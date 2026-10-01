@@ -3,12 +3,19 @@ import { dirname, join, relative, resolve } from "node:path";
 import { MatrixRunner } from "./matrix-runner";
 import type { AdapterKind, Scenario, ScenarioState } from "./matrix.types";
 import { STANDINGS } from "./standings";
-import { matrixWorld } from "./fixtures";
+import { matrixRows } from "./fixtures";
+import { mergeRows, worldDb } from "./world-db";
 import { closeHttpHarnesses } from "./adapters/http-adapter";
 import { accessScenarios } from "./cells/access-scenarios";
 import { buildProjectScenarios } from "./cells/build-project-scenarios";
 import { buildWorkScenarios } from "./cells/build-work-scenarios";
 import { runtimeScenarios } from "./cells/runtime-scenarios";
+import { hrRows, hrScenarios } from "./cells/hr-scenarios";
+import { payrollRows, payrollScenarios } from "./cells/payroll-scenarios";
+import { kbSurveyExportRows, kbSurveyExportScenarios } from "./cells/kb-survey-export-scenarios";
+import { signRows, signScenarios } from "./cells/sign-scenarios";
+import { signTokenRows, signTokenScenarios } from "./cells/sign-token-scenarios";
+import { inboundChannelScenarios, inboundRows } from "./cells/inbound-channel-scenarios";
 import { evidenceSuites } from "./evidence-suites";
 
 jest.setTimeout(120_000);
@@ -28,7 +35,9 @@ const STATES: readonly ScenarioState[] = [
   "archived-project",
 ];
 
-const world = matrixWorld();
+const world = worldDb(
+  mergeRows(matrixRows(), hrRows(), payrollRows(), kbSurveyExportRows(), signRows(), signTokenRows(), inboundRows()),
+);
 const runner = new MatrixRunner();
 
 const plantedFailure: Scenario = {
@@ -49,6 +58,12 @@ const scenarios: Scenario[] = [
   ...buildProjectScenarios(world),
   ...buildWorkScenarios(world),
   ...runtimeScenarios(world),
+  ...hrScenarios(world),
+  ...payrollScenarios(world),
+  ...kbSurveyExportScenarios(world),
+  ...signScenarios(world),
+  ...signTokenScenarios(world),
+  ...inboundChannelScenarios(world),
   ...(process.env.RBAC_MATRIX_PLANT_FAILURE === "1" ? [plantedFailure] : []),
 ];
 for (const scenario of scenarios) runner.declare(scenario);

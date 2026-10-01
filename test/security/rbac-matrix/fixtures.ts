@@ -14,7 +14,7 @@ import {
   tickets,
 } from "src/db/schema";
 import { ORG_A, ORG_B, VARIANTS, membershipIdOf, standingRows } from "./standings";
-import { mergeRows, worldDb, type Row, type WorldDb } from "./world-db";
+import { mergeRows, type Row } from "./world-db";
 
 export const PROJECT_A = 11;
 export const SIBLING_PROJECT_A = 22;
@@ -140,8 +140,4 @@ function domainRows(): Map<Table, Row[]> {
 
 export function matrixRows(): Map<Table, Row[]> {
   return mergeRows(standingRows(ORG_A), standingRows(ORG_B), domainRows());
-}
-
-export function matrixWorld(): WorldDb {
-  return worldDb(matrixRows());
 }
