@@ -216,7 +216,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/automation/projects-automations.controller.ts", line: 107, anchor: /update\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
       { file: "src/modules/build/core/automation/projects-automations.controller.ts", line: 113, anchor: /return this\.automations\.updateAutomation\(u, projectId, automationId, body\);/, note: "projectId is passed into the service call" },
-      { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 115, anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
+      { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 128, anchor: /await assertCanManageProject\(this\.db, this\.access, u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
       { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 60, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the UPDATE's WHERE now re-binds projectId, so a foreign automationId 404s" },
     ],
   },
@@ -231,7 +231,7 @@ export default [
     evidence: [
       { file: "src/modules/build/core/automation/projects-automations.controller.ts", line: 121, anchor: /delete\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
       { file: "src/modules/build/core/automation/projects-automations.controller.ts", line: 126, anchor: /return this\.automations\.deleteAutomation\(u, projectId, automationId\);/, note: "projectId is passed into the service call" },
-      { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 115, anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
+      { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 128, anchor: /await assertCanManageProject\(this\.db, this\.access, u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
       { file: "src/modules/build/core/automation/projects-automations.service.ts", line: 138, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the DELETE's WHERE now re-binds projectId, so a foreign automationId 404s" },
     ],
   },

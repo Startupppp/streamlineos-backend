@@ -25,7 +25,7 @@ export default [
       "None: the caller-supplied ticketIds filter is an additional narrowing clause, so foreign ids intersect to zero rows rather than overriding the org and project predicates.",
     evidence: [
       { file: "src/modules/build/import-export/ticket-import-export.controller.ts", line: 83, anchor: /return this\.exports\.exportTickets\(u, projectId, query\);/, note: "the complete authenticated actor reaches the service" },
-      { file: "src/modules/build/import-export/ticket-export.service.ts", line: 53, anchor: /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/, note: "project membership is enforced before the read" },
+      { file: "src/modules/build/import-export/ticket-export.service.ts", line: 53, anchor: /const read = await authorizeProjectTicketRead\(this\.db, this\.access, u, projectId\);/, note: "project-access enforces project membership and issues the ticket ScopedRead before the read" },
       { file: "src/modules/build/import-export/ticket-export.service.ts", line: 59, anchor: /tenant: tickets\.orgId,/, note: "the tenant column is declared to ScopedRead rather than filtered by hand" },
       { file: "src/modules/build/import-export/ticket-export.service.ts", line: 62, anchor: /eq\(tickets\.projectId, projectId\),/, note: "the URL project is a predicate on the exported rows" },
       { file: "src/modules/build/import-export/ticket-export.service.ts", line: 86, anchor: /\.where\(and\(where\.sql\)\)/, note: "the query consumes the token wholesale; it cannot drop a clause" },
