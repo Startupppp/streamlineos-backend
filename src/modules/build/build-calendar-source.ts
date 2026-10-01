@@ -2,7 +2,10 @@ import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
 import { and, eq, gte, isNotNull, isNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { organizationMembers, projects, tickets } from "../../db/schema";
+import { projects, tickets } from "../../db/schema";
+import { MembershipStateService } from "../../common/auth/membership-state.service";
+import { humanSessionPrincipal } from "../../common/auth/principal";
+import { AccessService } from "../access/access.service";
 import type {
   CalendarEventProjection,
   CalendarEventSource,
@@ -10,7 +13,7 @@ import type {
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
 import { CalendarSourceRegistry, CALENDAR_PER_SOURCE_CAP } from "../calendar/calendar-source.registry";
-import { reachableTicketProjectsSql } from "./reachability/project-reachability";
+import { resolveTicketVisibility } from "./core/project-crud/project-access";
 
 function dateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -25,6 +28,8 @@ export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: CalendarSourceRegistry,
+    private readonly access: AccessService,
+    private readonly membership: MembershipStateService,
   ) {}
 
   onModuleInit(): void {
@@ -34,18 +39,13 @@ export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
   async load(ctx: CalendarSourceContext): Promise<CalendarSourceLoadResult> {
     const { orgId, userId, start, end } = ctx;
 
-    const [memberRow] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .limit(1);
-    if (!memberRow) return { events: [], truncated: false };
+    const state = await this.membership.resolve(userId, orgId);
+    if (!state.active || state.membershipId === null) return { events: [], truncated: false };
+    const visible = await resolveTicketVisibility(this.access, {
+      userId, orgId, role: state.role, isOrgOwner: state.isOwner,
+      sessionId: `calendar:${userId}`, tokenScopes: null,
+      principal: humanSessionPrincipal(state.membershipId, state.isOwner),
+    });
 
     const rows = await this.db
       .select({
@@ -62,7 +62,7 @@ export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
       .where(
         and(
           eq(tickets.orgId, orgId),
-          reachableTicketProjectsSql(orgId, memberRow.id),
+          visible,
           isNotNull(tickets.dueDate),
           gte(tickets.dueDate, dateOnly(start)),
           lte(tickets.dueDate, dateOnly(end)),

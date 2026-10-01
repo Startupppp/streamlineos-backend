@@ -28,7 +28,7 @@ import type {
 import { loadShares, type BoardRow, type ShareEntry } from "./whiteboard-board-helpers";
 import { assertProjectAccess, resolveProjectAccess } from "../core/project-crud/project-access";
 import { resolveProjectsScope } from "../core/project-crud/projects-scope";
-import { reachableProjectsSql } from "../reachability/project-reachability";
+import { reachableProjectsSql } from "../core/project-crud/project-relationship";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
 import { keysetInteger, keysetTimestamp } from "../../../common/pagination/keyset";
