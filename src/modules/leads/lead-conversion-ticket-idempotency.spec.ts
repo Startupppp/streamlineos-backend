@@ -33,12 +33,16 @@ function makeMerges() {
   return { merge: jest.fn() };
 }
 
-function makeDb(existingTicket: boolean): { db: Db; txInsert: jest.Mock } {
-  const txInsert = jest.fn().mockReturnValue({
-    values: jest.fn().mockResolvedValue(undefined),
-  });
+function makeTicketCreation(): BuildTicketCreationService & { create: jest.Mock } {
+  return {
+    create: jest.fn().mockResolvedValue({ tickets: [{ id: 88 }] }),
+    createInTransaction: jest.fn().mockResolvedValue({ tickets: [{ id: 88 }] }),
+    publish: jest.fn(),
+  } as unknown as BuildTicketCreationService & { create: jest.Mock };
+}
 
-  const db = {
+function makeDb(existingTicket: boolean): Db {
+  return {
     query: {
       projects: {
         findFirst: jest.fn().mockResolvedValue(PROJECT),
@@ -63,7 +67,7 @@ function makeDb(existingTicket: boolean): { db: Db; txInsert: jest.Mock } {
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
-        insert: txInsert,
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
         select: jest.fn().mockReturnValue({
           from: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
@@ -73,8 +77,6 @@ function makeDb(existingTicket: boolean): { db: Db; txInsert: jest.Mock } {
       }),
     ),
   } as unknown as Db;
-
-  return { db, txInsert };
 }
 
 function getDispatchAs(svc: LeadConversionService) {
@@ -87,38 +89,43 @@ describe("LeadConversionService — onboarding ticket idempotency (retry safety)
     jest.resetAllMocks();
   });
 
-  it("run-once: creates the onboarding ticket inside a transaction when none exists", async () => {
-    const { db, txInsert } = makeDb(false);
-    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, {} as unknown as BuildTicketCreationService);
+  it("run-once: creates the onboarding ticket via ticketCreation.create when none exists", async () => {
+    const db = makeDb(false);
+    const ticketCreation = makeTicketCreation();
+    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, ticketCreation);
 
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
 
-    expect((db.transaction as jest.Mock).mock.calls).toHaveLength(1);
-    const valuesArg = (txInsert.mock.results[0]?.value as { values: jest.Mock } | undefined)?.values.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
-    expect(valuesArg?.title).toBe(TICKET_TITLE);
-    expect(valuesArg?.ticketNumber).toBe(42);
+    expect(ticketCreation.create).toHaveBeenCalledTimes(1);
+    const callArg = ticketCreation.create.mock.calls[0]?.[0] as { drafts: Array<{ title: string }> } | undefined;
+    expect(callArg?.drafts[0]?.title).toBe(TICKET_TITLE);
   });
 
   it("run-twice: skips ticket creation when a matching ticket already exists (idempotency)", async () => {
-    const { db } = makeDb(true);
-    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, {} as unknown as BuildTicketCreationService);
+    const db = makeDb(true);
+    const ticketCreation = makeTicketCreation();
+    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, ticketCreation);
 
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
 
-    expect((db.transaction as jest.Mock).mock.calls).toHaveLength(0);
+    expect(ticketCreation.create).not.toHaveBeenCalled();
   });
 
-  it("run-twice with fresh state: transaction called exactly once (first call creates, second finds existing)", async () => {
-    let existingTicket = false;
-    const txInsert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
+  it("run-twice with fresh state: ticketCreation.create called exactly once (first call creates, second finds existing)", async () => {
+    let created = false;
+    const ticketCreation = makeTicketCreation();
+    (ticketCreation.create as jest.Mock).mockImplementation(async () => {
+      created = true;
+      return { tickets: [{ id: 88 }] };
+    });
 
     const db = {
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue(PROJECT) },
         tickets: {
           findFirst: jest.fn().mockImplementation(() =>
-            Promise.resolve(existingTicket ? { id: 99 } : null),
+            Promise.resolve(created ? { id: 99 } : null),
           ),
         },
         clientAccounts: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -134,25 +141,24 @@ describe("LeadConversionService — onboarding ticket idempotency (retry safety)
         return chain;
       }),
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
-      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        existingTicket = true;
-        return fn({
-          insert: txInsert,
+      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
           select: jest.fn().mockReturnValue({
             from: jest.fn().mockReturnThis(),
             where: jest.fn().mockReturnThis(),
             limit: jest.fn().mockResolvedValue([]),
           }),
           execute: jest.fn().mockResolvedValue([{ start: 42 }]),
-        });
-      }),
+        }),
+      ),
     } as unknown as Db;
 
-    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, {} as unknown as BuildTicketCreationService);
+    const svc = new LeadConversionService(db, makeAccess() as never, makeDispatch() as never, makeMerges() as never, ticketCreation);
 
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
     await getDispatchAs(svc).call(svc, "org-a", "user-1", LEAD, null);
 
-    expect((db.transaction as jest.Mock).mock.calls).toHaveLength(1);
+    expect(ticketCreation.create).toHaveBeenCalledTimes(1);
   });
 });

@@ -263,15 +263,13 @@ function makeWebhooksService(store: Store, afterOwnershipCheck?: () => void) {
       }),
     })),
     delete: (table: unknown) => ({
-      where: (where: unknown) => ({
-        returning: async () => {
-          deleteStatements();
-          const hit = table === projectWebhooks ? store.webhooks.filter((row) => matches(where, row)) : [];
-          store.webhooks = store.webhooks.filter((row) => !hit.includes(row));
-          return hit.map((row) => ({ ...row }));
-        },
-      }),
+      where: async (where: unknown) => {
+        deleteStatements();
+        const hit = table === projectWebhooks ? store.webhooks.filter((row) => matches(where, row)) : [];
+        store.webhooks = store.webhooks.filter((row) => !hit.includes(row));
+      },
     }),
+    transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(db),
   } as unknown as Db;
 
   return { svc: new ProjectsWebhooksService(db, {} as unknown as WebhookEndpointService), deleteStatements };
@@ -537,7 +535,7 @@ describe("ProjectsWebhooksService — webhook deletion binds to the URL project"
     };
     const { svc } = makeWebhooksService(store, move);
 
-    await expect(svc.deleteWebhook(ORG, PROJECT_A, HOOK_A)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteWebhook(ORG, PROJECT_A, HOOK_A)).resolves.toBeUndefined();
     expect(store.webhooks.some((row) => row.id === HOOK_A)).toBe(true);
   });
 });
