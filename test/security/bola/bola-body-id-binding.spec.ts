@@ -122,7 +122,7 @@ describe("the detector bites", () => {
 });
 
 describe("the surface, enumerated from the committed contract", () => {
-  it("counts the operations and the id-shaped body and query fields", () => {
+  it("counts the operations and the id-shaped body and query fields, 3,939 operations at f6d12e138 moved by module to 4,102, and every new id field goes through the same ratchet below", () => {
     const { counts } = enumerateIdFieldSites();
     // 3642 -> 3648, and the six are individually accounted for:
     //   +2  GET|POST /cron/calendar-provider-sync-sweep — the drain the provider-sync
@@ -166,11 +166,20 @@ describe("the surface, enumerated from the committed contract", () => {
     //   3893 - 2 = 3891; regenerating the stale artifact revealed 57 more, giving 3948; removing
     //   the nine /build/workspaces* operations with PM Workspace gives 3939, and takes bodyFields
     //   -5, queryFields -9 (so idFields -14) and operationsWithIdFields -3 with them.
-    expect(counts.operations).toBe(3939);
-    expect(counts.bodyFields).toBe(916);
-    expect(counts.queryFields).toBe(326);
-    expect(counts.idFields).toBe(1242);
-    expect(counts.operationsWithIdFields).toBe(774);
+    const total = (byModule: Readonly<Record<string, number>>): number =>
+      Object.values(byModule).reduce((sum, n) => sum + n, 0);
+    expect(counts.operations).toBe(
+      CONTRACT_AT_F6D12E138.operations +
+        total(OPERATIONS_MOVED_SINCE_F6D12E138.added) -
+        total(OPERATIONS_MOVED_SINCE_F6D12E138.removed),
+    );
+    expect(counts.operations).toBe(4102);
+    expect(counts.bodyFields).toBe(960);
+    expect(counts.queryFields).toBe(378);
+    expect(counts.idFields).toBe(1338);
+    expect(counts.idFields).toBe(counts.bodyFields + counts.queryFields);
+    expect(counts.operationsWithIdFields).toBe(823);
+    expect(counts.idFields - CONTRACT_AT_F6D12E138.idFields).toBe(96);
   });
 
   /**
@@ -217,6 +226,26 @@ describe("the surface, enumerated from the committed contract", () => {
    * they are recorded here because a client sends a person's id, which is the question this pin
    * keeps open.
    */
+  it("GET /auth/session-data/{userId} query orgId is the org the web tier's own session selected, sent behind INTERNAL_API_SECRET and honoured only while the membership resolver accepts it", () => {
+    const controller = readFileSync(join(BACKEND_ROOT, "src/modules/auth/auth.controller.ts"), "utf8");
+    const handler = controller.slice(controller.indexOf('@Get("session-data/:userId")'));
+    expect(handler.slice(0, 900)).toContain('internalSecretMatches(process.env.INTERNAL_API_SECRET, req.headers["x-internal-secret"])');
+    expect(handler.slice(0, 900)).toContain("this.authService.getSessionData(userId, query.orgId)");
+    const service = readFileSync(join(BACKEND_ROOT, "src/modules/auth/auth.service.ts"), "utf8");
+    expect(service).toContain("const scoped = await this.loadSessionData(userId, sessionOrgId);");
+    expect(service).toContain("return scoped.orgId === sessionOrgId ? scoped : lastActivated;");
+  });
+
+  it("the two subject selectors admitted since f6d12e138 are gated: a work log for another person needs scope all and a member of the caller's org, and the sources creator filter sits inside the org-bound list", () => {
+    const workLogs = readFileSync(join(BACKEND_ROOT, "src/modules/hr/time/work-logs.service.ts"), "utf8");
+    expect(workLogs).toContain("if (userId !== actor.userId && !scope.unrestricted) {");
+    expect(workLogs).toContain("eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)");
+    const sources = readFileSync(join(BACKEND_ROOT, "src/modules/kb/wiki/kb-sources.service.ts"), "utf8");
+    const list = sources.slice(sources.indexOf(".from(kbSources)"));
+    expect(list.slice(0, 500)).toContain("eq(kbSources.orgId, orgId)");
+    expect(list.slice(0, 500)).toContain("query.createdById !== undefined ? eq(kbSources.createdById, query.createdById) : undefined");
+  });
+
   it("splits out the tenant and actor selectors rather than analysing them as object references", () => {
     const { counts } = enumerateIdFieldSites();
 
@@ -297,7 +326,63 @@ describe("the surface, enumerated from the committed contract", () => {
  * The file-size programme will keep producing that shape, so the fix belongs in the analyser.
  */
 const WRITTEN_UNRESOLVED_BASELINE = 225;
-const UNRESOLVED_BASELINE = 179;
+const UNRESOLVED_BASELINE = 151;
+
+const UNRESOLVED_ADMITTED_SINCE_F6D12E138: ReadonlyArray<readonly [string, string]> = [
+  ["AgentController_listTickets|assigneeId", "a filter ANDed into ProjectsTicketsReadService's project- and org-bound ticket query, so another organisation's id matches no row"],
+  ["AgentController_listTickets|cycleId", "a filter ANDed into ProjectsTicketsReadService's project- and org-bound ticket query, so another organisation's id matches no row"],
+  ["AgentController_listTickets|labelIds", "a filter ANDed into ProjectsTicketsReadService's project- and org-bound ticket query, so another organisation's id matches no row"],
+  ["ProjectsTicketsController_listTickets|assigneeId", "a filter ANDed into ProjectsTicketsReadService's project- and org-bound ticket query, so another organisation's id matches no row"],
+  ["ProjectsTicketsController_listTickets|cycleId", "a filter ANDed into ProjectsTicketsReadService's project- and org-bound ticket query, so another organisation's id matches no row"],
+  ["ProjectsTicketsController_listTickets|labelIds", "a filter ANDed into ProjectsTicketsReadService's project- and org-bound ticket query, so another organisation's id matches no row"],
+  ["ProjectsTicketsController_getColumnCounts|assigneeId", "a filter ANDed into ProjectsTicketsReadService's project- and org-bound ticket query, so another organisation's id matches no row"],
+  ["ProjectsTicketsController_getColumnCounts|labelIds", "a filter ANDed into ProjectsTicketsReadService's project- and org-bound ticket query, so another organisation's id matches no row"],
+  ["ProjectsTicketsController_getAllWork|assigneeId", "a filter ANDed into ProjectsWorkQueryService.getAllWork's org-bound ticket query, so another organisation's id matches no row"],
+  ["ProjectsTicketsController_getAllWork|labelIds", "a filter ANDed into ProjectsWorkQueryService.getAllWork's org-bound ticket query, so another organisation's id matches no row"],
+  ["ProjectsReportsController_getAnalytics|ownerId", "ProjectsAnalyticsService.getProjectAnalytics resolves the owner under organizationMembers.orgId before filtering"],
+  ["ProjectsReportsController_getAnalytics|teamId", "ProjectsAnalyticsService.getProjectAnalytics resolves the team under projectTeamMembers.orgId before filtering"],
+  ["KbAnalyticsController_noResults|spaceId", "an IN-subquery over kb_pages bound to kb_pages.org_id = the caller's org, so another organisation's space matches nothing"],
+  ["KbAnalyticsController_reviewSla|spaceId", "an IN-subquery over kb_pages bound to kb_pages.org_id = the caller's org, so another organisation's space matches nothing"],
+  ["KbPageCollectionController_listPages|ownerMembershipId", "a filter ANDed with buildVisiblePageScope's org-bound visible-page branches in KnowledgeCollectionService.listPages, so another organisation's id matches no row"],
+  ["KbPageCollectionController_listPages|projectId", "a filter ANDed with buildVisiblePageScope's org-bound visible-page branches in KnowledgeCollectionService.listPages, so another organisation's id matches no row"],
+  ["KbPageCollectionController_listPages|spaceId", "a filter ANDed with buildVisiblePageScope's org-bound visible-page branches in KnowledgeCollectionService.listPages, so another organisation's id matches no row"],
+  ["ProjectsByIdController_updateProject|clientId", "crm_client_id carries the composite tenant FK (org_id, crm_client_id) from migration 1701, so another organisation's client cannot land"],
+  ["AgentController_createProject|clientId", "crm_client_id carries the composite tenant FK (org_id, crm_client_id) from migration 1701, so another organisation's client cannot land"],
+  ["ProjectsController_createProject|clientId", "crm_client_id carries the composite tenant FK (org_id, crm_client_id) from migration 1701, so another organisation's client cannot land"],
+  ["IncidentsController_updateIncident|releaseId", "project_incidents carries fk_project_incidents_org_release (org_id, release_id), so another organisation's release cannot land"],
+  ["AnnouncementsController_create|targetIds", "a recipient filter stored on the caller's own broadcast; BroadcastsService matches targets inside broadcast_audience_targets.org_id = the reader's org, so a foreign department or role id reaches no one"],
+  ["AnnouncementsController_update|targetIds", "a recipient filter stored on the caller's own broadcast; BroadcastsService matches targets inside broadcast_audience_targets.org_id = the reader's org, so a foreign department or role id reaches no one"],
+  ["AgentController_createTicket|assigneeIds", "ProjectsTicketsCreateService.createTicket resolves assignees through resolveProjectAssignableMemberships(orgId) before writing"],
+  ["AgentController_createTicket|reporterId", "ProjectsTicketsCreateService.createTicket resolves the reporter through resolveOrganizationActorsByUserIds(orgId) and 404s one that is not an active member"],
+  ["ProjectsTicketsController_createTicket|assigneeIds", "ProjectsTicketsCreateService.createTicket resolves assignees through resolveProjectAssignableMemberships(orgId) before writing"],
+  ["ProjectsTicketsController_createTicket|reporterId", "ProjectsTicketsCreateService.createTicket resolves the reporter through resolveOrganizationActorsByUserIds(orgId) and 404s one that is not an active member"],
+  ["BlogInternalController_invalidate|eventId", "the signed blog-admin invalidation receiver (BlogInvalidationSignatureGuard HMAC); blog posts are the vendor's global content with no tenant, and eventId is the sender's dedupe key"],
+  ["BlogInternalController_invalidate|postId", "the signed blog-admin invalidation receiver (BlogInvalidationSignatureGuard HMAC); blog posts are the vendor's global content with no tenant, and eventId is the sender's dedupe key"],
+  ["ProjectsRoadmapController_mergeFeedback|targetPostId", "ProjectsFeedbackService.mergeFeedback reads the target under feedbackPosts.orgId inside the merge transaction"],
+  ["EmployeesController_onboard|reportingManagerUserId", "ReportingManagerFallbackResolver.resolveMany resolves the selected manager through membersOf(orgId) and refuses a non-member with MANAGER_NOT_FOUND"],
+  ["InvoicesWriteController_createFromTimesheets|projectId", "loadInvoiceableEntries reads the entries under timesheets.org_id and 404s the whole request on any missing id, and projectId must be one of those entries' projects or the request is refused"],
+  ["InvoicesWriteController_createFromTimesheets|timesheetEntryIds", "loadInvoiceableEntries reads the entries under timesheets.org_id and 404s the whole request on any missing id, and projectId must be one of those entries' projects or the request is refused"],
+  ["KbContentHealthController_bulkRepair|assigneeMembershipId", "kb_health_items carries fk_kb_health_items_org_assignee (org_id, assignee_membership_id) -> organization_members(org_id, id), so another organisation's membership cannot land"],
+];
+
+const UNRESOLVED_OPEN_SINCE_F6D12E138: ReadonlyArray<readonly [string, string]> = [
+  ["IncidentsController_updateFollowUpAction|ownerId", "incident follow-up owner_id references the global users table with no org column, so another organisation's user id lands while an unknown one raises a FK error; owned by the Build lane"],
+];
+
+const RESOLVED_SINCE_F6D12E138: readonly string[] = [
+  "AgentController_createTicket|parentTicketId",
+  "ProjectsTicketsController_createTicket|parentTicketId",
+];
+
+const CONTRACT_AT_F6D12E138 = { operations: 3939, bodyFields: 916, queryFields: 326, idFields: 1242, operationsWithIdFields: 774 };
+
+const OPERATIONS_MOVED_SINCE_F6D12E138: {
+  readonly added: Readonly<Record<string, number>>;
+  readonly removed: Readonly<Record<string, number>>;
+} = {
+  added: { hr: 70, build: 42, kb: 42, cron: 14, blog: 10, public: 8, me: 6, timesheets: 2, accounting: 1, auth: 1, careers: 1, clients: 1, feedbucket: 1, health: 1, invoices: 1, organization: 1, "portal-access": 1, users: 1 },
+  removed: { kb: 27, blog: 11, careers: 2, build: 1 },
+};
 
 /**
  * Four, not five. `CrmMetadataController_createBlueprint|pipelineId` left this list on
@@ -325,8 +410,6 @@ const NEWLY_VISIBLE_WRITTEN_UNRESOLVED: readonly string[] = [
 
 /** The 10 the forwarded-carrier trace made visible. Same rule: named, so they cannot be absorbed. */
 const NEWLY_VISIBLE_BY_FORWARDED_CARRIER: readonly string[] = [
-  "AgentController_createTicket|parentTicketId",
-  "ProjectsTicketsController_createTicket|parentTicketId",
   "ProjectsTicketChecklistsController_createChecklistItem|assigneeId",
   "DealsController_createDeal|leadId",
   "DealsController_createDeal|clientId",
@@ -366,10 +449,34 @@ describe("findings", () => {
     expect(NEWLY_VISIBLE_BY_CAST_REMOVAL.filter((site) => !present.has(site))).toEqual([]);
   });
 
-  it("does not add an unresolved body or query id", () => {
+  it("does not add an unresolved body or query id beyond the 151 measured at f6d12e138 (156 less the 5 since resolved), excusing only sites admitted by name with a reason, so the open Build site keeps it red until it is fixed", () => {
     const counts = summarize(bindings);
     expect(counts["written-unresolved"]).toBeLessThanOrEqual(WRITTEN_UNRESOLVED_BASELINE);
-    expect(counts.unresolved).toBeLessThanOrEqual(UNRESOLVED_BASELINE);
+    const admitted = new Set(UNRESOLVED_ADMITTED_SINCE_F6D12E138.map(([site]) => site));
+    const counted = bindings
+      .filter((b) => b.verdict === "unresolved")
+      .map((b) => `${b.operationId}|${b.field}`)
+      .filter((site) => !admitted.has(site));
+    expect({ count: counted.length, open: UNRESOLVED_OPEN_SINCE_F6D12E138.filter(([site]) => counted.includes(site)) }).toEqual({
+      count: Math.min(counted.length, UNRESOLVED_BASELINE),
+      open: [],
+    });
+  });
+
+  it("every unresolved site admitted since f6d12e138 is still unresolved, so an excuse cannot outlive the site it excuses", () => {
+    const unresolved = new Set(bindings.filter((b) => b.verdict === "unresolved").map((b) => `${b.operationId}|${b.field}`));
+    expect(UNRESOLVED_ADMITTED_SINCE_F6D12E138.map(([site]) => site).filter((site) => !unresolved.has(site))).toEqual([]);
+  });
+
+  it("POST /kb/analytics/gaps/create-fix resolves the requested space through assertSpaceAccess before the draft is written", () => {
+    const site = bindings.find((b) => b.operationId === "KbAnalyticsController_createFix" && b.field === "spaceId");
+    expect(site?.verdict).toMatch(/^(?:org-predicate|object-assertion)$/);
+  });
+
+  it("ticket create resolves parentTicketId under the caller's org now, so the forwarded-carrier pin holds the repair", () => {
+    const verdicts = new Map(bindings.map((b) => [`${b.operationId}|${b.field}`, b.verdict]));
+    for (const site of RESOLVED_SINCE_F6D12E138)
+      expect([site, verdicts.get(site)]).toEqual([site, expect.stringMatching(/^(?:org-predicate|object-assertion)$/)]);
   });
 
   it("still holds the two sites the regenerated contract made visible, refused by a composite tenant FK", () => {
