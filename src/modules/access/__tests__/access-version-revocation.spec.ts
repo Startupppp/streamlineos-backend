@@ -122,7 +122,7 @@ describe("accessVersionChannel.publish — local listener fires synchronously", 
       calls.push(orgId);
     });
 
-    await accessVersionChannel.publish("org-sync-test");
+    accessVersionChannel.publish("org-sync-test");
     unsubscribe();
 
     expect(calls).toEqual(["org-sync-test"]);
@@ -134,8 +134,8 @@ describe("accessVersionChannel.publish — local listener fires synchronously", 
       calls.push(orgId);
     });
 
-    await accessVersionChannel.publish("org-a");
-    await accessVersionChannel.publish("org-b");
+    accessVersionChannel.publish("org-a");
+    accessVersionChannel.publish("org-b");
     unsubscribe();
 
     expect(calls).toEqual(["org-a", "org-b"]);
@@ -150,7 +150,7 @@ describe("AccessService.onModuleInit — permsCache cleared on version bump", ()
     await svc.resolveUserPermissions("org-bump", "user-bump");
     const selectAfterFirst: number = db.select.mock.calls.length;
 
-    await accessVersionChannel.publish("org-bump");
+    accessVersionChannel.publish("org-bump");
 
     await svc.resolveUserPermissions("org-bump", "user-bump");
     const selectAfterSecond: number = db.select.mock.calls.length;
@@ -165,7 +165,7 @@ describe("AccessService.onModuleInit — permsCache cleared on version bump", ()
     await svc.resolveUserPermissions("org-unchanged", "user-x");
     const selectAfterFirst: number = db.select.mock.calls.length;
 
-    await accessVersionChannel.publish("org-other");
+    accessVersionChannel.publish("org-other");
 
     await svc.resolveUserPermissions("org-unchanged", "user-x");
     const selectAfterSecond: number = db.select.mock.calls.length;

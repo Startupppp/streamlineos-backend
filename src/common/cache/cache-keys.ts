@@ -22,7 +22,6 @@ export const CACHE_KEYS = {
   mfaOrgPolicy: (orgId: string) => `mfa:org-policy:${orgId}`,
   mfaUserTotp: (userId: string) => `mfa:user-totp:${userId}`,
 
-  accessVersion: (orgId: string) => `access:version:${orgId}`,
   accessSnapshot: (userId: string, version: number, isOrgOwner: boolean) =>
     `access:snapshot:${userId}:v${version}:o${isOrgOwner ? 1 : 0}`,
   accessPerms: (orgId: string, userId: string, version: number) =>

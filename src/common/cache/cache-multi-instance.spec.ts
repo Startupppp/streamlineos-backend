@@ -1,20 +1,23 @@
 import type { Redis } from "@upstash/redis";
-import {
-  AccessVersionChannel,
-  accessVersionChannel,
-  type AccessVersionStore,
-} from "../rbac/access-version-channel";
+import { accessVersionChannel } from "../rbac/access-version-channel";
+import { AccessVersionCache, VERSION_CACHE_TTL_MS } from "../../modules/access/access-version-cache";
+import type { Db } from "../../db/drizzle.module";
 import { bumpPermissionsVersion, type DbOrTx } from "../rbac/access-invalidate";
 import { CACHE_KEYS } from "./cache-keys";
 import { CacheService } from "./cache.service";
 import { InMemoryRedis } from "./in-memory-redis.test-double";
 
-function makeVersionStore(redis: InMemoryRedis): AccessVersionStore {
-  return {
-    get: (orgId) => redis.get<number>(`av:${orgId}`),
-    set: (orgId, version) => redis.set(`av:${orgId}`, version).then((): void => {}),
-    clear: (orgId) => redis.del(`av:${orgId}`).then((): void => {}),
+function makeVersionReader(rows: Map<string, number>): AccessVersionCache {
+  const db: Record<string, unknown> = {
+    query: {
+      accessVersions: {
+        findFirst: () => Promise.resolve({ permissionsVersion: rows.get("org-1") ?? 1 }),
+      },
+    },
+    execute: () => Promise.resolve(undefined),
   };
+  db["transaction"] = (fn: (tx: unknown) => Promise<unknown>) => fn(db);
+  return new AccessVersionCache(db as unknown as Db);
 }
 
 function makeDelDeafRedis(): Redis {
@@ -45,18 +48,6 @@ function makeDelDeafRedis(): Redis {
   } as unknown as Redis;
 }
 
-function makeDeafToDelVersionStore(): AccessVersionStore {
-  const entries = new Map<string, number>();
-  return {
-    get: (orgId) => Promise.resolve(entries.get(orgId) ?? null),
-    set: (orgId, version) => {
-      entries.set(orgId, version);
-      return Promise.resolve();
-    },
-    clear: (_orgId) => Promise.resolve(),
-  };
-}
-
 function makeMockTx(rows: Map<string, number>) {
   const pending = new Map<string, number>();
   const tx = {
@@ -75,7 +66,7 @@ function makeMockTx(rows: Map<string, number>) {
 }
 
 describe("cross-instance cache invalidation", () => {
-  afterEach(() => accessVersionChannel.useStore(null));
+  afterEach(() => accessVersionChannel.reset());
 
   it("P1 mutation: A invalidates a key; B misses on next read", async () => {
     const redis = new InMemoryRedis();
@@ -139,50 +130,30 @@ describe("cross-instance cache invalidation", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("P3a role change: version bump propagates from A to B via shared store", async () => {
-    const redis = new InMemoryRedis();
-    const store = makeVersionStore(redis);
-    accessVersionChannel.useStore(store);
-    const instanceB = new AccessVersionChannel();
-    instanceB.useStore(store);
-
+  it("P3a role change: a committed bump reaches B from the durable row once B's local version expires", async () => {
     const rows = new Map<string, number>([["org-1", 7]]);
-    const { tx, commit } = makeMockTx(rows);
+    const instanceB = makeVersionReader(rows);
+    expect(await instanceB.getVersion("org-1")).toBe(7);
 
+    const { tx, commit } = makeMockTx(rows);
     await bumpPermissionsVersion(tx, "org-1");
     commit();
 
-    const version = await instanceB.read("org-1", () => Promise.resolve(rows.get("org-1") ?? 1));
+    const clock = jest.spyOn(Date, "now").mockReturnValue(Date.now() + VERSION_CACHE_TTL_MS + 1);
+    const version = await instanceB.getVersion("org-1");
+    clock.mockRestore();
     expect(version).toBe(8);
   });
 
   it("P3b role change: rolled-back tx does not advance B-observed version", async () => {
-    const redis = new InMemoryRedis();
-    const store = makeVersionStore(redis);
-    accessVersionChannel.useStore(store);
-    const instanceB = new AccessVersionChannel();
-    instanceB.useStore(store);
-
     const rows = new Map<string, number>([["org-1", 5]]);
-    const { tx, rollback } = makeMockTx(rows);
+    const instanceB = makeVersionReader(rows);
 
+    const { tx, rollback } = makeMockTx(rows);
     await bumpPermissionsVersion(tx, "org-1");
     rollback();
 
-    const version = await instanceB.read("org-1", () => Promise.resolve(rows.get("org-1") ?? 1));
-    expect(version).toBe(5);
-  });
-
-  it("P3 bite: if channel store clear is skipped B serves stale version", async () => {
-    const store = makeDeafToDelVersionStore();
-    const instanceB = new AccessVersionChannel();
-    instanceB.useStore(store);
-
-    await instanceB.read("org-1", () => Promise.resolve(3));
-
-    const rows = new Map<string, number>([["org-1", 4]]);
-    const version = await instanceB.read("org-1", () => Promise.resolve(rows.get("org-1") ?? 1));
-    expect(version).toBe(3);
+    expect(await instanceB.getVersion("org-1")).toBe(5);
   });
 
   it("P4 entitlement: setModuleEnabled busts all active members' sessions", async () => {

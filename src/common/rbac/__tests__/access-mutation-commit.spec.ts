@@ -365,8 +365,8 @@ describe("commitAccessChange — identity intent (session revocation)", () => {
     expect(cache.invalidate).not.toHaveBeenCalled();
   });
 
-  it("does not fail the commit when Redis is down; the tombstone failure surfaces from the after-commit hook", async () => {
-    const { tx } = makeTx([], [{ id: "s-1" }]);
+  it("fails closed when Redis is down: the session is revoked on the tx, which the guard reads on a tombstone miss, and the tombstone failure surfaces from the after-commit hook", async () => {
+    const { tx, updates } = makeTx([], [{ id: "s-1" }]);
     const cache = makeCache();
     const sessions = { publishRevocations: jest.fn().mockRejectedValue(new Error("redis down")) };
     const { hooks } = await inRequest(() =>
@@ -376,6 +376,7 @@ describe("commitAccessChange — identity intent (session revocation)", () => {
     );
 
     expect(bumpPermissionsVersion).toHaveBeenCalledWith(tx, ORG);
+    expect(updates).toHaveBeenCalledWith(userSessions);
     const results = await Promise.allSettled(hooks.map((hook) => hook()));
     expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "subject");

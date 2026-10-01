@@ -28,6 +28,6 @@ export async function bumpPermissionsVersion(tx: DbOrTx, orgId: string): Promise
         updatedAt: new Date(),
       },
     });
-  await accessVersionChannel.publish(orgId);
-  registerAfterCommit(() => accessVersionChannel.publish(orgId));
+  const publish = async (): Promise<void> => accessVersionChannel.publish(orgId);
+  if (!registerAfterCommit(publish)) await publish();
 }

@@ -39,7 +39,7 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "access:perms:<orgId>:<userId>:v<version>",
-    description: "Resolved permission set per user per access-version. In-process only (Map keyed by orgId:userId:version); CACHE_KEYS.accessPerms is the canonical key format. Cross-instance invalidation: bumpPermissionsVersion clears the shared access:version:<orgId> Redis key; other instances re-read the version from DB and compute a new permsKey that is a cache miss.",
+    description: "Resolved permission set per user per access-version. In-process only (Map keyed by orgId:userId:version); CACHE_KEYS.accessPerms is the canonical key format. Cross-instance invalidation: every instance re-reads access_versions.permissions_version from the DB after its 1s local version TTL, so a bump yields a new permsKey that is a cache miss; no shared cache sits in the revocation path.",
     invalidation: {
       kind: "write",
       events: ["bumpPermissionsVersion in any role/grant/delegation mutation"],
@@ -101,19 +101,6 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     },
     dimensions: ["userId"] as const,
     staleToleranceSeconds: 0,
-  },
-  {
-    namespace: "access:version:<orgId>",
-    description: "Permission-resolution version counter. Incremented on every role/grant/delegation/ownership mutation; drives per-user permission cache invalidation. This is the cross-instance invalidation signal: clearing it forces all instances to re-read the durable version from DB.",
-    invalidation: {
-      kind: "write",
-      events: [
-        "bumpPermissionsVersion(tx, orgId) in any role/grant/delegation/ownership mutation",
-        "OrgProfileService.switchOrg (clears outgoing-org version)",
-      ],
-    },
-    dimensions: ["orgId"] as const,
-    staleToleranceSeconds: 1,
   },
   {
     namespace: "access:members-with-perm:<orgId>:<permKey>:v<version>",

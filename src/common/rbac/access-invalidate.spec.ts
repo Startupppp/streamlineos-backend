@@ -43,7 +43,7 @@ function makeVersionTable() {
 }
 
 describe("bumpPermissionsVersion", () => {
-  afterEach(() => accessVersionChannel.useStore(null));
+  afterEach(() => jest.restoreAllMocks());
 
   it("moves the version off the value a reader sees when no row exists", async () => {
     const { tx, readAsResolverDoes } = makeVersionTable();
@@ -78,7 +78,7 @@ describe("bumpPermissionsVersion", () => {
     }
   });
 
-  it("publishes again after commit so an in-transaction stale read cannot survive", async () => {
+  it("publishes the bump only after commit, never inside the transaction", async () => {
     const { tx } = makeVersionTable();
     const afterCommit: Array<() => Promise<unknown>> = [];
     const publish = jest.spyOn(accessVersionChannel, "publish");
@@ -88,11 +88,22 @@ describe("bumpPermissionsVersion", () => {
       () => bumpPermissionsVersion(tx, "org-1"),
     );
 
-    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).not.toHaveBeenCalled();
     expect(afterCommit).toHaveLength(1);
 
     await afterCommit[0]!();
 
-    expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledWith("org-1");
+  });
+
+  it("publishes inline when no after-commit context exists, never dropping the bump", async () => {
+    const { tx } = makeVersionTable();
+    const publish = jest.spyOn(accessVersionChannel, "publish");
+
+    await bumpPermissionsVersion(tx, "org-1");
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledWith("org-1");
   });
 });

@@ -76,7 +76,7 @@ const TABLE_TO_CACHE_FAMILIES = [
     table: "role_assignments",
     families: [
       { key: "org:roles:", invalidationKeywords: ["rolesList", "org:roles:"] },
-      { key: "access:version:", invalidationKeywords: ["bumpPermissionsVersion", "accessVersion"] },
+      { key: "access:perms:", invalidationKeywords: ["bumpPermissionsVersion"] },
       { key: "user:session:", invalidationKeywords: ["userSession", "user:session:"] },
     ],
   },
@@ -84,14 +84,14 @@ const TABLE_TO_CACHE_FAMILIES = [
     table: "role_permission_grants",
     families: [
       { key: "rbac:role-perms:", invalidationKeywords: ["rolePerms", "rbac:role-perms:"] },
-      { key: "access:version:", invalidationKeywords: ["bumpPermissionsVersion"] },
+      { key: "access:perms:", invalidationKeywords: ["bumpPermissionsVersion"] },
       { key: "user:session:", invalidationKeywords: ["userSession"] },
     ],
   },
   {
     table: "access_versions",
     families: [
-      { key: "access:version:", invalidationKeywords: ["bumpPermissionsVersion", "accessVersionChannel"] },
+      { key: "access:perms:", invalidationKeywords: ["bumpPermissionsVersion", "accessVersionChannel"] },
     ],
   },
   {
@@ -113,21 +113,21 @@ const TABLE_TO_CACHE_FAMILIES = [
   {
     table: "module_ownerships",
     families: [
-      { key: "access:version:", invalidationKeywords: ["bumpPermissionsVersion"] },
+      { key: "access:perms:", invalidationKeywords: ["bumpPermissionsVersion"] },
       { key: "ownership:modules:", invalidationKeywords: ["moduleOwnershipsList", "ownership:modules:", "moduleOwnershipDetail"] },
     ],
   },
   {
     table: "user_permission_grants",
     families: [
-      { key: "access:version:", invalidationKeywords: ["bumpPermissionsVersion"] },
+      { key: "access:perms:", invalidationKeywords: ["bumpPermissionsVersion"] },
       { key: "user:session:", invalidationKeywords: ["userSession"] },
     ],
   },
   {
     table: "user_delegations",
     families: [
-      { key: "access:version:", invalidationKeywords: ["bumpPermissionsVersion"] },
+      { key: "access:perms:", invalidationKeywords: ["bumpPermissionsVersion"] },
       { key: "user:session:", invalidationKeywords: ["userSession"] },
     ],
   },
@@ -209,7 +209,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   rolesList: "org:roles:",
   mfaOrgPolicy: "mfa:org-policy:",
   mfaUserTotp: "mfa:user-totp:",
-  accessVersion: "access:version:",
   accessPerms: "access:perms:",
   accessMembersWithPermPage: "access:members-with-perm:",
   leadsList: "leads:list:",

@@ -43,7 +43,7 @@ function buildService(membership: {
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
-    new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+    new AccessVersionCache(db as unknown as Db),
     makeMembershipStateStub(stateFromRow({ ...membership, id: 1 })),
   );
 }

@@ -332,7 +332,7 @@ describe("OrgProfileService.switchOrg — placement-aware revalidation", () => {
   });
 
   describe("outgoing org cache invalidation (criterion 5)", () => {
-    it("invalidates the outgoing org authorization snapshot after a successful switch", async () => {
+    it("drops the switching user's session and touches no org-wide key after a successful switch", async () => {
       const { db: targetDb } = makeSwitchableDb("us", {
         membershipResult: ACTIVE_MEMBERSHIP,
         userRows: [{ lastActiveOrgId: "org-a" }],
@@ -348,10 +348,11 @@ describe("OrgProfileService.switchOrg — placement-aware revalidation", () => {
       const service = makeService(makeMinimalPrimaryDb(), { cacheInvalidate });
       await service.switchOrg("user-1", "org-target");
 
-      expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.accessVersion("org-a"));
+      expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
+      expect(cacheInvalidate).toHaveBeenCalledTimes(1);
     });
 
-    it("does not call accessVersion invalidation when the user had no previous org", async () => {
+    it("invalidates only the user session when the user had no previous org", async () => {
       const { db: targetDb } = makeSwitchableDb("us", {
         membershipResult: ACTIVE_MEMBERSHIP,
         userRows: [{ lastActiveOrgId: null }],
@@ -367,10 +368,8 @@ describe("OrgProfileService.switchOrg — placement-aware revalidation", () => {
       const service = makeService(makeMinimalPrimaryDb(), { cacheInvalidate });
       await service.switchOrg("user-1", "org-target");
 
-      const accessVersionCalls = (cacheInvalidate.mock.calls as string[][]).filter(
-        ([key]) => key.startsWith("access:version:"),
-      );
-      expect(accessVersionCalls).toHaveLength(0);
+      expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
+      expect(cacheInvalidate).toHaveBeenCalledTimes(1);
     });
 
     it("still invalidates userSession regardless of outgoing org", async () => {
