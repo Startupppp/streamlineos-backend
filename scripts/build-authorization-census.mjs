@@ -1875,6 +1875,23 @@ function renderJson(files, rows) {
   )}\n`;
 }
 
+const RBAC_MATRIX_LEDGER = join(REPO_ROOT, ".artifacts", "rbac-matrix-ledger.json");
+
+function printRbacMatrixLedger() {
+  console.log("");
+  if (!existsSync(RBAC_MATRIX_LEDGER)) {
+    console.log("RBAC matrix ledger: not produced in this tree. Run `pnpm check:rbac-matrix-ledger` to execute it.");
+    return;
+  }
+  const ledger = JSON.parse(readFileSync(RBAC_MATRIX_LEDGER, "utf8"));
+  const executable = ledger.entries.filter((entry) => entry.kind === "executable").length;
+  console.log(
+    `RBAC matrix ledger: proven ${ledger.proven} · failed ${ledger.failed} · unrun ${ledger.unrun} · total ${ledger.total} (executable ${executable}, declared ${ledger.total - executable})`,
+  );
+  for (const entry of ledger.entries.filter((candidate) => candidate.status === "failed"))
+    console.log(`  FAILED  ${entry.id}: ${entry.detail}`);
+}
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 function run(checkOnly) {
@@ -1936,6 +1953,7 @@ function run(checkOnly) {
   console.log("Verified: REVIEWED hand-read verdicts all match their source anchors.");
   console.log("Not verified: actual runtime behavior (RLS, network calls, post-commit hooks) — use e2e/integration tests for those.");
   console.log("Not verified: non-Build modules (HR, KB, billing, etc.) — this census is scoped to src/modules/build/**.");
+  printRbacMatrixLedger();
 
   if (existsSync(OUT_RATCHET)) {
     const ratchet = JSON.parse(readFileSync(OUT_RATCHET, "utf8"));
