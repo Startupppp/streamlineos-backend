@@ -118,6 +118,7 @@ export class MatrixRunner {
           tenant: scenario.tenant,
           state: scenario.state,
           expected: scenario.expected,
+          pairedWith: scenario.pairedWith ?? null,
           covers: scenario.covers ?? [],
           required: true,
           status: result.status,

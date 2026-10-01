@@ -63,6 +63,7 @@ export interface BindingEntry {
   readonly tenant: "same" | "other";
   readonly state: ScenarioState;
   readonly expected: ExpectedOutcome;
+  readonly pairedWith: string | null;
   readonly covers: readonly string[];
   readonly required: true;
   readonly status: CellStatus;

@@ -235,5 +235,10 @@ function run() {
   return 0;
 }
 
+function printDigest() {
+  process.stdout.write(`${sourceDigest()}\n`);
+  return 0;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  process.exit(process.argv.includes("--self-test") ? selfTest() : run());
+  process.exit(process.argv.includes("--self-test") ? selfTest() : process.argv.includes("--digest") ? printDigest() : run());

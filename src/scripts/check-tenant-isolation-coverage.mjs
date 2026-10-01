@@ -22,6 +22,7 @@
 import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { LEDGER_PATH as MATRIX_LEDGER_PATH, freshness as matrixFreshness } from "./check-rbac-matrix-ledger.mjs";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
@@ -137,6 +138,20 @@ function hasIsolationTest(serviceFile, allSpecFiles) {
 
 // ─── self-test ────────────────────────────────────────────────────────────────
 
+const SERVICE_NAME_RE = /[A-Z][A-Za-z0-9]*Service(?=[.\s(]|$)/g;
+
+export function matrixIsolatedServices(ledger) {
+  const bindings = (ledger?.entries ?? []).filter((entry) => entry.kind === "binding");
+  const proven = new Set(bindings.filter((entry) => entry.status === "proven").map((entry) => `${entry.scenario}@${entry.adapter}`));
+  const names = new Set();
+  for (const entry of bindings) {
+    if (entry.status !== "proven" || entry.tenant !== "other" || entry.expected !== "404") continue;
+    if (!entry.pairedWith || !proven.has(`${entry.pairedWith}@${entry.adapter}`)) continue;
+    for (const name of String(entry.entry).match(SERVICE_NAME_RE) ?? []) names.add(name);
+  }
+  return names;
+}
+
 if (SELF_TEST) {
   const goodServiceSrc = `
     import { Inject, Injectable } from "@nestjs/common";
@@ -181,7 +196,22 @@ if (SELF_TEST) {
     });
   `;
 
+  const matrixFixture = {
+    entries: [
+      { kind: "binding", scenario: "allow", adapter: "service", status: "proven", tenant: "same", expected: "allow", pairedWith: null, entry: "ContactsService.list" },
+      { kind: "binding", scenario: "foreign", adapter: "service", status: "proven", tenant: "other", expected: "404", pairedWith: "allow", entry: "ContactsService.list" },
+      { kind: "binding", scenario: "orphan", adapter: "service", status: "proven", tenant: "other", expected: "404", pairedWith: "missing", entry: "OrphanService.list" },
+      { kind: "binding", scenario: "broken", adapter: "service", status: "failed", tenant: "other", expected: "404", pairedWith: "allow", entry: "BrokenService.list" },
+      { kind: "binding", scenario: "local", adapter: "http", status: "proven", tenant: "same", expected: "403", pairedWith: "allow", entry: "GET /x -> LocalService.read" },
+    ],
+  };
+  const matrixNames = matrixIsolatedServices(matrixFixture);
+
   const checks = {
+    matrixCountsAProvenPairedCrossTenantService: matrixNames.has("ContactsService"),
+    matrixIgnoresAnUnpairedCrossTenantBinding: !matrixNames.has("OrphanService"),
+    matrixIgnoresAFailedBinding: !matrixNames.has("BrokenService"),
+    matrixIgnoresAnInTenantRefusal: !matrixNames.has("LocalService"),
     hasDbHandleDetectsInjectDrizzle: hasDbHandle(goodServiceSrc),
     hasDbHandleDetectsPrivateDb: hasDbHandle(badServiceSrc),
     isTenantOwnedRequiresOrgIdAndFilter: isTenantOwned(goodServiceSrc) === true,
@@ -259,12 +289,18 @@ const globalServices = serviceFilesWithDb.filter(
   (f) => isGlobalService(f) || !isTenantOwned(readFileSync(f, "utf8")),
 );
 
+const matrixLedger = existsSync(MATRIX_LEDGER_PATH) ? JSON.parse(readFileSync(MATRIX_LEDGER_PATH, "utf8")) : null;
+const matrixState = matrixFreshness(matrixLedger);
+const matrixNames = matrixState === "fresh" ? matrixIsolatedServices(matrixLedger) : new Set();
+const matrixProven = (f) => matrixNames.has(serviceClassName(readFileSync(f, "utf8")) ?? "");
+
 const covered = tenantServices.filter((f) =>
-  hasIsolationTest(f, isolationSpecFiles),
+  hasIsolationTest(f, isolationSpecFiles) || matrixProven(f),
 );
 const uncovered = tenantServices.filter(
-  (f) => !hasIsolationTest(f, isolationSpecFiles),
+  (f) => !hasIsolationTest(f, isolationSpecFiles) && !matrixProven(f),
 );
+const matrixOnly = tenantServices.filter((f) => matrixProven(f) && !hasIsolationTest(f, isolationSpecFiles));
 
 const coveragePercent =
   tenantServices.length > 0
@@ -276,6 +312,7 @@ console.log(`  — tenant-owned               ${tenantServices.length}`);
 console.log(`  — global/platform            ${globalServices.length}`);
 console.log(`Isolation test files found     ${isolationSpecFiles.length}`);
 console.log(`Services with a DECLARED test  ${covered.length} / ${tenantServices.length}  (${coveragePercent}%)`);
+console.log(`  — matrix-proven cross-tenant  ${tenantServices.filter(matrixProven).length}  (${matrixOnly.length} with no spec; RBAC matrix ledger ${matrixState})`);
 console.log("");
 console.log("NOTE: this gate is static. It matches a spec file that names the service and does not");
 console.log("      run it, so a spec that throws before its first expectation still counts here.");
