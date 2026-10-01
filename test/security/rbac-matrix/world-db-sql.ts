@@ -1,5 +1,5 @@
 import { Column, SQL, StringChunk, Table, getTableColumns, getTableName, is } from "drizzle-orm";
-import { tokensOf, type Token } from "./world-db-tokens";
+import { resolveRawNames, tokensOf, type Token } from "./world-db-tokens";
 import { UnsupportedQuery, aggregate, andOf, castTo, combine, compare, epochOf, likeMatch, orOf, toChar, type Truth } from "./world-db-values";
 
 export { UnsupportedQuery, type Truth };
@@ -8,6 +8,7 @@ export type Row = Readonly<Record<string, unknown>>;
 export type Lookup = (column: Column) => unknown;
 export type Subselect = ((table: string, column: string, conditions: ReadonlyArray<readonly [string, unknown]>) => readonly unknown[]) & {
   readonly rowsOf?: (table: Table) => readonly Row[];
+  readonly tableNamed?: (name: string) => Table | undefined;
 };
 
 const NO_SUBSELECT: Subselect = (table) => {
@@ -273,7 +274,13 @@ class Parser {
       ? combos
       : combos.filter((combo) => this.nested(span[0], span[1], scoped(combo)).expression() === true);
     const selectEnd = marks[fromMark][0];
-    const values = kept.slice(0, cap).map((combo) => this.nested(open + 2, selectEnd, scoped(combo)).operand());
+    const aggregates = this.tokens.slice(open + 2, selectEnd).some((token, index, span) => {
+      const next = span[index + 1];
+      return token.kind === "ident" && AGGREGATES.has(token.text) && next?.kind === "word" && next.text === "(";
+    });
+    const values = aggregates
+      ? [this.complete(new Parser(this.tokens.slice(open + 2, selectEnd), scoped(new Map()), this.subselect, kept.slice(0, cap).map(scoped)), (parser) => parser.operand())]
+      : kept.slice(0, cap).map((combo) => this.nested(open + 2, selectEnd, scoped(combo)).operand());
     this.position = close + 1;
     return values;
   }
@@ -421,7 +428,7 @@ class Parser {
 
 export function evaluate(node: unknown, lookup: Lookup, subselect: Subselect = NO_SUBSELECT, group: readonly Lookup[] | null = null): Truth {
   if (node === undefined) return true;
-  const parser = new Parser(tokensOf(node), lookup, subselect, group);
+  const parser = new Parser(resolveRawNames(tokensOf(node), subselect.tableNamed), lookup, subselect, group);
   const truth = parser.expression();
   if (!parser.done()) throw new UnsupportedQuery("trailing tokens after a predicate");
   return truth;
@@ -432,7 +439,7 @@ export function scalar(node: unknown, lookup: Lookup, subselect: Subselect = NO_
   const tokens = tokensOf(node);
   if (tokens.length === 1 && tokens[0].kind === "column") return lookup(tokens[0].column);
   if (tokens.length === 1 && tokens[0].kind === "value") return tokens[0].value;
-  const parser = new Parser(tokens, lookup, subselect, group);
+  const parser = new Parser(resolveRawNames(tokens, subselect.tableNamed), lookup, subselect, group);
   if (parser.startsWithValue()) {
     const value = parser.operand();
     if (parser.done()) return value;

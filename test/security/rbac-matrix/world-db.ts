@@ -60,7 +60,10 @@ function knownTable(table: unknown): Table {
 }
 
 function subselectOver(rows: WorldRows): Subselect {
-  return Object.assign(legacySubselect(rows), { rowsOf: (table: Table) => rows.get(table) ?? [] });
+  return Object.assign(legacySubselect(rows), {
+    rowsOf: (table: Table) => rows.get(table) ?? [],
+    tableNamed: (name: string) => [...SCHEMA_TABLES].find((candidate) => getTableName(candidate) === name),
+  });
 }
 
 function legacySubselect(rows: WorldRows): Subselect {

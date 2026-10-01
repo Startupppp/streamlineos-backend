@@ -1,4 +1,4 @@
-import { Column, Param, SQL, StringChunk, Table, is } from "drizzle-orm";
+import { Column, Param, SQL, StringChunk, Table, getTableColumns, is } from "drizzle-orm";
 import { UnsupportedQuery } from "./world-db-values";
 
 export type Token =
@@ -9,7 +9,7 @@ export type Token =
   | { readonly kind: "ident"; readonly text: string }
   | { readonly kind: "table"; readonly table: Table };
 
-const LEXEME = /\s*(<>|!=|>=|<=|=|<|>|\(|\)|,|\*|\/|\|\||::|'(?:[^']|'')*'|-?\d+(?:\.\d+)?|\+|-|[A-Za-z_]+)\s*/y;
+const LEXEME = /\s*(<>|!=|>=|<=|=|<|>|\(|\)|,|\*|\/|\|\||::|'(?:[^']|'')*'|-?\d+(?:\.\d+)?|\.|\+|-|[A-Za-z_]+)\s*/y;
 const KEYWORDS = new Set(["and", "or", "not", "is", "null", "in", "true", "false", "asc", "desc", "like", "ilike"]);
 
 function lex(text: string, out: Token[]): void {
@@ -73,4 +73,43 @@ export function tokensOf(node: unknown, out: Token[] = []): Token[] {
     return out;
   }
   throw new UnsupportedQuery(`sql chunk ${Object.prototype.toString.call(node)}`);
+}
+
+const RESERVED = new Set(["select", "from", "where", "inner", "left", "join", "on", "limit", "group", "order"]);
+
+function aliasedColumn(table: Table, name: string): Column {
+  const column = Object.values(getTableColumns(table)).find((candidate) => candidate.name === name);
+  if (column === undefined) throw new UnsupportedQuery(`raw column ${name} outside its table`);
+  return column;
+}
+
+export function resolveRawNames(tokens: readonly Token[], tableNamed: ((name: string) => Table | undefined) | undefined): Token[] {
+  if (tableNamed === undefined) return [...tokens];
+  const aliases = new Map<string, Table>();
+  const sourced: Token[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    const name = tokens[index + 1];
+    const table = token.kind === "ident" && token.text === "from" && name?.kind === "ident" ? tableNamed(name.text) : undefined;
+    const alias = tokens[index + 2];
+    sourced.push(token);
+    if (table === undefined || alias?.kind !== "ident" || RESERVED.has(alias.text)) continue;
+    if (tokens.some((other) => other.kind === "column" && other.column.table === table))
+      throw new UnsupportedQuery("a raw alias over a table the statement also names directly, whose columns would be indistinguishable");
+    sourced.push({ kind: "table", table });
+    aliases.set(alias.text, table);
+    index += 2;
+  }
+  const out: Token[] = [];
+  for (let index = 0; index < sourced.length; index += 1) {
+    const token = sourced[index];
+    const dot = sourced[index + 1];
+    const column = sourced[index + 2];
+    const table = token.kind === "ident" ? aliases.get(token.text) : undefined;
+    if (table !== undefined && dot?.kind === "word" && dot.text === "." && column?.kind === "ident") {
+      out.push({ kind: "column", column: aliasedColumn(table, column.text) });
+      index += 2;
+    } else out.push(token);
+  }
+  return out;
 }

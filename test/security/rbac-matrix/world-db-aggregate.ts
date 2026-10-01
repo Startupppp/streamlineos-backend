@@ -1,6 +1,6 @@
 import { Column, SQL, is } from "drizzle-orm";
 import { AGGREGATES, compareRows, groupOrderTerm, scalar, type Lookup, type Subselect } from "./world-db-sql";
-import { tokensOf } from "./world-db-tokens";
+import { tokensOf, type Token } from "./world-db-tokens";
 import { UnsupportedQuery } from "./world-db-values";
 
 export interface GroupQuery<C> {
@@ -12,15 +12,24 @@ export interface GroupQuery<C> {
   readonly subselect: Subselect;
 }
 
+function isWord(token: Token | undefined, text: string): boolean {
+  return token?.kind === "word" && token.text === text;
+}
+
+function outerAggregate(tokens: readonly Token[]): boolean {
+  let nested = 0;
+  for (const [index, token] of tokens.entries()) {
+    const next = tokens[index + 1];
+    if (isWord(token, "(") && (nested > 0 || (next?.kind === "ident" && next.text === "select"))) nested += 1;
+    else if (isWord(token, ")") && nested > 0) nested -= 1;
+    else if (nested === 0 && token.kind === "ident" && AGGREGATES.has(token.text) && isWord(next, "(")) return true;
+  }
+  return false;
+}
+
 export function aggregated(fields: unknown): boolean {
   if (fields === null || fields === undefined || is(fields, Column)) return false;
-  if (is(fields, SQL) || is(fields, SQL.Aliased)) {
-    const tokens = tokensOf(fields);
-    return tokens.some((token, index) => {
-      const next = tokens[index + 1];
-      return token.kind === "ident" && AGGREGATES.has(token.text) && next?.kind === "word" && next.text === "(";
-    });
-  }
+  if (is(fields, SQL) || is(fields, SQL.Aliased)) return outerAggregate(tokensOf(fields));
   if (typeof fields !== "object") return false;
   return Object.values(fields).some(aggregated);
 }

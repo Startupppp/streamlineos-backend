@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { candidateApplications, candidateSlaTracking, scheduledReports } from "src/db/schema";
+import { candidateApplications, candidateSlaTracking, candidates, scheduledReports } from "src/db/schema";
 import { worldDb } from "./world-db";
 import { evaluate, scalar, type Lookup } from "./world-db-sql";
 import { UnsupportedQuery } from "./world-db-values";
@@ -79,5 +79,28 @@ describe("world-db value expressions", () => {
     const db = applications().db;
     await expect(db.select({ status: candidateApplications.status, total: sql<number>`count(*)` }).from(candidateApplications)).rejects.toThrow(UnsupportedQuery);
     await expect(db.select({ half: sql<number>`count(*) / 2` }).from(candidateApplications)).rejects.toThrow(UnsupportedQuery);
+  });
+
+  it("resolves a raw-named, aliased, correlated count subquery and refuses a raw table it cannot tell apart or does not know", async () => {
+    const world = worldDb(
+      new Map([
+        [candidates, [{ id: 7, orgId: "a" }]],
+        [
+          candidateApplications,
+          [
+            { id: 1, orgId: "a", status: "APPLIED" },
+            { id: 2, orgId: "a", status: "REJECTED" },
+            { id: 3, orgId: "b", status: "APPLIED" },
+          ],
+        ],
+      ]),
+    );
+    const peers = (table: string, outer: typeof candidates.orgId | typeof candidateApplications.orgId) =>
+      world.db
+        .select({ peers: sql<number>`(SELECT count(*)::int FROM ${sql.raw(table)} r WHERE r.org_id = ${outer} AND r.status IN ('APPLIED', 'ACCEPTED'))` })
+        .from(candidates);
+    expect(await peers("candidate_applications", candidates.orgId)).toEqual([{ peers: 1 }]);
+    await expect(peers("candidate_applications", candidateApplications.orgId)).rejects.toThrow(UnsupportedQuery);
+    await expect(peers("no_such_table", candidates.orgId)).rejects.toThrow(UnsupportedQuery);
   });
 });
