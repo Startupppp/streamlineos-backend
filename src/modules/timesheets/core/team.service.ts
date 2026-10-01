@@ -5,7 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetPeriods, organizationMembers, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
+import { resolveTeamScope, membershipScope } from "./timesheets-core-scope";
 import type { TeamWeekSummaryQuery } from "./dto/team.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -21,7 +21,7 @@ export class TeamService {
   ) {}
 
   async getWeekSummary(u: CurrentUserContext, query: TeamWeekSummaryQuery) {
-    const read = await resolveReportsScope(this.access, u);
+    const read = await resolveTeamScope(this.access, u);
     const actorMembId = actingMembershipId(u.principal);
     const requested = (query.userIds ?? []).slice(0, 100);
 

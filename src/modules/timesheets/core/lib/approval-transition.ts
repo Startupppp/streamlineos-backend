@@ -37,11 +37,16 @@ export async function applyApproval(
   },
 ): Promise<void> {
   const { approverActor, lockAfterApproval, emitCount, ownerUserId, now } = approval;
+  // Approving with lockAfterApproval stamps lockedAt, so the period really is
+  // locked and the status has to say so. Leaving it APPROVED while emitting
+  // timesheets.period.locked put the row and its event stream out of step and
+  // left the LOCKED state reachable only through the explicit lock route.
+  const finalStatus = lockAfterApproval ? "LOCKED" : "APPROVED";
 
   const [transition] = await tx
     .update(timesheetPeriods)
     .set({
-      status: "APPROVED",
+      status: finalStatus,
       approvedAt: now,
       approvedByMembershipId: approverActor.membershipId,
       lockedAt: lockAfterApproval ? now : null,
@@ -150,12 +155,11 @@ export async function applyApproval(
     entityType: "period",
     entityId: periodId.toString(),
     action: "period.approved",
-    after: { status: "APPROVED" },
+    after: { status: finalStatus },
   });
 
   if (transition && ownerUserId) {
     const base = transition.eventSeq - emitCount + 1;
-    const payload = lifecyclePayload(u.orgId, periodId, transition, ownerUserId, u.userId, now, null);
 
     await emitPeriodLifecycleEvent(tx, {
       eventType: TIMESHEET_LIFECYCLE_EVENTS.approved,
@@ -163,7 +167,16 @@ export async function applyApproval(
       periodId,
       eventSeq: base,
       occurredAt: now,
-      payload,
+      // The approval event reports the approval, whatever the lock did next.
+      payload: lifecyclePayload(
+        u.orgId,
+        periodId,
+        { ...transition, status: "APPROVED" },
+        ownerUserId,
+        u.userId,
+        now,
+        null,
+      ),
     });
 
     if (lockAfterApproval) {
@@ -173,7 +186,17 @@ export async function applyApproval(
         periodId,
         eventSeq: transition.eventSeq,
         occurredAt: now,
-        payload,
+        // Report the status this transition just established rather than
+        // whatever the driver echoed back, so the event cannot drift from it.
+        payload: lifecyclePayload(
+          u.orgId,
+          periodId,
+          { ...transition, status: finalStatus },
+          ownerUserId,
+          u.userId,
+          now,
+          null,
+        ),
       });
     }
   }
@@ -193,11 +216,13 @@ export async function applyBulkApproval(
 ): Promise<number[]> {
   const { approverActor, lockAfterApproval, owners, now } = approval;
   const emitCount = lockAfterApproval ? 2 : 1;
+  // See applyApproval: a period that gets lockedAt stamped must carry LOCKED.
+  const finalStatus = lockAfterApproval ? "LOCKED" : "APPROVED";
 
   const transitions = await tx
     .update(timesheetPeriods)
     .set({
-      status: "APPROVED",
+      status: finalStatus,
       approvedAt: now,
       approvedByMembershipId: approverActor.membershipId,
       lockedAt: lockAfterApproval ? now : null,
@@ -295,7 +320,7 @@ export async function applyBulkApproval(
       entityType: "period",
       entityId: id.toString(),
       action: "period.approved",
-      after: { status: "APPROVED" },
+      after: { status: finalStatus },
     })),
   );
 
@@ -307,14 +332,21 @@ export async function applyBulkApproval(
       operation: "bulk-approve",
     });
     if (!ownerUserId) continue;
-    const payload = lifecyclePayload(u.orgId, transition.id, transition, ownerUserId, u.userId, now, null);
     events.push({
       eventType: TIMESHEET_LIFECYCLE_EVENTS.approved,
       orgId: u.orgId,
       periodId: transition.id,
       eventSeq: transition.eventSeq - emitCount + 1,
       occurredAt: now,
-      payload,
+      payload: lifecyclePayload(
+        u.orgId,
+        transition.id,
+        { ...transition, status: "APPROVED" },
+        ownerUserId,
+        u.userId,
+        now,
+        null,
+      ),
     });
     if (lockAfterApproval) {
       events.push({
@@ -323,7 +355,15 @@ export async function applyBulkApproval(
         periodId: transition.id,
         eventSeq: transition.eventSeq,
         occurredAt: now,
-        payload,
+        payload: lifecyclePayload(
+          u.orgId,
+          transition.id,
+          { ...transition, status: finalStatus },
+          ownerUserId,
+          u.userId,
+          now,
+          null,
+        ),
       });
     }
   }

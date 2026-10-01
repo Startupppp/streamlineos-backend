@@ -30,6 +30,19 @@ export async function resolveApprovalScope(
   return ScopedRead.for(access, u, TS_APPROVALS_VIEW_PERMISSION);
 }
 
+/**
+ * Team visibility must come from the team key the team controller gates on.
+ * Deriving it from `timesheets:reports:view` leaked coworkers' hours whenever
+ * the reports grant was wider than the team grant, and emptied the team
+ * surface for a principal who held team:view without reports:view.
+ */
+export async function resolveTeamScope(
+  access: AccessService,
+  u: CurrentUserContext,
+): Promise<ScopedRead> {
+  return ScopedRead.for(access, u, TS_TEAM_VIEW_PERMISSION);
+}
+
 export async function resolveReportsScope(
   access: AccessService,
   u: CurrentUserContext,

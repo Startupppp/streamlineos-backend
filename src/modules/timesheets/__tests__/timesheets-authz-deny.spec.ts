@@ -1,4 +1,5 @@
 import request from "supertest";
+import { DiscoveryService } from "@nestjs/core";
 import {
   createAuthzHarness,
   ORG_B,
@@ -8,6 +9,16 @@ import {
 import { EntriesController } from "../core/entries.controller";
 import { TimesheetCalendarController } from "../core/calendar.controller";
 import { TimesheetPeriodsController } from "../core/periods.controller";
+import { TimesheetApprovalsController } from "../core/approvals.controller";
+import { TeamController } from "../core/team.controller";
+import { TimesheetReportsController } from "../core/reports.controller";
+import { TimesheetBillingController } from "../core/billing.controller";
+import { TimesheetSettingsController } from "../core/settings.controller";
+import { RatesController } from "../core/rates.controller";
+import { TimesheetAuditController } from "../core/audit.controller";
+import { TimesheetExceptionsController } from "../core/exceptions.controller";
+import { TimerController } from "../core/timer.controller";
+import { TimesheetBudgetsController } from "../core/budgets.controller";
 import { ALL_PERMISSION_NAMES } from "../../rbac/permissions";
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -18,17 +29,57 @@ const GET_ROUTES: readonly GatedRoute[] = [
   { verb: "get", path: `/timesheets/periods`, key: "timesheets:entries:view" },
   { verb: "get", path: `/timesheets/periods/${ID}`, key: "timesheets:entries:view" },
   { verb: "get", path: `/timesheets/periods/current`, key: "timesheets:entries:view" },
+  { verb: "get", path: `/timesheets/periods/${ID}/approver`, key: "timesheets:entries:view" },
   { verb: "get", path: `/timesheets/periods/overdue`, key: "timesheets:approvals:view" },
+  { verb: "get", path: `/timesheets/approvals`, key: "timesheets:approvals:view" },
+  { verb: "get", path: `/timesheets/team/week-summary`, key: "timesheets:team:view" },
+  { verb: "get", path: `/timesheets/reports/overview`, key: "timesheets:reports:view" },
+  { verb: "get", path: `/timesheets/reports/utilization`, key: "timesheets:reports:view" },
+  { verb: "get", path: `/timesheets/reports/client-profitability`, key: "timesheets:reports:view" },
+  { verb: "get", path: `/timesheets/reports/compliance`, key: "timesheets:reports:view" },
+  { verb: "get", path: `/timesheets/reports/approval-sla`, key: "timesheets:reports:view" },
+  { verb: "get", path: `/timesheets/reports/billing-leakage`, key: "timesheets:reports:view" },
+  { verb: "get", path: `/timesheets/billing/uninvoiced`, key: "timesheets:billing:view" },
+  { verb: "get", path: `/timesheets/billing/uninvoiced-entries`, key: "timesheets:billing:view" },
+  { verb: "get", path: `/timesheets/billing/rate-preview`, key: "timesheets:billing:view" },
+  { verb: "get", path: `/timesheets/settings`, key: "timesheets:settings:view" },
+  { verb: "get", path: `/timesheets/settings/history`, key: "timesheets:settings:view" },
+  { verb: "get", path: `/timesheets/rates`, key: "timesheets:rates:view" },
+  { verb: "get", path: `/timesheets/audit`, key: "timesheets:audit:view" },
+  { verb: "get", path: `/timesheets/audit/verify`, key: "timesheets:audit:view" },
+  { verb: "get", path: `/timesheets/exceptions`, key: "timesheets:exceptions:view" },
+  { verb: "get", path: `/timesheets/exceptions/summary`, key: "timesheets:exceptions:view" },
+  { verb: "get", path: `/timesheets/timer/active`, key: "timesheets:entries:view" },
+  { verb: "get", path: `/timesheets/budgets`, key: "timesheets:budgets:view" },
 ];
 
 const POST_ROUTES: readonly GatedRoute[] = [
   { verb: "post", path: `/timesheets/entries`, key: "timesheets:entries:create" },
   { verb: "post", path: `/timesheets/entries/from-attendance`, key: "timesheets:entries:create" },
+  { verb: "post", path: `/timesheets/entries/${ID}/void`, key: "timesheets:entries:void" },
   { verb: "post", path: `/timesheets/periods/${ID}/lock`, key: "timesheets:approvals:manage" },
   { verb: "post", path: `/timesheets/periods/${ID}/recall`, key: "timesheets:entries:create" },
   { verb: "post", path: `/timesheets/periods/${ID}/reopen`, key: "timesheets:approvals:manage" },
   { verb: "post", path: `/timesheets/periods/${ID}/submit`, key: "timesheets:entries:create" },
   { verb: "post", path: `/timesheets/periods/${ID}/unlock`, key: "timesheets:approvals:manage" },
+  { verb: "post", path: `/timesheets/approvals/bulk-approve`, key: "timesheets:approvals:manage" },
+  { verb: "post", path: `/timesheets/approvals/bulk-reject`, key: "timesheets:approvals:manage" },
+  { verb: "post", path: `/timesheets/approvals/${ID}/approve`, key: "timesheets:approvals:manage" },
+  { verb: "post", path: `/timesheets/approvals/${ID}/reject`, key: "timesheets:approvals:manage" },
+  { verb: "post", path: `/timesheets/billing/export`, key: "timesheets:billing:export" },
+  { verb: "post", path: `/timesheets/billing/create-invoice-draft`, key: "timesheets:billing:invoice" },
+  { verb: "post", path: `/timesheets/billing/release-draft`, key: "timesheets:billing:invoice" },
+  { verb: "post", path: `/timesheets/rates`, key: "timesheets:rates:manage" },
+  { verb: "post", path: `/timesheets/exceptions/${ID}/resolve`, key: "timesheets:exceptions:manage" },
+  { verb: "post", path: `/timesheets/exceptions/${ID}/dismiss`, key: "timesheets:exceptions:manage" },
+  { verb: "post", path: `/timesheets/exceptions/run-detection`, key: "timesheets:exceptions:manage" },
+  { verb: "post", path: `/timesheets/timer/start`, key: "timesheets:entries:create" },
+  { verb: "post", path: `/timesheets/timer/${ID}/pause`, key: "timesheets:entries:create" },
+  { verb: "post", path: `/timesheets/timer/${ID}/resume`, key: "timesheets:entries:create" },
+  { verb: "post", path: `/timesheets/timer/${ID}/stop`, key: "timesheets:entries:create" },
+  { verb: "post", path: `/timesheets/timer/${ID}/discard`, key: "timesheets:entries:create" },
+  { verb: "post", path: `/timesheets/timer/${ID}/convert`, key: "timesheets:entries:create" },
+  { verb: "post", path: `/timesheets/budgets`, key: "timesheets:budgets:manage" },
 ];
 
 const PUT_ROUTES: readonly GatedRoute[] = [
@@ -36,9 +87,14 @@ const PUT_ROUTES: readonly GatedRoute[] = [
 
 const PATCH_ROUTES: readonly GatedRoute[] = [
   { verb: "patch", path: `/timesheets/entries/${ID}`, key: "timesheets:entries:update" },
+  { verb: "patch", path: `/timesheets/settings`, key: "timesheets:settings:manage" },
+  { verb: "patch", path: `/timesheets/rates/${ID}`, key: "timesheets:rates:manage" },
+  { verb: "patch", path: `/timesheets/budgets/${ID}`, key: "timesheets:budgets:manage" },
 ];
 
 const DELETE_ROUTES: readonly GatedRoute[] = [
+  { verb: "delete", path: `/timesheets/rates/${ID}`, key: "timesheets:rates:manage" },
+  { verb: "delete", path: `/timesheets/budgets/${ID}`, key: "timesheets:budgets:manage" },
 ];
 
 const ALL_ROUTES: readonly GatedRoute[] = [
@@ -53,11 +109,37 @@ describe("timesheets — authorization deny", () => {
   let harness: AuthzHarness;
 
   beforeAll(async () => {
-    harness = await createAuthzHarness([
-      EntriesController,
-      TimesheetCalendarController,
-      TimesheetPeriodsController,
-    ]);
+    harness = await createAuthzHarness(
+      [
+        EntriesController,
+        TimesheetCalendarController,
+        TimesheetPeriodsController,
+        TimesheetApprovalsController,
+        TeamController,
+        TimesheetReportsController,
+        TimesheetBillingController,
+        TimesheetSettingsController,
+        RatesController,
+        TimesheetAuditController,
+        TimesheetExceptionsController,
+        TimerController,
+        TimesheetBudgetsController,
+      ],
+      {
+        /*
+         * PermissionGuard injects DiscoveryService and sweeps the discovered
+         * controllers on bootstrap. The harness builds a bare testing module
+         * with no DiscoveryModule, so that dependency is auto-mocked without
+         * `getControllers` and `app.init()` throws before a single route is
+         * exercised. Supply it explicitly: the sweep is a separate concern
+         * (permission.guard-boot-sweep.spec.ts owns it) and this spec is about
+         * what each route answers.
+         */
+        providers: [
+          { provide: DiscoveryService, useValue: { getControllers: () => [] } },
+        ],
+      },
+    );
   });
 
   afterAll(async () => {
@@ -74,7 +156,9 @@ describe("timesheets — authorization deny", () => {
   });
 
   it("covers the whole gated surface of these controllers", () => {
-    expect(ALL_ROUTES.length).toBe(14);
+    // 59 = every @RequirePermission route on the thirteen controllers mounted
+    // above. Adding a gated timesheets route without a row here fails this.
+    expect(ALL_ROUTES.length).toBe(59);
   });
 
   describe("a caller holding every OTHER permission is still refused", () => {

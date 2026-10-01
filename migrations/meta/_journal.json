@@ -7232,6 +7232,20 @@
       "when": 1803093648725,
       "tag": "1705_blog_revisions_publication",
       "breakpoints": true
+    },
+    {
+      "idx": 1161,
+      "version": "7",
+      "when": 1803093649725,
+      "tag": "1706_timesheet_periods_locked_status_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 1162,
+      "version": "7",
+      "when": 1803093650725,
+      "tag": "1707_timesheets_work_log_unique_excludes_voided",
+      "breakpoints": true
     }
   ]
 }

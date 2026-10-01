@@ -3,6 +3,9 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { Db } from "../../../../db/drizzle.module";
 import { timesheetPeriods } from "../../../../db/schema";
 import { PeriodsService } from "../periods.service";
+import { ApprovalsService } from "../approvals.service";
+import type { AccessService } from "../../../access/access.service";
+import type { RateResolverService } from "../rate-resolver.service";
 import type { PeriodsReadService } from "../periods-read.service";
 import type { PeriodsSubmitService } from "../periods-submit.service";
 import type { TimesheetsAuditService } from "../timesheets-audit.service";
@@ -18,6 +21,15 @@ const WORKER = {
   orgId: ORG,
   isOrgOwner: false,
   principal: humanSessionPrincipal(WORKER_MEMBERSHIP, false),
+} as unknown as CurrentUserContext;
+
+// Reopen is an approver action, not the worker's (the worker recalls), so the
+// route-clearing cases drive it as the assigned approver (TS-SEC-002).
+const APPROVER = {
+  userId: "usr-manager",
+  orgId: ORG,
+  isOrgOwner: false,
+  principal: humanSessionPrincipal(APPROVER_MEMBERSHIP, false),
 } as unknown as CurrentUserContext;
 
 const ROUTED = {
@@ -56,7 +68,16 @@ function periodsService(db: Db, row: Record<string, unknown>) {
   } as unknown as PeriodsReadService;
   const audit = { record: () => Promise.resolve() } as unknown as TimesheetsAuditService;
   const notifications = { emit: () => Promise.resolve({ notificationIds: [] }) } as unknown as NotificationDispatchService;
-  return new PeriodsService(db, reader, {} as PeriodsSubmitService, audit, notifications);
+  // The real guard. These cases act as the assigned approver, so it decides
+  // without reaching for delegations and the unused deps stay out of the way.
+  const approvals = new ApprovalsService(
+    db,
+    {} as AccessService,
+    audit,
+    {} as RateResolverService,
+    notifications,
+  );
+  return new PeriodsService(db, reader, {} as PeriodsSubmitService, audit, notifications, approvals);
 }
 
 const CLEARED_ROUTE = {
@@ -78,7 +99,7 @@ describe("a period's approval route lives exactly as long as its submission", ()
   it("reopen clears the route from an approved period so a resubmission routes afresh", async () => {
     const { db, periodSets } = makeDb();
 
-    await periodsService(db, { ...ROUTED, status: "APPROVED" }).reopenPeriod(WORKER, 42);
+    await periodsService(db, { ...ROUTED, status: "APPROVED" }).reopenPeriod(APPROVER, 42);
 
     expect(periodSets[0]).toMatchObject({ status: "DRAFT", ...CLEARED_ROUTE });
   });
@@ -86,7 +107,7 @@ describe("a period's approval route lives exactly as long as its submission", ()
   it("reopen clears the route from a locked period too", async () => {
     const { db, periodSets } = makeDb();
 
-    await periodsService(db, { ...ROUTED, status: "LOCKED" }).reopenPeriod(WORKER, 42);
+    await periodsService(db, { ...ROUTED, status: "LOCKED" }).reopenPeriod(APPROVER, 42);
 
     expect(periodSets[0]).toMatchObject({ status: "DRAFT", ...CLEARED_ROUTE });
   });

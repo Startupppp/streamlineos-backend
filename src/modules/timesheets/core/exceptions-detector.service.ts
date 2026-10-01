@@ -12,7 +12,7 @@ import {
   users,
 } from "../../../db/schema";
 import { forEachOrg } from "../../../common/tenant";
-import { formatDateOnly } from "./lib/period.helpers";
+import { utcDateOnly } from "./lib/period.helpers";
 import { addDays, lastCompleteWeekRange } from "./lib/exception-window";
 
 type ExceptionCandidate = typeof timesheetExceptions.$inferInsert;
@@ -199,7 +199,7 @@ export class ExceptionsDetectorService {
       });
     }
 
-    const rateSince = addDays(formatDateOnly(new Date()), -MISSING_RATE_LOOKBACK_DAYS);
+    const rateSince = addDays(utcDateOnly(new Date()), -MISSING_RATE_LOOKBACK_DAYS);
     const missingRateEntries = await this.db
       .select({
         id: timesheets.id,

@@ -14,7 +14,7 @@ import { timerSessions, timesheetSettings, projects, tickets } from "../../../db
 import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesService } from "./entries.service";
-import { formatDateOnly } from "./lib/period.helpers";
+import { utcDateOnly } from "./lib/period.helpers";
 import { buildTimerShape, elapsedSeconds } from "./lib/timer-shape";
 import {
   discardTimer,
@@ -196,7 +196,7 @@ export class TimerService {
 
     const accSeconds = elapsedSeconds(claimed);
     const hours = input.hours ?? Math.max(Math.round((accSeconds / 3600) * 100) / 100, 0.01);
-    const date = input.date ?? formatDateOnly(new Date());
+    const date = input.date ?? utcDateOnly(new Date());
 
     const entry = await this.entries
       .createEntry(u, {
