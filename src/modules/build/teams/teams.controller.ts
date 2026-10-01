@@ -201,7 +201,7 @@ export class TeamsController {
     @Body() body: AddTeamProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.teamProjects.addProject(u.orgId, u.userId, teamId, body.projectId);
+    return this.teamProjects.addProject(u, teamId, body.projectId);
   }
 
   @Delete(":teamId/projects/:projectId")
@@ -214,6 +214,6 @@ export class TeamsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.teamProjects.removeProject(u.orgId, u.userId, teamId, projectId);
+    return this.teamProjects.removeProject(u, teamId, projectId);
   }
 }
