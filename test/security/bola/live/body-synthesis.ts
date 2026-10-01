@@ -198,6 +198,7 @@ function stringCandidates(schema: JsonSchema, nonce: string): string[] {
   push("USD");
   push("US");
   push("example.com");
+  push("project:1");
   return out;
 }
 
