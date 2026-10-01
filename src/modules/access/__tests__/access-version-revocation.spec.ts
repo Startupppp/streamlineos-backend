@@ -108,7 +108,7 @@ function buildVersionService() {
     cache,
     entitlements,
     makeMfaPolicyStub(),
-    new AccessVersionCache(typedDb, cache),
+    new AccessVersionCache(typedDb),
     makeMembershipStateStub({ active: true, isOwner: false, role: "MEMBER", membershipId: 1 }),
   );
 
