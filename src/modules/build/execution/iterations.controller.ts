@@ -307,7 +307,7 @@ export class EpicsController {
     @Body() body: UpdateEpicInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.epics.updateEpic(u.orgId, projectId, epicId, body);
+    return this.epics.updateEpic(u, projectId, epicId, body);
   }
 
   @Delete(":epicId")

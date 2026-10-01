@@ -385,16 +385,31 @@ describe("BuildEntityActions", () => {
       expect(result).toEqual({ ok: false, reason: "invalid" });
     });
 
-    it("executes the ticket update and activity-log insert inside the same transaction", async () => {
+    it("routes dueDate change through canonical updateTicket and passes the current version", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
 
       const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "2026-12-31" });
 
       expect(result).toEqual({ ok: true, message: "Due date set to 2026-12-31", data: {} });
-      expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-      expect(mockTx.update).toHaveBeenCalledTimes(1);
-      expect(mockTx.insert).toHaveBeenCalledTimes(1);
+      expect(mockTicketChange.updateTicket).toHaveBeenCalledTimes(1);
+      expect(mockTicketChange.updateTicket).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: ACTOR.orgId, userId: ACTOR.userId }),
+        STUB_TICKET.projectId,
+        STUB_TICKET.id,
+        expect.objectContaining({ dueDate: "2026-12-31", version: STUB_TICKET.version }),
+      );
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("maps TicketVersionConflictException from updateTicket to reason: invalid for dueDate", async () => {
+      mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
+      mockDb.query.projects.findFirst.mockResolvedValue({ projectId: 7 });
+      mockTicketChange.updateTicket.mockRejectedValue(new TicketVersionConflictException(2));
+
+      const result = await service.run(ACTOR, TICKET_REF, "due-date", { dueDate: "2026-12-31" });
+
+      expect(result).toEqual({ ok: false, reason: "invalid" });
     });
   });
 

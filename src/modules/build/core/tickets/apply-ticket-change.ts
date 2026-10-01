@@ -221,6 +221,7 @@ export async function applyTicketChange(
   if (input.dueDate !== undefined) updateData.dueDate = input.dueDate;
   if (input.customerId !== undefined) updateData.customerId = input.customerId;
   if (input.parentTicketId !== undefined) updateData.parentTicketId = input.parentTicketId;
+  if (input.health !== undefined) updateData.health = input.health;
   if (input.recurrenceRule != null) {
     updateData.recurrenceRule = input.recurrenceRule;
     updateData.isRecurring = input.isRecurring !== false;

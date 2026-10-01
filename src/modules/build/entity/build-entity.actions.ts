@@ -2,11 +2,9 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import type { TenantTx } from "../../../db/drizzle.types";
 import {
   projectMembers,
   organizationMembers,
-  ticketActivityLog,
   tickets,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -27,11 +25,6 @@ import { isProjectMember, text } from "./build-entity-action-helpers";
 import { createTicketFromAction } from "./build-entity-ticket-create";
 import { CacheService } from "../../../common/cache/cache.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
-
-type TicketActivityAction =
-  | "status_changed"
-  | "assignee_changed"
-  | "due_date_changed";
 
 @Injectable()
 export class BuildEntityActions {
@@ -68,7 +61,6 @@ export class BuildEntityActions {
         id: true,
         status: true,
         assigneeMembershipId: true,
-        dueDate: true,
         projectId: true,
         version: true,
       },
@@ -83,7 +75,7 @@ export class BuildEntityActions {
       : actionId === "assign"
         ? await this.assign(actor, ticket.id, ticket.projectId, input, ticket.version)
         : actionId === "due-date"
-          ? await this.setDueDate(actor, ticket.id, ticket.projectId, ticket.dueDate, input)
+          ? await this.setDueDate(actor, ticket.id, ticket.projectId, input, ticket.version)
           : { ok: false as const, reason: "invalid" as const };
     if (result.ok)
       await this.cache
@@ -218,28 +210,29 @@ export class BuildEntityActions {
     actor: EntityActor,
     ticketId: number,
     projectId: number,
-    currentDueDate: string | null,
     input: Record<string, unknown>,
+    version: number,
   ): Promise<EntityActionResult> {
     const dueDate = text(input, "dueDate");
     if (!dueDate) return { ok: false, reason: "invalid" };
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(tickets)
-        .set({ dueDate, updatedAt: new Date() })
-        .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
-
-      await this.logActivity(
-        tx,
-        actor,
-        ticketId,
+    try {
+      await this.ticketChange.updateTicket(
+        this.toUserContext(actor),
         projectId,
-        "due_date_changed",
-        currentDueDate,
-        dueDate,
+        ticketId,
+        { dueDate, version },
       );
-    });
+    } catch (error) {
+      if (
+        error instanceof TicketVersionConflictException ||
+        error instanceof BadRequestException
+      ) return { ok: false, reason: "invalid" };
+      if (error instanceof ForbiddenException) return { ok: false, reason: "forbidden" };
+      if (error instanceof NotFoundException) return { ok: false, reason: "not-found" };
+      throw error;
+    }
+
     this.audit.log({
       action: "ticket.due_date_changed",
       userId: actor.userId,
@@ -250,25 +243,5 @@ export class BuildEntityActions {
     });
 
     return { ok: true, message: `Due date set to ${dueDate}`, data: {} };
-  }
-
-  private async logActivity(
-    tx: TenantTx,
-    actor: EntityActor,
-    ticketId: number,
-    projectId: number,
-    action: TicketActivityAction,
-    fromValue: string | null,
-    toValue: string | null,
-  ): Promise<void> {
-    await tx.insert(ticketActivityLog).values({
-      orgId: actor.orgId,
-      ticketId,
-      projectId,
-      userMembershipId: actor.membershipId ?? null,
-      action,
-      fromValue,
-      toValue,
-    });
   }
 }

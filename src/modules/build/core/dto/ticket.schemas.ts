@@ -187,6 +187,7 @@ export const updateTicketSchema = z
     recurrenceRule: recurrenceRuleSchema.nullable().optional(),
     customerId: z.number().int().positive().nullable().optional(),
     parentTicketId: z.number().int().positive().nullable().optional(),
+    health: z.enum(portfolioHealthEnum.enumValues).nullable().optional(),
   }).strict()
   .superRefine((data, ctx) => {
     refineDueOnOrAfterStart(data, ctx);

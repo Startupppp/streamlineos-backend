@@ -3,6 +3,7 @@ import { and, desc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
 import { tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   CreateEpicInput,
   EpicListQuery,
@@ -18,13 +19,14 @@ import {
 } from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { assertProjectInOrg } from "../core";
-import { BuildTicketCreationService, TicketVersionConflictException } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
 
 @Injectable()
 export class EpicsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ticketCreation: BuildTicketCreationService,
+    private readonly ticketChange: ProjectsTicketsUpdateService,
   ) {}
 
   async listEpics(orgId: string, projectId: number, query: EpicListQuery = {}) {
@@ -126,33 +128,37 @@ export class EpicsService {
     return created.tickets[0];
   }
 
-  async updateEpic(orgId: string, projectId: number, epicId: number, input: UpdateEpicInput) {
+  async updateEpic(u: CurrentUserContext, projectId: number, epicId: number, input: UpdateEpicInput) {
     const before = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, "EPIC"), isNull(tickets.deletedAt)),
-      columns: { version: true },
+      where: and(eq(tickets.id, epicId), eq(tickets.orgId, u.orgId), eq(tickets.projectId, projectId), eq(tickets.type, "EPIC"), isNull(tickets.deletedAt)),
+      columns: { id: true, version: true },
     });
     if (!before) throw new NotFoundException("Epic not found");
-    if (input.version !== before.version) throw new TicketVersionConflictException(before.version);
 
-    const { version: _v, ...rest } = input;
-    const [updated] = await this.db
-      .update(tickets)
-      .set({ ...rest, updatedAt: new Date() })
-      .where(
-        and(
-          eq(tickets.id, epicId),
-          eq(tickets.orgId, orgId),
-          eq(tickets.projectId, projectId),
-          eq(tickets.type, "EPIC"),
-          isNull(tickets.deletedAt),
-          eq(tickets.version, before.version),
-        ),
-      )
-      .returning();
-    if (!updated) {
-      const [current] = await this.db.select({ version: tickets.version }).from(tickets).where(and(eq(tickets.id, epicId), eq(tickets.orgId, orgId))).limit(1);
-      throw new TicketVersionConflictException(current?.version ?? before.version);
-    }
+    await this.ticketChange.updateTicket(u, projectId, epicId, {
+      version: input.version,
+      ...(input.title !== undefined && { title: input.title }),
+      ...(input.description !== undefined && { description: input.description }),
+      ...(input.priority !== undefined && { priority: input.priority }),
+      ...(input.assigneeId !== undefined && { assigneeId: input.assigneeId ?? "" }),
+      ...(input.health !== undefined && { health: input.health }),
+      ...(input.startDate !== undefined && { startDate: input.startDate }),
+      ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
+      ...(input.points !== undefined && { points: input.points }),
+    });
+
+    const updated = await this.db.query.tickets.findFirst({
+      where: and(eq(tickets.id, epicId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
+      columns: {
+        id: true, orgId: true, projectId: true, ticketNumber: true, title: true,
+        description: true, type: true, status: true, priority: true, health: true,
+        epicId: true, cycleId: true, assigneeMembershipId: true, points: true,
+        storyPoints: true, startDate: true, dueDate: true, rank: true, timeSpent: true,
+        completionPercentage: true, deletedAt: true, createdAt: true, updatedAt: true,
+        version: true,
+      },
+    });
+    if (!updated) throw new NotFoundException("Epic not found after update");
     return updated;
   }
 
