@@ -27,6 +27,7 @@ function comparable(value: unknown): unknown {
 
 export function compare(left: unknown, right: unknown): number | null {
   if (left === null || left === undefined || right === null || right === undefined) return null;
+  if (left instanceof Interval || right instanceof Interval) throw new UnsupportedQuery("comparison involving an interval");
   let a = comparable(left);
   let b = comparable(right);
   if (typeof a === "number" && typeof b === "string" && b.trim() !== "" && !Number.isNaN(Number(b))) b = Number(b);
@@ -97,9 +98,20 @@ export function combine(operator: string, left: unknown, right: unknown): unknow
       throw new UnsupportedQuery("concatenation of a non-scalar");
     return `${left}${right}`;
   }
-  const sign = operator === "-" ? -1 : 1;
+  if (typeof left === "number" && typeof right === "number") {
+    if (operator === "*") return left * right;
+    if (operator === "/") {
+      if (right === 0) throw new UnsupportedQuery("division by zero");
+      if (Number.isInteger(left) && Number.isInteger(right) && left % right !== 0)
+        throw new UnsupportedQuery("inexact division of integers, whose integer and numeric semantics differ");
+      return left / right;
+    }
+  }
+  const sign = operator === "-" ? -1 : operator === "+" ? 1 : 0;
+  if (sign === 0) throw new UnsupportedQuery(`arithmetic ${operator} over ${typeof left} and ${typeof right}`);
   if (typeof left === "number" && typeof right === "number") return left + sign * right;
   if (left instanceof Date && right instanceof Interval) return new Date(left.getTime() + sign * right.milliseconds);
+  if (left instanceof Date && right instanceof Date && sign === -1) return new Interval(left.getTime() - right.getTime());
   throw new UnsupportedQuery(`arithmetic ${operator} over ${typeof left} and ${typeof right}`);
 }
 
@@ -108,4 +120,27 @@ export function toChar(value: unknown, zone: unknown, format: unknown): string |
   if (isAbsent(value)) return null;
   if (!(value instanceof Date)) throw new UnsupportedQuery("to_char over a non-timestamp");
   return `${value.toISOString().slice(0, 23)}000`;
+}
+
+export function epochOf(value: unknown): number | null {
+  if (isAbsent(value)) return null;
+  if (value instanceof Interval) return value.milliseconds / 1_000;
+  if (value instanceof Date) return value.getTime() / 1_000;
+  throw new UnsupportedQuery(`extract(epoch) over a ${typeof value}`);
+}
+
+export function aggregate(name: string, values: readonly unknown[], distinct: boolean): unknown {
+  const present = values.filter((value) => !isAbsent(value));
+  const kept = distinct ? present.filter((value, index) => present.findIndex((other) => compare(other, value) === 0) === index) : present;
+  if (name === "count") return kept.length;
+  if (kept.length === 0) return null;
+  if (name === "min" || name === "max") {
+    const direction = name === "min" ? -1 : 1;
+    return kept.reduce((best, value) => ((compare(value, best) ?? 0) * direction > 0 ? value : best));
+  }
+  if (name === "sum") {
+    if (!kept.every((value) => typeof value === "number")) throw new UnsupportedQuery("sum over a non-number");
+    return kept.reduce<number>((total, value) => total + Number(value), 0);
+  }
+  throw new UnsupportedQuery(`aggregate ${name}`);
 }

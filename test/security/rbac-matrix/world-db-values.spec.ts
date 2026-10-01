@@ -1,5 +1,6 @@
-import { sql } from "drizzle-orm";
-import { candidateSlaTracking, scheduledReports } from "src/db/schema";
+import { eq, sql } from "drizzle-orm";
+import { candidateApplications, candidateSlaTracking, scheduledReports } from "src/db/schema";
+import { worldDb } from "./world-db";
 import { evaluate, scalar, type Lookup } from "./world-db-sql";
 import { UnsupportedQuery } from "./world-db-values";
 
@@ -39,5 +40,44 @@ describe("world-db value expressions", () => {
     expect(() => evaluate(sql`${candidateSlaTracking.enteredAt} < now() - ('two weeks')::interval`, lookup)).toThrow(UnsupportedQuery);
     expect(() => evaluate(sql`${candidateSlaTracking.enteredAt} < now() - now()`, lookup)).toThrow(UnsupportedQuery);
     expect(() => evaluate(sql`${candidateSlaTracking.enteredAt} < (${1})::timestamp`, lookup)).toThrow(UnsupportedQuery);
+  });
+
+  const applications = (): ReturnType<typeof worldDb> =>
+    worldDb(
+      new Map([
+        [
+          candidateApplications,
+          [
+            { id: 1, orgId: "a", status: "APPLIED" },
+            { id: 2, orgId: "a", status: "ACCEPTED" },
+            { id: 3, orgId: "b", status: "ACCEPTED" },
+          ],
+        ],
+      ]),
+    );
+
+  it("aggregates an implicit group, honouring the filter clause and the tenant predicate, and answers zero over no rows", async () => {
+    const fields = { applied: sql<number>`count(*)::int`, hired: sql<number>`count(*) filter (where ${candidateApplications.status} = 'ACCEPTED')::int` };
+    const db = applications().db;
+    expect(await db.select(fields).from(candidateApplications).where(eq(candidateApplications.orgId, "a"))).toEqual([{ applied: 2, hired: 1 }]);
+    expect(await db.select(fields).from(candidateApplications).where(eq(candidateApplications.orgId, "c"))).toEqual([{ applied: 0, hired: 0 }]);
+  });
+
+  it("groups by a column and orders by an aggregate", async () => {
+    const rows = await applications()
+      .db.select({ orgId: candidateApplications.orgId, total: sql<number>`count(distinct ${candidateApplications.id})::int` })
+      .from(candidateApplications)
+      .groupBy(candidateApplications.orgId)
+      .orderBy(sql`count(*) desc`);
+    expect(rows).toEqual([
+      { orgId: "a", total: 2 },
+      { orgId: "b", total: 1 },
+    ]);
+  });
+
+  it("rejects a bare column that is neither grouped nor aggregated, and an integer division whose two semantics disagree", async () => {
+    const db = applications().db;
+    await expect(db.select({ status: candidateApplications.status, total: sql<number>`count(*)` }).from(candidateApplications)).rejects.toThrow(UnsupportedQuery);
+    await expect(db.select({ half: sql<number>`count(*) / 2` }).from(candidateApplications)).rejects.toThrow(UnsupportedQuery);
   });
 });

@@ -1,16 +1,9 @@
-import { Column, Param, SQL, StringChunk, Table, getTableColumns, getTableName, is } from "drizzle-orm";
-import { UnsupportedQuery, andOf, castTo, combine, compare, likeMatch, orOf, toChar, type Truth } from "./world-db-values";
+import { Column, SQL, StringChunk, Table, getTableColumns, getTableName, is } from "drizzle-orm";
+import { tokensOf, type Token } from "./world-db-tokens";
+import { UnsupportedQuery, aggregate, andOf, castTo, combine, compare, epochOf, likeMatch, orOf, toChar, type Truth } from "./world-db-values";
 
 export { UnsupportedQuery, type Truth };
 export type Row = Readonly<Record<string, unknown>>;
-
-type Token =
-  | { readonly kind: "column"; readonly column: Column }
-  | { readonly kind: "value"; readonly value: unknown }
-  | { readonly kind: "list"; readonly values: readonly unknown[] }
-  | { readonly kind: "word"; readonly text: string }
-  | { readonly kind: "ident"; readonly text: string }
-  | { readonly kind: "table"; readonly table: Table };
 
 export type Lookup = (column: Column) => unknown;
 export type Subselect = ((table: string, column: string, conditions: ReadonlyArray<readonly [string, unknown]>) => readonly unknown[]) & {
@@ -21,10 +14,10 @@ const NO_SUBSELECT: Subselect = (table) => {
   throw new UnsupportedQuery(`subselect over ${table}`);
 };
 
-const LEXEME = /\s*(<>|!=|>=|<=|=|<|>|\(|\)|,|\|\||::|'(?:[^']|'')*'|-?\d+(?:\.\d+)?|\+|-|[A-Za-z_]+)\s*/y;
-const ARITHMETIC = new Set(["||", "+", "-"]);
-const VALUE_FUNCTIONS = new Set(["now", "case", "to_char"]);
-const KEYWORDS = new Set(["and", "or", "not", "is", "null", "in", "true", "false", "asc", "desc", "like", "ilike"]);
+const ADDITIVE = new Set(["||", "+", "-"]);
+const MULTIPLICATIVE = new Set(["*", "/"]);
+export const AGGREGATES = new Set(["count", "min", "max", "sum"]);
+const VALUE_FUNCTIONS = new Set(["now", "case", "to_char", "extract", "coalesce", ...AGGREGATES]);
 const COMPARATORS = new Set(["=", "<>", "!=", ">", ">=", "<", "<="]);
 const SUBQUERY_CLAUSES = new Set(["select", "from", "inner", "left", "join", "on", "where", "limit"]);
 
@@ -40,69 +33,6 @@ export function propertyOf(column: Column): string {
   return property;
 }
 
-function lex(text: string, out: Token[]): void {
-  LEXEME.lastIndex = 0;
-  let position = 0;
-  while (position < text.length) {
-    if (text.slice(position).trim() === "") return;
-    LEXEME.lastIndex = position;
-    const match = LEXEME.exec(text);
-    if (match === null) throw new UnsupportedQuery(`sql fragment "${text}"`);
-    position = LEXEME.lastIndex;
-    const lexeme = match[1];
-    if (lexeme.startsWith("'")) out.push({ kind: "value", value: lexeme.slice(1, -1).replace(/''/g, "'") });
-    else if (/^-?\d/.test(lexeme)) out.push({ kind: "value", value: Number(lexeme) });
-    else if (/^[A-Za-z_]/.test(lexeme)) {
-      const word = lexeme.toLowerCase();
-      out.push(KEYWORDS.has(word) ? { kind: "word", text: word } : { kind: "ident", text: word });
-    } else out.push({ kind: "word", text: lexeme });
-  }
-}
-
-function listValue(item: unknown): unknown {
-  if (is(item, Param)) return item.value;
-  if (is(item, Column) || is(item, SQL) || is(item, Table)) throw new UnsupportedQuery("non-literal list member");
-  return item;
-}
-
-export function tokensOf(node: unknown, out: Token[] = []): Token[] {
-  if (is(node, SQL)) {
-    for (const chunk of node.queryChunks) tokensOf(chunk, out);
-    return out;
-  }
-  if (is(node, SQL.Aliased)) return tokensOf(node.sql, out);
-  if (is(node, StringChunk)) {
-    lex(node.value.join(""), out);
-    return out;
-  }
-  if (is(node, Column)) {
-    out.push({ kind: "column", column: node });
-    return out;
-  }
-  if (is(node, Param)) {
-    if (is(node.value, SQL) || is(node.value, Column)) return tokensOf(node.value, out);
-    out.push(Array.isArray(node.value) ? { kind: "list", values: node.value } : { kind: "value", value: node.value });
-    return out;
-  }
-  if (Array.isArray(node)) {
-    out.push({ kind: "list", values: node.map(listValue) });
-    return out;
-  }
-  if (is(node, Table)) {
-    out.push({ kind: "table", table: node });
-    return out;
-  }
-  if (node === null || ["string", "number", "boolean", "bigint"].includes(typeof node)) {
-    out.push({ kind: "value", value: node });
-    return out;
-  }
-  if (node instanceof Date) {
-    out.push({ kind: "value", value: node });
-    return out;
-  }
-  throw new UnsupportedQuery(`sql chunk ${Object.prototype.toString.call(node)}`);
-}
-
 class Parser {
   private position = 0;
 
@@ -110,6 +40,7 @@ class Parser {
     private readonly tokens: readonly Token[],
     private readonly lookup: Lookup,
     private readonly subselect: Subselect,
+    private readonly group: readonly Lookup[] | null = null,
   ) {}
 
   done(): boolean {
@@ -189,10 +120,7 @@ class Parser {
         }));
         return negatedIn ? (found === null ? null : !found) : found;
       }
-      const list = this.tokens[this.position];
-      if (list?.kind !== "list") throw new UnsupportedQuery("in without a literal list");
-      this.position += 1;
-      const hits = list.values.map((value) => {
+      const hits = this.inList().map((value) => {
         const order = compare(left, value);
         return order === null ? null : order === 0;
       });
@@ -352,7 +280,10 @@ class Parser {
 
   operand(): unknown {
     let value = this.casts(this.atom());
-    for (let operator = this.peekWord(); operator !== undefined && ARITHMETIC.has(operator); operator = this.peekWord()) {
+    const classes = new Set<string>();
+    for (let operator = this.peekWord(); operator !== undefined && (ADDITIVE.has(operator) || MULTIPLICATIVE.has(operator)); operator = this.peekWord()) {
+      classes.add(ADDITIVE.has(operator) ? "additive" : "multiplicative");
+      if (classes.size > 1) throw new UnsupportedQuery("arithmetic mixing precedence levels");
       this.position += 1;
       value = combine(operator, value, this.casts(this.atom()));
     }
@@ -399,9 +330,74 @@ class Parser {
     return toChar(value, zone, format);
   }
 
+  private aggregateOf(name: string): unknown {
+    const group = this.group;
+    if (group === null) throw new UnsupportedQuery(`${name}() outside a grouped select`);
+    const open = this.position + 1;
+    const close = this.closingParen(open);
+    const distinct = this.identAt(open + 1) === "distinct";
+    const start = distinct ? open + 2 : open + 1;
+    const star = this.peekWordAt(start) === "*" && start + 1 === close;
+    this.position = close + 1;
+    let kept = group;
+    if (this.identAt(this.position) === "filter") {
+      const filterOpen = this.position + 1;
+      const filterClose = this.closingParen(filterOpen);
+      if (this.identAt(filterOpen + 1) !== "where") throw new UnsupportedQuery("aggregate filter without where");
+      kept = group.filter((lookup) => this.complete(this.nested(filterOpen + 2, filterClose, lookup), (parser) => parser.expression()) === true);
+      this.position = filterClose + 1;
+    }
+    if (star) {
+      if (name !== "count" || distinct) throw new UnsupportedQuery(`${name}(*)`);
+      return kept.length;
+    }
+    return aggregate(name, kept.map((lookup) => this.complete(this.nested(start, close, lookup), (parser) => parser.operand())), distinct);
+  }
+
+  private inList(): readonly unknown[] {
+    const list = this.tokens[this.position];
+    if (list?.kind === "list") {
+      this.position += 1;
+      return list.values;
+    }
+    if (!this.take("(")) throw new UnsupportedQuery("in without a literal list");
+    const values = [this.operand()];
+    while (this.take(",")) values.push(this.operand());
+    this.expect(")");
+    return values;
+  }
+
+  private complete<T>(parser: Parser, read: (parser: Parser) => T): T {
+    const value = read(parser);
+    if (!parser.done()) throw new UnsupportedQuery("trailing tokens inside a function argument");
+    return value;
+  }
+
+  private callArguments(name: string): unknown[] {
+    this.ident(name);
+    this.expect("(");
+    const values = [this.operand()];
+    while (this.take(",")) values.push(this.operand());
+    this.expect(")");
+    return values;
+  }
+
+  private extractOf(): number | null {
+    this.ident("extract");
+    this.expect("(");
+    this.ident("epoch");
+    this.ident("from");
+    const value = this.operand();
+    this.expect(")");
+    return epochOf(value);
+  }
+
   private atom(): unknown {
     if (this.subqueryAt(this.position)) return this.subquery()[0] ?? null;
     const name = this.identAt(this.position);
+    if (name !== undefined && AGGREGATES.has(name) && this.peekWordAt(this.position + 1) === "(") return this.aggregateOf(name);
+    if (name === "extract") return this.extractOf();
+    if (name === "coalesce") return this.callArguments("coalesce").find((value) => value !== null && value !== undefined) ?? null;
     if (name === "case") return this.caseOf();
     if (name === "to_char") return this.toCharOf();
     if (name === "now" && this.peekWordAt(this.position + 1) === "(" && this.peekWordAt(this.position + 2) === ")") {
@@ -423,25 +419,35 @@ class Parser {
   }
 }
 
-export function evaluate(node: unknown, lookup: Lookup, subselect: Subselect = NO_SUBSELECT): Truth {
+export function evaluate(node: unknown, lookup: Lookup, subselect: Subselect = NO_SUBSELECT, group: readonly Lookup[] | null = null): Truth {
   if (node === undefined) return true;
-  const parser = new Parser(tokensOf(node), lookup, subselect);
+  const parser = new Parser(tokensOf(node), lookup, subselect, group);
   const truth = parser.expression();
   if (!parser.done()) throw new UnsupportedQuery("trailing tokens after a predicate");
   return truth;
 }
 
-export function scalar(node: unknown, lookup: Lookup, subselect: Subselect = NO_SUBSELECT): unknown {
+export function scalar(node: unknown, lookup: Lookup, subselect: Subselect = NO_SUBSELECT, group: readonly Lookup[] | null = null): unknown {
   if (is(node, Column)) return lookup(node);
   const tokens = tokensOf(node);
   if (tokens.length === 1 && tokens[0].kind === "column") return lookup(tokens[0].column);
   if (tokens.length === 1 && tokens[0].kind === "value") return tokens[0].value;
-  const parser = new Parser(tokens, lookup, subselect);
+  const parser = new Parser(tokens, lookup, subselect, group);
   if (parser.startsWithValue()) {
     const value = parser.operand();
     if (parser.done()) return value;
   }
-  return evaluate(node, lookup, subselect);
+  return evaluate(node, lookup, subselect, group);
+}
+
+export function groupOrderTerm(node: unknown, lookup: Lookup, subselect: Subselect, group: readonly Lookup[]): { readonly value: unknown; readonly descending: boolean } {
+  const tokens = tokensOf(node);
+  const last = tokens[tokens.length - 1];
+  const direction = last?.kind === "word" && (last.text === "asc" || last.text === "desc") ? last.text : null;
+  const parser = new Parser(direction === null ? tokens : tokens.slice(0, -1), lookup, subselect, group);
+  const value = parser.operand();
+  if (!parser.done()) throw new UnsupportedQuery("grouped orderBy expression");
+  return { value, descending: direction === "desc" };
 }
 
 export function orderKey(node: unknown): { readonly column: Column; readonly descending: boolean } {
