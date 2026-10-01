@@ -106,7 +106,7 @@ export const DECLARED_RAW_SCOPE = new Map([
   ],
   [
     "src/modules/timesheets/core/periods-read.service.ts",
-    "Authorises one already-fetched period row in process, and treats team as a bypass where every list treats it as own — a pre-existing difference this migration preserved rather than silently unified.",
+    "Authorises one already-fetched period row in process; it reads the scope only to decide whether team needs the list predicate re-probed against that row id, so the check and the query cannot disagree.",
   ],
   [
     "src/modules/expenses/expenses.controller.ts",
