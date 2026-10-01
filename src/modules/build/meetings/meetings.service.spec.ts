@@ -38,6 +38,15 @@ function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
+function projectDecision() {
+  const row = { from: () => row, where: () => row, limit: async () => [projectAccessRow()] };
+  return row;
+}
+
+function meetingWriter(): AccessService {
+  return stubService<AccessService>({ scopeFor: standingAccess({ "build:manage": "all" }).scopeFor });
+}
+
 beforeEach(() => {
   jest.resetAllMocks();
 });
@@ -53,13 +62,13 @@ describe("MeetingsService.addAttendee — member validation", () => {
       query: {
         projectMeetings: { findFirst: jest.fn().mockResolvedValue({ id: 2, orgId: "org-1", projectId: 1 }) },
       },
-      select: jest.fn().mockReturnValue(memberChain),
+      select: jest.fn().mockReturnValueOnce(projectDecision()).mockReturnValue(memberChain),
     } as unknown as Db;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+    const mockAccess = meetingWriter();
 
     const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     await expect(
-      svc.addAttendee("org-1", "actor-1", 1, 2, { userId: "non-member" }),
+      svc.addAttendee(makeU("org-1"), 1, 2, { userId: "non-member" }),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -77,13 +86,13 @@ describe("MeetingsService.addAttendee — member validation", () => {
       query: {
         projectMeetings: { findFirst: jest.fn().mockResolvedValue({ id: 2, orgId: "org-1", projectId: 1 }) },
       },
-      select: jest.fn().mockReturnValue(memberChain),
+      select: jest.fn().mockReturnValueOnce(projectDecision()).mockReturnValue(memberChain),
       insert: jest.fn().mockReturnValue(insertChain),
     } as unknown as Db;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+    const mockAccess = meetingWriter();
 
     const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
-    const result = await svc.addAttendee("org-1", "actor-1", 1, 2, { userId: "member-user" });
+    const result = await svc.addAttendee(makeU("org-1"), 1, 2, { userId: "member-user" });
     expect(result).toEqual({ meetingId: 2, userId: "member-user" });
   });
 
@@ -92,12 +101,13 @@ describe("MeetingsService.addAttendee — member validation", () => {
       query: {
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
+      select: jest.fn().mockReturnValue(projectDecision()),
     } as unknown as Db;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+    const mockAccess = meetingWriter();
 
     const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     await expect(
-      svc.addAttendee("org-1", "actor-1", 1, 999, { userId: "user-x" }),
+      svc.addAttendee(makeU("org-1"), 1, 999, { userId: "user-x" }),
     ).rejects.toThrow(NotFoundException);
   });
 });
@@ -140,12 +150,13 @@ describe("MeetingsService.upsertStandup — caller-scoped write", () => {
       query: {
         projectMeetings: { findFirst: jest.fn().mockResolvedValue({ id: 2 }) },
       },
+      select: jest.fn().mockReturnValue(projectDecision()),
       insert: jest.fn().mockReturnValue({ values: insertValues }),
     } as unknown as Db;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+    const mockAccess = meetingWriter();
 
     const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
-    await svc.upsertStandup("org-1", "caller-1", 1, 2, {
+    await svc.upsertStandup({ ...makeU("org-1"), userId: "caller-1" }, 1, 2, {
       yesterday: "reviewed PRs",
       today: "writing tests",
       blockers: undefined,
@@ -161,12 +172,13 @@ describe("MeetingsService.upsertStandup — caller-scoped write", () => {
       query: {
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
+      select: jest.fn().mockReturnValue(projectDecision()),
     } as unknown as Db;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+    const mockAccess = meetingWriter();
 
     const svc = new MeetingsService(mockDb, mockAccess, mockAudit);
     await expect(
-      svc.upsertStandup("org-1", "caller-1", 1, 999, { today: "work" }),
+      svc.upsertStandup({ ...makeU("org-1"), userId: "caller-1" }, 1, 999, { today: "work" }),
     ).rejects.toThrow(NotFoundException);
   });
 });

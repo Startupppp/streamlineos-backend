@@ -99,7 +99,7 @@ export class MeetingsController {
     @Body() body: UpdateMeetingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateMeeting(u.orgId, u.userId, projectId, meetingId, body);
+    return this.svc.updateMeeting(u, projectId, meetingId, body);
   }
 
   @Delete(":meetingId")
@@ -112,7 +112,7 @@ export class MeetingsController {
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteMeeting(u.orgId, u.userId, projectId, meetingId);
+    return this.svc.deleteMeeting(u, projectId, meetingId);
   }
 
   @Post(":meetingId/attendees")
@@ -126,7 +126,7 @@ export class MeetingsController {
     @Body() body: AddAttendeeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.addAttendee(u.orgId, u.userId, projectId, meetingId, body);
+    return this.svc.addAttendee(u, projectId, meetingId, body);
   }
 
   @Delete(":meetingId/attendees/:attendeeUserId")
@@ -140,7 +140,7 @@ export class MeetingsController {
     @Param("attendeeUserId") attendeeUserId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.removeAttendee(u.orgId, u.userId, projectId, meetingId, attendeeUserId);
+    return this.svc.removeAttendee(u, projectId, meetingId, attendeeUserId);
   }
 
   @Put(":meetingId/standup")
@@ -153,6 +153,6 @@ export class MeetingsController {
     @Body() body: UpsertStandupInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.upsertStandup(u.orgId, u.userId, projectId, meetingId, body);
+    return this.svc.upsertStandup(u, projectId, meetingId, body);
   }
 }
