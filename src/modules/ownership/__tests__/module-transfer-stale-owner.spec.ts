@@ -94,7 +94,7 @@ async function buildService(mockDb: object) {
       },
       {
         provide: NotificationDispatchService,
-        useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+        useValue: { emit: jest.fn().mockResolvedValue(undefined), emitInTx: jest.fn().mockResolvedValue(undefined) },
       },
       {
         provide: OrganizationSagaService,

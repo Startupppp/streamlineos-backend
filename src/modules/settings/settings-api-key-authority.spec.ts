@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { ApiTokensService } from "../api-tokens/core/api-tokens.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { CacheService } from "../../common/cache/cache.service";
@@ -39,6 +40,12 @@ const OWNER = actor({
 const CLAIMS_ONLY_OWNER = actor({ role: "MEMBER", isOrgOwner: true });
 
 async function buildService(existingKey: { id: string } | null = { id: "key-1" }) {
+  const issue = jest.fn().mockResolvedValue({ id: "key-new" });
+  const revoke = jest.fn().mockImplementation(() =>
+    existingKey
+      ? Promise.resolve("revoked")
+      : Promise.reject(new NotFoundException("API token not found")),
+  );
   const findMany = jest.fn().mockResolvedValue([]);
   const findFirst = jest.fn().mockResolvedValue(existingKey ?? undefined);
   const insertValues = jest.fn().mockResolvedValue(undefined);
@@ -70,12 +77,13 @@ async function buildService(existingKey: { id: string } | null = { id: "key-1" }
       { provide: DRIZZLE, useValue: db },
       { provide: OrgMembershipService, useValue: { updateMemberRole: jest.fn() } },
       { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateForOrg: jest.fn() } },
+      { provide: ApiTokensService, useValue: { issue, revoke } },
     ],
   }).compile();
 
   return {
     service: moduleRef.get(SettingsService),
-    mocks: { findMany, findFirst, insertValues, updateWheres, sets },
+    mocks: { findMany, findFirst, insertValues, updateWheres, sets, issue, revoke },
   };
 }
 
@@ -95,6 +103,8 @@ describe("SettingsService — authority is structural, not a permission key", ()
     expect(mocks.findFirst).not.toHaveBeenCalled();
     expect(mocks.insertValues).not.toHaveBeenCalled();
     expect(mocks.updateWheres).toHaveLength(0);
+    expect(mocks.issue).not.toHaveBeenCalled();
+    expect(mocks.revoke).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -143,25 +153,38 @@ describe("SettingsService — API key reads and revocation", () => {
     expect(params).toContain(false);
   });
 
-  it("revokes by setting isRevoked, scoped to both the key id and the caller org", async () => {
+  it("revokes through the single API-key writer, scoped to the caller org and recording the caller as actor", async () => {
     const { service, mocks } = await buildService();
 
     await expect(service.revokeApiKey(ORG_ADMIN, "key-1")).resolves.toEqual({ success: true });
 
-    expect(mocks.sets).toEqual([{ isRevoked: true }]);
-    const { sql, params } = render(mocks.updateWheres[0]);
-    expect(sql).toContain('"api_keys"."id" = $');
-    expect(sql).toContain('"api_keys"."org_id" = $');
-    expect(params).toEqual(expect.arrayContaining(["key-1", "org-1"]));
+    expect(mocks.revoke).toHaveBeenCalledWith("org-1", "actor-1", "key-1");
+    expect(mocks.updateWheres).toHaveLength(0);
   });
 
-  it("answers NotFound for another org's key id and writes nothing", async () => {
+  it("answers NotFound for another org's key id and writes nothing itself", async () => {
     const { service, mocks } = await buildService(null);
 
     await expect(service.revokeApiKey(ORG_ADMIN, "key-foreign")).rejects.toBeInstanceOf(
       NotFoundException,
     );
 
+    expect(mocks.revoke).toHaveBeenCalledWith("org-1", "actor-1", "key-foreign");
     expect(mocks.updateWheres).toHaveLength(0);
+  });
+
+  it("creates through the single API-key writer with the caller's scopes and returns the raw key once", async () => {
+    const { service, mocks } = await buildService();
+
+    const created = await service.createApiKey(ORG_ADMIN, { name: "k", scopes: ["leads:write"] });
+
+    expect(mocks.issue).toHaveBeenCalledWith(
+      "org-1",
+      "actor-1",
+      expect.objectContaining({ name: "k", scopes: ["leads:write"], expiresAt: null }),
+      expect.objectContaining({ id: created.id, keyPrefix: created.keyPrefix }),
+    );
+    expect(created.key.startsWith(created.keyPrefix)).toBe(true);
+    expect(mocks.insertValues).not.toHaveBeenCalled();
   });
 });

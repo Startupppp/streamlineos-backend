@@ -1,6 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import { AuditService } from "../../../common/audit/audit.service";
+import type { CacheService } from "../../../common/cache/cache.service";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { loginHistory, userPreferences, userSessions } from "../../../db/schema";
 import type { SessionsService } from "../../sessions/sessions.service";
 import type {
@@ -37,7 +39,7 @@ import { keysetBefore } from "../../../common/pagination/keyset";
 
 export interface UserAccountRecordDeps {
   readonly db: Db;
-  readonly audit: AuditService;
+  readonly cache: CacheService;
   readonly sessions: Pick<SessionsService, "publishRevocations">;
   /**
    * `UserProfileService.assertMember`, bound: throws `NotFoundException` unless
@@ -71,21 +73,24 @@ export async function revokeSession(
   actorUserId: string,
 ) {
   await deps.assertMember(orgId, userId);
-  await deps.db
-    .update(userSessions)
-    .set({ isRevoked: true })
-    .where(
-      and(eq(userSessions.id, sessionId), eq(userSessions.userId, userId)),
-    );
-  await deps.sessions.publishRevocations([sessionId]);
-  deps.audit.log({
-    action: "user.session.revoked",
-    userId: actorUserId,
-    orgId,
-    targetId: userId,
-    targetType: "user",
-    metadata: { sessionId },
-  });
+  await runInTenantTransaction(
+    deps.db,
+    (tx) =>
+      commitAccessChange(tx, orgId, {
+        audit: {
+          action: "user.session.revoked",
+          userId: actorUserId,
+          targetId: userId,
+          targetType: "user",
+          metadata: { sessionId },
+        },
+        revoke: {
+          cache: deps.cache,
+          loses: [{ kind: "identity", userId, sessions: deps.sessions, sessionIds: [sessionId] }],
+        },
+      }),
+    { orgId },
+  );
   return { success: true };
 }
 
@@ -96,24 +101,23 @@ export async function revokeAllSessions(
   actorUserId: string,
 ) {
   await deps.assertMember(orgId, userId);
-  const active = await deps.db
-    .select({ id: userSessions.id })
-    .from(userSessions)
-    .where(
-      and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
-    );
-  await deps.db
-    .update(userSessions)
-    .set({ isRevoked: true })
-    .where(eq(userSessions.userId, userId));
-  await deps.sessions.publishRevocations(active.map((session) => session.id));
-  deps.audit.log({
-    action: "user.sessions.revoked_all",
-    userId: actorUserId,
-    orgId,
-    targetId: userId,
-    targetType: "user",
-  });
+  await runInTenantTransaction(
+    deps.db,
+    (tx) =>
+      commitAccessChange(tx, orgId, {
+        audit: {
+          action: "user.sessions.revoked_all",
+          userId: actorUserId,
+          targetId: userId,
+          targetType: "user",
+        },
+        revoke: {
+          cache: deps.cache,
+          loses: [{ kind: "identity", userId, sessions: deps.sessions }],
+        },
+      }),
+    { orgId },
+  );
   return { success: true };
 }
 

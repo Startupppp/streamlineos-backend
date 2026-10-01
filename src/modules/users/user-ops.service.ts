@@ -42,6 +42,7 @@ import {
 } from "../../common/rbac/assert-may-grant-role";
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
 import { withMembershipMutations } from "../../common/org/membership-mutations";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 
@@ -261,26 +262,30 @@ export class UserOpsService {
         }
       }
 
+      const access = {
+        audit: {
+          action: "user.bulk_updated",
+          userId: actorUserId,
+          targetType: "user",
+          metadata: {
+            userIds: tenantUserIds,
+            changes: { role, departmentId, branchId, teamId },
+          },
+        },
+        revoke: {
+          cache: this.cache,
+          loses: [{ kind: "standing" as const, userIds: tenantUserIds }],
+        },
+      };
       if (role) {
         await assertNoOwnerAmongTargets(tx, orgId, tenantUserIds);
-        await membership.changeRoles(tx, { orgId, userIds: tenantUserIds, role });
+        await membership.changeRoles(tx, { orgId, userIds: tenantUserIds, role }, access);
+      } else {
+        await commitAccessChange(tx, orgId, access);
       }
 
       return tenantUserIds;
     }));
-
-    if (scopedIds.length === 0) return { success: true, updated: 0 };
-
-    this.audit.log({
-      action: "user.bulk_updated",
-      userId: actorUserId,
-      orgId,
-      targetType: "user",
-      metadata: {
-        userIds: scopedIds,
-        changes: { role, departmentId, branchId, teamId },
-      },
-    });
 
     return { success: true, updated: scopedIds.length };
   }

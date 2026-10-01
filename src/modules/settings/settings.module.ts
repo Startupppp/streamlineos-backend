@@ -4,6 +4,7 @@ import { OrganizationModule } from "../organization/core/organization.module";
 import { AiUsageModule } from "../ai/usage/ai-usage.module";
 import { CrmCustomFieldsModule } from "../crm/custom-fields/crm-custom-fields.module";
 import { IntegrationsGitModule } from "../integrations/git/integrations-git.module";
+import { ApiTokensModule } from "../api-tokens/core/api-tokens.module";
 import { SettingsController } from "./settings.controller";
 import { SettingsDeprecatedRoutesController } from "./settings-deprecated-routes.controller";
 import { SettingsService } from "./settings.service";
@@ -16,6 +17,7 @@ import { SettingsAutomationsService } from "./settings-automations.service";
     AiUsageModule,
     CrmCustomFieldsModule,
     IntegrationsGitModule,
+    ApiTokensModule,
   ],
   controllers: [SettingsController, SettingsDeprecatedRoutesController],
   providers: [SettingsService, SettingsAutomationsService],

@@ -152,6 +152,7 @@ export class ModuleAccessGroupCrudService {
           targetType: "role",
           metadata: { moduleKey, name: created.name },
         },
+        revoke: { cache: this.cache, loses: [], listKeys: [CACHE_KEYS.rolesList(actor.orgId)] },
       });
       return created;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
@@ -164,7 +165,6 @@ export class ModuleAccessGroupCrudService {
       if (getPostgresErrorCode(error) === "23505") throw new ConflictException(`A group named "${input.name}" already exists in this module`);
       throw error;
     });
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     return { id: row.id, name: row.name, isSystem: row.isSystem, version: row.version, memberCount: 0, permissions: [] };
   }
 
@@ -186,6 +186,7 @@ export class ModuleAccessGroupCrudService {
             targetType: "role",
             metadata: { moduleKey, oldName: existing.name, newName: renamed.name },
           },
+          revoke: { cache: this.cache, loses: [], listKeys: [CACHE_KEYS.rolesList(actor.orgId)] },
         });
       }
       return updated;
@@ -200,7 +201,6 @@ export class ModuleAccessGroupCrudService {
       throw error;
     });
     if (!row) throw new BadRequestException("Failed to rename group");
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     const refreshed = await this.fetchSingleGroup(actor.orgId, moduleKey, row.id);
     if (!refreshed) throw new NotFoundException("Group not found");
     return refreshed;
@@ -223,9 +223,9 @@ export class ModuleAccessGroupCrudService {
           targetType: "role",
           metadata: { moduleKey, name: existing.name },
         },
+        revoke: { cache: this.cache, loses: [], listKeys: [CACHE_KEYS.rolesList(actor.orgId)] },
       });
     }, { orgId: actor.orgId });
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     return { success: true };
   }
 }

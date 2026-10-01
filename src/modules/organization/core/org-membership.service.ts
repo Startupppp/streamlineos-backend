@@ -13,10 +13,9 @@ import { and, eq } from "drizzle-orm";
 import { organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
+import type { CommitAccessAudit } from "../../../common/rbac/access-mutation-commit";
 import { SessionsService } from "../../sessions/sessions.service";
 import { stableHash } from "../../../common/cache/cache-hash";
 import type { ListMembersInput } from "./dto/organization.schemas";
@@ -43,7 +42,6 @@ export class OrgMembershipService {
   constructor(
     private readonly ably: AblyService,
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly sessions: SessionsService,
     private readonly access: AccessService,
@@ -72,23 +70,14 @@ export class OrgMembershipService {
     return this.accessRevocation.revokeOrgScopedAccess(orgId, memberUserId, cause);
   }
 
-  async revokeAccountAccess(orgId: string, memberUserId: string): Promise<void> {
-    return this.accessRevocation.revokeAccountAccess(orgId, memberUserId);
-  }
-
-  private async notifyAccessLoss(
+  async revokeAccountAccess(
     orgId: string,
     memberUserId: string,
-    kind: "removed" | "suspended",
+    audit: CommitAccessAudit,
   ): Promise<void> {
-    return this.accessRevocation.notifyAccessLoss(orgId, memberUserId, kind);
-  }
-
-  private async invalidateMemberSessionCaches(
-    orgId: string,
-    memberUserId: string,
-  ): Promise<void> {
-    return this.accessRevocation.invalidateMemberSessionCaches(orgId, memberUserId);
+    return this.accessRevocation.revokeAccountAccess(orgId, memberUserId, audit, () =>
+      this.invalidateMemberListCaches(orgId),
+    );
   }
 
   private async invalidateMemberListCaches(orgId: string): Promise<void> {
@@ -193,40 +182,48 @@ export class OrgMembershipService {
             );
           }
 
-          await membership.changeRole(tx, { orgId, userId: memberUserId, role });
+          await membership.changeRole(
+            tx,
+            { orgId, userId: memberUserId, role },
+            {
+              audit: {
+                action: "org.member_role_changed",
+                userId: actorUserId,
+                targetId: memberUserId,
+                targetType: "user",
+                metadata: { newRole: role },
+              },
+              revoke: {
+                cache: this.cache,
+                loses: [{ kind: "standing", userIds: [memberUserId] }],
+              },
+              notify: {
+                via: this.dispatch,
+                events: [
+                  {
+                    eventKey: "security.role.changed",
+                    orgId,
+                    actorUserId,
+                    targetUserIds: [memberUserId],
+                    entityType: "user",
+                    entityId: memberUserId,
+                    title: "Your role or permissions were updated",
+                    message: `Your organization role is now ${role}. Your access permissions may have changed.`,
+                    link: "/settings/security",
+                  },
+                ],
+              },
+              afterCommit: () =>
+                Promise.all([
+                  this.invalidateMemberListCaches(orgId),
+                  this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
+                ]).then(() => undefined),
+            },
+          );
         },
         { orgId },
       ),
     );
-
-    await Promise.all([
-      this.invalidateMemberListCaches(orgId),
-      this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
-      this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-    ]);
-
-    this.audit.log({
-      action: "org.member_role_changed",
-      userId: actorUserId,
-      orgId,
-      targetId: memberUserId,
-      targetType: "user",
-      metadata: { newRole: role },
-    });
-
-    void this.dispatch
-      .emit({
-        eventKey: "security.role.changed",
-        orgId,
-        actorUserId,
-        targetUserIds: [memberUserId],
-        entityType: "user",
-        entityId: memberUserId,
-        title: "Your role or permissions were updated",
-        message: `Your organization role is now ${role}. Your access permissions may have changed.`,
-        link: "/settings/security",
-      })
-      .catch(() => undefined);
 
     return { success: true };
   }

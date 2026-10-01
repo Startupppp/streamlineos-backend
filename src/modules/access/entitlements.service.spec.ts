@@ -14,6 +14,10 @@ type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
 };
 
+async function settleAfterCommit(): Promise<void> {
+  for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve));
+}
+
 function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number | null = 999) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
@@ -332,6 +336,8 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
+      await settleAfterCommit();
+
       // Three, not one, and the split is the point. Every write — the upsert, the
       // ownership row, the version bump — is still one atomic transaction.
       // bumpPermissionsVersion registers an afterCommit hook to publish the version
@@ -350,7 +356,17 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.insert).toHaveBeenCalledTimes(4);
+      await settleAfterCommit();
+
+      expect(mocks.insert).toHaveBeenCalledTimes(5);
+      expect(mocks.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "org.module_enabled",
+          userId: "user-1",
+          orgId: "org-1",
+          resourceId: "hr",
+        }),
+      );
       expect(mocks.values).toHaveBeenCalledWith({
         orgId: "org-1",
         moduleKey: "hr",
@@ -367,6 +383,8 @@ describe("EntitlementsService", () => {
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
+
+      await settleAfterCommit();
 
       expect(mocks.values).toHaveBeenCalledWith({
         orgId: "org-1",
@@ -385,6 +403,8 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
+      await settleAfterCommit();
+
       // One set_config per transaction and no other raw SQL: the write transaction,
       // the after-commit transaction bumpPermissionsVersion's registerAfterCommit
       // hook opens to publish the version bump post-commit, and the deferred
@@ -398,6 +418,8 @@ describe("EntitlementsService", () => {
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
+
+      await settleAfterCommit();
 
       expect(mocks.execute).toHaveBeenCalledTimes(3);
     });
@@ -426,6 +448,8 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
+      await settleAfterCommit();
+
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:module:hr");
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:modules");
       // Exactly the two org-scoped keys go through the single-key path. The member
@@ -443,6 +467,8 @@ describe("EntitlementsService", () => {
       const { cache, mocks: cacheMocks } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "actor-not-a-member");
+
+      await settleAfterCommit();
 
       // ONE call carrying every member's key, not one call per member. A
       // `members.map((m) => cache.invalidate(...))` reads as batched and is not:
@@ -477,6 +503,8 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
+      await settleAfterCommit();
+
       expect(cacheMocks.invalidateMany).toHaveBeenCalledTimes(2);
       expect(cacheMocks.invalidateMany).toHaveBeenNthCalledWith(
         2,
@@ -494,6 +522,8 @@ describe("EntitlementsService", () => {
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
+        await settleAfterCommit();
+
         expect(mocks.values).toHaveBeenCalledWith({
           orgId: "org-1",
           moduleKey: "hr",
@@ -508,9 +538,11 @@ describe("EntitlementsService", () => {
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
+        await settleAfterCommit();
+
         expect(mocks.txSelect).toHaveBeenCalledTimes(1);
         expect(mocks.onConflictDoNothing).not.toHaveBeenCalled();
-        expect(mocks.insert).toHaveBeenCalledTimes(2);
+        expect(mocks.insert).toHaveBeenCalledTimes(3);
       });
 
       it("skips ownership seeding when the org has no owner membership set", async () => {
@@ -519,9 +551,11 @@ describe("EntitlementsService", () => {
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
+        await settleAfterCommit();
+
         expect(mocks.txSelect).toHaveBeenCalledTimes(2);
         expect(mocks.onConflictDoNothing).not.toHaveBeenCalled();
-        expect(mocks.insert).toHaveBeenCalledTimes(2);
+        expect(mocks.insert).toHaveBeenCalledTimes(3);
       });
 
       it("uses onConflictDoNothing so re-enabling the same module is idempotent", async () => {
@@ -529,6 +563,8 @@ describe("EntitlementsService", () => {
         const { cache } = buildMockCache();
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+        await settleAfterCommit();
 
         expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(2);
         expect(mocks.onConflictDoUpdate).toHaveBeenCalledTimes(2);
@@ -539,6 +575,8 @@ describe("EntitlementsService", () => {
         const { cache } = buildMockCache();
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+        await settleAfterCommit();
 
         expect(mocks.values).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -556,8 +594,10 @@ describe("EntitlementsService", () => {
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
+        await settleAfterCommit();
+
         expect(mocks.onConflictDoNothing).toHaveBeenCalledTimes(1);
-        expect(mocks.insert).toHaveBeenCalledTimes(3);
+        expect(mocks.insert).toHaveBeenCalledTimes(4);
       });
     });
   });

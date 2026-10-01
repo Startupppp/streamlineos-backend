@@ -7,5 +7,6 @@ import { NotificationsModule } from "../../notifications/notifications.module";
   imports: [NotificationsModule],
   controllers: [ApiTokensController],
   providers: [ApiTokensService],
+  exports: [ApiTokensService],
 })
 export class ApiTokensModule {}

@@ -10,7 +10,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { ModuleDisabledException } from "../../common/http/api-exceptions";
-import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { CacheService } from "../../common/cache/cache.service";
 import { PLAN_LOCKED_MODULES } from "../billing/core/plan-entitlements.constants";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -231,15 +230,26 @@ export class EntitlementsService implements OnModuleInit {
         }
       }
 
-      await commitAccessChange(tx, orgId);
+      await commitAccessChange(tx, orgId, {
+        audit: {
+          action: enabled ? "org.module_enabled" : "org.module_disabled",
+          userId: enabledBy,
+          targetId: orgId,
+          targetType: "organization",
+          resourceType: "module",
+          resourceId: moduleKey,
+          metadata: { moduleKey, enabled },
+        },
+        afterCommit: async () => {
+          this.moduleMapCache.delete(orgId);
+          await Promise.all([
+            this.cache.invalidateForOrg(orgId, `entitlements:module:${moduleKey}`),
+            this.cache.invalidateForOrg(orgId, "entitlements:modules"),
+          ]);
+          await this.bustActiveMemberSessions(orgId);
+        },
+      });
     }, { orgId });
-
-    this.moduleMapCache.delete(orgId);
-    await this.cache.invalidateForOrg(orgId, `entitlements:module:${moduleKey}`);
-    await this.cache.invalidateForOrg(orgId, "entitlements:modules");
-
-    const bustSessions = (): Promise<void> => this.bustActiveMemberSessions(orgId);
-    if (!registerAfterCommit(bustSessions)) await bustSessions();
   }
 
   /**

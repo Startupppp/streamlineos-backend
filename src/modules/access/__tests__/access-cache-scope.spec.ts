@@ -153,7 +153,7 @@ function buildService(
     cache,
     entitlements,
     makeMfaPolicyStub(),
-    new AccessVersionCache(wrappedDb, cache),
+    new AccessVersionCache(wrappedDb),
     membershipStubFromDb(defaultDb),
   );
 }
@@ -204,7 +204,7 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
-      new AccessVersionCache(wrappedDb2, cache as unknown as CacheService),
+      new AccessVersionCache(wrappedDb2),
       membershipStubFromDb(db),
     );
 
@@ -267,7 +267,7 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
-      new AccessVersionCache(dbForA, cache as unknown as CacheService),
+      new AccessVersionCache(dbForA),
       membershipStubFromDb(dbForA),
     );
     const svcB = new AccessService(
@@ -275,7 +275,7 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
-      new AccessVersionCache(dbForB, cache as unknown as CacheService),
+      new AccessVersionCache(dbForB),
       membershipStubFromDb(dbForB),
     );
 

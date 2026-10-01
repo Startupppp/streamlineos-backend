@@ -24,7 +24,6 @@ import { getOrgAdminRecipients } from "../../../common/tenant/org-admin-recipien
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
@@ -44,7 +43,11 @@ import {
   roleAssignments,
   users,
 } from "../../../db/schema";
-import { commitAccessChange, type DbOrTx } from "../../../common/rbac/access-mutation-commit";
+import {
+  commitAccessChange,
+  scheduleStandingRevocation,
+  type DbOrTx,
+} from "../../../common/rbac/access-mutation-commit";
 import { assertMayAssignRole } from "../../rbac/assert-role-assignment";
 import { resolveModuleStandingRole } from "../../rbac/resolve-module-standing-role";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -176,7 +179,7 @@ export class InvitationAcceptanceService {
     userId: string,
   ): Promise<unknown[]> {
     return Promise.all([
-      this.cache.invalidate(CACHE_KEYS.userSession(userId)),
+      scheduleStandingRevocation(this.cache, [userId], { withSessions: true }),
       this.cache.invalidateNamespaceForOrg(orgId, "org:members:list"),
       this.cache.invalidateForOrg(orgId, "rbac:members"),
       this.cache.invalidateForOrg(orgId, "module-access:candidates"),
@@ -618,7 +621,15 @@ export class InvitationAcceptanceService {
       )
       .onConflictDoNothing();
 
-    await commitAccessChange(tx, orgId);
+    await commitAccessChange(tx, orgId, {
+      audit: {
+        action: "user.invitation.module_access_granted",
+        systemActor: "invitation-acceptance",
+        targetId: String(membershipId),
+        targetType: "membership",
+        metadata: { invitationId, inviterMembershipId, roleIds: toAssign },
+      },
+    });
   }
 
   async decline(input: DeclineInvitationInput): Promise<{ ok: true }> {

@@ -241,6 +241,69 @@ describe("NotificationDispatchService durability", () => {
     expect(insertedValues[0]?.dedupeKey).toEqual(insertedValues[1]?.dedupeKey);
   });
 
+  function makePassedTx() {
+    const rows: Array<Record<string, unknown>> = [];
+    const tx = {
+      insert: jest.fn().mockImplementation(() => ({
+        values: jest.fn().mockImplementation((v: Array<Record<string, unknown>>) => {
+          rows.push(...v);
+          return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    return { tx, rows };
+  }
+
+  it("emitInTx writes the intent on the passed transaction, not the ambient one, and drains only after commit", async () => {
+    const afterCommit: AfterCommitHook[] = [];
+    const passed = makePassedTx();
+
+    await inRequestTransaction(afterCommit, () =>
+      svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], [input]),
+    );
+
+    expect(passed.rows).toHaveLength(1);
+    expect(passed.rows[0]).toMatchObject({ orgId: ORG, eventKey: input.eventKey });
+    expect(insertedValues).toHaveLength(0);
+    expect(resolveDefinition).not.toHaveBeenCalled();
+    expect(afterCommit).toHaveLength(1);
+
+    await afterCommit[0]?.();
+    expect(resolveDefinition).toHaveBeenCalledWith(ORG, input.eventKey);
+  });
+
+  it("emitInTx outside a request context still records the intent on the tx and never dispatches inline over the network", async () => {
+    const passed = makePassedTx();
+
+    await svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], [input]);
+
+    expect(passed.rows).toHaveLength(1);
+    expect(resolveDefinition).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("emitInTx records several events in one outbox insert and drains each after commit", async () => {
+    const afterCommit: AfterCommitHook[] = [];
+    const passed = makePassedTx();
+    const second: DispatchEventInput = { ...input, targetUserIds: ["user-2"] };
+
+    await inRequestTransaction(afterCommit, () =>
+      svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], [input, second]),
+    );
+
+    expect(passed.tx.insert).toHaveBeenCalledTimes(1);
+    expect(passed.rows).toHaveLength(2);
+    expect(afterCommit).toHaveLength(2);
+  });
+
+  it("emitInTx writes nothing when given no events", async () => {
+    const passed = makePassedTx();
+
+    await svc.emitInTx(passed.tx as unknown as Parameters<typeof svc.emitInTx>[0], []);
+
+    expect(passed.tx.insert).not.toHaveBeenCalled();
+  });
+
   it("does not queue a hook outside a request transaction", () => {
     expect(registerAfterCommit(() => Promise.resolve())).toBe(false);
   });

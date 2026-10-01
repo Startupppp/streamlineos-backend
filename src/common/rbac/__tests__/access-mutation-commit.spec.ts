@@ -308,10 +308,10 @@ describe("commitAccessChange — membership and group intents", () => {
 });
 
 describe("commitAccessChange — ownership intent (standing loss)", () => {
-  it("busts both parties' sessions and membership status after commit, and notifies inside the commit", async () => {
+  it("busts both parties' sessions and membership status after commit, and writes the notification outbox on the passed tx", async () => {
     const { tx, inserted } = makeTx();
     const cache = makeCache();
-    const notifier = { emit: jest.fn().mockResolvedValue(undefined) };
+    const notifier = { emitInTx: jest.fn().mockResolvedValue(undefined) };
     const event = { eventKey: "ownership.transfer.accepted", targetUserIds: ["from"] };
     const { hooks } = await inRequest(() =>
       commitAccessChange(tx, ORG, {
@@ -322,7 +322,8 @@ describe("commitAccessChange — ownership intent (standing loss)", () => {
     );
 
     expect(inserted[0]?.row).toMatchObject({ action: "ownership.transfer_accepted" });
-    expect(notifier.emit).toHaveBeenCalledWith(event);
+    expect(notifier.emitInTx).toHaveBeenCalledTimes(1);
+    expect(notifier.emitInTx).toHaveBeenCalledWith(tx, [event]);
     expect(bustMembershipStatusCacheMany).not.toHaveBeenCalled();
 
     await drain(hooks);
@@ -336,9 +337,9 @@ describe("commitAccessChange — ownership intent (standing loss)", () => {
 
   it("emits nothing when the notification carries no events", async () => {
     const { tx } = makeTx();
-    const notifier = { emit: jest.fn().mockResolvedValue(undefined) };
+    const notifier = { emitInTx: jest.fn().mockResolvedValue(undefined) };
     await commitAccessChange(tx, ORG, { notify: { via: notifier, events: [] } });
-    expect(notifier.emit).not.toHaveBeenCalled();
+    expect(notifier.emitInTx).not.toHaveBeenCalled();
     expect(bumpPermissionsVersion).toHaveBeenCalledTimes(1);
   });
 });
@@ -365,8 +366,8 @@ describe("commitAccessChange — identity intent (session revocation)", () => {
     expect(cache.invalidate).not.toHaveBeenCalled();
   });
 
-  it("does not fail the commit when Redis is down; the tombstone failure surfaces from the after-commit hook", async () => {
-    const { tx } = makeTx([], [{ id: "s-1" }]);
+  it("fails closed when Redis is down: the session is revoked on the tx, which the guard reads on a tombstone miss, and the tombstone failure surfaces from the after-commit hook", async () => {
+    const { tx, updates } = makeTx([], [{ id: "s-1" }]);
     const cache = makeCache();
     const sessions = { publishRevocations: jest.fn().mockRejectedValue(new Error("redis down")) };
     const { hooks } = await inRequest(() =>
@@ -376,6 +377,7 @@ describe("commitAccessChange — identity intent (session revocation)", () => {
     );
 
     expect(bumpPermissionsVersion).toHaveBeenCalledWith(tx, ORG);
+    expect(updates).toHaveBeenCalledWith(userSessions);
     const results = await Promise.allSettled(hooks.map((hook) => hook()));
     expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "subject");

@@ -13,10 +13,12 @@ import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { OrgMembershipReadService } from "./org-membership-read.service";
 import { AblyService } from "../../realtime/ably.service";
 
+let otherActiveMemberships: unknown[] = [{ n: 1 }];
+
 jest.mock("../../../common/tenant/with-identity", () => ({
   withIdentity: jest.fn(
     (_db: unknown, _userId: string, fn: (tx: unknown) => unknown) => {
-      const rows = [{ n: 1 }];
+      const rows = otherActiveMemberships;
       const chain: Record<string, unknown> = {};
       for (const method of ["select", "from", "innerJoin", "leftJoin", "where", "orderBy", "limit"]) {
         chain[method] = () => chain;
@@ -28,7 +30,7 @@ jest.mock("../../../common/tenant/with-identity", () => ({
 }));
 
 describe("OrgMembershipService access revocation", () => {
-  it("evicts only the requested organization without revoking account sessions", async () => {
+  async function evict() {
     const where = jest.fn().mockReturnValue(
       Object.assign(Promise.resolve(undefined), {
         returning: jest.fn().mockResolvedValue([]),
@@ -48,7 +50,14 @@ describe("OrgMembershipService access revocation", () => {
       execute: jest.fn().mockResolvedValue([]),
       select: jest.fn().mockReturnValue(selectChain),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
-      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue(
+          Object.assign(Promise.resolve(undefined), {
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+          }),
+        ),
+      }),
+      query: { users: { findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }) } },
       update,
     };
     const moduleRef = await Test.createTestingModule({
@@ -81,7 +90,7 @@ describe("OrgMembershipService access revocation", () => {
           provide: CacheService,
           useValue: { invalidate, invalidateNamespace: jest.fn() },
         },
-        { provide: SessionsService, useValue: { revokeAllForUser } },
+        { provide: SessionsService, useValue: { revokeAllForUser, publishRevocations: jest.fn() } },
         { provide: AccessService, useValue: {} },
         { provide: OrgMembershipReadService, useValue: {} },
       ],
@@ -93,6 +102,16 @@ describe("OrgMembershipService access revocation", () => {
     const updatedTables = update.mock.calls.map((call) =>
       getTableName(call[0] as Parameters<typeof getTableName>[0]),
     );
+    return { updatedTables, revokeAllForUser, invalidate };
+  }
+
+  afterEach(() => {
+    otherActiveMemberships = [{ n: 1 }];
+  });
+
+  it("evicts only the requested organization without revoking account sessions", async () => {
+    const { updatedTables, revokeAllForUser, invalidate } = await evict();
+
     expect(updatedTables).toEqual(
       expect.arrayContaining([
         "agent_tokens",
@@ -100,7 +119,17 @@ describe("OrgMembershipService access revocation", () => {
         "ownership_transfers",
       ]),
     );
+    expect(updatedTables).not.toContain("user_sessions");
     expect(revokeAllForUser).not.toHaveBeenCalled();
-    expect(invalidate).toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith("user:session:member-1");
+  });
+
+  it("ends the identity on the same transaction when the member has no other active organisation, never through a pre-commit Redis call", async () => {
+    otherActiveMemberships = [];
+
+    const { updatedTables, revokeAllForUser } = await evict();
+
+    expect(updatedTables).toEqual(expect.arrayContaining(["agent_tokens", "user_sessions"]));
+    expect(revokeAllForUser).not.toHaveBeenCalled();
   });
 });

@@ -94,7 +94,7 @@ function buildService(db: unknown): AccessService {
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
-    new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
+    new AccessVersionCache(wrappedDb),
     makeMembershipStateStub(),
   );
 }
@@ -376,7 +376,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
       getModuleMap: jest.fn().mockResolvedValue({}),
       getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     };
-    const versionCacheSvc = new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService);
+    const versionCacheSvc = new AccessVersionCache(db as unknown as Db);
     const svc = new AccessService(
       db as unknown as Db,
       cache as unknown as CacheService,
@@ -567,7 +567,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const logWarnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
 
     const db1 = withTenantTxMock(makeDb());
-    const versionCacheSvc2 = new AccessVersionCache(db1 as unknown as Db, cache as unknown as CacheService);
+    const versionCacheSvc2 = new AccessVersionCache(db1 as unknown as Db);
     const svc = new AccessService(
       db1 as unknown as Db,
       cache as unknown as CacheService,

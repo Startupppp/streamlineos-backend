@@ -1,6 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
-import type { AuditService } from "../../common/audit/audit.service";
+import type { CacheService } from "../../common/cache/cache.service";
 import type { SessionsService } from "../sessions/sessions.service";
 import type { EmploymentFactsService } from "../directory/employment-facts.service";
 import type { ReportingRelationshipService } from "../directory/reporting-relationship.service";
@@ -30,13 +30,13 @@ describe("UserProfileService — cross-tenant isolation", () => {
   }
 
   function makeService(memberRow: unknown): UserProfileService {
-    const audit: Pick<AuditService, "log"> = { log: jest.fn() };
+    const cache: Partial<CacheService> = {};
     const sessions: Partial<SessionsService> = {};
     const employment: Partial<EmploymentFactsService> = {};
     const activity: Partial<UserActivityService> = {};
     return new UserProfileService(
       makeDb(memberRow),
-      audit as AuditService,
+      cache as CacheService,
       sessions as SessionsService,
       employment as EmploymentFactsService,
       activity as UserActivityService,
@@ -67,10 +67,10 @@ describe("UserProfileService — cross-tenant isolation", () => {
         update: jest.fn().mockReturnValue({ set: updateSet }),
       } as unknown as Db;
 
-      const audit: Pick<AuditService, "log"> = { log: jest.fn() };
+      const cache: Partial<CacheService> = {};
       const svc = new UserProfileService(
         db,
-        audit as AuditService,
+        cache as CacheService,
         {} as SessionsService,
         {} as EmploymentFactsService,
         {} as UserActivityService,
@@ -120,7 +120,7 @@ describe("UserProfileService — account records never leave the tenant", () => 
     const publishRevocations = jest.fn().mockResolvedValue(undefined);
     const svc = new UserProfileService(
       db,
-      { log: jest.fn() } as unknown as AuditService,
+      {} as unknown as CacheService,
       { publishRevocations } as unknown as SessionsService,
       {} as unknown as EmploymentFactsService,
       {} as unknown as UserActivityService,

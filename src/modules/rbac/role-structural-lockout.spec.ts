@@ -103,7 +103,7 @@ describe("removeRoleMember — no lockout barrier after structural authority cha
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: NotificationDispatchService,
-          useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+          useValue: { emit: jest.fn().mockResolvedValue(undefined), emitInTx: jest.fn().mockResolvedValue(undefined) },
         },
         {
           provide: AccessService,

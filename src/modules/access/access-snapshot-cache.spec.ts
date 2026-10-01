@@ -88,10 +88,7 @@ function buildService() {
     getPlanLockedModules: jest.fn().mockResolvedValue([]),
   };
 
-  const versionCacheSvc = new AccessVersionCache(
-    db as unknown as Db,
-    cache as unknown as CacheService,
-  );
+  const versionCacheSvc = new AccessVersionCache(db as unknown as Db);
   const svc = new AccessService(
     db as unknown as Db,
     cache as unknown as CacheService,

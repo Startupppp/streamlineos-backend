@@ -160,8 +160,36 @@ describe("changeRole", () => {
     const updates = statementsOn(captured, 'update "organization_members"');
     expect(updates).toHaveLength(1);
     expect(updates[0]?.params).toEqual(expect.arrayContaining(["ORG_ADMIN", ORG, USER]));
-    expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "ORG_ADMIN");
+    expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "ORG_ADMIN", undefined);
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+  });
+
+  it("hands the caller's audit, revoke and notify intents to the structural sync's single commit", async () => {
+    const { tx } = makeTx();
+    const cache = makeCache();
+    const access = {
+      audit: { action: "org.member_role_changed", userId: "actor" },
+      revoke: { cache, loses: [{ kind: "standing" as const, userIds: [USER] }] },
+    };
+
+    await withMembershipMutations(cache, (membership) =>
+      membership.changeRole(tx, { orgId: ORG, userId: USER, role: "ORG_ADMIN" }, access),
+    );
+
+    expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "ORG_ADMIN", access);
+    expect(commitAccessChange).not.toHaveBeenCalled();
+  });
+
+  it("hands a bulk role change's intents to the batched sync", async () => {
+    const { tx } = makeTx([[1], [2]]);
+    const cache = makeCache();
+    const access = { audit: { action: "user.bulk_updated", userId: "actor" } };
+
+    await withMembershipMutations(cache, (membership) =>
+      membership.changeRoles(tx, { orgId: ORG, userIds: ["a", "b"], role: "MEMBER" }, access),
+    );
+
+    expect(syncStructuralRoleAssignments).toHaveBeenCalledWith(tx, ORG, [1, 2], "MEMBER", access);
   });
 });
 
@@ -191,8 +219,25 @@ describe("setLifecycleStatus", () => {
       USER,
       ORG,
     ]);
-    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, undefined);
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+  });
+
+  it("commits the status change once, carrying the caller's intents", async () => {
+    const { tx } = makeTx();
+    const cache = makeCache();
+    const access = { audit: { action: "org.member_suspended", userId: "actor" } };
+
+    await withMembershipMutations(cache, (membership) =>
+      membership.setLifecycleStatus(
+        tx,
+        { orgId: ORG, userId: USER, status: "SUSPENDED", occurredAt: new Date() },
+        access,
+      ),
+    );
+
+    expect(commitAccessChange).toHaveBeenCalledTimes(1);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, access);
   });
 
   it("reactivation stamps activated_at and clears both tombstones", async () => {
@@ -234,8 +279,25 @@ describe("deleteMembership", () => {
     );
 
     expect(statementsOn(captured, 'delete from "organization_members"')).toHaveLength(1);
-    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, undefined);
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+  });
+
+  it("commits the removal once, after the delete, carrying the caller's intents", async () => {
+    const { tx, captured } = makeTx();
+    const cache = makeCache();
+    const access = { audit: { action: "org.member_removed", userId: "actor" } };
+    (commitAccessChange as jest.Mock).mockImplementationOnce(() => {
+      expect(statementsOn(captured, 'delete from "organization_members"')).toHaveLength(1);
+      return Promise.resolve();
+    });
+
+    await withMembershipMutations(cache, (membership) =>
+      membership.deleteMembership(tx, { orgId: ORG, userId: USER }, access),
+    );
+
+    expect(commitAccessChange).toHaveBeenCalledTimes(1);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, access);
   });
 
   it("deleteMembershipsById scopes to the organisation and does not bump the version", async () => {

@@ -54,7 +54,13 @@ describe("OrgMembershipService member status guards", () => {
             sendMembershipSuspendedEmail: jest.fn().mockResolvedValue(undefined),
           },
         },
-        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: NotificationDispatchService,
+          useValue: {
+            emit: jest.fn().mockResolvedValue(undefined),
+            emitInTx: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: DRIZZLE, useValue: { query: { organizationMembers: { findFirst }, users: { findFirst: jest.fn().mockResolvedValue({ email: "member@example.com" }) } } } },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
@@ -146,6 +152,9 @@ function makeSelectChain(result: unknown[], endWithLimit = false) {
 
 function buildTxMock(selectResults: { result: unknown[]; endWithLimit?: boolean }[]) {
   let callIndex = 0;
+  const insertValues = jest.fn().mockReturnValue({
+    onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+  });
   return {
     execute: jest.fn().mockResolvedValue([]),
     select: jest.fn().mockImplementation(() => {
@@ -163,11 +172,8 @@ function buildTxMock(selectResults: { result: unknown[]; endWithLimit?: boolean 
         ),
       }),
     }),
-    insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
-      }),
-    }),
+    insert: jest.fn().mockReturnValue({ values: insertValues }),
+    insertValues,
   };
 }
 
@@ -191,7 +197,13 @@ describe("OrgMembershipService — module-ownership guards", () => {
             sendMembershipSuspendedEmail: jest.fn().mockResolvedValue(undefined),
           },
         },
-        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: NotificationDispatchService,
+          useValue: {
+            emit: jest.fn().mockResolvedValue(undefined),
+            emitInTx: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: DRIZZLE, useValue: dbValue },
         { provide: AuditService, useValue: { log: auditLog } },
         {
@@ -305,9 +317,15 @@ describe("OrgMembershipService — module-ownership guards", () => {
       expect(result).toEqual({ success: true });
       expect(revokeAllForUser).not.toHaveBeenCalled();
       expect(tx.update).toHaveBeenCalled();
-      expect(auditLog).toHaveBeenCalledWith(
-        expect.objectContaining({ action: "org.member_removed" }),
+      expect(tx.insertValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "org.member_removed",
+          userId: ACTOR_ID,
+          orgId: ORG_ID,
+          targetId: MEMBER_ID,
+        }),
       );
+      expect(auditLog).not.toHaveBeenCalled();
     });
 
     it("converts a raw FK violation (23503 backstop) to BadRequestException", async () => {

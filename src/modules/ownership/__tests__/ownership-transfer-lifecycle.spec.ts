@@ -181,7 +181,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
             invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
           },
         },
-        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined), emitInTx: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: OrganizationSagaService,
           useValue: {

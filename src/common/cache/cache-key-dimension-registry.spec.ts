@@ -19,11 +19,11 @@ const DIMENSION_REGISTRY: readonly DimensionEntry[] = [
     },
   },
   {
-    name: "accessVersion",
+    name: "rolesList",
     dimensions: ["orgId"],
-    baseline: () => CACHE_KEYS.accessVersion("org-a"),
+    baseline: () => CACHE_KEYS.rolesList("org-a"),
     vary: {
-      orgId: () => CACHE_KEYS.accessVersion("org-b"),
+      orgId: () => CACHE_KEYS.rolesList("org-b"),
     },
   },
   {

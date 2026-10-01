@@ -8,7 +8,6 @@ import {
   organizationMembers,
   users,
 } from "../../db/schema";
-import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { InvitationCreateService } from "../organization/core/invitation-create.service";
 import {
@@ -27,7 +26,7 @@ import type {
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner";
-import { scheduleStandingRevocation } from "../../common/rbac/access-mutation-commit";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -57,7 +56,6 @@ export class UsersService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly access: AccessService,
     private readonly admission: MembershipAdmissionService,
@@ -127,29 +125,27 @@ export class UsersService {
             DEPARTMENT: departmentId ?? null,
             BRANCH: branchId ?? null,
           });
+          await commitAccessChange(tx, orgId, {
+            ...(admitted.createdUser && {
+              audit: {
+                action: "user.created",
+                userId: actorUserId,
+                targetId: admitted.userId,
+                targetType: "user",
+                resourceType: "user",
+                resourceId: admitted.userId,
+                metadata: { email, role },
+              },
+            }),
+            afterCommit: () => this.invalidateMembershipCaches(orgId),
+          });
           return admitted;
         },
         { orgId },
       )
     );
 
-    await this.invalidateMembershipCaches(orgId);
-
-    if (!outcome.createdUser) return { userId: outcome.userId, created: false };
-
-    this.audit.log({
-      action: "user.created",
-      userId: actorUserId,
-      orgId,
-      targetId: outcome.userId,
-      targetType: "user",
-      actorUserId,
-      resourceType: "user",
-      resourceId: outcome.userId,
-      metadata: { email, role },
-    });
-
-    return { userId: outcome.userId, created: true };
+    return { userId: outcome.userId, created: outcome.createdUser };
   }
 
   async listUsers(orgId: string, params: ListUsersInput) {
@@ -224,32 +220,25 @@ export class UsersService {
       data.departmentId !== undefined || data.teamId !== undefined;
     const hasReportingUpdate = data.reportingTo !== undefined;
 
-    let canonicalEmploymentSynced: boolean | null = null;
-    if (hasUserUpdates || hasPlacementUpdates || hasReportingUpdate) {
-      await runInTenantTransaction(
+    await withMembershipMutations(this.cache, (membership) =>
+      runInTenantTransaction(
         this.db,
         async (tx) => {
           if (hasUserUpdates) {
             await tx.update(users).set(updateData).where(eq(users.id, userId));
           }
-          await syncOrgUnitPlacement(tx, orgId, userId, {
-            DEPARTMENT: data.departmentId,
-            TEAM: data.teamId,
-          });
-          if (
-            data.designation !== undefined ||
-            data.departmentId !== undefined
-          ) {
-            canonicalEmploymentSynced = await syncCanonicalEmploymentFields(
-              tx,
-              orgId,
-              userId,
-              {
-                designation: data.designation,
-                departmentId: data.departmentId,
-              },
-            );
-          }
+          if (hasPlacementUpdates)
+            await syncOrgUnitPlacement(tx, orgId, userId, {
+              DEPARTMENT: data.departmentId,
+              TEAM: data.teamId,
+            });
+          const canonicalEmploymentSynced =
+            data.designation !== undefined || data.departmentId !== undefined
+              ? await syncCanonicalEmploymentFields(tx, orgId, userId, {
+                  designation: data.designation,
+                  departmentId: data.departmentId,
+                })
+              : null;
           if (hasReportingUpdate)
             await this.relationships.setRelationships(tx, {
               orgId,
@@ -259,41 +248,35 @@ export class UsersService {
               effectiveFrom: await orgBusinessDate(this.db, orgId),
               source: "MANUAL",
             });
+
+          const access = {
+            audit: {
+              action: "user.updated",
+              userId: actorUserId,
+              targetId: userId,
+              targetType: "user",
+              resourceType: "user",
+              resourceId: userId,
+              metadata: {
+                changes: data,
+                ...(canonicalEmploymentSynced !== null && { canonicalEmploymentSynced }),
+              },
+            },
+            revoke: {
+              cache: this.cache,
+              loses: [{ kind: "standing" as const, userIds: [userId] }],
+            },
+          };
+          if (data.role === undefined) {
+            await commitAccessChange(tx, orgId, access);
+            return;
+          }
+          await assertTargetNotOwner(tx, orgId, userId);
+          await membership.changeRole(tx, { orgId, userId, role: data.role }, access);
         },
         { orgId },
-      );
-    }
-
-    if (data.role !== undefined) {
-      const nextRole = data.role;
-      await withMembershipMutations(this.cache, (membership) =>
-        runInTenantTransaction(
-          this.db,
-          async (tx) => {
-            await assertTargetNotOwner(tx, orgId, userId);
-            await membership.changeRole(tx, { orgId, userId, role: nextRole });
-          },
-          { orgId },
-        )
-      );
-    }
-
-    this.audit.log({
-      action: "user.updated",
-      userId: actorUserId,
-      orgId,
-      targetId: userId,
-      targetType: "user",
-      actorUserId,
-      resourceType: "user",
-      resourceId: userId,
-      metadata: {
-        changes: data,
-        ...(canonicalEmploymentSynced !== null && {
-          canonicalEmploymentSynced,
-        }),
-      },
-    });
+      ),
+    );
 
     return { success: true };
   }
@@ -335,23 +318,11 @@ export class UsersService {
     }
 
     await this.orgMembership.removeMember(orgId, actorUserId, userId);
-    await this.orgMembership.revokeAccountAccess(orgId, userId);
-
-    await this.db
-      .update(users)
-      .set({ isActive: false, userStatus: "deleted", deletedAt: new Date() })
-      .where(eq(users.id, userId));
-
-    await scheduleStandingRevocation(this.cache, [userId]);
-    await this.invalidateMembershipCaches(orgId);
-
-    this.audit.log({
+    await this.orgMembership.revokeAccountAccess(orgId, userId, {
       action: "user.deleted",
       userId: actorUserId,
-      orgId,
       targetId: userId,
       targetType: "user",
-      actorUserId,
       resourceType: "user",
       resourceId: userId,
     });
