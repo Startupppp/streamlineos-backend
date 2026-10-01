@@ -43,7 +43,10 @@ import {
   decodeTupleCursor,
 } from "../../../../common/pagination/cursor";
 import { PAGE_SIZE_CAP } from "../../../../common/pagination/list-query.schema";
-import { assertRoadmapTargetsInOrg } from "./roadmap-references";
+import { assertRoadmapTargetsReachable } from "./roadmap-references";
+import { assertProjectVisible, resolveTicketVisibility } from "../project-crud/project-access";
+import { AccessService } from "../../../access/access.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import {
   computeRoadmapPrioritization,
   type RiceInputs,
@@ -248,6 +251,7 @@ export class ProjectsRoadmapService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   searchFallbackCondition(term: string): SQL {
@@ -324,7 +328,9 @@ export class ProjectsRoadmapService {
     );
   }
 
-  async listRoadmapWithPrioritization(orgId: string, query: RoadmapListQuery) {
+  async listRoadmapWithPrioritization(actor: CurrentUserContext, query: RoadmapListQuery) {
+    if (query.projectId !== undefined) await assertProjectVisible(this.db, this.access, actor, query.projectId);
+    const { orgId } = actor;
     const page = await this.listRoadmap(orgId, query);
     const accounts = await loadRoadmapAccountTiers(
       this.db,
@@ -372,12 +378,9 @@ export class ProjectsRoadmapService {
       );
   }
 
-  async createRoadmap(
-    orgId: string,
-    userId: string,
-    input: CreateRoadmapInput,
-  ) {
-    await assertRoadmapTargetsInOrg(this.db, orgId, input);
+  async createRoadmap(actor: CurrentUserContext, input: CreateRoadmapInput) {
+    await assertRoadmapTargetsReachable(this.db, this.access, actor, input);
+    const { orgId, userId } = actor;
     if (
       input.ownerMembershipId !== undefined &&
       input.ownerMembershipId !== null
@@ -440,12 +443,9 @@ export class ProjectsRoadmapService {
     );
   }
 
-  async updateRoadmap(
-    orgId: string,
-    itemId: number,
-    input: UpdateRoadmapInput,
-  ) {
-    await assertRoadmapTargetsInOrg(this.db, orgId, input);
+  async updateRoadmap(actor: CurrentUserContext, itemId: number, input: UpdateRoadmapInput) {
+    await assertRoadmapTargetsReachable(this.db, this.access, actor, input);
+    const { orgId } = actor;
     if (
       input.ownerMembershipId !== undefined &&
       input.ownerMembershipId !== null
@@ -500,14 +500,12 @@ export class ProjectsRoadmapService {
     );
   }
 
-  async getRoadmapSignals(orgId: string, itemId: number) {
-    const item = await this.getRoadmap(orgId, itemId);
+  async getRoadmapSignals(actor: CurrentUserContext, itemId: number) {
+    const { orgId } = actor;
+    const [item, visible] = await Promise.all([this.getRoadmap(orgId, itemId), resolveTicketVisibility(this.access, actor)]);
     const [demand, delivery] = await Promise.all([
       loadRoadmapDemandSignals(this.db, orgId, item.id, item.votes),
-      loadRoadmapDeliveryProgress(this.db, orgId, {
-        projectId: item.projectId,
-        epicTicketId: item.epicTicketId,
-      }),
+      loadRoadmapDeliveryProgress(this.db, orgId, { projectId: item.projectId, epicTicketId: item.epicTicketId }, visible),
     ]);
     return {
       itemId: item.id,

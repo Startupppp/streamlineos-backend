@@ -1,3 +1,4 @@
+import { orgWideRoadmapAccess, roadmapActor } from "./__tests__/roadmap-access-double";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
@@ -78,7 +79,7 @@ function makeService(parts: {
     update: parts.update ?? jest.fn(),
     select: selectChain(parts),
   } as unknown as Db;
-  return new ProjectsRoadmapService(db, lifecycleAuditDouble());
+  return new ProjectsRoadmapService(db, lifecycleAuditDouble(), orgWideRoadmapAccess());
 }
 
 function insertCapture(returned: RoadmapRowShape) {
@@ -101,7 +102,7 @@ describe("createRoadmap — the four RICE columns were published but unwritable;
     const { insert, values } = insertCapture(stored);
     const service = makeService({ insert });
 
-    await service.createRoadmap(ORG, "user-1", {
+    await service.createRoadmap(roadmapActor(ORG), {
       title: "Bulk import",
       status: "planned",
       isPublic: true,
@@ -121,7 +122,7 @@ describe("createRoadmap — the four RICE columns were published but unwritable;
     const { insert, values } = insertCapture(roadmapRow());
     const service = makeService({ insert });
 
-    await service.createRoadmap(ORG, "user-1", {
+    await service.createRoadmap(roadmapActor(ORG), {
       title: "Unscored",
       status: "planned",
       isPublic: true,
@@ -137,7 +138,7 @@ describe("createRoadmap — the four RICE columns were published but unwritable;
     const { insert, values } = insertCapture(roadmapRow());
     const service = makeService({ insert });
 
-    await service.createRoadmap(ORG, "user-1", {
+    await service.createRoadmap(roadmapActor(ORG), {
       title: "Reduce churn",
       status: "planned",
       isPublic: true,
@@ -154,7 +155,7 @@ describe("createRoadmap — the four RICE columns were published but unwritable;
     const { insert, values } = insertCapture(roadmapRow());
     const service = makeService({ insert });
 
-    await service.createRoadmap(ORG, "user-1", {
+    await service.createRoadmap(roadmapActor(ORG), {
       title: "No goal yet",
       status: "planned",
       isPublic: true,
@@ -169,7 +170,7 @@ describe("createRoadmap — the four RICE columns were published but unwritable;
   it("returns the created row already carrying its computed prioritization", async () => {
     const stored = roadmapRow({ reach: 1000, impact: 3, confidence: 80, effort: 4 });
     const { insert } = insertCapture(stored);
-    const created = await makeService({ insert }).createRoadmap(ORG, "user-1", {
+    const created = await makeService({ insert }).createRoadmap(roadmapActor(ORG), {
       title: "Bulk import",
       status: "planned",
       isPublic: true,
@@ -189,7 +190,7 @@ describe("createRoadmap — owner membership is validated against the actor's or
     const { insert, values } = insertCapture(roadmapRow());
     const service = makeService({ insert, aggregateRows: [{ id: 42 }] });
 
-    await service.createRoadmap(ORG, "user-1", {
+    await service.createRoadmap(roadmapActor(ORG), {
       title: "Ship owner",
       status: "planned",
       isPublic: true,
@@ -206,7 +207,7 @@ describe("createRoadmap — owner membership is validated against the actor's or
     const service = makeService({ aggregateRows: [] });
 
     await expect(
-      service.createRoadmap(ORG, "user-1", {
+      service.createRoadmap(roadmapActor(ORG), {
         title: "Cross-tenant attempt",
         status: "planned",
         isPublic: true,
@@ -220,7 +221,7 @@ describe("createRoadmap — owner membership is validated against the actor's or
 describe("updateRoadmap — RICE inputs round-trip through the update", () => {
   it("passes the four inputs to .set so an operator can score an existing item", async () => {
     const { update, set, findFirst } = updateCapture(roadmapRow({ reach: 10, impact: 1, confidence: 100, effort: 2 }));
-    await makeService({ update, findFirst }).updateRoadmap(ORG, 7, {
+    await makeService({ update, findFirst }).updateRoadmap(roadmapActor(ORG), 7, {
       version: 1,
       reach: 10,
       impact: 1,
@@ -234,13 +235,13 @@ describe("updateRoadmap — RICE inputs round-trip through the update", () => {
 
   it("passes an explicit null through so a retracted guess is cleared, not ignored", async () => {
     const { update, set, findFirst } = updateCapture(roadmapRow());
-    await makeService({ update, findFirst }).updateRoadmap(ORG, 7, { version: 1, effort: null });
+    await makeService({ update, findFirst }).updateRoadmap(roadmapActor(ORG), 7, { version: 1, effort: null });
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ effort: null }));
   });
 
   it("passes outcome through to .set so a stated goal can be updated on an existing item", async () => {
     const { update, set, findFirst } = updateCapture(roadmapRow());
-    await makeService({ update, findFirst }).updateRoadmap(ORG, 7, {
+    await makeService({ update, findFirst }).updateRoadmap(roadmapActor(ORG), 7, {
       version: 1,
       outcome: "Increase activation rate by 20%",
     });
@@ -251,13 +252,13 @@ describe("updateRoadmap — RICE inputs round-trip through the update", () => {
 
   it("passes null outcome through so a previously set goal can be cleared", async () => {
     const { update, set, findFirst } = updateCapture(roadmapRow());
-    await makeService({ update, findFirst }).updateRoadmap(ORG, 7, { version: 1, outcome: null });
+    await makeService({ update, findFirst }).updateRoadmap(roadmapActor(ORG), 7, { version: 1, outcome: null });
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ outcome: null }));
   });
 
   it("returns a null score once an input is cleared, never the stale complete score", async () => {
     const { update, findFirst } = updateCapture(roadmapRow({ reach: 10, impact: 1, confidence: 100, effort: null }));
-    const updated = await makeService({ update, findFirst }).updateRoadmap(ORG, 7, { version: 1, effort: null });
+    const updated = await makeService({ update, findFirst }).updateRoadmap(roadmapActor(ORG), 7, { version: 1, effort: null });
     expect(updated.prioritization.score).toBeNull();
     expect(updated.prioritization.missingInputs).toEqual(["effort"]);
   });
@@ -269,7 +270,7 @@ describe("listRoadmapWithPrioritization — every row carries its score so the b
       roadmapRow({ id: 1, reach: 100, impact: 2, confidence: 50, effort: 1 }),
       roadmapRow({ id: 2 }),
     ]);
-    const page = await makeService({ findMany }).listRoadmapWithPrioritization(ORG, { limit: 50 });
+    const page = await makeService({ findMany }).listRoadmapWithPrioritization(roadmapActor(ORG), { limit: 50 });
 
     expect(page.data.map((row) => row.id)).toEqual([1, 2]);
     expect(page.data[0].prioritization.score).toBe(100);
@@ -287,14 +288,14 @@ describe("listRoadmapWithPrioritization — every row carries its score so the b
 describe("getRoadmapSignals — cross-tenant ids are a miss, not a denial (BE-91)", () => {
   it("throws NotFoundException when the item belongs to another org", async () => {
     const findFirst = jest.fn().mockResolvedValue(undefined);
-    await expect(makeService({ findFirst }).getRoadmapSignals(OTHER_ORG, 7)).rejects.toBeInstanceOf(
+    await expect(makeService({ findFirst }).getRoadmapSignals(roadmapActor(OTHER_ORG), 7)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
 
   it("binds the caller org into the lookup predicate rather than trusting the id alone", async () => {
     const findFirst = jest.fn().mockResolvedValue(undefined);
-    await expect(makeService({ findFirst }).getRoadmapSignals(OTHER_ORG, 7)).rejects.toBeInstanceOf(
+    await expect(makeService({ findFirst }).getRoadmapSignals(roadmapActor(OTHER_ORG), 7)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(findFirst).toHaveBeenCalledTimes(1);
@@ -307,7 +308,7 @@ describe("getRoadmapSignals — cross-tenant ids are a miss, not a denial (BE-91
     const signals = await makeService({
       findFirst,
       aggregateRows: [{ linkedFeedbackCount: 4, openLinkedFeedbackCount: 3 }],
-    }).getRoadmapSignals(ORG, 7);
+    }).getRoadmapSignals(roadmapActor(ORG), 7);
 
     expect(signals.itemId).toBe(7);
     expect(signals.prioritization.score).toBe(100);
