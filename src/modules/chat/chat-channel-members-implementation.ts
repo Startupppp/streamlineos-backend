@@ -38,6 +38,7 @@ import {
   flattenChannelMember,
 } from "./chat-channel-member-shape";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatNotificationsService } from "./chat-notifications.service";
 
 @Injectable()
 export class ChatChannelMembersImplementation {
@@ -45,9 +46,13 @@ export class ChatChannelMembersImplementation {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entities: EntityReferenceService,
     @Optional() private readonly chatMessages?: ChatMessagesService,
+    @Optional() private readonly notifications?: ChatNotificationsService,
   ) {}
 
-  async assertChannelMembership(channelId: number, actor: EntityActor): Promise<void> {
+  async assertChannelMembership(
+    channelId: number,
+    actor: EntityActor,
+  ): Promise<void> {
     await assertChannelAccess(this.db, this.entities, channelId, actor);
   }
 
@@ -69,7 +74,12 @@ export class ChatChannelMembersImplementation {
     return { ...channel, members: channel.members.map(flattenChannelMember) };
   }
 
-  async listMembers(channelId: number, actor: EntityActor, cursor?: number, limit?: number) {
+  async listMembers(
+    channelId: number,
+    actor: EntityActor,
+    cursor?: number,
+    limit?: number,
+  ) {
     const orgId = actor.orgId;
     await assertChannelAccess(this.db, this.entities, channelId, actor);
 
@@ -89,15 +99,26 @@ export class ChatChannelMembersImplementation {
 
     const hasMore = rows.length > PAGE_SIZE;
     const pageSlice = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
-    const nextCursor = hasMore ? (pageSlice[pageSlice.length - 1]?.id ?? null) : null;
+    const nextCursor = hasMore
+      ? (pageSlice[pageSlice.length - 1]?.id ?? null)
+      : null;
     return { members: pageSlice.map(flattenChannelMember), nextCursor };
   }
 
-  async addMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) {
+  async addMember(
+    channelId: number,
+    targetUserId: string,
+    requesterId: string,
+    orgId: string,
+  ) {
     await assertChannelAdmin(this.db, channelId, requesterId, orgId);
 
     await assertUsersInOrg(this.db, orgId, [targetUserId]);
-    const targetMembershipId = await resolveOrgMembership(this.db, orgId, targetUserId);
+    const targetMembershipId = await resolveOrgMembership(
+      this.db,
+      orgId,
+      targetUserId,
+    );
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
       columns: { id: true },
@@ -108,7 +129,8 @@ export class ChatChannelMembersImplementation {
       ),
     });
 
-    if (existing) throw new ConflictException("User is already a member of this channel");
+    if (existing)
+      throw new ConflictException("User is already a member of this channel");
 
     await this.db.insert(chatChannelMembers).values({
       orgId,
@@ -118,26 +140,51 @@ export class ChatChannelMembersImplementation {
       lastReadPosition: channelHighWaterMark(channelId, orgId),
     });
 
+    await this.notifications?.publishChannelInviteNotification(
+      orgId,
+      channelId,
+      targetUserId,
+      requesterId,
+    );
+
     return { ok: true };
   }
 
-  async removeMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) {
-    const { role } = await assertChannelMember(this.db, channelId, requesterId, orgId);
+  async removeMember(
+    channelId: number,
+    targetUserId: string,
+    requesterId: string,
+    orgId: string,
+  ) {
+    const { role } = await assertChannelMember(
+      this.db,
+      channelId,
+      requesterId,
+      orgId,
+    );
 
     if (requesterId !== targetUserId && role !== "ADMIN")
-      throw new ForbiddenException("Only channel admins can remove other members");
+      throw new ForbiddenException(
+        "Only channel admins can remove other members",
+      );
 
-    const targetMembershipId = await resolveOrgMembership(this.db, orgId, targetUserId);
+    const targetMembershipId = await resolveOrgMembership(
+      this.db,
+      orgId,
+      targetUserId,
+    );
     await runInTenantTransaction(
       this.db,
       async (tx) => {
-        await tx.delete(chatChannelMembers).where(
-          and(
-            eq(chatChannelMembers.orgId, orgId),
-            eq(chatChannelMembers.channelId, channelId),
-            eq(chatChannelMembers.membershipId, targetMembershipId),
-          ),
-        );
+        await tx
+          .delete(chatChannelMembers)
+          .where(
+            and(
+              eq(chatChannelMembers.orgId, orgId),
+              eq(chatChannelMembers.channelId, channelId),
+              eq(chatChannelMembers.membershipId, targetMembershipId),
+            ),
+          );
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
           organizationId: orgId,
@@ -145,7 +192,12 @@ export class ChatChannelMembersImplementation {
           aggregateId: `${channelId}:${targetMembershipId}:${randomUUID()}`,
           aggregateVersion: 1,
           eventType: REALTIME_TOKEN_REVOCATION_EVENT,
-          payload: { orgId, userId: targetUserId, channelId, membershipId: targetMembershipId },
+          payload: {
+            orgId,
+            userId: targetUserId,
+            channelId,
+            membershipId: targetMembershipId,
+          },
           occurredAt: new Date(),
         });
       },
@@ -155,20 +207,37 @@ export class ChatChannelMembersImplementation {
     return { ok: true };
   }
 
-  async updateChannel(channelId: number, userId: string, body: UpdateChannelInput, orgId: string) {
-    const { role } = await assertChannelMember(this.db, channelId, userId, orgId);
+  async updateChannel(
+    channelId: number,
+    userId: string,
+    body: UpdateChannelInput,
+    orgId: string,
+  ) {
+    const { role } = await assertChannelMember(
+      this.db,
+      channelId,
+      userId,
+      orgId,
+    );
     if (role !== "ADMIN")
-      throw new ForbiddenException("Only channel admins can update channel details");
+      throw new ForbiddenException(
+        "Only channel admins can update channel details",
+      );
 
-    const updateData: Partial<typeof chatChannels.$inferInsert> = { updatedAt: new Date() };
+    const updateData: Partial<typeof chatChannels.$inferInsert> = {
+      updatedAt: new Date(),
+    };
     if (body.name !== undefined) updateData.name = body.name;
-    if (body.description !== undefined) updateData.description = body.description;
+    if (body.description !== undefined)
+      updateData.description = body.description;
     if (body.avatarUrl !== undefined) updateData.avatarUrl = body.avatarUrl;
 
     await this.db
       .update(chatChannels)
       .set(updateData)
-      .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)));
+      .where(
+        and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
+      );
 
     return { ok: true };
   }
@@ -184,12 +253,21 @@ export class ChatChannelMembersImplementation {
     });
 
     if (!channel) throw new NotFoundException("Channel not found");
-    const actorMembershipId = await resolveOrgMembership(this.db, actor.orgId, actor.userId);
+    const actorMembershipId = await resolveOrgMembership(
+      this.db,
+      actor.orgId,
+      actor.userId,
+    );
 
     if (channel.type !== "PUBLIC") {
       if (!channel.entityType || !channel.entityId)
         throw new NotFoundException("Channel not found");
-      await assertEntityAccess(this.entities, channel, actor, "Channel not found");
+      await assertEntityAccess(
+        this.entities,
+        channel,
+        actor,
+        "Channel not found",
+      );
     }
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
@@ -226,18 +304,25 @@ export class ChatChannelMembersImplementation {
   }
 
   async leaveChannel(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(
+      this.db,
+      channelId,
+      userId,
+      orgId,
+    );
 
     await runInTenantTransaction(
       this.db,
       async (tx) => {
-        await tx.delete(chatChannelMembers).where(
-          and(
-            eq(chatChannelMembers.orgId, orgId),
-            eq(chatChannelMembers.channelId, channelId),
-            eq(chatChannelMembers.membershipId, membershipId),
-          ),
-        );
+        await tx
+          .delete(chatChannelMembers)
+          .where(
+            and(
+              eq(chatChannelMembers.orgId, orgId),
+              eq(chatChannelMembers.channelId, channelId),
+              eq(chatChannelMembers.membershipId, membershipId),
+            ),
+          );
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
           organizationId: orgId,
@@ -263,7 +348,12 @@ export class ChatChannelMembersImplementation {
     return { ok: true };
   }
 
-  async listChannelFiles(channelId: number, actor: EntityActor, cursor?: number, limit = 20) {
+  async listChannelFiles(
+    channelId: number,
+    actor: EntityActor,
+    cursor?: number,
+    limit = 20,
+  ) {
     const orgId = actor.orgId;
     await assertChannelAccess(this.db, this.entities, channelId, actor);
     const safeLimit = Math.min(Math.max(1, limit), 100);
@@ -302,23 +392,45 @@ export class ChatChannelMembersImplementation {
 
     const hasMore = rows.length > safeLimit;
     if (hasMore) rows.pop();
-    return { files: rows, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
+    return {
+      files: rows,
+      nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined,
+    };
   }
 
-  async updateMemberRole(channelId: number, targetUserId: string, requesterId: string, orgId: string, role: string) {
-    const { role: requesterRole } = await assertChannelMember(this.db, channelId, requesterId, orgId);
-    if (requesterRole !== "ADMIN") throw new ForbiddenException("Only admins can change roles");
+  async updateMemberRole(
+    channelId: number,
+    targetUserId: string,
+    requesterId: string,
+    orgId: string,
+    role: string,
+  ) {
+    const { role: requesterRole } = await assertChannelMember(
+      this.db,
+      channelId,
+      requesterId,
+      orgId,
+    );
+    if (requesterRole !== "ADMIN")
+      throw new ForbiddenException("Only admins can change roles");
 
-    const targetMembershipId = await resolveOrgMembership(this.db, orgId, targetUserId);
+    const targetMembershipId = await resolveOrgMembership(
+      this.db,
+      orgId,
+      targetUserId,
+    );
     if (!targetMembershipId) return { ok: true };
 
-    await this.db.update(chatChannelMembers).set({ role }).where(
-      and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.membershipId, targetMembershipId),
-      ),
-    );
+    await this.db
+      .update(chatChannelMembers)
+      .set({ role })
+      .where(
+        and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.membershipId, targetMembershipId),
+        ),
+      );
     return { ok: true };
   }
 }

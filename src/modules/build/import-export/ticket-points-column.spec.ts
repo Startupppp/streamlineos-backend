@@ -4,6 +4,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { Db } from "../../../db/drizzle.types";
 import type { AccessService } from "../../access/access.service";
+import type { BuildTicketCreationService } from "../core/tickets";
 import { queryTickets } from "../core";
 import { parseCsvRows } from "./csv-source";
 import { parseImportSource } from "./import-source";
@@ -71,16 +72,22 @@ function unrestrictedAccess(): AccessService {
 }
 
 function makeTx() {
-  const batches: Values[][] = [];
-  const tx = {
-    insert: () => ({
-      values: (values: Values[]) => {
-        batches.push(values);
-        return { returning: async () => values.map((_, index) => ({ id: 100 + index })) };
+  const tx = {} as unknown as DbOrTx;
+  return { tx };
+}
+
+function makeTicketCreation() {
+  const capturedDrafts: Values[][] = [];
+  const ticketCreation = {
+    createInTransaction: jest.fn().mockImplementation(
+      async (_tx: unknown, command: { drafts: Values[] }) => {
+        capturedDrafts.push(command.drafts);
+        return { command, tickets: command.drafts.map((_d, index) => ({ id: 100 + index })) };
       },
-    }),
-  } as unknown as DbOrTx;
-  return { tx, batches };
+    ),
+    publish: jest.fn(),
+  } as unknown as BuildTicketCreationService;
+  return { ticketCreation, capturedDrafts };
 }
 
 async function importCsv(content: string): Promise<Values[]> {
@@ -96,9 +103,10 @@ async function importCsv(content: string): Promise<Values[]> {
   });
   expect(preview.issues).toEqual([]);
   expect(preview.rows).toHaveLength(1);
-  const { tx, batches } = makeTx();
-  await insertTicketBatch(tx, actor, PROJECT, 1, preview.rows);
-  return batches[0] ?? [];
+  const { tx } = makeTx();
+  const { ticketCreation, capturedDrafts } = makeTicketCreation();
+  await insertTicketBatch(tx, ticketCreation, actor, PROJECT, 1, preview.rows);
+  return capturedDrafts[0] ?? [];
 }
 
 describe("Ticket import and export use the points column", () => {

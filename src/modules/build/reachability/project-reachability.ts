@@ -5,6 +5,7 @@ import {
   projectTeamAssignments,
   projectTeamMembers,
   projects,
+  tickets,
 } from "../../../db/schema";
 
 export function reachableProjectsSql(
@@ -37,4 +38,8 @@ export function reachableProjectsSql(
         AND ${projectTeamMembers.membershipId} = ${membershipId}
     )
   )`;
+}
+
+export function reachableTicketProjectsSql(orgId: string, membershipId: number): SQL<unknown> {
+  return sql`${tickets.projectId} IN (SELECT ${projects.id} FROM ${projects} WHERE ${projects.orgId} = ${orgId} AND ${reachableProjectsSql(orgId, membershipId)})`;
 }

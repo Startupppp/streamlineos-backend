@@ -3,6 +3,7 @@ import { is, SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { EpicsService } from "./epics.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { BuildTicketCreationService } from "../core/tickets";
 import { Test } from "@nestjs/testing";
 
 const dialect = new PgDialect();
@@ -32,7 +33,11 @@ function makeDb(returning: unknown[], findFirstResult: unknown = undefined) {
 async function createService(returning: unknown[], findFirstResult: unknown = undefined) {
   const { db, updateChain, whereCaptures } = makeDb(returning, findFirstResult);
   const module = await Test.createTestingModule({
-    providers: [EpicsService, { provide: DRIZZLE, useValue: db }],
+    providers: [
+      EpicsService,
+      { provide: DRIZZLE, useValue: db },
+      { provide: BuildTicketCreationService, useValue: { createInTransaction: jest.fn(), publish: jest.fn() } },
+    ],
   }).compile();
   return { service: module.get(EpicsService), updateChain, whereCaptures, module };
 }

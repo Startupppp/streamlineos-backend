@@ -306,3 +306,39 @@ describe("HrCopilotTools — D-07: getLeaveUtilization scopes to caller when not
     expect(sqlText).toContain("org_id");
   });
 });
+
+describe("HrCopilotTools — B5: getHeadcountSummary scope enforcement", () => {
+  it("team-scoped caller is denied on getHeadcountSummary and no query is issued, because headcount is an org-wide aggregate that expands team scope silently", async () => {
+    expect.hasAssertions();
+    const { definitions, dbExecute } = await buildSut();
+    const tool = findTool(definitions, "getHeadcountSummary");
+
+    const result = await tool.run({}, makeCtx("team"));
+
+    expect(result).toMatchObject({ kind: "denied", permission: "hr:analytics:read" });
+    expect(dbExecute).not.toHaveBeenCalled();
+  });
+
+  it("own-scoped caller is denied on getHeadcountSummary and no query is issued, because a single employee's headcount is not meaningful analytics data", async () => {
+    expect.hasAssertions();
+    const { definitions, dbExecute } = await buildSut();
+    const tool = findTool(definitions, "getHeadcountSummary");
+
+    const result = await tool.run({}, makeCtx("own"));
+
+    expect(result).toMatchObject({ kind: "denied", permission: "hr:analytics:read" });
+    expect(dbExecute).not.toHaveBeenCalled();
+  });
+
+  it("all-scoped caller gets org-wide headcount from getHeadcountSummary and the query is issued", async () => {
+    expect.hasAssertions();
+    const { definitions, dbExecute } = await buildSut();
+    const tool = findTool(definitions, "getHeadcountSummary");
+    dbExecute.mockResolvedValue([{ total: "10", active: "8", probation: "1", notice: "1" }]);
+
+    const result = await tool.run({}, makeCtx("all"));
+
+    expect(result).toMatchObject({ kind: "data", data: { total: 10, active: 8 } });
+    expect(dbExecute).toHaveBeenCalled();
+  });
+});

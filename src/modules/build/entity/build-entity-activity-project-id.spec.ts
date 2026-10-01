@@ -5,7 +5,7 @@ import { BuildEntityActions } from "./build-entity.actions";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { resolveValidTicketStatuses } from "../core/tickets";
+import { BuildTicketCreationService, resolveValidTicketStatuses } from "../core/tickets";
 import type { EntityActor, EntityReference } from "../../entity-reference/entity-reference.types";
 
 jest.mock("../core/tickets");
@@ -70,6 +70,13 @@ async function buildService(
         useValue: {
           invalidateNamespace: jest.fn().mockResolvedValue(undefined),
           del: jest.fn().mockResolvedValue(undefined),
+        },
+      },
+      {
+        provide: BuildTicketCreationService,
+        useValue: {
+          createInTransaction: jest.fn(),
+          publish: jest.fn(),
         },
       },
     ],

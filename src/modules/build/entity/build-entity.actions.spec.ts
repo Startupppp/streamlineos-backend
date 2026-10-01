@@ -74,6 +74,7 @@ const mockDb = {
 
 describe("BuildEntityActions", () => {
   let service: BuildEntityActions;
+  let mockTicketCreation: { createInTransaction: jest.Mock; publish: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -82,6 +83,10 @@ describe("BuildEntityActions", () => {
     mockDb.transaction.mockImplementation(
       async (cb: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => cb(mockTx),
     );
+    mockTicketCreation = {
+      createInTransaction: jest.fn().mockResolvedValue({ tickets: [STUB_CREATED_TICKET], command: {} }),
+      publish: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -89,7 +94,7 @@ describe("BuildEntityActions", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
         { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
-        { provide: BuildTicketCreationService, useValue: { createInTransaction: jest.fn().mockResolvedValue({ tickets: [STUB_CREATED_TICKET], command: {} }), publish: jest.fn() } },
+        { provide: BuildTicketCreationService, useValue: mockTicketCreation },
       ],
     }).compile();
 
@@ -376,7 +381,7 @@ describe("BuildEntityActions", () => {
         });
       }
       expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-      expect(mockTx.insert).toHaveBeenCalledTimes(1);
+      expect(mockTicketCreation.createInTransaction).toHaveBeenCalledTimes(1);
     });
 
     it("links the ticket back to the chat message it was converted from", async () => {
@@ -390,16 +395,22 @@ describe("BuildEntityActions", () => {
       });
 
       expect(result).toMatchObject({ ok: true });
-      expect(mockTx.insert).toHaveBeenCalledTimes(3);
+      expect(mockTx.insert).toHaveBeenCalledTimes(1);
+      expect(mockTicketCreation.createInTransaction).toHaveBeenCalledTimes(1);
+      expect(mockTicketCreation.createInTransaction).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          drafts: expect.arrayContaining([
+            expect.objectContaining({ activityToValue: "From a chat message" }),
+          ]),
+        }),
+      );
       expect(mockTx.values).toHaveBeenCalledWith(
         expect.objectContaining({
           ticketId: 99,
           url: expect.stringMatching(/\/chat\?channel=3&message=9$/),
           label: "Chat message",
         }),
-      );
-      expect(mockTx.values).toHaveBeenCalledWith(
-        expect.objectContaining({ ticketId: 99, action: "created", toValue: "From a chat message" }),
       );
     });
 
@@ -412,7 +423,8 @@ describe("BuildEntityActions", () => {
         sourceMessageId: 9,
       });
 
-      expect(mockTx.insert).toHaveBeenCalledTimes(1);
+      expect(mockTx.insert).not.toHaveBeenCalled();
+      expect(mockTicketCreation.createInTransaction).toHaveBeenCalledTimes(1);
     });
 
     it("uses description as title fallback when title is absent", async () => {

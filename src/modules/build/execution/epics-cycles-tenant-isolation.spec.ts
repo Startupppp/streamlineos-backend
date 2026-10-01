@@ -3,6 +3,7 @@ import { NotFoundException } from "@nestjs/common";
 import { EpicsService } from "./epics.service";
 import { CyclesService } from "./cycles.service";
 import { epicRowSchema } from "./dto/execution-response.schemas";
+import type { BuildTicketCreationService } from "../core/tickets";
 
 type TxHandle = { insert: jest.Mock; execute: jest.Mock };
 
@@ -90,22 +91,21 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
 
   it("creates the epic when the project belongs to the caller's org (own project)", async () => {
     const fakeEpic = { id: 1, orgId: OWNER_ORG, title: "Epic", type: "EPIC" };
-    const returning = jest.fn().mockResolvedValue([fakeEpic]);
-    const values = jest.fn().mockReturnValue({ returning });
-    const insert = jest.fn().mockReturnValue({ values });
-    const execute = jest.fn().mockResolvedValue([{ start: 1 }]);
-    const tx: TxHandle = { insert, execute };
+    const ticketCreation = {
+      create: jest.fn().mockResolvedValue({ tickets: [fakeEpic], command: {} }),
+      createInTransaction: jest.fn(),
+      publish: jest.fn(),
+    } as unknown as BuildTicketCreationService;
     const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
     const db = {
       query: { projects: { findFirst: projectFindFirst } },
-      transaction: jest.fn().mockImplementation((cb: (handle: TxHandle) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
-    const svc = new EpicsService(db);
+    const svc = new EpicsService(db, ticketCreation);
 
     const result = await svc.createEpic(OWNER_ORG, "u1", 1, { title: "Epic" });
 
     expect(result).toEqual(fakeEpic);
-    expect(insert).toHaveBeenCalled();
+    expect(ticketCreation.create).toHaveBeenCalledTimes(1);
   });
 });
 

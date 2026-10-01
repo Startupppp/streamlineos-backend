@@ -381,6 +381,7 @@ export const rankTicketResultSchema = z.object({
   id: z.number().int(),
   rank: z.string(),
   status: z.string(),
+  version: z.number().int(),
 });
 
 export const ticketUpdateResultSchema = z.object({

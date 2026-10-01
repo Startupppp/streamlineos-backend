@@ -1,6 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { TicketVersionConflictException } from "../core/tickets";
+import { BuildTicketCreationService, TicketVersionConflictException } from "../core/tickets";
 import { CyclesService } from "./cycles.service";
 import { ModulesService } from "./modules.service";
 import { EpicsService } from "./epics.service";
@@ -68,7 +68,11 @@ async function epicsService(ticketRow: Record<string, unknown> | undefined, upda
     },
   };
   const module = await Test.createTestingModule({
-    providers: [EpicsService, { provide: DRIZZLE, useValue: db }],
+    providers: [
+      EpicsService,
+      { provide: DRIZZLE, useValue: db },
+      { provide: BuildTicketCreationService, useValue: { createInTransaction: jest.fn(), publish: jest.fn() } },
+    ],
   }).compile();
   return { service: module.get(EpicsService), module, update };
 }

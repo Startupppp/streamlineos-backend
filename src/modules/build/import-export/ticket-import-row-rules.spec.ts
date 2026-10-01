@@ -37,10 +37,10 @@ describe("an imported row obeys the same title rule as a ticket created by hand"
 });
 
 describe("date ordering on an imported row is governed by the edit path, because the create path has no date fields", () => {
-  it("is not judged against createTicketSchema, which rejects startDate and dueDate as unknown keys", () => {
+  it("rejects startDate as an unknown key but accepts dueDate, because createTicketSchema was extended to include dueDate", () => {
     expect(createAccepts({ title: "Ship it" })).toBe(true);
     expect(createAccepts({ title: "Ship it", startDate: "2026-10-01" })).toBe(false);
-    expect(createAccepts({ title: "Ship it", dueDate: "2026-10-01" })).toBe(false);
+    expect(createAccepts({ title: "Ship it", dueDate: "2026-10-01" })).toBe(true);
   });
 
   it("rejects a due date before the start date", () => {

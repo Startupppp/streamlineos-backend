@@ -199,6 +199,17 @@ describe("WorkspaceCopilotTools.getPersonTicketStats", () => {
     expect(wq.countTicketsByProjectAndStatus).not.toHaveBeenCalled();
   });
 
+  it("B4: team-scoped actor querying a different user is denied and issues no query, because team scope is not org-wide and must not fall through to the unrestricted branch", async () => {
+    const wq = makeWorkQuery({ byProject: [], totals: { total: 0, done: 0, inProgress: 0 } });
+    const sut = makeSut(wq);
+    const def = toolNamed(sut, "getPersonTicketStats");
+
+    const result = await def.run({ userId: "user-other" }, makeCtx("team"));
+
+    expect(result).toMatchObject({ kind: "denied" });
+    expect(wq.countTicketsByProjectAndStatus).not.toHaveBeenCalled();
+  });
+
   it("returns an exact total without a partial flag, because GROUP BY returns all project-status groups at once", async () => {
     const wq = makeWorkQuery({
       byProject: [{ projectId: 10, projectName: "Alpha", total: 250, done: 50, inProgress: 100 }],
