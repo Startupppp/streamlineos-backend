@@ -66,8 +66,12 @@ export class BuildApprovalRequestedConsumerService
       return;
     }
 
-    const { approvalId, projectId, orgId, approverUserId, title } =
-      parseResult.data;
+    const { approvalId, projectId, approverUserId, title } = parseResult.data;
+    const orgId = event.organizationId;
+    if (parseResult.data.orgId !== orgId) {
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", "payload orgId does not match the event tenant");
+      return;
+    }
 
     await this.dispatch.emit({
       orgId,

@@ -37,7 +37,7 @@ import {
   type TicketChangeEffectRow,
   type TicketChangeFields,
 } from "./ticket-change-effects";
-import { resolveProjectAssignableMemberships } from "../project-crud/project-access";
+import { resolveProjectAssignableMemberships } from "../project-crud/project-assignable-members";
 
 export async function bulkMutateTickets(
   db: Db,
@@ -150,7 +150,7 @@ export async function bulkMutateTickets(
         projectId,
         effectiveRows,
         body.status,
-        policy.role,
+        policy,
       );
       update.status = body.status;
     }

@@ -15,10 +15,7 @@ import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { BuildRestoreResult } from "../dto/build-core-response.schemas";
-import {
-  assertTicketReadAccess,
-  type TicketReadAccess,
-} from "../project-crud/project-access";
+import { type TicketReadAccess, assertTicketWriteAccess } from "../project-crud/project-access";
 import { restoreTicketRows } from "./apply-ticket-change";
 
 @Injectable()
@@ -36,7 +33,7 @@ export class ProjectsTicketsRestoreService {
     ticketId: number,
   ): Promise<BuildRestoreResult> {
     const orgId = u.orgId;
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId, {
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId, {
       includeDeleted: true,
     });
 
@@ -136,7 +133,7 @@ export class ProjectsTicketsRestoreService {
     commentId: number,
   ): Promise<BuildRestoreResult> {
     const orgId = u.orgId;
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId, {
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId, {
       includeDeleted: true,
     });
 

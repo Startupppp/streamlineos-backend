@@ -7,7 +7,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertCanModifyAuthoredRecord, assertProjectAccess } from "../core";
+import { assertCanModifyAuthoredRecord, assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   buildCursorPage,
@@ -148,7 +148,7 @@ export class UpdatesService {
   }
 
   async createUpdate(u: CurrentUserContext, projectId: number, input: CreateUpdateInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const membershipId = actingMembershipId(u.principal);
     if (membershipId === null)
       throw new ForbiddenException("No active membership found");
@@ -184,7 +184,7 @@ export class UpdatesService {
   }
 
   async editUpdate(u: CurrentUserContext, projectId: number, updateId: number, input: EditUpdateInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const update = await this.loadUpdate(u.orgId, projectId, updateId);
     await assertCanModifyAuthoredRecord(
       this.access,
@@ -224,7 +224,7 @@ export class UpdatesService {
   }
 
   async softDeleteUpdate(u: CurrentUserContext, projectId: number, updateId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const update = await this.loadUpdate(u.orgId, projectId, updateId);
     await assertCanModifyAuthoredRecord(
       this.access,

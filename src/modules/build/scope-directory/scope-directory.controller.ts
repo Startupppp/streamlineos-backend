@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../common/auth/principal";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { ScopeDirectoryService } from "./scope-directory.service";
@@ -33,12 +32,7 @@ export class ScopeDirectoryController {
     @Body() body: ResolveScopeDirectoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const data = await this.svc.resolveScopeDirectory(
-      u.orgId,
-      u.userId,
-      actingMembershipId(u.principal),
-      body.keys,
-    );
+    const data = await this.svc.resolveScopeDirectory(u, body.keys);
     return { data };
   }
 
@@ -51,9 +45,7 @@ export class ScopeDirectoryController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.searchScopeDirectory(
-      u.orgId,
-      u.userId,
-      actingMembershipId(u.principal),
+      u,
       query.q,
       query.limit,
       query.cursor,

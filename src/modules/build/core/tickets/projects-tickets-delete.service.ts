@@ -23,10 +23,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { AccessService } from "../../../access/access.service";
 import { AuditService } from "../../../../common/audit/audit.service";
-import {
-  assertTicketReadAccess,
-  type TicketReadAccess,
-} from "../project-crud/project-access";
+import { type TicketReadAccess, assertTicketWriteAccess } from "../project-crud/project-access";
 
 const BLOCKER_PROBE_LIMIT = 50;
 
@@ -47,7 +44,7 @@ export class ProjectsTicketsDeleteService {
     force: boolean,
   ) {
     const { orgId, userId } = u;
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId);
     const existing = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, ticketId),

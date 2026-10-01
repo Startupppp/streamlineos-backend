@@ -64,8 +64,12 @@ export class BuildBlockerCreatedConsumerService
       return;
     }
 
-    const { blockedTicketId, blockingTicketId, projectId, orgId, actorUserId } =
-      parseResult.data;
+    const { blockedTicketId, blockingTicketId, projectId, actorUserId } = parseResult.data;
+    const orgId = event.organizationId;
+    if (parseResult.data.orgId !== orgId) {
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", "payload orgId does not match the event tenant");
+      return;
+    }
 
     const assigneeRows = await this.db
       .select({ userId: organizationMembers.userId })

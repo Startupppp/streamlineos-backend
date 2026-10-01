@@ -13,7 +13,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { CreatePortalCrInput } from "./dto/client-portal.schemas";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { nextChangeRequestNumber } from "./change-request-number-counter";
 import { buildPortalProjection } from "./portal-projection";
 import type { PortalCapabilities } from "./portal-projection";
@@ -34,7 +34,7 @@ export class ClientPortalService {
   ) {}
 
   async createPortalChangeRequest(u: CurrentUserContext, projectId: number, input: CreatePortalCrInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [cr] = await this.db.transaction(async (tx) => {
       const nextNumber = await nextChangeRequestNumber(tx, u.orgId, projectId);
       return tx

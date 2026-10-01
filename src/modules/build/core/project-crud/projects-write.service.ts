@@ -25,7 +25,7 @@ import type {
   UpdateProjectInput,
 } from "../dto/projects.schemas";
 import { ProjectsQueryService } from "./projects-query.service";
-import { assertProjectAccess, assertCanDeleteProject, assertCanManageProject } from "./project-access";
+import { assertProjectAccess, assertCanDeleteProject, authorizeProjectUpdate } from "./project-access";
 
 @Injectable()
 export class ProjectsWriteService {
@@ -43,7 +43,7 @@ export class ProjectsWriteService {
   ) {
     const orgId = u.orgId;
 
-    await assertCanManageProject(this.db, this.access, u, projectId);
+    await authorizeProjectUpdate(this.db, this.access, u, projectId, body.status !== undefined);
 
     const managerMembershipId = body.managerId === undefined
       ? undefined

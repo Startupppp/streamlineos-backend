@@ -16,7 +16,7 @@ import { NotificationsService } from "../../../notifications/notifications.servi
 import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { AccessService } from "../../../access/access.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
-import { assertProjectVisible, authorizeProjectTicketRead } from "../project-crud/project-access";
+import { authorizeProjectTicketRead, assertProjectVisibleForWrite } from "../project-crud/project-access";
 import { ticketScope } from "../lib/tickets-scope";
 import type { ScopedWhere } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
@@ -101,7 +101,7 @@ export class ProjectsTicketsTransferService {
   }
 
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
-    await assertProjectVisible(this.db, this.access, u, projectId);
+    await assertProjectVisibleForWrite(this.db, this.access, u, projectId);
     if (
       body.rows.some((row) => row.assigneeEmail !== undefined) &&
       !(await this.access.holds(u, "build:tickets:assign"))

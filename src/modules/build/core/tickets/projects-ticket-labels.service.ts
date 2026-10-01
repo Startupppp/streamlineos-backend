@@ -8,10 +8,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { withSavepoint } from "../../../data-quality/savepoint";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { AccessService } from "../../../access/access.service";
-import {
-  assertTicketReadAccess,
-  type TicketReadAccess,
-} from "../project-crud/project-access";
+import { type TicketReadAccess, assertTicketWriteAccess } from "../project-crud/project-access";
 import type { AddLabelInput } from "../dto/projects.schemas";
 
 @Injectable()
@@ -28,7 +25,7 @@ export class ProjectsTicketLabelsService {
     ticketId: number,
     body: AddLabelInput,
   ) {
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId);
     const [mapping] = await this.db
       .insert(ticketLabelMappings)
       .values({ orgId: u.orgId, ticketId, labelId: body.labelId })
@@ -45,7 +42,7 @@ export class ProjectsTicketLabelsService {
     ticketId: number,
     labelId: number,
   ) {
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId);
     const deleted = await this.db
       .delete(ticketLabelMappings)
       .where(

@@ -14,7 +14,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
 import type {
   AddAttendeeInput,
@@ -233,7 +233,7 @@ export class MeetingsService {
   }
 
   async createMeeting(u: CurrentUserContext, projectId: number, input: CreateMeetingInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const resolvedCycleId = input.cycleId ?? null;
     let attendeeMemberships = new Map<string, number>();
 

@@ -1,29 +1,31 @@
-import { and, eq, isNull } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { type Db } from "../../../db/drizzle.module";
-import { projects } from "../../../db/schema";
-import type { EntityActor } from "../../entity-reference/entity-reference.types";
-import { reachableProjectsSql } from "../reachability/project-reachability";
+import type { Permissions } from "../../entity-reference/entity-scope";
+import type { EntityActionFailure, EntityActor } from "../../entity-reference/entity-reference.types";
+import { decideProjectWrite } from "../core/project-crud/project-access";
+import { projectReachFor } from "../core/project-crud/project-relationship";
+import { resolveEntityCardScope } from "./build-entity-scope";
 
 export function text(input: Record<string, unknown>, name: string): string | null {
   const value = input[name];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-export async function isProjectMember(
+export function entityProjectReach(actor: EntityActor, permissions: Permissions): SQL {
+  return projectReachFor(
+    (key) => resolveEntityCardScope(actor, permissions, key),
+    actor.orgId,
+    actor.membershipId ?? null,
+  );
+}
+
+export async function entityProjectWriteRefusal(
   db: Db,
   actor: EntityActor,
+  reach: SQL,
   projectId: number,
-): Promise<boolean> {
-  if (actor.isOrgOwner) return true;
-  const membershipId = actor.membershipId ?? -1;
-  const row = await db.query.projects.findFirst({
-    where: and(
-      eq(projects.id, projectId),
-      eq(projects.orgId, actor.orgId),
-      isNull(projects.deletedAt),
-      reachableProjectsSql(actor.orgId, membershipId),
-    ),
-    columns: { id: true },
-  });
-  return Boolean(row);
+): Promise<EntityActionFailure | null> {
+  const decision = await decideProjectWrite(db, actor.orgId, projectId, reach);
+  if (decision === "allowed") return null;
+  return decision === "missing" ? "not-found" : "forbidden";
 }

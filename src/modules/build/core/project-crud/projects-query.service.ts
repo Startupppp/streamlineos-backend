@@ -22,9 +22,9 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { AccessService } from "../../../access/access.service";
 import type { ScopedRead } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../../common/auth/principal";
 import { resolveProjectAccess } from "./project-access";
-import { reachableProjectsSql } from "../../reachability/project-reachability";
+import { projectRelationship } from "./project-relationship";
+import { accountableMembershipId } from "../../../../common/auth/principal";
 import { resolveProjectsScope } from "./projects-scope";
 import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
 import type { ListProjectsInput } from "../dto/projects.schemas";
@@ -59,7 +59,7 @@ export class ProjectsQueryService {
   async listProjects(u: CurrentUserContext, input: ListProjectsInput) {
     const read = await resolveProjectsScope(this.access, u);
     if (read.denied) return { data: [], hasMore: false, nextCursor: null, nextSortCursor: null };
-    const membershipId = actingMembershipId(u.principal);
+    const membershipId = accountableMembershipId(u.principal);
     const ticketRead = await resolveTicketsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
@@ -87,9 +87,7 @@ export class ProjectsQueryService {
       domain.push(eq(organizationMembers.userId, managerId));
     }
 
-    const ownProjects = membershipId !== null
-      ? reachableProjectsSql(orgId, membershipId)
-      : sql`false`;
+    const ownProjects = projectRelationship(orgId, membershipId).any;
 
     if (search?.trim()) {
       const match = or(

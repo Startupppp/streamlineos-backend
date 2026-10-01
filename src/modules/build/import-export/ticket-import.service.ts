@@ -15,7 +15,7 @@ import {
   type CommandFenceStore,
 } from "../../../common/idempotency/command-fence-store";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectWriteAccess } from "../core";
 import { lockProjectTicketMutation } from "../core/tickets";
 import { IMPORT_COMMAND_NAME, IMPORT_PERMISSION } from "./import-export.constants";
 import { parseImportSource, type ImportFormat } from "./import-source";
@@ -125,7 +125,7 @@ export class TicketImportService {
   }
 
   private async authorize(u: CurrentUserContext, projectId: number): Promise<void> {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     if (!(await this.access.holds(u, IMPORT_PERMISSION)))
       throw new ForbiddenException("Not authorized to create tickets in this project");
   }

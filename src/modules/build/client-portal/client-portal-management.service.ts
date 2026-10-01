@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 
 @Injectable()
 export class ClientPortalManagementService {
@@ -44,7 +44,7 @@ export class ClientPortalManagementService {
   }
 
   async publishPortal(u: CurrentUserContext, projectId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [updated] = await this.db
       .update(projects)
       .set({ portalPublishedAt: new Date() })
@@ -73,7 +73,7 @@ export class ClientPortalManagementService {
   }
 
   async unpublishPortal(u: CurrentUserContext, projectId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [updated] = await this.db
       .update(projects)
       .set({ portalPublishedAt: null })

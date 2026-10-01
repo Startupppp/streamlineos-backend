@@ -13,7 +13,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertCanModifyAuthoredRecord, assertProjectAccess } from "../core";
+import { assertCanModifyAuthoredRecord, assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   buildCursorPage,
@@ -113,7 +113,7 @@ export class FilesService {
   }
 
   async uploadFile(u: CurrentUserContext, projectId: number, input: UploadFileInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const membershipId = actingMembershipId(u.principal);
     if (membershipId === null)
       throw new ForbiddenException("No active membership found");
@@ -172,7 +172,7 @@ export class FilesService {
   }
 
   async softDeleteFile(u: CurrentUserContext, projectId: number, fileId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const file = await this.loadFile(u.orgId, projectId, fileId);
     await assertCanModifyAuthoredRecord(
       this.access,
