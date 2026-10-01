@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -6,6 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { EntriesReadService } from "./entries-read.service";
 import { PeriodsReadService } from "./periods-read.service";
 import { TeamService } from "./team.service";
+import { TimesheetOverdueService } from "./overdue.service";
 
 const ORG = "org-1";
 const MANAGER_USER = "user-manager";
@@ -40,7 +41,7 @@ function makeDb(rowSets: readonly unknown[][]) {
     const rows = rowSets[call] ?? [];
     call += 1;
     const node = Promise.resolve(rows) as Promise<unknown[]> & Record<string, unknown>;
-    for (const key of ["from", "leftJoin", "innerJoin", "groupBy", "orderBy", "limit"]) {
+    for (const key of ["from", "leftJoin", "innerJoin", "groupBy", "orderBy", "limit", "offset"]) {
       node[key] = jest.fn().mockImplementation(() => node);
     }
     node.where = jest.fn().mockImplementation((predicate: unknown) => {
@@ -285,5 +286,161 @@ describe("PeriodsReadService.getPeriod — which key carried the caller in", () 
     await svc.getPeriod(manager(), 7);
 
     expect(wheres).toHaveLength(2);
+  });
+});
+
+describe("overdue queue and period detail answer from one authority decision", () => {
+  const APPROVALS_AT = (scope: "all" | "team" | "own") =>
+    ({
+      "timesheets:entries:view": "none",
+      "timesheets:team:view": "none",
+      "timesheets:approvals:view": scope,
+    }) as const;
+
+  const overdueRow = (userMembershipId: number) => ({
+    id: 7,
+    userMembershipId,
+    userId: "user-report",
+    periodStart: "2026-01-05",
+    periodEnd: "2026-01-11",
+    status: "OPEN",
+    totalHours: "0",
+    userName: null,
+    userEmail: null,
+    windowTotal: "1",
+  });
+
+  const detailRow = (userMembershipId: number) => ({
+    id: 7,
+    orgId: ORG,
+    userMembershipId,
+    periodStart: "2026-01-05",
+    periodEnd: "2026-01-11",
+    status: "OPEN",
+    totalHours: "0",
+    billableHours: "0",
+    nonBillableHours: "0",
+    submittedAt: null,
+    approvedAt: null,
+    rejectedAt: null,
+    lockedAt: null,
+    currentApproverMembershipId: null,
+    approvalRoute: null,
+    approvalDueAt: null,
+    approvalEscalatedAt: null,
+    rejectionReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    userEmail: null,
+    userName: null,
+  });
+
+  /**
+   * The three row-narrowing devices either predicate can use. A device the
+   * overdue list relies on and the detail probe lacks is a row the queue shows
+   * and the detail read refuses.
+   */
+  function narrowingDevices(rendered: string) {
+    return {
+      ownerEquality: /"user_membership_id" = \$\d+/.test(rendered),
+      reportingGraph: rendered.includes("hr_reporting_lines"),
+      unrestricted: /\band true and\b/.test(rendered),
+    };
+  }
+
+  async function listPredicate(scope: "all" | "team" | "own") {
+    const { db, rendered } = makeDb([[], [overdueRow(REPORT_MEMBERSHIP)]]);
+    await new TimesheetOverdueService(db, accessByKey(APPROVALS_AT(scope))).listOverdue(
+      manager(),
+      { page: 1, limit: 50 } as never,
+    );
+    return rendered(1).sql;
+  }
+
+  async function detailPredicate(scope: "all" | "team" | "own") {
+    const { db, rendered } = makeDb([[detailRow(REPORT_MEMBERSHIP)], [{ id: 7 }]]);
+    await new PeriodsReadService(db, accessByKey(APPROVALS_AT(scope))).getPeriod(manager(), 7);
+    return rendered(1).sql;
+  }
+
+  it.each(["all", "team", "own"] as const)(
+    "the detail probe carries every narrowing device the overdue list relies on, at %s scope",
+    async (scope) => {
+      const list = narrowingDevices(await listPredicate(scope));
+      const detail = narrowingDevices(await detailPredicate(scope));
+
+      expect({
+        scope,
+        ownerEquality: !list.ownerEquality || detail.ownerEquality,
+        reportingGraph: !list.reportingGraph || detail.reportingGraph,
+        unrestricted: !list.unrestricted || detail.unrestricted,
+      }).toEqual({ scope, ownerEquality: true, reportingGraph: true, unrestricted: true });
+    },
+  );
+
+  it("lists a direct report's unsubmitted period to a team-scoped approvals grant", async () => {
+    const { db, rendered } = makeDb([[], [overdueRow(REPORT_MEMBERSHIP)]]);
+
+    const result = await new TimesheetOverdueService(
+      db,
+      accessByKey(APPROVALS_AT("team")),
+    ).listOverdue(manager(), { page: 1, limit: 50 } as never);
+
+    expect(result.items.map((i) => i.periodId)).toEqual([7]);
+    expect(rendered(1).sql).toContain("hr_reporting_lines");
+  });
+
+  it("opens that same direct report's period to the team-scoped approvals grant that listed it", async () => {
+    const { db, rendered } = makeDb([[detailRow(REPORT_MEMBERSHIP)], [{ id: 7 }]]);
+
+    const result = await new PeriodsReadService(db, accessByKey(APPROVALS_AT("team"))).getPeriod(
+      manager(),
+      7,
+    );
+
+    expect(result.period.id).toBe(7);
+    expect(rendered(1).params).toContain(MANAGER_USER);
+  });
+
+  it("still refuses the team-scoped approvals grant a period that is neither its own, its report's, nor one it approves", async () => {
+    const { db } = makeDb([[detailRow(STRANGER_MEMBERSHIP)], []]);
+
+    await expect(
+      new PeriodsReadService(db, accessByKey(APPROVALS_AT("team"))).getPeriod(manager(), 7),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("keeps an own-scoped approvals grant's overdue queue to its own periods, with no reporting-graph widening", async () => {
+    const { db, rendered } = makeDb([[], []]);
+
+    await new TimesheetOverdueService(db, accessByKey(APPROVALS_AT("own"))).listOverdue(
+      manager(),
+      { page: 1, limit: 50 } as never,
+    );
+
+    const { sql, params } = rendered(1);
+    expect(sql).toContain("\"user_membership_id\" = $2");
+    expect(sql).not.toContain("hr_reporting_lines");
+    expect(params).not.toContain(MANAGER_USER);
+  });
+
+  it("opens an own-scoped approvals grant's own period, and refuses another member's", async () => {
+    const opened = makeDb([[detailRow(MANAGER_MEMBERSHIP)]]);
+    const refused = makeDb([[detailRow(STRANGER_MEMBERSHIP)], []]);
+
+    await expect(
+      new PeriodsReadService(opened.db, accessByKey(APPROVALS_AT("own"))).getPeriod(manager(), 7),
+    ).resolves.toMatchObject({ period: { id: 7 } });
+    await expect(
+      new PeriodsReadService(refused.db, accessByKey(APPROVALS_AT("own"))).getPeriod(manager(), 7),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("answers a period from another tenant with 404 rather than 403, for the team-scoped approvals grant too", async () => {
+    const { db } = makeDb([[]]);
+
+    await expect(
+      new PeriodsReadService(db, accessByKey(APPROVALS_AT("team"))).getPeriod(manager(), 7),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
