@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetPeriods, projects, users, organizationMembers, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
+import { resolveReportsScope, membershipTeamScope } from "./timesheets-core-scope";
 import type { OverviewQuery, ReportRangeQuery } from "./dto/reports.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveDateRange, round2, utilizationRate } from "./lib/report-metrics";
@@ -48,7 +48,7 @@ export class ReportsService {
     const timesheetsWhere = read.compose(
       {
         tenant: timesheets.orgId,
-        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheets.userMembershipId),
         and: [
           isNull(timesheets.voidedAt),
           requestedMembershipId !== undefined ? eq(timesheets.userMembershipId, requestedMembershipId) : undefined,
@@ -63,7 +63,7 @@ export class ReportsService {
     const periodsWhere = read.compose(
       {
         tenant: timesheetPeriods.orgId,
-        scope: membershipScope(actorMembId, timesheetPeriods.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheetPeriods.userMembershipId),
         and: [
           eq(timesheetPeriods.status, "SUBMITTED"),
           query.startDate ? gte(timesheetPeriods.periodStart, query.startDate) : undefined,
@@ -157,7 +157,7 @@ export class ReportsService {
     const where = read.compose(
       {
         tenant: timesheets.orgId,
-        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        scope: membershipTeamScope(u.orgId, u.userId, actorMembId, timesheets.userMembershipId),
         and: [isNull(timesheets.voidedAt), gte(timesheets.date, startDate), lte(timesheets.date, endDate)],
       },
       ({ sql: w }) => w,

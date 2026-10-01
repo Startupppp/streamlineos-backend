@@ -7,10 +7,15 @@ jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(() => true),
 }));
 
+import { sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { timesheets } from "../../../db/schema";
+import { ScopedRead } from "../../access/scoped-read";
 import { isScopable } from "../../rbac/permissions";
 import {
   approvalQueueScope,
+  membershipScope,
+  membershipTeamScope,
   resolveApprovalScope,
   resolveEntriesScope,
   resolvePayrollScope,
@@ -162,5 +167,71 @@ describe("approvalQueueScope", () => {
 
   it("matches nothing for a session with no membership", () => {
     expect(render(approvalQueueScope(null)).sql).toBe("false");
+  });
+});
+
+describe("membershipTeamScope", () => {
+  const dialect = new PgDialect();
+
+  const renderArm = (scopeName: "own" | "team", membershipId: number | null) =>
+    dialect.sqlToQuery(
+      ScopedRead.of("org-1", "user-1", scopeName).compose(
+        {
+          tenant: timesheets.orgId,
+          scope: membershipTeamScope("org-1", "user-1", membershipId, timesheets.userMembershipId),
+        },
+        ({ sql: where }) => where,
+        () => sql`false`,
+      ),
+    );
+
+  it("keeps the own arm a plain owner-column equality", () => {
+    const rendered = renderArm("own", 77);
+    expect(rendered.sql).toContain('"user_membership_id" = $2');
+    expect(rendered.sql).not.toContain("EXISTS");
+    expect(rendered.params).toEqual(["org-1", 77]);
+  });
+
+  it("no longer collapses team onto own: the team predicate differs from the own predicate", () => {
+    expect(renderArm("team", 77).sql).not.toBe(renderArm("own", 77).sql);
+  });
+
+  it("admits own rows or a current direct report's rows under team scope", () => {
+    const rendered = renderArm("team", 77);
+
+    expect(rendered.sql).toMatch(/"user_membership_id" = \$\d+ or exists/i);
+    expect(rendered.sql).toContain('"hr_reporting_lines" rl');
+    expect(rendered.sql).toContain("me.id = rl.manager_employment_id");
+    expect(rendered.sql).toContain("ee.id = rl.employment_id");
+    expect(rendered.sql).toContain("rl.line_type = 'primary'");
+  });
+
+  it("bridges the owning membership id to the reporting graph's user id", () => {
+    const rendered = renderArm("team", 77);
+
+    expect(rendered.sql).toContain('"organization_members" rm');
+    expect(rendered.sql).toContain("rm.user_id = ep.user_id");
+    expect(rendered.sql).toMatch(/rm\.id = "timesheets"\."user_membership_id"/);
+  });
+
+  it("dates the reporting line from the org business date, never the session date", () => {
+    const rendered = renderArm("team", 77);
+
+    expect(rendered.sql).toContain("app.org_business_date");
+    expect(rendered.sql).not.toContain("CURRENT_DATE");
+  });
+
+  it("excludes deleted people and non-primary employments on both ends of the line", () => {
+    const rendered = renderArm("team", 77);
+
+    expect(rendered.sql).toContain("me.is_primary = true");
+    expect(rendered.sql).toContain("ee.is_primary = true");
+    expect((rendered.sql.match(/deleted_at IS NULL/g) ?? []).length).toBe(4);
+  });
+
+  it("matches nothing for a session with no membership, under team as well as own", () => {
+    expect(membershipTeamScope("org-1", "user-1", null, timesheets.userMembershipId).team).toBeUndefined();
+    expect(renderArm("team", null).sql).toContain("false");
+    expect(dialect.sqlToQuery(membershipScope(null, timesheets.userMembershipId).own).sql).toBe("false");
   });
 });

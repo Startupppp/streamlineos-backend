@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetSettings, holidays, leaveRequests, users, organizationMembers } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { membershipScope } from "../core/timesheets-core-scope";
+import { membershipTeamScope } from "../core/timesheets-core-scope";
 import type { ScopedRead } from "../../access/scoped-read";
 import { computeLeaveDays, computeOvertime, isWeekend, round2 } from "./lib/payroll-calc";
 import type { PeriodSummaryQuery, PayrollSummaryRow } from "./dto/payroll.schemas";
@@ -160,7 +160,7 @@ export class PayrollSummaryService {
     const entries: RawEntry[] = await read.read(
       {
         tenant: timesheets.orgId,
-        scope: membershipScope(actorMembId, timesheets.userMembershipId),
+        scope: membershipTeamScope(orgId, actorUserId, actorMembId, timesheets.userMembershipId),
         and: [
           gte(timesheets.date, query.start),
           lte(timesheets.date, query.end),
