@@ -100,6 +100,7 @@ export const PAYROLL_PERMISSIONS: Permission[] = [
     resource: "payroll:bank",
     action: "view",
     description: "View unmasked bank details (sensitive)",
+    sensitive: true,
   },
   {
     name: "payroll:bank:manage",

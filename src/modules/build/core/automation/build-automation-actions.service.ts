@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import {
   projectAutomations,
   projectStatuses,
@@ -13,6 +14,9 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
+import { assertTransitionAllowed } from "../tickets/projects-tickets-workflow-utils";
+import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
+import { ProjectsActivityService } from "../activity/projects-activity.service";
 
 export type StoredAction = NonNullable<typeof projectAutomations.$inferSelect>["actions"][number];
 
@@ -25,20 +29,14 @@ function isValidLabelId(value: string): boolean {
   return Number.isInteger(n) && n > 0;
 }
 
-/**
- * Executes one automation action against one ticket. Split out of
- * `BuildAutomationRunnerService` (BE-09): the runner decides *whether* an
- * action set should run (conditions, loop guard, rate limit, history); this
- * decides *how* one action mutates a ticket. Every write here goes straight
- * to `tickets`/`ticketLabelMappings`/`ticketComments` via Drizzle rather than
- * through `ProjectsTicketsUpdateService` — see the loop-prevention note on
- * `BuildAutomationRunnerService` for why that matters.
- */
 @Injectable()
 export class BuildAutomationActionExecutor {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly activity: ProjectsActivityService,
+  ) {}
 
-  private async applyLabel(orgId: string, ticketId: number, labelRef: string): Promise<void> {
+  private async applyLabel(orgId: string, ticketId: number, labelRef: string): Promise<boolean> {
     if (isValidLabelId(labelRef)) {
       const numericId = Number(labelRef);
       const found = await this.db.query.ticketLabels.findFirst({
@@ -47,13 +45,13 @@ export class BuildAutomationActionExecutor {
       });
       if (!found) {
         logger.warn("BuildAutomationActionExecutor: label not found by id", { numericId, orgId });
-        return;
+        return false;
       }
       await this.db
         .insert(ticketLabelMappings)
         .values({ orgId, ticketId, labelId: found.id })
         .onConflictDoNothing();
-      return;
+      return true;
     }
 
     const byName = await this.db.query.ticketLabels.findFirst({
@@ -62,12 +60,13 @@ export class BuildAutomationActionExecutor {
     });
     if (!byName) {
       logger.warn("BuildAutomationActionExecutor: label not found by name", { labelRef, orgId });
-      return;
+      return false;
     }
     await this.db
       .insert(ticketLabelMappings)
       .values({ orgId, ticketId, labelId: byName.id })
       .onConflictDoNothing();
+    return true;
   }
 
   async execute(
@@ -98,12 +97,45 @@ export class BuildAutomationActionExecutor {
           });
           return;
         }
-        await this.db.transaction(async tx => {
-          await reserveTicketCapacity(tx, orgId, projectId, [{ status: action.value, count: 1 }], [ticketId]);
-          await tx.update(tickets)
-            .set({ status: action.value, updatedAt: new Date() })
-            .where(ticketWhere);
+        const currentTicket = await this.db.query.tickets.findFirst({
+          where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+          columns: { status: true, version: true },
         });
+        if (!currentTicket) return;
+        const previousStatus = currentTicket.status;
+        const now = new Date();
+        await this.db.transaction(async tx => {
+          await assertTransitionAllowed(tx, orgId, projectId, previousStatus, action.value, {
+            userId: authorId ?? "automation",
+            userProjectRole: null,
+            isOrgOwner: false,
+            ticketId,
+          });
+          await reserveTicketCapacity(tx, orgId, projectId, [{ status: action.value, count: 1 }], [ticketId]);
+          const rows = await tx.update(tickets)
+            .set({ status: action.value, updatedAt: now, version: currentTicket.version + 1 })
+            .where(ticketWhere)
+            .returning({ version: tickets.version });
+          const updatedVersion = rows[0]?.version ?? currentTicket.version + 1;
+          await OutboxWriter.emit(tx, {
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "ticket",
+            aggregateId: String(ticketId),
+            aggregateVersion: updatedVersion,
+            eventType: "build.ticket.status_changed",
+            occurredAt: now,
+            payload: {
+              ticketId,
+              projectId,
+              orgId,
+              previousStatus,
+              newStatus: action.value,
+              actorUserId: authorId ?? null,
+            },
+          });
+        });
+        await this.activity.logTicketActivity(orgId, ticketId, authorId, "status_changed", previousStatus, action.value);
         return;
       }
       case "set_assignee": {
@@ -121,6 +153,7 @@ export class BuildAutomationActionExecutor {
             updatedAt: new Date(),
           })
           .where(ticketWhere);
+        await this.activity.logTicketActivity(orgId, ticketId, authorId, "assignee_changed");
         return;
       }
       case "set_priority": {
@@ -135,10 +168,14 @@ export class BuildAutomationActionExecutor {
           .update(tickets)
           .set({ priority: action.value, updatedAt: new Date() })
           .where(ticketWhere);
+        await this.activity.logTicketActivity(orgId, ticketId, authorId, "priority_changed");
         return;
       }
       case "add_label": {
-        await this.applyLabel(orgId, ticketId, action.value);
+        const applied = await this.applyLabel(orgId, ticketId, action.value);
+        if (applied) {
+          await this.activity.logTicketActivity(orgId, ticketId, authorId, "label_changed");
+        }
         return;
       }
       case "add_comment": {
@@ -151,6 +188,7 @@ export class BuildAutomationActionExecutor {
         await this.db
           .insert(ticketComments)
           .values({ orgId, ticketId, userId: authorId, content: action.value });
+        await this.activity.logTicketActivity(orgId, ticketId, authorId, "comment_added");
         return;
       }
     }

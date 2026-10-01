@@ -1,4 +1,4 @@
-import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import { ProjectsTicketWatchersService } from "./projects-ticket-watchers.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.module";
@@ -7,15 +7,6 @@ import { assertTicketReadAccess } from "../project-crud/project-access";
 jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
-
-/**
- * The build ticket watcher payload, asserted on what the read path RETURNS.
- *
- * `hooks/api/build/watchers.ts:21` reads through `apiClient.get<TicketWatcher[]>`, a cast. The
- * `user` relation on `ticket_watchers` points at `organization_members`, not at a person, so the
- * service shipped the membership row where `TicketWatcher.user` declares a `TicketUser`, and the
- * row carries `membershipId` where the client reads `userId`. A typecheck of either repo passed.
- */
 
 const ORG = "org-1";
 const TICKET = 7;
@@ -33,10 +24,9 @@ const actor: CurrentUserContext = {
 };
 
 beforeEach(() => {
-  jest.mocked(assertTicketReadAccess).mockResolvedValue();
+  jest.mocked(assertTicketReadAccess).mockResolvedValue(undefined as never);
 });
 
-/** A watcher row exactly as `with: { user: { with: { user } } }` hands it back. */
 function nestedWatcherRow(userId: string | null, id: number) {
   return {
     id,
@@ -69,18 +59,10 @@ function makeDb(rows: unknown[]) {
 }
 
 function build(db: Db) {
-  return new ProjectsTicketSubresourcesService(
-    db,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {
-      scopeFor: jest.fn().mockResolvedValue("all"),
-      resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-    },
-  );
+  return new ProjectsTicketWatchersService(db, {
+    scopeFor: jest.fn().mockResolvedValue("all"),
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+  } as never);
 }
 
 describe("build ticket watchers — the person, not the membership row", () => {
@@ -103,13 +85,6 @@ describe("build ticket watchers — the person, not the membership row", () => {
   });
 });
 
-/**
- * The consumer predicates, run against the real payload.
- *
- * `watcher-list.tsx:36` decides `isWatching` by `w.userId === currentUserId`, and `useToggleWatch`
- * branches on it — false means the click always POSTs, so un-watching was unreachable. `:106`
- * names each avatar with `getUserDisplayName(w.user)` and keys it by `w.userId`.
- */
 describe("build ticket watchers — the consumer predicates against the real payload", () => {
   interface FlatWatcher {
     userId?: string | null;

@@ -43,17 +43,20 @@ async function webhooksService(
     where: jest.fn().mockReturnValue({ returning: updateReturning }),
   });
   const update = jest.fn().mockReturnValue({ set });
-  const returning = jest.fn().mockResolvedValue([returnedRow({ version: 1 })]);
+  const returning = jest.fn()
+    .mockResolvedValueOnce([{ id: 55 }])
+    .mockResolvedValue([returnedRow({ version: 1 })]);
   const values = jest.fn().mockReturnValue({ returning });
   const insert = jest.fn().mockReturnValue({ values });
-  const db = {
+  const db: Record<string, unknown> = {
     select,
     update,
     insert,
     query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }) } },
   };
+  db.transaction = jest.fn().mockImplementation((cb: (tx: unknown) => unknown) => cb(db));
   const module = await Test.createTestingModule({
-    providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }],
+    providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db as unknown as Record<string, unknown> }],
   }).compile();
   return { service: module.get(ProjectsWebhooksService), module, select, update, set, values, returning, updateReturning };
 }
@@ -207,9 +210,10 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    const written = values.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(written.secretSetAt).toBeInstanceOf(Date);
-    expect(written.secret).toEqual(expect.any(String));
+    // calls[0] is credential insert (signingSecret), calls[1] is webhook row insert
+    const webhookInsert = values.mock.calls[1]?.[0] as Record<string, unknown>;
+    expect(webhookInsert.secretSetAt).toBeInstanceOf(Date);
+    expect(webhookInsert.secret).toEqual(expect.any(String));
     await module.close();
   });
 
@@ -219,7 +223,8 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    const projection = Object.keys(returning.mock.calls[0]?.[0] as Record<string, unknown>);
+    // returning.mock.calls[0] is credential returning({ id }); calls[1] is webhook projection
+    const projection = Object.keys(returning.mock.calls[1]?.[0] as Record<string, unknown>);
     expect(projection).toEqual(expect.arrayContaining(["hasSecret", "secretSetAt", "version", "updatedAt"]));
     expect(projection).not.toContain("secret");
     await module.close();
@@ -243,13 +248,14 @@ describe("webhook secret age is expressible without exposing the secret", () => 
     await module.close();
   });
 
-  it("derives hasSecret from a secret IS NOT NULL predicate rather than a stored flag", async () => {
+  it("derives hasSecret from an integrations_endpoint_id IS NOT NULL predicate rather than a stored flag", async () => {
     const { service, module, returning } = await webhooksService(1);
     await service.createWebhook(ORG, PROJECT_ID, "user-1", {
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    const projection = returning.mock.calls[0]?.[0] as Record<string, { queryChunks?: unknown[] }>;
+    // calls[1] is the webhook insert projection; calls[0] is the credential id projection
+    const projection = returning.mock.calls[1]?.[0] as Record<string, { queryChunks?: unknown[] }>;
     const chunks = projection.hasSecret?.queryChunks ?? [];
     const rendered = chunks
       .map((chunk) => {
@@ -260,7 +266,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       })
       .join("");
     expect(rendered).toContain("IS NOT NULL");
-    expect(rendered).toContain("secret");
+    expect(rendered).toContain("integrations_endpoint_id");
     await module.close();
   });
 
@@ -320,7 +326,8 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    const writeKeys = Object.keys(write.returning.mock.calls[0]?.[0] as Record<string, unknown>);
+    // calls[0] is credential returning({ id }); calls[1] is webhook projection
+    const writeKeys = Object.keys(write.returning.mock.calls[1]?.[0] as Record<string, unknown>);
 
     expect(listKeys.sort()).toEqual(writeKeys.sort());
     await module.close();

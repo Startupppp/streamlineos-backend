@@ -1,4 +1,5 @@
 export {
+  assertCanManageProject,
   assertCanModifyAuthoredRecord,
   assertProjectAccess,
   assertProjectAggregateAccess,

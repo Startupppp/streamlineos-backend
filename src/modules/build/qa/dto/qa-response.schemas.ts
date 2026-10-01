@@ -142,4 +142,5 @@ export const bugRowSchema = z.object({
   linkedTestCaseId: z.number().int().nullable(),
   reopenCount: z.number().int().nullable(),
   createdByUserId: z.string().nullable(),
+  version: z.number().int(),
 });

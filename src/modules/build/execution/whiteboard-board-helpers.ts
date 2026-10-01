@@ -4,7 +4,6 @@ import {
   organizationMembers,
   projectWhiteboardShares,
   projectWhiteboards,
-  projects,
   users,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
@@ -12,14 +11,7 @@ import { AccessService } from "../../access/access.service";
 import { resolveWhiteboardAccess } from "./whiteboard-access";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-
-export async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
-  const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-    columns: { id: true },
-  });
-  if (!project) throw new NotFoundException("Project not found");
-}
+import { assertProjectInOrg } from "../core/project-crud/project-access";
 
 export type ShareEntry = {
   userId: string;
@@ -52,7 +44,7 @@ export async function requireWhiteboardManageAccess(
   projectId: number,
   whiteboardId: number,
 ): Promise<typeof projectWhiteboards.$inferSelect> {
-  await assertProject(db, u.orgId, projectId);
+  await assertProjectInOrg(db, u.orgId, projectId);
 
   const rows = await db
     .select({
