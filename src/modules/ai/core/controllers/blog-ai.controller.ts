@@ -41,6 +41,14 @@ import type { Request, Response } from "express";
 
 const postIdParams = z.object({ postId: z.string().min(1) }).strict();
 
+/**
+ * Editorial writing assistance for the marketing blog. It has had no caller since the in-app blog
+ * admin UI moved to the standalone admin (`Startupppp/blogs`), which does its own editing; the
+ * routes stay because `blog:ai:use` is a granted permission and withdrawing a grantable key needs
+ * its own migration. Note that it reads `blog_posts`, whose columns are the PUBLISHED projection
+ * after migration 1705 — a draft's text lives in `blog_post_revisions` and is not visible here, so
+ * do not reuse this as a draft-editing surface without reading the working revision instead.
+ */
 @Controller("ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @UseRateLimit("ai:invoke")
