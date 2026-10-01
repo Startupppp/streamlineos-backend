@@ -24,6 +24,9 @@ class MixedController {
   @AuthorizedInService("assertModuleAccessPolicy")
   standingRoute(): void {}
 
+  @RequirePermission("timesheets:entries:view", "timesheets:team:view", "timesheets:approvals:view")
+  anyOfThreeRoute(): void {}
+
   undeclaredRoute(): void {}
 
   notARoute(): void {}
@@ -33,6 +36,7 @@ for (const name of [
   "memberRoute",
   "gatedRoute",
   "standingRoute",
+  "anyOfThreeRoute",
   "undeclaredRoute",
 ]) {
   Reflect.defineMetadata(
@@ -103,6 +107,18 @@ describe("classifyHandler", () => {
     });
   });
 
+  it("keeps a multi-key route permissioned, naming the first key and carrying the rest", () => {
+    expect(at("anyOfThreeRoute")).toEqual({
+      mode: "permissioned",
+      permission: "timesheets:entries:view",
+      alternates: [
+        "timesheets:entries:view",
+        "timesheets:team:view",
+        "timesheets:approvals:view",
+      ],
+    });
+  });
+
   it("reports absence rather than guessing", () => {
     expect(at("undeclaredRoute")).toEqual({ mode: "undeclared" });
   });
@@ -153,6 +169,30 @@ describe("recordRouteClassification", () => {
       "x-exposure": "in-service",
       "x-authorized-in-service": "assertModuleAccessPolicy",
     });
+  });
+
+  it("publishes every key of a multi-key route, so the document cannot understate the gate", () => {
+    const document = documentFor(["MixedController_anyOfThreeRoute"]);
+    expect(recordRouteClassification(appWith([new MixedController()]), document)).toEqual({
+      stamped: 1,
+      undeclared: 0,
+    });
+    expect(document.paths["/p0"].get).toMatchObject({
+      "x-exposure": "permissioned",
+      "x-permission": "timesheets:entries:view",
+      "x-permission-any": [
+        "timesheets:entries:view",
+        "timesheets:team:view",
+        "timesheets:approvals:view",
+      ],
+    });
+    expect(document.paths["/p0"].get.description ?? "").toContain("timesheets:approvals:view");
+  });
+
+  it("leaves x-permission-any off a single-key route, so the vendored contract does not churn", () => {
+    const document = documentFor(["MixedController_gatedRoute"]);
+    recordRouteClassification(appWith([new MixedController()]), document);
+    expect(document.paths["/p0"].get["x-permission-any"]).toBeUndefined();
   });
 
   it("records an undeclared route as undeclared rather than omitting it", () => {
@@ -250,6 +290,16 @@ describe("describeExposure", () => {
     expect(describeExposure({ mode: "permissioned", permission: "hr:employees:view" })).toContain(
       "hr:employees:view",
     );
+  });
+
+  it("names every key when a route accepts any one of several", () => {
+    const summary = describeExposure({
+      mode: "permissioned",
+      permission: "timesheets:entries:view",
+      alternates: ["timesheets:entries:view", "timesheets:team:view"],
+    });
+    expect(summary).toContain("timesheets:entries:view");
+    expect(summary).toContain("timesheets:team:view");
   });
 
   it("names the checker on an in-service route", () => {

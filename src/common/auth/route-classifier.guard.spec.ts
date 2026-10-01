@@ -31,6 +31,16 @@ class PermissionedController {
 }
 Reflect.defineMetadata(PATH_METADATA, "permissioned", PermissionedController.prototype.route);
 
+class MultiKeyPermissionedController {
+  @RequirePermission("timesheets:entries:view", "timesheets:team:view")
+  route(): void {}
+}
+Reflect.defineMetadata(
+  PATH_METADATA,
+  "multi-key-permissioned",
+  MultiKeyPermissionedController.prototype.route,
+);
+
 @AuthorizedInService("assertModuleAccessPolicy")
 class InServiceController {
   route(): void {}
@@ -160,6 +170,13 @@ describe("RouteClassifierGuard.onApplicationBootstrap", () => {
       new PermissionedController(),
     ], ENFORCING_EXPLICITLY);
     expect(() => guard.onApplicationBootstrap()).not.toThrow();
+  });
+
+  it("counts a route naming SEVERAL permission keys as declared, so BE-30 cannot miss it", () => {
+    const guard = makeGuard([new MultiKeyPermissionedController()], ENFORCING_EXPLICITLY);
+    expect(() => guard.onApplicationBootstrap()).not.toThrow();
+    const undeclared = (guard as unknown as { undeclared: Set<string> }).undeclared;
+    expect(undeclared.size).toBe(0);
   });
 
   it("populates the undeclared set with the controller#method label", () => {

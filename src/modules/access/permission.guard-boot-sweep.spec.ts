@@ -196,3 +196,28 @@ describe("PermissionGuard boot sweep — guard chain detection completeness", ()
     expect(() => guard.onApplicationBootstrap()).not.toThrow();
   });
 });
+
+describe("PermissionGuard boot sweep — a route naming several keys stays visible to it", () => {
+  it("refuses a multi-key route that mounts no PermissionGuard, so an OR cannot be a way to ship ungated", () => {
+    class MultiKeyBrokenController {
+      @RequirePermission("timesheets:entries:view", "timesheets:team:view")
+      route(): void {}
+    }
+    Reflect.defineMetadata(PATH_METADATA, "/multi-broken", MultiKeyBrokenController.prototype.route);
+
+    const guard = makeGuard([new MultiKeyBrokenController()]);
+    expect(() => guard.onApplicationBootstrap()).toThrow(/MultiKeyBrokenController#route/);
+  });
+
+  it("accepts a multi-key route that does mount it", () => {
+    @UseGuards(JwtAuthGuard, PermissionGuard)
+    class MultiKeyCorrectController {
+      @RequirePermission("timesheets:entries:view", "timesheets:team:view")
+      route(): void {}
+    }
+    Reflect.defineMetadata(PATH_METADATA, "/multi-ok", MultiKeyCorrectController.prototype.route);
+
+    const guard = makeGuard([new MultiKeyCorrectController()]);
+    expect(() => guard.onApplicationBootstrap()).not.toThrow();
+  });
+});
