@@ -19,15 +19,14 @@ import {
   withMembershipMutations,
 } from "../membership-mutations";
 import {
-  bustMembershipAfterIdentityErasure,
-  bustMembershipsAfterOrgTeardown,
-  revokeMembershipAccessCaches,
-} from "../membership-bust";
-import {
   bustMembershipStatusCache,
   bustMembershipStatusCacheMany,
 } from "../../auth/membership-state.service";
-import { commitAccessChange } from "../../rbac/access-mutation-commit";
+import {
+  commitAccessChange,
+  revokeStandingNowAndAfterCommit,
+  scheduleStandingRevocation,
+} from "../../rbac/access-mutation-commit";
 import {
   syncStructuralRoleAssignment,
   syncStructuralRoleAssignments,
@@ -56,7 +55,10 @@ function makeTx(returned: unknown[][] = [[42]]): {
 }
 
 function makeCache(): CacheService {
-  return { invalidate: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService;
+  return {
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    invalidateMany: jest.fn().mockResolvedValue(undefined),
+  } as unknown as CacheService;
 }
 
 function statementsOn(captured: Statement[], fragment: string): Statement[] {
@@ -350,7 +352,7 @@ describe("bulk operations are bounded", () => {
     const cache = makeCache();
     const userIds = Array.from({ length: 5000 }, (_, index) => `member-${index}`);
 
-    await bustMembershipsAfterOrgTeardown(cache, userIds);
+    await scheduleStandingRevocation(cache, userIds);
 
     expect(bustMembershipStatusCacheMany).toHaveBeenCalledTimes(1);
     expect(bustMembershipStatusCache).not.toHaveBeenCalled();
@@ -413,7 +415,7 @@ describe("invalidation-only entry points", () => {
 
     await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: {} as never, afterCommit: hooks },
-      () => revokeMembershipAccessCaches(cache, ORG, USER),
+      () => revokeStandingNowAndAfterCommit(cache, USER),
     );
 
     expect(bustMembershipStatusCache).toHaveBeenCalledTimes(1);
@@ -429,7 +431,7 @@ describe("invalidation-only entry points", () => {
   it("identity erasure busts every organisation the subject belongs to", async () => {
     const cache = makeCache();
 
-    await bustMembershipAfterIdentityErasure(cache, USER);
+    await scheduleStandingRevocation(cache, [USER]);
 
     expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
   });

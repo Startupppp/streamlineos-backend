@@ -206,16 +206,13 @@ async function resolveLosers(
 
 type RevocationPlan = { standing: readonly string[]; sessions: readonly string[]; listKeys: readonly ExactCacheKey[] };
 
-async function bustKeys(cache: CacheService, keys: readonly ExactCacheKey[]): Promise<void> {
-  const [only] = keys;
-  if (keys.length === 1 && only !== undefined) await cache.invalidate(only);
+async function bust(cache: CacheService, keys: readonly ExactCacheKey[], standing: readonly string[]) {
+  const [onlyKey] = keys;
+  if (keys.length === 1 && onlyKey !== undefined) await cache.invalidate(onlyKey);
   else if (keys.length > 1) await cache.invalidateMany(keys);
-}
-
-async function bustStanding(cache: CacheService, userIds: readonly string[]): Promise<void> {
-  const [only] = userIds;
-  if (userIds.length === 1 && only !== undefined) await bustMembershipStatusCache(cache, only);
-  else if (userIds.length > 1) await bustMembershipStatusCacheMany(cache, userIds);
+  const [onlyUser] = standing;
+  if (standing.length === 1 && onlyUser !== undefined) await bustMembershipStatusCache(cache, onlyUser);
+  else if (standing.length > 1) await bustMembershipStatusCacheMany(cache, standing);
 }
 
 async function scheduleRevocation(cache: CacheService, plan: RevocationPlan): Promise<void> {
@@ -224,17 +221,22 @@ async function scheduleRevocation(cache: CacheService, plan: RevocationPlan): Pr
   ];
   const standing = [...new Set(plan.standing)];
   if (keys.length === 0 && standing.length === 0) return;
-  await afterCommitOrInline(async () => {
-    await bustKeys(cache, keys);
-    await bustStanding(cache, standing);
-  });
+  await afterCommitOrInline(() => bust(cache, keys, standing));
+}
+
+export async function revokeStandingNowAndAfterCommit(cache: CacheService, userId: string) {
+  const run = () => bust(cache, [CACHE_KEYS.userSession(userId)], [userId]);
+  await run();
+  registerAfterCommit(run);
 }
 
 export function scheduleStandingRevocation(
   cache: CacheService,
   userIds: readonly string[],
+  { withSessions = false }: { withSessions?: boolean } = {},
 ): Promise<void> {
-  return scheduleRevocation(cache, { standing: userIds, sessions: [], listKeys: [] });
+  const sessions = withSessions ? userIds : [];
+  return scheduleRevocation(cache, { standing: userIds, sessions, listKeys: [] });
 }
 
 async function revokeSessions(

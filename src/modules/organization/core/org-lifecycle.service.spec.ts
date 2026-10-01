@@ -145,11 +145,7 @@ describe("OrgLifecycleService", () => {
     expect(db.transaction).toHaveBeenCalledTimes(4);
     expect(revokeAllPending).toHaveBeenCalledWith("org-1", db);
     expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1", "removed");
-    // The session bust is batched: one invalidateMany carrying every member's key,
-    // rather than one invalidate per member.
-    expect(cacheInvalidateMany).toHaveBeenCalledWith(
-      expect.arrayContaining([CACHE_KEYS.userSession("user-1")]),
-    );
+    expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
   });
 
   it("hides another tenant's archived organization during restore", async () => {

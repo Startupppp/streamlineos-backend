@@ -28,7 +28,6 @@ const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 const SRC_DIR = join(BACKEND_ROOT, "src");
 
 const OWNER_WRITES = "src/common/org/membership-mutations.ts";
-const OWNER_INVALIDATION = "src/common/org/membership-bust.ts";
 const PRIMITIVE_DECLARATION = "src/common/auth/membership-state.service.ts";
 
 const MIN_FILES = 500;
@@ -102,7 +101,6 @@ export const WRITE_EXEMPT = new Map([
 export const PRIMITIVE_EXEMPT = new Map([
   [OWNER_WRITES, "the owner itself"],
   ["src/common/rbac/access-mutation-commit.ts", "the access-mutation commit module schedules every revocation"],
-  [OWNER_INVALIDATION, "the invalidation half of the owner"],
   [PRIMITIVE_DECLARATION, "declares bustMembershipStatusCache and bustMembershipStatusCacheMany"],
 ]);
 
@@ -146,12 +144,18 @@ export const ACCESS_SCOPES = [
   "src/common/rbac/",
 ];
 
+export const REVOCATION_SCOPES = [
+  "src/common/auth/api-key.guard.ts",
+  "src/common/auth/system-jobs.ts",
+  "src/modules/cron/cron-org-purge-worker.service.ts",
+  "src/modules/organization/core/org-lifecycle.service.ts",
+  "src/modules/organization/core/org-membership-access-revocation.ts",
+  "src/modules/organization/core/org-purge.service.ts",
+  "src/modules/users/users.service.ts",
+];
+
 export const ACCESS_SIDE_EFFECT_EXEMPT = new Map([
   [BUMP_COMMIT_OWNER, "the access-mutation commit module itself"],
-  [
-    "src/common/org/membership-bust.ts",
-    "revokeMembershipAccessCaches busts now and after commit for organization/core callers outside this scope",
-  ],
   [
     "src/modules/ownership/lib/ownership-transfer-initiation.ts",
     "opening a PENDING transfer changes no access; the audit records a request, not a grant",
@@ -172,6 +176,10 @@ export const ACCESS_SIDE_EFFECT_EXEMPT = new Map([
 
 export function isAccessScoped(rel) {
   return ACCESS_SCOPES.some((scope) => rel.startsWith(scope));
+}
+
+export function isRevocationScoped(rel) {
+  return isAccessScoped(rel) || REVOCATION_SCOPES.includes(rel);
 }
 
 const ACCESS_AUDIT_RE =
@@ -244,9 +252,10 @@ export function findPrimitiveImports(source) {
 }
 
 export function scanAccessSideEffects(rel, source) {
-  if (!isAccessScoped(rel) || ACCESS_SIDE_EFFECT_EXEMPT.has(rel)) return [];
+  if (!isRevocationScoped(rel) || ACCESS_SIDE_EFFECT_EXEMPT.has(rel)) return [];
   const out = [];
-  for (const hit of findAccessAuditWrites(source))
+  const audits = isAccessScoped(rel) ? findAccessAuditWrites(source) : [];
+  for (const hit of audits)
     out.push({
       rel,
       line: hit.line,
@@ -453,6 +462,18 @@ if (RUN_DIRECTLY && process.argv.includes("--self-test")) {
   check("rbac is access-scoped", isAccessScoped("src/modules/rbac/roles.service.ts"), true);
   check("ownership is access-scoped", isAccessScoped("src/modules/ownership/x.ts"), true);
   check("hr is not access-scoped", isAccessScoped("src/modules/hr/x.ts"), false);
+  check("an owned file is revocation-scoped", isRevocationScoped("src/modules/users/users.service.ts"), true);
+  check("its sibling is not", isRevocationScoped("src/modules/users/users.controller.ts"), false);
+  check(
+    "an owned file's lifecycle audit is not an access audit",
+    scanAccessSideEffects("src/modules/users/users.service.ts", "this.audit.log({ action: 'user.deleted' });").length,
+    0,
+  );
+  check(
+    "an owned file's direct session bust is still caught",
+    scanAccessSideEffects("src/modules/users/users.service.ts", "await cache.invalidate(CACHE_KEYS.userSession(u));").length,
+    1,
+  );
   check(
     "a planted module-access file collects all three side-effect violations",
     scanAccessSideEffects(
@@ -524,7 +545,7 @@ function scanRepository() {
           line: hit.line,
           kind: "PRIVATE INVALIDATION PRIMITIVE",
           text: hit.text,
-          fix: "Use a named operation: a MembershipMutations method, or revokeMembershipAccessCaches / bustMembershipsAfterOrgTeardown / bustMembershipAfterIdentityErasure / bustMembershipAfterOwnershipChange.",
+          fix: "Use a MembershipMutations method, a commitAccessChange revoke intent, or scheduleStandingRevocation / revokeStandingNowAndAfterCommit from common/rbac/access-mutation-commit.",
         });
 
     if (!BUMP_EXEMPT.has(rel))
