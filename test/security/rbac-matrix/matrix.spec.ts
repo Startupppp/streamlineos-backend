@@ -1,46 +1,58 @@
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { MatrixRunner } from "./matrix-runner";
-import type { AdapterKind, ExecutableCell } from "./matrix.types";
+import type { AdapterKind, Scenario, ScenarioState } from "./matrix.types";
 import { STANDINGS } from "./standings";
 import { matrixWorld } from "./fixtures";
 import { closeHttpHarnesses } from "./adapters/http-adapter";
-import { accessCells } from "./cells/access-cells";
-import { buildCells } from "./cells/build-cells";
-import { runtimeCells } from "./cells/runtime-cells";
-import { declaredCells } from "./cells/declared-cells";
+import { accessScenarios } from "./cells/access-scenarios";
+import { buildProjectScenarios } from "./cells/build-project-scenarios";
+import { buildWorkScenarios } from "./cells/build-work-scenarios";
+import { runtimeScenarios } from "./cells/runtime-scenarios";
+import { evidenceSuites } from "./evidence-suites";
 
-jest.setTimeout(60_000);
+jest.setTimeout(120_000);
 
 const BACKEND_ROOT = resolve(__dirname, "../../..");
 const ADAPTERS: readonly AdapterKind[] = ["http", "realtime", "job", "file", "service"];
+const STATES: readonly ScenarioState[] = [
+  "normal",
+  "module-disabled",
+  "cross-project",
+  "scope-narrowed",
+  "replayed",
+  "suspended-membership",
+  "removed-membership",
+  "expired-role",
+  "soft-deleted-parent",
+  "archived-project",
+];
 
 const world = matrixWorld();
 const runner = new MatrixRunner();
 
-const plantedFailure: ExecutableCell = {
-  kind: "executable",
+const plantedFailure: Scenario = {
   id: "planted-failure",
-  standing: "org:member",
+  actor: "org:member",
   resource: "module-access:build",
   action: "manage-access",
   tenant: "same",
   state: "normal",
   expected: "403",
-  adapter: "service",
   because: "the gate self-test plants an allow where a refusal is expected",
   pairedWith: "module-access-manage-org-admin",
-  run: async () => ({ outcome: "allow" }),
+  bindings: [{ adapter: "service", entry: "planted", run: async () => ({ outcome: "allow" }) }],
 };
 
-const executable: ExecutableCell[] = [
-  ...accessCells(world),
-  ...buildCells(world),
-  ...runtimeCells(world),
+const scenarios: Scenario[] = [
+  ...accessScenarios(world),
+  ...buildProjectScenarios(world),
+  ...buildWorkScenarios(world),
+  ...runtimeScenarios(world),
   ...(process.env.RBAC_MATRIX_PLANT_FAILURE === "1" ? [plantedFailure] : []),
 ];
-for (const cell of executable) runner.declare(cell);
-for (const cell of declaredCells()) runner.declare(cell);
+for (const scenario of scenarios) runner.declare(scenario);
+for (const suite of evidenceSuites()) runner.declareSuite(suite);
 
 function suitesOnDisk(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
@@ -48,6 +60,10 @@ function suitesOnDisk(directory: string): string[] {
     if (statSync(path).isDirectory()) return suitesOnDisk(path);
     return /spec\.ts$/.test(name) ? [relative(BACKEND_ROOT, path).split("\\").join("/")] : [];
   });
+}
+
+function resourcesOf(predicate: (scenario: Scenario) => boolean): Set<string> {
+  return new Set(scenarios.filter(predicate).map((scenario) => scenario.resource));
 }
 
 afterAll(async () => {
@@ -59,62 +75,81 @@ afterAll(async () => {
     writeFileSync(target, `${JSON.stringify(ledger, null, 2)}\n`);
   }
   process.stdout.write(
-    `\nRBAC Matrix Ledger: proven=${ledger.proven} failed=${ledger.failed} unrun=${ledger.unrun} total=${ledger.total}\n`,
+    `\nRBAC Matrix Ledger: scenarios=${ledger.scenarios} proven=${ledger.proven} failed=${ledger.failed} unrun=${ledger.unrun} total=${ledger.total}\n`,
   );
 });
 
 describe("RBAC verification matrix", () => {
-  for (const cell of executable)
-    it(`${cell.id}: ${cell.standing} ${cell.action} on ${cell.resource} in the ${cell.tenant} tenant (${cell.state}) is ${cell.expected} because ${cell.because}`, async () => {
-      expect(await runner.execute(cell)).toEqual({ status: "proven", detail: null });
+  for (const scenario of scenarios)
+    describe(`${scenario.id}: ${scenario.actor} ${scenario.action} on ${scenario.resource} in the ${scenario.tenant} tenant (${scenario.state}) is ${scenario.expected} because ${scenario.because}`, () => {
+      for (const binding of scenario.bindings)
+        it(`through the ${binding.adapter} adapter (${binding.entry})`, async () => {
+          expect(await runner.execute(scenario, binding)).toEqual({ status: "proven", detail: null });
+        });
     });
 });
 
 describe("RBAC verification matrix shape", () => {
-  it("pairs every refusal with an allowed cell on the same resource, action and adapter so no negative passes on a surface nothing can reach", () => {
-    const unpaired = executable
-      .filter((cell) => cell.expected !== "allow")
-      .filter((cell) => {
-        const pair = cell.pairedWith === undefined ? undefined : runner.find(cell.pairedWith);
-        return (
-          pair === undefined ||
-          pair.kind !== "executable" ||
-          pair.expected !== "allow" ||
-          pair.resource !== cell.resource ||
-          pair.action !== cell.action ||
-          pair.adapter !== cell.adapter
-        );
+  it("pairs every refusal with an allowed scenario on the same resource and action that binds every adapter the refusal binds, so no negative passes on a surface nothing can reach", () => {
+    const unpaired = scenarios
+      .filter((scenario) => scenario.expected !== "allow")
+      .filter((scenario) => {
+        const pair = scenario.pairedWith === undefined ? undefined : runner.find(scenario.pairedWith);
+        if (pair === undefined || pair.expected !== "allow" || pair.resource !== scenario.resource || pair.action !== scenario.action) return true;
+        const pairAdapters = new Set(pair.bindings.map((binding) => binding.adapter));
+        return scenario.bindings.some((binding) => !pairAdapters.has(binding.adapter));
       })
-      .map((cell) => cell.id);
+      .map((scenario) => scenario.id);
     expect(unpaired).toEqual([]);
   });
 
-  it("names a pair only on refusals so an allowed cell never masquerades as a negative", () => {
-    expect(executable.filter((cell) => cell.expected === "allow" && cell.pairedWith !== undefined).map((cell) => cell.id)).toEqual([]);
+  it("names a pair only on refusals so an allowed scenario never masquerades as a negative", () => {
+    expect(scenarios.filter((scenario) => scenario.expected === "allow" && scenario.pairedWith !== undefined).map((scenario) => scenario.id)).toEqual([]);
   });
 
-  it("covers the six BE-102 standings and the outsider, each with at least one refusal", () => {
-    for (const standing of STANDINGS) {
-      expect(executable.filter((cell) => cell.standing === standing).length).toBeGreaterThan(0);
-      expect(executable.some((cell) => cell.standing === standing && cell.expected !== "allow")).toBe(true);
-    }
+  it("runs shared scenarios through more than one adapter, so one decision is proven on several transports", () => {
+    expect(scenarios.filter((scenario) => scenario.bindings.length > 1).length).toBeGreaterThanOrEqual(30);
   });
 
-  it("drives every adapter with both an allowed and a refused cell", () => {
+  it("gives every BE-102 standing refusals on at least three resources and every standing but the outsider allows on at least three", () => {
+    const short = STANDINGS.map((standing) => ({
+      standing,
+      refused: [...resourcesOf((scenario) => scenario.actor === standing && scenario.expected !== "allow")],
+      allowed: [...resourcesOf((scenario) => scenario.actor === standing && scenario.expected === "allow")],
+    })).filter((row) => row.refused.length < 3 || (row.standing !== "outsider" && row.allowed.length < 3));
+    expect(short).toEqual([]);
+  });
+
+  it("drives every adapter with both an allowed and a refused binding", () => {
     for (const adapter of ADAPTERS) {
-      expect(executable.some((cell) => cell.adapter === adapter && cell.expected === "allow")).toBe(true);
-      expect(executable.some((cell) => cell.adapter === adapter && cell.expected !== "allow")).toBe(true);
+      const bound = scenarios.filter((scenario) => scenario.bindings.some((binding) => binding.adapter === adapter));
+      expect({ adapter, allow: bound.some((scenario) => scenario.expected === "allow"), refuse: bound.some((scenario) => scenario.expected !== "allow") }).toEqual({
+        adapter,
+        allow: true,
+        refuse: true,
+      });
     }
   });
 
-  it("states every contract outcome at least once: allow, 403 in-tenant, 404 cross-tenant and 402 module gate", () => {
-    for (const outcome of ["allow", "403", "404", "402"] as const)
-      expect(executable.some((cell) => cell.expected === outcome)).toBe(true);
-    expect(executable.filter((cell) => cell.tenant === "other").every((cell) => cell.expected === "404")).toBe(true);
+  it("states every contract outcome at least once and answers every cross-tenant scenario 404", () => {
+    for (const outcome of ["allow", "403", "404", "402"]) expect(scenarios.some((scenario) => scenario.expected === outcome)).toBe(true);
+    expect(scenarios.filter((scenario) => scenario.tenant === "other" && scenario.expected !== "404").map((scenario) => scenario.id)).toEqual([]);
   });
 
-  it("registers every BOLA suite on disk as a declared cell so the ledger shows what this run did not execute", () => {
-    const declared = new Set(declaredCells().map((cell) => cell.evidenceSuite));
+  it("covers every lifecycle state, membership state and role-expiry state the matrix names", () => {
+    expect(STATES.filter((state) => !scenarios.some((scenario) => scenario.state === state))).toEqual([]);
+  });
+
+  it("labels a scenario tenant-only exactly when its entry point takes no actor, and never pairs it with an actor scenario", () => {
+    const mixed = scenarios.filter((scenario) => {
+      const pair = scenario.pairedWith === undefined ? undefined : runner.find(scenario.pairedWith);
+      return pair !== undefined && (pair.actor === "tenant-only") !== (scenario.actor === "tenant-only");
+    });
+    expect(mixed.map((scenario) => scenario.id)).toEqual([]);
+  });
+
+  it("registers every BOLA suite on disk as evidence so the ledger shows what the gate ran and what it could not", () => {
+    const declared = new Set(evidenceSuites().map((suite) => suite.suite));
     const onDisk = [
       ...suitesOnDisk(join(BACKEND_ROOT, "test/security/bola")),
       ...readdirSync(join(BACKEND_ROOT, "test/security"))
@@ -123,5 +158,9 @@ describe("RBAC verification matrix shape", () => {
     ];
     expect(onDisk.filter((suite) => !declared.has(suite))).toEqual([]);
     expect([...declared].filter((suite) => !existsSync(join(BACKEND_ROOT, suite)))).toEqual([]);
+  });
+
+  it("never marks a seeded e2e suite runnable, so the gate cannot execute it against a database", () => {
+    expect(evidenceSuites().filter((suite) => suite.suite.includes("seeded-e2e") && suite.runnable)).toEqual([]);
   });
 });
