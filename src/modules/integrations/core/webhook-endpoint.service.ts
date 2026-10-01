@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, lt, sql } from "drizzle-orm";
 import {
   integrationWebhookEndpointCredentials,
   integrationWebhookDeliveries,
@@ -9,6 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { forEachOrg } from "../../../common/tenant";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
   postSafeWebhook,
@@ -220,6 +221,39 @@ export class WebhookEndpointService {
     );
 
     return this.deliverInteractive(orgId, deliveryId, url, signingSecret, "webhook.test", testPayload);
+  }
+
+  async pruneDeliveries(cutoff: Date): Promise<number> {
+    const PRUNE_BATCH_SIZE = 500;
+    let total = 0;
+
+    await forEachOrg(this.db, "prune-webhook-deliveries", async (tx, orgId) => {
+      for (;;) {
+        const rows = await tx
+          .select({ id: integrationWebhookDeliveries.id })
+          .from(integrationWebhookDeliveries)
+          .where(
+            and(
+              eq(integrationWebhookDeliveries.orgId, orgId),
+              lt(integrationWebhookDeliveries.createdAt, cutoff),
+              ne(integrationWebhookDeliveries.status, "pending"),
+            ),
+          )
+          .limit(PRUNE_BATCH_SIZE);
+        if (rows.length === 0) break;
+
+        await tx.delete(integrationWebhookDeliveries).where(
+          inArray(
+            integrationWebhookDeliveries.id,
+            rows.map((r) => r.id),
+          ),
+        );
+        total += rows.length;
+        if (rows.length < PRUNE_BATCH_SIZE) break;
+      }
+    });
+
+    return total;
   }
 
   private async deliverInteractive(

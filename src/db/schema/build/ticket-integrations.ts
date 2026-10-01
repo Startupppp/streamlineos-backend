@@ -1,6 +1,5 @@
-import { bigserial, boolean, check, foreignKey, index, integer, jsonb, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
-import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 
@@ -16,7 +15,6 @@ export const projectWebhooks = build.table(
       ,
     url: text("url").notNull(),
     events: text("events").array().notNull().default([]),
-    secret: text("secret"),
     secretSetAt: timestamp("secret_set_at", { withTimezone: true }),
     integrationsEndpointId: integer("integrations_endpoint_id"),
     isActive: boolean("is_active").notNull().default(true),
@@ -35,40 +33,6 @@ export const projectWebhooks = build.table(
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_webhooks_org_project" }).onDelete("cascade"),
     index("idx_project_webhooks_project_id").on(t.projectId),
     unique("uniq_project_webhooks_org_id").on(t.orgId, t.id),
-  ],
-);
-
-export const webhookDeliveries = build.table(
-  "webhook_deliveries",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    webhookId: integer("webhook_id")
-      .notNull()
-      ,
-    event: varchar("event", { length: 100 }).notNull(),
-    payload: jsonb("payload"),
-    status: varchar("status", { length: 20 }).notNull().default("pending"),
-    responseCode: integer("response_code"),
-    responseBody: text("response_body"),
-    attempts: integer("attempts").notNull().default(0),
-    lastError: text("last_error"),
-    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => [
-  foreignKey({ columns: [t.orgId, t.webhookId], foreignColumns: [projectWebhooks.orgId, projectWebhooks.id], name: "fk_webhook_deliveries_org_webhook" }).onDelete("cascade"),
-    index("idx_webhook_deliveries_webhook_id").on(t.webhookId),
-    index("idx_webhook_deliveries_delivered_at").on(t.deliveredAt),
-    unique("uniq_webhook_deliveries_org_id").on(t.orgId, t.id),
-    check(
-      "chk_webhook_deliveries_status",
-      sql`${t.status} IN ('pending','success','failed')`,
-    ),
   ],
 );
 

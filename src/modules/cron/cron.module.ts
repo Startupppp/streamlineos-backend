@@ -98,6 +98,7 @@ import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronAiUsageRetentionService } from "./cron-ai-usage-retention.service";
 import { ProjectsModule } from "../build/core";
+import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { CrmModule } from "../crm/core/crm.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import { SessionsModule } from "../sessions/sessions.module";
@@ -157,6 +158,7 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
     OrganizationModule,
     HrGovernanceModule,
     ProjectsModule,
+    IntegrationsModule,
     CrmModule,
     /** For the report-schedule sweep, which claims due rows and emits. */
     ReportingModule,

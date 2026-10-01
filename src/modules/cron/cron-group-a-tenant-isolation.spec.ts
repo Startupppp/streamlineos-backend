@@ -10,6 +10,7 @@ import { forEachOrg } from "../../common/tenant";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { WebhookEndpointService } from "../integrations/core/webhook-endpoint.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronHolidayService } from "./cron-holiday.service";
@@ -204,23 +205,51 @@ describe("CronBuildRetentionService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
   const ATTACKER = "org-attacker";
 
-  it("scopes webhook delivery pruning to the org in callback (isolation — deny)", async () => {
-    const { db, selectWhere } = makeDb([]);
-    setupForEachOrg(db, ATTACKER);
-    const svc = new CronBuildRetentionService(db);
+  it("delegates to WebhookEndpointService.pruneDeliveries with the 90-day cutoff and returns its count (positive)", async () => {
+    const pruneDeliveries = jest.fn().mockResolvedValue(7);
+    const webhookEndpoint = { pruneDeliveries } as unknown as WebhookEndpointService;
+    const svc = new CronBuildRetentionService(webhookEndpoint);
 
     const result = await svc.pruneWebhookDeliveries();
+
+    expect(result.webhookDeliveriesPruned).toBe(7);
+    expect(pruneDeliveries).toHaveBeenCalledTimes(1);
+    const [cutoff] = pruneDeliveries.mock.calls[0] as [Date];
+    const expectedMs = 90 * 24 * 60 * 60 * 1000;
+    expect(Math.abs(Date.now() - cutoff.getTime() - expectedMs)).toBeLessThan(5000);
+  });
+
+  it("returns zero when pruneDeliveries reports nothing to prune (negative — no terminal rows)", async () => {
+    const pruneDeliveries = jest.fn().mockResolvedValue(0);
+    const webhookEndpoint = { pruneDeliveries } as unknown as WebhookEndpointService;
+    const svc = new CronBuildRetentionService(webhookEndpoint);
+
+    const result = await svc.pruneWebhookDeliveries();
+
     expect(result.webhookDeliveriesPruned).toBe(0);
+    expect(pruneDeliveries).toHaveBeenCalledTimes(1);
+  });
+
+  it("WebhookEndpointService.pruneDeliveries scopes deletes to the org in forEachOrg callback (isolation — deny: attacker org)", async () => {
+    const { db, selectWhere } = makeDb([]);
+    setupForEachOrg(db, ATTACKER);
+    const svc = new WebhookEndpointService(db);
+
+    const pruned = await svc.pruneDeliveries(new Date());
+
+    expect(pruned).toBe(0);
     expect(selectWhere).toHaveBeenCalled();
     expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
   });
 
-  it("prunes webhook deliveries for the owning org (isolation — control)", async () => {
+  it("WebhookEndpointService.pruneDeliveries scopes deletes to the owning org (isolation — control)", async () => {
     const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, OWNER);
-    const svc = new CronBuildRetentionService(db);
+    const svc = new WebhookEndpointService(db);
 
-    await svc.pruneWebhookDeliveries();
+    await svc.pruneDeliveries(new Date());
+
+    expect(selectWhere).toHaveBeenCalled();
     expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
   });
 });

@@ -192,7 +192,7 @@ const RETENTION_MATRIX = {
     owner: "knowledge-team",
     notes: "Wiki revision history is the content audit trail and the only path to restore a page after a bad edit; insert-only, matching kb_article_versions. Growth is bounded by the VERSION_WINDOW_MS snapshot throttle, not by deletion. Decided 2026-09-02 (S10).",
   },
-  webhook_deliveries: {
+  integration_webhook_deliveries: {
     decision: "RETAIN-BOUNDED",
     worker: "CronBuildRetentionService",
     owner: "delivery-team",
@@ -444,7 +444,7 @@ if (args.includes("--self-test")) {
     kbIngestionCheckpointsHasWorker:
       RETENTION_MATRIX["kb_ingestion_checkpoints"].worker === "CronKbTelemetryRetentionService" &&
       classify("kb_ingestion_checkpoints").status === "COVERED",
-    webhookDeliveriesHaveWorker: RETENTION_MATRIX["webhook_deliveries"].worker === "CronBuildRetentionService",
+    webhookDeliveriesHaveWorker: RETENTION_MATRIX["integration_webhook_deliveries"].worker === "CronBuildRetentionService",
     auditLogsHasNoWorker: RETENTION_MATRIX["audit_logs"].worker === null,
     classifyUnknownIsUncovered: classify("unknown_table_xyz", 100).status === "UNCOVERED",
     classifyAuditLogsIsKeepForever: classify("audit_logs", 0).status === "KEEP-FOREVER",
