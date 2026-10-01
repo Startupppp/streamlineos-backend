@@ -145,7 +145,7 @@ export const epicListQuerySchema = z
   .object({
     cursor: z.string().min(1).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
-    q: z.string().optional(),
+    q: z.string().max(200).optional(),
     status: z.string().optional(),
     ownerId: z.string().optional(),
     health: z.enum(["on_track", "at_risk", "off_track"]).optional(),

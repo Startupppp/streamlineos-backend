@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { BuildTicketCreationService, TicketVersionConflictException } from "../core/tickets";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import {
   intakeItems,
   organizationMembers,
@@ -75,7 +75,7 @@ export class MilestonesService {
         eq(projectMilestones.orgId, orgId),
         isNull(projectMilestones.deletedAt),
         status ? eq(projectMilestones.status, status) : undefined,
-        q ? sql`${projectMilestones.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
+        q ? ilike(projectMilestones.name, `${escapeLike(q)}%`) : undefined,
         from ? gte(projectMilestones.targetDate, from) : undefined,
         to ? lte(projectMilestones.targetDate, to) : undefined,
         ownerId ? eq(projectMilestones.ownerMembershipId, ownerId) : undefined,

@@ -1,7 +1,7 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { TicketVersionConflictException } from "../tickets";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
@@ -121,7 +121,7 @@ export class ProjectsReleasesService {
         eq(projectReleases.orgId, orgId),
         isNull(projectReleases.deletedAt),
         status ? eq(projectReleases.status, status) : undefined,
-        q ? sql`${projectReleases.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
+        q ? ilike(projectReleases.name, `${escapeLike(q)}%`) : undefined,
         from ? gte(projectReleases.releaseDate, from) : undefined,
         to ? lte(projectReleases.releaseDate, to) : undefined,
         pos ? lt(projectReleases.id, pos.id) : undefined,

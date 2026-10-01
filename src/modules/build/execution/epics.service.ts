@@ -18,7 +18,7 @@ import {
   microsecondCursorValue,
 } from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { assertProjectInOrg } from "../core";
+import { assertProjectInOrg, escapeLike } from "../core";
 import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 
 @Injectable()
@@ -42,7 +42,7 @@ export class EpicsService {
       query.status ? eq(tickets.status, query.status) : undefined,
       query.health ? eq(tickets.health, query.health) : undefined,
       query.q && query.q.trim()
-        ? ilike(tickets.title, `%${query.q.trim().replace(/[%_\\]/g, "\\$&")}%`)
+        ? ilike(tickets.title, `${escapeLike(query.q.trim())}%`)
         : undefined,
       query.ownerId
         ? sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${query.ownerId})`
