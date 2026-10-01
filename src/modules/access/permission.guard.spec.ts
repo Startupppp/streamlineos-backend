@@ -148,7 +148,7 @@ describe("PermissionGuard", () => {
   }
 
   function requestContextFor(
-    handler: unknown,
+    handler: GuardTestController[keyof GuardTestController],
     currentUser: CurrentUserContext = user,
   ): { request: GuardRequest; context: ExecutionContextHost } {
     const actor = { ...currentUser };

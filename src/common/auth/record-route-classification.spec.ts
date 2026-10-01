@@ -79,6 +79,7 @@ interface TestOperation {
   operationId: string;
   description?: string;
   "x-exposure"?: string;
+  "x-permission-any"?: readonly string[];
 }
 
 const documentFor = (

@@ -73,8 +73,22 @@ export class TimesheetPeriodsController {
     return this.overdue.listOverdue(u, query);
   }
 
+  /**
+   * Three keys, because three standings legitimately open one timesheet.
+   *
+   * An employee reaches their own period through `entries:view`, a reporting
+   * manager reaches a direct report's through `team:view`, and an approver
+   * reaches the period sitting in their queue through `approvals:view`. Only the
+   * first was declared, so `PermissionGuard` refused the other two before any
+   * scope logic ran and an approver opened an empty sheet.
+   *
+   * Row visibility is unchanged and still belongs to the service:
+   * `resolveEntriesScope` and the `periodInScope` probe decide which period this
+   * caller may actually read, so admission here widens who may ask, never what
+   * the answer contains.
+   */
   @Get(":periodId")
-  @RequirePermission("timesheets:entries:view")
+  @RequirePermission("timesheets:entries:view", "timesheets:team:view", "timesheets:approvals:view")
   @Validate({ params: periodIdParams })
   @ResponseSchema(periodDetailResponseSchema)
   getPeriod(
