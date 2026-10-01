@@ -3,6 +3,10 @@ import { CyclesService } from "./execution/cycles.service";
 import { ModulesService } from "./execution/modules.service";
 import { BuildMembersService } from "./core";
 import type { Db } from "../../db/drizzle.module";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
+import type { AccessService } from "../access/access.service";
+import { stubService } from "../../test/service-stub.spec-fixtures";
 
 
 function txDb(deleted: Array<{ id: number }>) {
@@ -19,24 +23,40 @@ function txDb(deleted: Array<{ id: number }>) {
   } as unknown as Db;
 }
 
+function ownerOf(orgId: string): CurrentUserContext {
+  return {
+    userId: "u-owner",
+    orgId,
+    role: "OWNER",
+    isOrgOwner: true,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
+  };
+}
+
+const access = stubService<AccessService>({
+  resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+});
+
 describe("build — a delete that matched no row answers 404, not 204", () => {
   const ATTACKER_ORG = "org-attacker";
   const OWNER_ORG = "org-owner";
 
   it("DELETE /build/:projectId/cycles/:cycleId refuses a cycle the org does not own", async () => {
-    await expect(new CyclesService(txDb([])).deleteCycle(ATTACKER_ORG, 1, 1)).rejects.toThrow(NotFoundException);
+    await expect(new CyclesService(txDb([]), access).deleteCycle(ownerOf(ATTACKER_ORG), 1, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("DELETE /build/:projectId/cycles/:cycleId still deletes the org's own cycle (control)", async () => {
-    await expect(new CyclesService(txDb([{ id: 1 }])).deleteCycle(OWNER_ORG, 1, 1)).resolves.toEqual({ success: true });
+    await expect(new CyclesService(txDb([{ id: 1 }]), access).deleteCycle(ownerOf(OWNER_ORG), 1, 1)).resolves.toEqual({ success: true });
   });
 
   it("DELETE /build/:projectId/modules/:moduleId refuses a module the org does not own", async () => {
-    await expect(new ModulesService(txDb([])).deleteModule(ATTACKER_ORG, 1, 1)).rejects.toThrow(NotFoundException);
+    await expect(new ModulesService(txDb([]), access).deleteModule(ownerOf(ATTACKER_ORG), 1, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("DELETE /build/:projectId/modules/:moduleId still deletes the org's own module (control)", async () => {
-    await expect(new ModulesService(txDb([{ id: 1 }])).deleteModule(OWNER_ORG, 1, 1)).resolves.toEqual({
+    await expect(new ModulesService(txDb([{ id: 1 }]), access).deleteModule(ownerOf(OWNER_ORG), 1, 1)).resolves.toEqual({
       success: true,
     });
   });

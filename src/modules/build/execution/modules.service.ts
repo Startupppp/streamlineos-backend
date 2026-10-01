@@ -16,7 +16,10 @@ import type {
   ModuleListQuery,
   UpdateModuleInput,
 } from "./dto/iterations.schemas";
-import { assertProjectInOrg } from "../core";
+import { assertProjectAccess } from "../core";
+import { assertProjectVisible } from "../core/project-crud/project-access";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
   buildTupleCursorPage,
   decodeTupleCursor,
@@ -25,14 +28,18 @@ import { TicketVersionConflictException } from "../core/tickets";
 
 @Injectable()
 export class ModulesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   async listModules(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
     query: ModuleListQuery = {},
   ) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const limit = query.pageSize ?? 100;
     const cursor = query.cursor ? decodeTupleCursor(query.cursor, 2) : null;
     if (query.cursor && (!cursor || !/^\d+$/.test(cursor[1]))) {
@@ -118,14 +125,14 @@ export class ModulesService {
   }
 
   async createModule(
-    orgId: string,
-    userId: string,
+    actor: CurrentUserContext,
     projectId: number,
     input: CreateModuleInput,
   ) {
     // `listModules` above resolves the project; this did not, so a cross-tenant `:projectId` fell
     // through the duplicate-name check and the INSERT then hit the composite tenant FK as a 500.
-    await assertProjectInOrg(this.db, orgId, projectId);
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const { orgId, userId } = actor;
     const [existing] = await this.db
       .select({ id: modules.id, name: modules.name })
       .from(modules)
@@ -171,11 +178,13 @@ export class ModulesService {
   }
 
   async updateModule(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
     moduleId: number,
     input: UpdateModuleInput,
   ) {
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const before = await this.db.query.modules.findFirst({
       where: and(eq(modules.id, moduleId), eq(modules.projectId, projectId), eq(modules.orgId, orgId)),
       columns: { version: true },
@@ -204,7 +213,9 @@ export class ModulesService {
     return updated;
   }
 
-  async deleteModule(orgId: string, projectId: number, moduleId: number) {
+  async deleteModule(actor: CurrentUserContext, projectId: number, moduleId: number) {
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     await this.db.transaction(async (tx) => {
       await tx
         .update(tickets)

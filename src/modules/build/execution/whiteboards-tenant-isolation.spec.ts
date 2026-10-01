@@ -2,12 +2,31 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { WhiteboardsService } from "./whiteboards.service";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+function actorIn(orgId: string, isOrgOwner: boolean): CurrentUserContext {
+  return {
+    userId: "u1",
+    orgId,
+    role: isOrgOwner ? "OWNER" : "MEMBER",
+    isOrgOwner,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, isOrgOwner),
+  };
+}
 
 describe("WhiteboardsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
-  const access = { holds: jest.fn().mockResolvedValue(true) } as never;
+  const access = stubService<AccessService>({
+    holds: jest.fn().mockResolvedValue(true),
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+  });
 
   function makeDb(projectRow: unknown | null, boardRows: unknown[]) {
     const loadSharesWhere = jest
@@ -27,10 +46,10 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
   }
 
   it("throws NotFoundException for getWhiteboard when board not in org (cross-tenant isolation)", async () => {
-    const project = { id: 1 };
+    const project = { id: 1, managerMembershipId: 1 };
     const db = makeDb(project, []);
     const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
-    const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
+    const u = actorIn(ATTACKER_ORG, false);
     await expect(svc.getWhiteboard(u, 1, 99)).rejects.toThrow(NotFoundException);
   });
 
@@ -39,7 +58,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     const board = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "B", visibility: "private", createdBy: "u1", deletedAt: null, data: {} };
     const db = makeDb(project, [{ board, shareRole: null }]);
     const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = actorIn(OWNER_ORG, true);
     const result = await svc.getWhiteboard(u, 1, 1);
     expect(result).toBeDefined();
   });
@@ -49,7 +68,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     const board = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "B", visibility: "private", createdBy: "u1", deletedAt: null, data: { elements: [] }, shareToken: "abc123hash", publicAccess: "viewer", linkExpiresAt: null, allowExport: true, createdAt: new Date(), updatedAt: new Date() };
     const db = makeDb(project, [{ board, shareRole: null }]);
     const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = actorIn(OWNER_ORG, true);
     const result = await svc.getWhiteboard(u, 1, 1);
     expect(result.sharing).not.toBeNull();
     expect((result.sharing as Record<string, unknown>)["shareToken"]).toBeNull();
@@ -70,7 +89,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     } as unknown as Db;
 
     const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = actorIn(OWNER_ORG, true);
     await expect(
       svc.updateWhiteboard(u, 1, 1, { name: "New Name" }),
     ).rejects.toThrow(NotFoundException);
@@ -96,7 +115,7 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     void originalSelect;
 
     const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = actorIn(OWNER_ORG, true);
     await svc.listWhiteboards(u, 1, { limit: 20 });
     expect(capturedLimit).toBe(21);
   });

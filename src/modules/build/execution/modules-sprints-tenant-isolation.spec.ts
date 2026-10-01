@@ -2,6 +2,10 @@ import type { Db } from "../../../db/drizzle.module";
 import { BadRequestException, ConflictException, GoneException, NotFoundException } from "@nestjs/common";
 import { ModulesService } from "./modules.service";
 import { SprintsService } from "./sprints.service";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -18,6 +22,18 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
 
+function owner(orgId: string): CurrentUserContext {
+  return {
+    userId: "user-1",
+    orgId,
+    role: "OWNER",
+    isOrgOwner: true,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
+  };
+}
+
 describe("ModulesService — cross-tenant isolation", () => {
   it("listModules refuses a project the requesting org does not own (cross-tenant isolation — 404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
@@ -26,9 +42,9 @@ describe("ModulesService — cross-tenant isolation", () => {
       query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
-    const svc = new ModulesService(db);
+    const svc = new ModulesService(db, stubService<AccessService>({}));
 
-    await expect(svc.listModules(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.listModules(owner(ATTACKER_ORG), 1)).rejects.toThrow(NotFoundException);
 
     expect(where).not.toHaveBeenCalled();
     const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
@@ -49,9 +65,9 @@ describe("ModulesService — cross-tenant isolation", () => {
         return { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }) };
       }),
     } as unknown as Db;
-    const svc = new ModulesService(db);
+    const svc = new ModulesService(db, stubService<AccessService>({}));
 
-    const result = await svc.listModules(OWNER_ORG, 1);
+    const result = await svc.listModules(owner(OWNER_ORG), 1);
     expect(result.data).toHaveLength(1);
     expect(result.pagination).toEqual({ limit: 100, hasMore: false, nextCursor: null });
   });
@@ -61,9 +77,9 @@ describe("ModulesService — cross-tenant isolation", () => {
       query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
       select: jest.fn(),
     } as unknown as Db;
-    const svc = new ModulesService(db);
+    const svc = new ModulesService(db, stubService<AccessService>({}));
 
-    await expect(svc.listModules(OWNER_ORG, 1, { cursor: "not-a-cursor" })).rejects.toThrow(BadRequestException);
+    await expect(svc.listModules(owner(OWNER_ORG), 1, { cursor: "not-a-cursor" })).rejects.toThrow(BadRequestException);
     expect(db.select).not.toHaveBeenCalled();
   });
 });
@@ -89,10 +105,10 @@ describe("ModulesService — createModule", () => {
       }),
     } as unknown as Db;
 
-    const svc = new ModulesService(db);
+    const svc = new ModulesService(db, stubService<AccessService>({}));
 
     await expect(
-      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+      svc.createModule(owner(OWNER_ORG), 1, { name: "Sprint Alpha", status: "in-progress", startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(ConflictException);
   });
 
@@ -115,13 +131,13 @@ describe("ModulesService — createModule", () => {
       }),
     } as unknown as Db;
 
-    const svc = new ModulesService(db);
+    const svc = new ModulesService(db, stubService<AccessService>({}));
 
     await expect(
-      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+      svc.createModule(owner(OWNER_ORG), 1, { name: "Sprint Alpha", status: "in-progress", startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(otherError);
     await expect(
-      svc.createModule(OWNER_ORG, "user-1", 1, { name: "Sprint Alpha", status: "in-progress" }),
+      svc.createModule(owner(OWNER_ORG), 1, { name: "Sprint Alpha", status: "in-progress", startDate: undefined, endDate: undefined }),
     ).rejects.not.toThrow(ConflictException);
   });
 });

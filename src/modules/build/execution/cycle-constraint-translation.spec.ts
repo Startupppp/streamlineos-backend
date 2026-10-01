@@ -3,14 +3,28 @@ import { CyclesService } from "./cycles.service";
 import { drizzlePostgresError } from "../../../test/postgres-error-fixture";
 import type { Db } from "../../../db/drizzle.module";
 import { cycleStatusEnum } from "../../../db/schema/common/enums";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { UpdateCycleInput } from "./dto/iterations.schemas";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ORG_ID = "org-cycle-62";
 const PROJECT_ID = 9;
 const CYCLE_ID = 7;
 const USER_ID = "user-1";
+const ACTOR: CurrentUserContext = {
+  userId: USER_ID,
+  orgId: ORG_ID,
+  role: "OWNER",
+  isOrgOwner: true,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
+};
 
 const CREATE_INPUT = { name: "Q4 Sprint", startDate: "2026-10-01", endDate: "2026-10-14" };
-const UPDATE_INPUT_ACTIVE = { status: "active" as const, version: 1 };
+const UPDATE_INPUT_ACTIVE: UpdateCycleInput = { status: "active", version: 1, startDate: undefined, endDate: undefined };
 const UPDATE_INPUT_DATES = { startDate: "2026-10-01", endDate: "2026-10-14", version: 1 };
 
 type CycleRowStatus = (typeof cycleStatusEnum.enumValues)[number];
@@ -110,7 +124,7 @@ function cycleOk() {
 }
 
 function makeService(db: Db): CyclesService {
-  return new CyclesService(db as never);
+  return new CyclesService(db, stubService<AccessService>({}));
 }
 
 describe("CyclesService — constraint violation translation", () => {
@@ -123,11 +137,11 @@ describe("CyclesService — constraint violation translation", () => {
       } as unknown as Db;
 
       await expect(
-        makeService(db).createCycle(ORG_ID, USER_ID, PROJECT_ID, CREATE_INPUT),
+        makeService(db).createCycle(ACTOR, PROJECT_ID, CREATE_INPUT),
       ).rejects.toThrow(ConflictException);
 
       await expect(
-        makeService(db).createCycle(ORG_ID, USER_ID, PROJECT_ID, CREATE_INPUT),
+        makeService(db).createCycle(ACTOR, PROJECT_ID, CREATE_INPUT),
       ).rejects.toThrow("Cycle dates overlap with an existing cycle.");
     });
 
@@ -138,7 +152,7 @@ describe("CyclesService — constraint violation translation", () => {
         query: { projects: { findFirst: projectOk() } },
       } as unknown as Db;
 
-      const result = await makeService(db).createCycle(ORG_ID, USER_ID, PROJECT_ID, CREATE_INPUT);
+      const result = await makeService(db).createCycle(ACTOR, PROJECT_ID, CREATE_INPUT);
       expect(result).toMatchObject({ id: CYCLE_ID });
     });
 
@@ -151,7 +165,7 @@ describe("CyclesService — constraint violation translation", () => {
       } as unknown as Db;
 
       await expect(
-        makeService(db).createCycle(ORG_ID, USER_ID, PROJECT_ID, CREATE_INPUT),
+        makeService(db).createCycle(ACTOR, PROJECT_ID, CREATE_INPUT),
       ).rejects.toThrow("connection reset");
     });
   });
@@ -165,11 +179,11 @@ describe("CyclesService — constraint violation translation", () => {
       } as unknown as Db;
 
       await expect(
-        makeService(db).updateCycle(ORG_ID, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_ACTIVE),
+        makeService(db).updateCycle(ACTOR, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_ACTIVE),
       ).rejects.toThrow(ConflictException);
 
       await expect(
-        makeService(db).updateCycle(ORG_ID, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_ACTIVE),
+        makeService(db).updateCycle(ACTOR, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_ACTIVE),
       ).rejects.toThrow("Only one active cycle is allowed at a time per project.");
     });
 
@@ -181,7 +195,7 @@ describe("CyclesService — constraint violation translation", () => {
         query: { projects: { findFirst: projectOk() }, cycles: { findFirst: cycleOk() } },
       } as unknown as Db;
 
-      const result = await makeService(db).updateCycle(ORG_ID, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_ACTIVE);
+      const result = await makeService(db).updateCycle(ACTOR, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_ACTIVE);
       expect(result).toMatchObject({ status: "active" });
     });
   });
@@ -195,11 +209,11 @@ describe("CyclesService — constraint violation translation", () => {
       } as unknown as Db;
 
       await expect(
-        makeService(db).updateCycle(ORG_ID, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_DATES),
+        makeService(db).updateCycle(ACTOR, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_DATES),
       ).rejects.toThrow(ConflictException);
 
       await expect(
-        makeService(db).updateCycle(ORG_ID, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_DATES),
+        makeService(db).updateCycle(ACTOR, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_DATES),
       ).rejects.toThrow("Cycle dates overlap with an existing cycle.");
     });
 
@@ -211,7 +225,7 @@ describe("CyclesService — constraint violation translation", () => {
       } as unknown as Db;
 
       await expect(
-        makeService(db).updateCycle(ORG_ID, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_DATES),
+        makeService(db).updateCycle(ACTOR, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_DATES),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -224,7 +238,7 @@ describe("CyclesService — constraint violation translation", () => {
       } as unknown as Db;
 
       await expect(
-        makeService(db).updateCycle(ORG_ID, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_DATES),
+        makeService(db).updateCycle(ACTOR, PROJECT_ID, CYCLE_ID, UPDATE_INPUT_DATES),
       ).rejects.toThrow("deadlock detected");
     });
   });

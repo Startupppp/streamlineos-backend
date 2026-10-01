@@ -1,5 +1,9 @@
 import type { Db } from "../../../db/drizzle.module";
 import { ModulesService } from "./modules.service";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -38,13 +42,22 @@ function makeDb() {
 }
 
 const ORG = "org-abc";
+const ACTOR: CurrentUserContext = {
+  userId: "u-owner",
+  orgId: ORG,
+  role: "OWNER",
+  isOrgOwner: true,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
+};
 
 describe("ModulesService — server-side search predicate (B10)", () => {
   it("with search term — WHERE carries the trimmed term so a page 2 match is not missed by client filter (BE-134 failing first)", async () => {
     const { db, capturedWhereConds } = makeDb();
-    const svc = new ModulesService(db);
+    const svc = new ModulesService(db, stubService<AccessService>({}));
 
-    await svc.listModules(ORG, 1, { search: "auth" });
+    await svc.listModules(ACTOR, 1, { search: "auth" });
 
     const allValues = capturedWhereConds.flatMap((c) => sqlValues(c));
     expect(allValues.some((v) => typeof v === "string" && v.includes("auth"))).toBe(true);
@@ -52,9 +65,9 @@ describe("ModulesService — server-side search predicate (B10)", () => {
 
   it("without search term — WHERE does not carry a name-match literal so no rows are pre-filtered (BE-141 positive control)", async () => {
     const { db, capturedWhereConds } = makeDb();
-    const svc = new ModulesService(db);
+    const svc = new ModulesService(db, stubService<AccessService>({}));
 
-    await svc.listModules(ORG, 1);
+    await svc.listModules(ACTOR, 1);
 
     const allValues = capturedWhereConds.flatMap((c) => sqlValues(c));
     expect(allValues.every((v) => typeof v !== "string" || !v.endsWith("%"))).toBe(true);

@@ -3,7 +3,9 @@ import { and, eq, isNull } from "drizzle-orm";
 import { projects } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { assertProjectInOrg } from "../project-crud/project-access";
+import { assertCanManageProject, assertProjectVisible } from "../project-crud/project-access";
+import { AccessService } from "../../../access/access.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { UpdateIterationSettingsInput } from "../dto/iterations-settings.schemas";
 
 export interface IterationSettings {
@@ -18,10 +20,14 @@ const DEFAULTS: IterationSettings = {
 
 @Injectable()
 export class ProjectsSettingsIterationsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  async getSettings(orgId: string, projectId: number): Promise<IterationSettings> {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async getSettings(actor: CurrentUserContext, projectId: number): Promise<IterationSettings> {
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const [project] = await this.db
       .select({ settings: projects.settings })
       .from(projects)
@@ -36,11 +42,12 @@ export class ProjectsSettingsIterationsService {
   }
 
   async updateSettings(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
     input: UpdateIterationSettingsInput,
   ): Promise<IterationSettings> {
-    await assertProjectInOrg(this.db, orgId, projectId);
+    await assertCanManageProject(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const [project] = await this.db
       .select({ settings: projects.settings })
       .from(projects)

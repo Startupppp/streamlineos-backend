@@ -7,6 +7,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
 
 function makeActionItemsTicketCreation() {
   return {
@@ -172,6 +173,14 @@ describe("MeetingsService.upsertStandup — caller-scoped write", () => {
 });
 
 describe("ActionItemsService.convertToTask", () => {
+  function ticketCreator(): AccessService {
+    return stubService<AccessService>({ holds: jest.fn().mockResolvedValue(true) });
+  }
+
+  function visibleProject() {
+    return { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } };
+  }
+
   function makeTx(itemOverrides: Record<string, unknown> = {}) {
     const item = {
       id: 1,
@@ -215,21 +224,23 @@ describe("ActionItemsService.convertToTask", () => {
   it("throws ConflictException when the action item is already converted (convertedTicketId set)", async () => {
     const tx = makeTx({ convertedTicketId: 42 });
     const mockDb = {
+      query: visibleProject(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
-    await expect(svc.convertToTask("org-1", "user-1", 1, 2, 1)).rejects.toThrow(ConflictException);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation(), ticketCreator());
+    await expect(svc.convertToTask(makeU("org-1", true), 1, 2, 1)).rejects.toThrow(ConflictException);
   });
 
   it("creates a ticket and returns { actionItem, ticketId } when the item is not yet converted", async () => {
     const tx = makeTx({ convertedTicketId: null });
     const mockDb = {
+      query: visibleProject(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
-    const result = await svc.convertToTask("org-1", "user-1", 1, 2, 1);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation(), ticketCreator());
+    const result = await svc.convertToTask(makeU("org-1", true), 1, 2, 1);
 
     expect(result).toMatchObject({ actionItem: expect.anything(), ticketId: 100 });
     expect((result as { actionItem: { status: string } }).actionItem.status).toBe("converted");
@@ -245,11 +256,12 @@ describe("ActionItemsService.convertToTask", () => {
       execute: jest.fn(),
     };
     const mockDb = {
+      query: visibleProject(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
-    await expect(svc.convertToTask("org-1", "user-1", 1, 2, 999)).rejects.toThrow(NotFoundException);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation(), ticketCreator());
+    await expect(svc.convertToTask(makeU("org-1", true), 1, 2, 999)).rejects.toThrow(NotFoundException);
   });
 
   it("throws NotFoundException when the meeting is not found in the transaction", async () => {
@@ -261,11 +273,12 @@ describe("ActionItemsService.convertToTask", () => {
       execute: jest.fn(),
     };
     const mockDb = {
+      query: visibleProject(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
-    await expect(svc.convertToTask("org-1", "user-1", 1, 999, 1)).rejects.toThrow(NotFoundException);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation(), ticketCreator());
+    await expect(svc.convertToTask(makeU("org-1", true), 1, 999, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("throws ConflictException when UPDATE WHERE converted_ticket_id IS NULL returns 0 rows (concurrent conversion race)", async () => {
@@ -279,11 +292,12 @@ describe("ActionItemsService.convertToTask", () => {
       }),
     };
     const mockDb = {
+      query: visibleProject(),
       transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
     } as unknown as Db;
 
-    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation());
-    await expect(svc.convertToTask("org-1", "user-1", 1, 2, 1)).rejects.toThrow(ConflictException);
+    const svc = new ActionItemsService(mockDb, mockAudit, makeActionItemsTicketCreation(), ticketCreator());
+    await expect(svc.convertToTask(makeU("org-1", true), 1, 2, 1)).rejects.toThrow(ConflictException);
   });
 });
 

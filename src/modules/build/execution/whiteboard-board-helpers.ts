@@ -11,7 +11,7 @@ import { AccessService } from "../../access/access.service";
 import { resolveWhiteboardAccess } from "./whiteboard-access";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { assertProjectInOrg } from "../core/project-crud/project-access";
+import { resolveProjectAccess } from "../core/project-crud/project-access";
 
 export type ShareEntry = {
   userId: string;
@@ -44,7 +44,7 @@ export async function requireWhiteboardManageAccess(
   projectId: number,
   whiteboardId: number,
 ): Promise<typeof projectWhiteboards.$inferSelect> {
-  await assertProjectInOrg(db, u.orgId, projectId);
+  const { hasAccess: hasProjectAccess } = await resolveProjectAccess(db, access, u, projectId);
 
   const rows = await db
     .select({
@@ -79,6 +79,7 @@ export async function requireWhiteboardManageAccess(
     shareRole: row.shareRole ?? null,
     user: { userId: u.userId, isOrgOwner: u.isOrgOwner },
     hasManagePermission,
+    hasProjectAccess,
   });
 
   if (resolvedAccess !== "manage") throw new ForbiddenException("Manage access required");

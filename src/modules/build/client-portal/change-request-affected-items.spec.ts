@@ -6,6 +6,13 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
 import { drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
+
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual<object>("../core/project-crud/project-access"),
+  assertTicketReadAccess: jest.fn().mockResolvedValue(undefined),
+}));
 
 function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
   return {
@@ -103,7 +110,7 @@ beforeEach(() => {
 describe("ChangeRequestAffectedItemsService — listAffectedTickets", () => {
   it("returns an empty cursor page envelope when nothing is linked", async () => {
     const db = buildJoinSelectDb([]);
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     const result = await svc.listAffectedTickets(makeU("org-1"), 10, 1, {});
 
@@ -114,7 +121,7 @@ describe("ChangeRequestAffectedItemsService — listAffectedTickets", () => {
   it("returns linked tickets with a ticket summary, keyed under data", async () => {
     const rows = [affectedItemRow(1), affectedItemRow(2, { id: 56, title: "Other ticket" })];
     const db = buildJoinSelectDb(rows);
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     const result = await svc.listAffectedTickets(makeU("org-1"), 10, 1, {});
 
@@ -126,7 +133,7 @@ describe("ChangeRequestAffectedItemsService — listAffectedTickets", () => {
   it("sets hasMore and a nextCursor when a sentinel row over the limit is fetched", async () => {
     const rows = [affectedItemRow(1), affectedItemRow(2), affectedItemRow(3)];
     const db = buildJoinSelectDb(rows);
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     const result = await svc.listAffectedTickets(makeU("org-1"), 10, 1, { limit: 2 });
 
@@ -137,7 +144,7 @@ describe("ChangeRequestAffectedItemsService — listAffectedTickets", () => {
 
   it("throws NotFoundException (not 403) when the change request is cross-tenant, before touching the join query", async () => {
     const db = buildJoinSelectDb([]);
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("reject"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("reject"), stubService<AccessService>({}));
 
     await expect(svc.listAffectedTickets(makeU("org-attacker"), 10, 1, {})).rejects.toThrow(
       NotFoundException,
@@ -165,7 +172,7 @@ describe("ChangeRequestAffectedItemsService — linkTicket", () => {
         values: jest.fn().mockReturnValue({ returning: insertReturning }),
       }),
     } as unknown as Db;
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     const result = await svc.linkTicket(makeU("org-1"), 10, 1, { ticketId: TICKET_ROW.id });
 
@@ -186,7 +193,7 @@ describe("ChangeRequestAffectedItemsService — linkTicket", () => {
         }),
       }),
     } as unknown as Db;
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     await expect(
       svc.linkTicket(makeU("org-1"), 10, 1, { ticketId: TICKET_ROW.id }),
@@ -199,7 +206,7 @@ describe("ChangeRequestAffectedItemsService — linkTicket", () => {
       select: jest.fn().mockReturnValue(ticketChain),
       insert: jest.fn(),
     } as unknown as Db;
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     await expect(
       svc.linkTicket(makeU("org-1"), 10, 1, { ticketId: TICKET_ROW.id }),
@@ -213,7 +220,7 @@ describe("ChangeRequestAffectedItemsService — linkTicket", () => {
       select: jest.fn().mockReturnValue(ticketChain),
       insert: jest.fn(),
     } as unknown as Db;
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     await expect(
       svc.linkTicket(makeU("org-1"), 10, 1, { ticketId: 9999 }),
@@ -223,7 +230,7 @@ describe("ChangeRequestAffectedItemsService — linkTicket", () => {
 
   it("throws NotFoundException (not 403) when the change request itself is cross-tenant, before any ticket lookup", async () => {
     const db = { select: jest.fn(), insert: jest.fn() } as unknown as Db;
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("reject"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("reject"), stubService<AccessService>({}));
 
     await expect(
       svc.linkTicket(makeU("org-attacker"), 10, 1, { ticketId: TICKET_ROW.id }),
@@ -241,7 +248,7 @@ describe("ChangeRequestAffectedItemsService — unlinkTicket", () => {
       select: jest.fn().mockReturnValue(selectChain),
       delete: jest.fn().mockReturnValue({ where: deleteWhere }),
     } as unknown as Db;
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     await svc.unlinkTicket(makeU("org-1"), 10, 1, 5);
 
@@ -255,7 +262,7 @@ describe("ChangeRequestAffectedItemsService — unlinkTicket", () => {
       select: jest.fn().mockReturnValue(selectChain),
       delete: jest.fn(),
     } as unknown as Db;
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("resolve"), stubService<AccessService>({}));
 
     await expect(svc.unlinkTicket(makeU("org-1"), 10, 1, 999)).rejects.toThrow(NotFoundException);
     expect((db.delete as jest.Mock)).not.toHaveBeenCalled();
@@ -263,7 +270,7 @@ describe("ChangeRequestAffectedItemsService — unlinkTicket", () => {
 
   it("throws NotFoundException (not 403) when the change request is cross-tenant, before any delete", async () => {
     const db = { select: jest.fn(), delete: jest.fn() } as unknown as Db;
-    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("reject"));
+    const svc = new ChangeRequestAffectedItemsService(db, mockAudit, mockChangeRequests("reject"), stubService<AccessService>({}));
 
     await expect(svc.unlinkTicket(makeU("org-attacker"), 10, 1, 5)).rejects.toThrow(
       NotFoundException,

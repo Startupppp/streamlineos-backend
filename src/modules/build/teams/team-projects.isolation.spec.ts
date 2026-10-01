@@ -4,10 +4,26 @@ import { TeamProjectsService } from "./team-projects.service";
 import type { TeamsService } from "./teams.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { Db } from "../../../db/drizzle.module";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ATTACKER_ORG = "org-attacker";
 const TEAM_ID = 1;
 const PROJECT_ID = 99;
+
+function actorIn(orgId: string): CurrentUserContext {
+  return {
+    userId: "actor-1",
+    orgId,
+    role: "OWNER",
+    isOrgOwner: true,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
+  };
+}
 
 function makeTeams(throwForOrg?: string): TeamsService {
   return {
@@ -46,20 +62,20 @@ function render(value: unknown): string {
 describe("TeamProjectsService — cross-tenant isolation (BOLA)", () => {
   it("listTeamProjects throws NotFoundException when team belongs to a different org (DENY)", async () => {
     const db = makeDb();
-    const svc = new TeamProjectsService(db, makeTeams(ATTACKER_ORG), mockAudit);
+    const svc = new TeamProjectsService(db, makeTeams(ATTACKER_ORG), mockAudit, stubService<AccessService>({}));
     await expect(svc.listTeamProjects(ATTACKER_ORG, TEAM_ID)).rejects.toThrow(NotFoundException);
   });
 
   it("addProject throws NotFoundException when team belongs to a different org — cross-org isolation", async () => {
     const db = makeDb();
-    const svc = new TeamProjectsService(db, makeTeams(ATTACKER_ORG), mockAudit);
-    await expect(svc.addProject(ATTACKER_ORG, "actor-1", TEAM_ID, PROJECT_ID)).rejects.toThrow(NotFoundException);
+    const svc = new TeamProjectsService(db, makeTeams(ATTACKER_ORG), mockAudit, stubService<AccessService>({}));
+    await expect(svc.addProject(actorIn(ATTACKER_ORG), TEAM_ID, PROJECT_ID)).rejects.toThrow(NotFoundException);
   });
 
   it("removeProject throws NotFoundException when team belongs to a different org — cross-org isolation", async () => {
     const db = makeDb();
-    const svc = new TeamProjectsService(db, makeTeams(ATTACKER_ORG), mockAudit);
-    await expect(svc.removeProject(ATTACKER_ORG, "actor-1", TEAM_ID, PROJECT_ID)).rejects.toThrow(NotFoundException);
+    const svc = new TeamProjectsService(db, makeTeams(ATTACKER_ORG), mockAudit, stubService<AccessService>({}));
+    await expect(svc.removeProject(actorIn(ATTACKER_ORG), TEAM_ID, PROJECT_ID)).rejects.toThrow(NotFoundException);
   });
 });
 
@@ -80,7 +96,7 @@ describe("TeamProjectsService.listTeamProjects — soft-deleted project exclusio
       insert: jest.fn(),
     } as unknown as Db;
 
-    const svc = new TeamProjectsService(captureDb, makeTeams(), mockAudit);
+    const svc = new TeamProjectsService(captureDb, makeTeams(), mockAudit, stubService<AccessService>({}));
     await svc.listTeamProjects("org-1", TEAM_ID);
 
     const rendered = render(capturedWhere);

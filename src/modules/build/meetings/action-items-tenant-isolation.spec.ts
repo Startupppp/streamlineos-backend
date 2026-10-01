@@ -1,7 +1,13 @@
 import { NotFoundException } from "@nestjs/common";
-import type { Db } from "../../../db/drizzle.module";
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { BuildTicketCreationService } from "../core/tickets";
 import { ActionItemsService } from "./action-items.service";
-import { createActionItemSchema } from "./dto/meetings.schemas";
+import { createActionItemSchema, updateActionItemSchema } from "./dto/meetings.schemas";
 
 describe("createActionItemSchema — strict() rejects status field sent by frontend in BUG-049", () => {
   it("rejects a payload that includes status because create schema has no status key and .strict() disallows extras", () => {
@@ -22,17 +28,43 @@ describe("ActionItemsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
-  const audit = { log: jest.fn() } as never;
+  function owner(orgId: string): CurrentUserContext {
+    return {
+      userId: "u1",
+      orgId,
+      role: "OWNER",
+      isOrgOwner: true,
+      sessionId: "s",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(1, true),
+    };
+  }
+
+  async function service(db: object): Promise<ActionItemsService> {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ActionItemsService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: BuildTicketCreationService, useValue: {} },
+        { provide: AccessService, useValue: {} },
+      ],
+    }).compile();
+    return moduleRef.get(ActionItemsService);
+  }
 
   it("throws NotFoundException when meeting not found for different org (cross-tenant isolation)", async () => {
     const db = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(null) },
         meetingActionItems: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-    } as unknown as Db;
-    const svc = new ActionItemsService(db, audit);
-    await expect(svc.updateItem(ATTACKER_ORG, "u1", 1, 99, 1, { title: "hack" } as never)).rejects.toThrow(NotFoundException);
+    };
+    const svc = await service(db);
+    await expect(
+      svc.updateItem(owner(ATTACKER_ORG), 1, 99, 1, updateActionItemSchema.parse({ title: "hack" })),
+    ).rejects.toThrow(NotFoundException);
   });
 
   it("returns item for the owning org (same-tenant control)", async () => {
@@ -42,13 +74,14 @@ describe("ActionItemsService — cross-tenant isolation", () => {
     const update = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning }) }) });
     const db = {
       query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(meeting) },
         meetingActionItems: { findFirst: jest.fn().mockResolvedValue(item) },
       },
       update,
-    } as unknown as Db;
-    const svc = new ActionItemsService(db, audit);
-    const result = await svc.updateItem(OWNER_ORG, "u1", 1, 1, 1, { title: "Updated" } as never);
+    };
+    const svc = await service(db);
+    const result = await svc.updateItem(owner(OWNER_ORG), 1, 1, 1, updateActionItemSchema.parse({ title: "Updated" }));
     expect(result).toBeDefined();
   });
 });
