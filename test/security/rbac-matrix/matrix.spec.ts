@@ -18,6 +18,7 @@ import { signTokenRows, signTokenScenarios } from "./cells/sign-token-scenarios"
 import { inboundChannelScenarios, inboundRows } from "./cells/inbound-channel-scenarios";
 import { buildIsolationScenarios } from "./cells/build-isolation-scenarios";
 import { hrDirectoryIsolationScenarios } from "./cells/hr-directory-isolation-scenarios";
+import { recruitmentIntegrationsIsolationScenarios } from "./cells/recruitment-integrations-isolation-scenarios";
 import { evidenceSuites } from "./evidence-suites";
 
 jest.setTimeout(120_000);
@@ -68,6 +69,7 @@ const scenarios: Scenario[] = [
   ...inboundChannelScenarios(world),
   ...buildIsolationScenarios(),
   ...hrDirectoryIsolationScenarios(),
+  ...recruitmentIntegrationsIsolationScenarios(),
   ...(process.env.RBAC_MATRIX_PLANT_FAILURE === "1" ? [plantedFailure] : []),
 ];
 for (const scenario of scenarios) runner.declare(scenario);
