@@ -15,6 +15,7 @@ import {
   resolveEntriesScope,
   resolvePayrollScope,
   resolveReportsScope,
+  resolveTeamScope,
   TS_ENTRIES_VIEW_PERMISSION,
   TS_PAYROLL_VIEW_PERMISSION,
   TS_REPORTS_VIEW_PERMISSION,
@@ -70,6 +71,39 @@ describe("resolveEntriesScope", () => {
     scopes({ [TS_ENTRIES_VIEW_PERMISSION]: "all", [TS_TEAM_VIEW_PERMISSION]: "none" });
     const read = await resolveEntriesScope(mockAccess, makeUser());
     expect(read.unrestricted).toBe(true);
+  });
+});
+
+describe("resolveTeamScope", () => {
+  const byKey = (map: Record<string, "all" | "team" | "own" | "none">) =>
+    (mockAccess.scopeFor as jest.Mock).mockImplementation(
+      async (_: unknown, key: string) => map[key] ?? "none",
+    );
+
+  it("reads the team key, not the reports key", async () => {
+    byKey({ [TS_TEAM_VIEW_PERMISSION]: "team", [TS_REPORTS_VIEW_PERMISSION]: "all" });
+    const read = await resolveTeamScope(mockAccess, makeUser());
+    expect(read.rawScope("spec reads the resolved scope")).toBe("team");
+    expect(read.unrestricted).toBe(false);
+  });
+
+  it("does not widen on a broader reports grant", async () => {
+    byKey({ [TS_TEAM_VIEW_PERMISSION]: "own", [TS_REPORTS_VIEW_PERMISSION]: "all" });
+    const read = await resolveTeamScope(mockAccess, makeUser());
+    expect(read.rawScope("spec reads the resolved scope")).toBe("own");
+  });
+
+  it("still resolves a team grant held without reports:view", async () => {
+    byKey({ [TS_TEAM_VIEW_PERMISSION]: "all" });
+    const read = await resolveTeamScope(mockAccess, makeUser());
+    expect(read.denied).toBe(false);
+    expect(read.unrestricted).toBe(true);
+  });
+
+  it("denies when the team key is absent", async () => {
+    byKey({ [TS_REPORTS_VIEW_PERMISSION]: "all" });
+    const read = await resolveTeamScope(mockAccess, makeUser());
+    expect(read.denied).toBe(true);
   });
 });
 
