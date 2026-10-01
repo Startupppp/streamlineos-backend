@@ -132,3 +132,28 @@ export function approvalQueueScope(membershipId: number | null): OwnershipScope 
     own: or(eq(timesheetPeriods.userMembershipId, membershipId), eq(timesheetPeriods.currentApproverMembershipId, membershipId)) ?? sql`false`,
   };
 }
+
+/**
+ * Everything `timesheets:approvals:view` reaches, at whichever scope it is held.
+ *
+ * The overdue queue lists unsettled periods, which are generally unsubmitted and
+ * so carry no `current_approver_membership_id` at all: `approvalQueueScope`
+ * alone matches none of them, and the queue reaches a team-scoped holder's
+ * direct reports through the reporting graph instead. Both predicates therefore
+ * belong to this one key, and composing them here is what keeps the queue's rows
+ * and the single-period read from disagreeing.
+ *
+ * The `own` arm is `approvalQueueScope`'s, unchanged, so an `own`-scoped holder -
+ * which is what `MANAGER_AUTHORITY_GRANTS` hands a reporting manager - gains
+ * nothing from the team arm.
+ */
+export function approvalQueueTeamScope(
+  orgId: string,
+  actorUserId: string,
+  membershipId: number | null,
+): OwnershipScope {
+  const queue = approvalQueueScope(membershipId);
+  const { team } = membershipTeamScope(orgId, actorUserId, membershipId, timesheetPeriods.userMembershipId);
+  if (!team) return queue;
+  return { own: queue.own, team: or(team, queue.own) ?? queue.own };
+}

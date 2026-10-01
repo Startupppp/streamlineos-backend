@@ -19,7 +19,12 @@ import {
 import { AccessService } from "../../access/access.service";
 import type { ScopedRead } from "../../access/scoped-read";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveEntriesScope, membershipTeamScope } from "./timesheets-core-scope";
+import {
+  approvalQueueTeamScope,
+  membershipTeamScope,
+  resolveApprovalScope,
+  resolveEntriesScope,
+} from "./timesheets-core-scope";
 import type { PeriodsQuery } from "./dto/periods.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -226,7 +231,8 @@ export class PeriodsReadService {
       u.isOrgOwner ||
       scope === "all" ||
       ownRow ||
-      (scope === "team" && (await this.periodInScope(read, u, periodId)));
+      (scope === "team" && (await this.periodInScope(read, u, periodId))) ||
+      (await this.periodInApprovalScope(u, periodId));
 
     if (!allowed) {
       throw new ForbiddenException("You do not have access to this period");
@@ -235,6 +241,32 @@ export class PeriodsReadService {
     const periodEntries = await this.listPeriodEntries(u.orgId, periodId);
 
     return { period: this.mapPeriod(row), entries: periodEntries };
+  }
+
+  /**
+   * The approval queue's own predicate, re-asked about one period id.
+   *
+   * A reporting manager holds `timesheets:approvals:view` at `own` and no team
+   * key, so nothing in the entries scope can justify the row they were sent to
+   * approve. Asking `approvalQueueTeamScope` - the predicate behind both the
+   * approvals queue and the overdue queue - keeps the detail read and those
+   * queues inseparable at every scope the key can be held at, including `team`,
+   * where the overdue queue reaches direct reports whose unsubmitted periods
+   * have no assigned approver to match on.
+   */
+  private async periodInApprovalScope(u: CurrentUserContext, periodId: number): Promise<boolean> {
+    const read = await resolveApprovalScope(this.access, u);
+    const membershipId = actingMembershipId(u.principal);
+    return read.read(
+      {
+        tenant: timesheetPeriods.orgId,
+        scope: approvalQueueTeamScope(u.orgId, u.userId, membershipId),
+        and: [eq(timesheetPeriods.id, periodId)],
+      },
+      async ({ sql: where }) =>
+        (await this.db.select({ id: timesheetPeriods.id }).from(timesheetPeriods).where(where).limit(1)).length > 0,
+      () => false,
+    );
   }
 
   /** Re-asks the list predicate about one period id, so the authorization answer and the row predicate cannot disagree. */
