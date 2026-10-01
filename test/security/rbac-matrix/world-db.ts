@@ -171,6 +171,7 @@ class WriteQuery implements PromiseLike<Row[]> {
   constructor(
     private readonly record: WriteRecord,
     private readonly nextId: () => number,
+    private readonly matching: (predicate: unknown) => Row[],
   ) {}
 
   values(values: unknown): this {
@@ -204,11 +205,14 @@ class WriteQuery implements PromiseLike<Row[]> {
     onfulfilled?: ((value: Row[]) => A | PromiseLike<A>) | null,
     onrejected?: ((reason: unknown) => B | PromiseLike<B>) | null,
   ): PromiseLike<A | B> {
-    const inserted =
+    const values = typeof this.record.values === "object" ? this.record.values : {};
+    const written =
       this.record.verb === "insert"
-        ? [{ id: this.nextId(), ...(typeof this.record.values === "object" ? this.record.values : {}) }]
-        : [];
-    return Promise.resolve(inserted).then(onfulfilled, onrejected);
+        ? [{ id: this.nextId(), ...values }]
+        : this.record.verb === "update"
+          ? this.matching(this.record.where).map((row) => ({ ...row, ...values }))
+          : [];
+    return Promise.resolve(written).then(onfulfilled, onrejected);
   }
 
   catch<B = never>(onrejected?: ((reason: unknown) => B | PromiseLike<B>) | null): PromiseLike<Row[] | B> {
@@ -234,7 +238,7 @@ export function worldDb(rows: WorldRows): WorldDb {
   const write = (verb: WriteRecord["verb"], table: Table): WriteQuery => {
     const record: WriteRecord = { verb, table: getTableName(table), values: undefined, where: undefined };
     writes.push(record);
-    return new WriteQuery(record, nextId);
+    return new WriteQuery(record, nextId, (predicate) => new SelectQuery(rows, []).from(table).where(predicate).resolve());
   };
   const relational = (table: Table) => {
     const find = (options: { where?: unknown } = {}): Row[] => {

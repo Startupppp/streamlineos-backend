@@ -8,6 +8,7 @@ import { ModuleStandingMutationsService } from "src/modules/module-access/module
 import { RoleMemberService } from "src/modules/rbac/role-member.service";
 import { RecruitmentJobsService } from "src/modules/hr/recruitment/recruitment-jobs.service";
 import { assertProjectAccess, assertTicketReadAccess } from "src/modules/build/core/project-crud/project-access";
+import { MilestonesService } from "src/modules/build/execution/workspace.service";
 import { settle } from "../matrix-runner";
 import type { Observation } from "../matrix.types";
 import { MATRIX_MODULE, accessFor, actorFor, type Standing } from "../standings";
@@ -82,6 +83,28 @@ export async function projectAccess(world: WorldDb, standing: Standing, orgId: s
   return settle(
     () => assertProjectAccess(world.db, accessFor(world), actorFor(standing, orgId), projectId),
     () => ({ projectLookupRan: world.reads.slice(mark).some((read) => read.table === "projects") }),
+  );
+}
+
+export async function milestoneLifecycle(
+  world: WorldDb,
+  verb: "delete" | "restore",
+  standing: Standing,
+  orgId: string,
+  projectId: number,
+  milestoneId: number,
+): Promise<Observation> {
+  const service = new MilestonesService(world.db, accessFor(world), audit);
+  const actor = actorFor(standing, orgId);
+  const mark = world.writes.length;
+  return settle(
+    () =>
+      verb === "delete"
+        ? service.deleteMilestone(actor, projectId, milestoneId)
+        : service.restoreMilestone(actor, projectId, milestoneId),
+    (value) => ({
+      writesOnlyWhenAllowed: (value === undefined) === (writesSince(world, mark, "project_milestones") === 0),
+    }),
   );
 }
 
