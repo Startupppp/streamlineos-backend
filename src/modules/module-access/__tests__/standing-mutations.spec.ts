@@ -126,14 +126,17 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
     const result = await svc.grantAdminStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
 
     expect(result).toEqual({ success: true });
-    expect(commitAccessChange).toHaveBeenCalled();
-    expect(auditLog).toHaveBeenCalledWith(
+    expect(commitAccessChange).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
       expect.objectContaining({
-        action: "module_access.standing_granted",
-        metadata: expect.objectContaining({
-          moduleKey: MODULE,
-          rank: ROLE_RANK.MODULE_ADMIN,
-          targetUserId: TARGET_USER,
+        audit: expect.objectContaining({
+          action: "module_access.standing_granted",
+          metadata: expect.objectContaining({
+            moduleKey: MODULE,
+            rank: ROLE_RANK.MODULE_ADMIN,
+            targetUserId: TARGET_USER,
+          }),
         }),
       }),
     );
@@ -255,11 +258,14 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
 
     expect(result).toEqual({ success: true });
     expect(txMock.delete).toHaveBeenCalled();
-    expect(commitAccessChange).toHaveBeenCalled();
-    expect(auditLog).toHaveBeenCalledWith(
+    expect(commitAccessChange).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
       expect.objectContaining({
-        action: "module_access.standing_revoked",
-        metadata: expect.objectContaining({ moduleKey: MODULE }),
+        audit: expect.objectContaining({
+          action: "module_access.standing_revoked",
+          metadata: expect.objectContaining({ moduleKey: MODULE }),
+        }),
       }),
     );
   });

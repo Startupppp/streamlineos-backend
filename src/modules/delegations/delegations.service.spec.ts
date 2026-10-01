@@ -11,6 +11,7 @@ import {
 import type { Db } from "../../db/drizzle.module";
 import type { AccessService } from "../access/access.service";
 import { DelegationsService } from "./delegations.service";
+import { loadOneDelegation } from "./lib/delegation-listing";
 
 jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: jest.fn(
@@ -23,6 +24,10 @@ jest.mock("../../common/rbac/access-mutation-commit", () => ({
 jest.mock("../../common/tenant/tenant-context", () => ({
   registerAfterCommit: jest.fn().mockReturnValue(true),
 }));
+jest.mock("./lib/delegation-listing", () => {
+  const actual = jest.requireActual<typeof import("./lib/delegation-listing")>("./lib/delegation-listing");
+  return { ...actual, loadOneDelegation: jest.fn().mockResolvedValue(null) };
+});
 
 const actor = {
   userId: "delegator-1",
@@ -39,7 +44,7 @@ describe("DelegationsService normalized permission grants", () => {
 
   afterEach(() => jest.useRealTimers());
 
-  it("writes lifecycle data to the header and permissions to child rows", async () => {
+  it("writes lifecycle data to the header and permissions to child rows so the created record has split tables with no cross-contamination", async () => {
     const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1_000);
     const endsAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1_000);
     const created = {
@@ -74,6 +79,12 @@ describe("DelegationsService normalized permission grants", () => {
     const access = {
       resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
     };
+    jest.mocked(loadOneDelegation).mockResolvedValueOnce({
+      ...created,
+      delegatorId: actor.userId,
+      delegateeId: "delegatee-1",
+      permissions: ["hr:employees:view", "hr:employees:manage"],
+    } as never);
     const service = new DelegationsService(
       db as unknown as Db,
       cache as unknown as CacheService,

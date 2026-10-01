@@ -113,19 +113,10 @@ const PRIMITIVES = [
   "bustMembershipStatusCacheMany",
 ];
 
-// ─── access-bump ratchet ──────────────────────────────────────────────────────
-// `bumpPermissionsVersion` is a private primitive. The only production caller is
-// `access-mutation-commit.ts`; every other direct import is a by-pass that lets a
-// caller bump the version without writing the audit row or scheduling revocation.
-
 const BUMP_PRIMITIVE = "bumpPermissionsVersion";
 const BUMP_COMMIT_OWNER = "src/common/rbac/access-mutation-commit.ts";
 const BUMP_DECLARATION = "src/common/rbac/access-invalidate.ts";
 
-/**
- * Files permitted to import `bumpPermissionsVersion` directly.
- * Spec files are excluded from the walk so they don't need entries here.
- */
 export const BUMP_EXEMPT = new Map([
   [BUMP_COMMIT_OWNER, "the sole authorised caller that wraps every side-effect"],
   [BUMP_DECLARATION, "declares bumpPermissionsVersion"],
@@ -144,8 +135,6 @@ export function findBumpImports(source) {
   }
   return out;
 }
-
-// ─── end access-bump ratchet ──────────────────────────────────────────────────
 
 const DRIZZLE_WRITE_RE = /\.(insert|update|delete)\(\s*organizationMembers\b/g;
 const RAW_WRITE_RE =

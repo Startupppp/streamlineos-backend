@@ -368,7 +368,6 @@ describe("Condition 4 — direct grants are tied to membership, not role", () =>
           new Map([["hr:employees:view", "all"]]),
         ),
       } as never,
-      { log: jest.fn() } as never,
       { invalidate: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
@@ -396,7 +395,6 @@ describe("Condition 4 — direct grants are tied to membership, not role", () =>
       mockDb as never,
       { assertModuleAccess: jest.fn().mockResolvedValue(undefined) } as never,
       { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) } as never,
-      { log: jest.fn() } as never,
       { invalidate: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
@@ -429,7 +427,6 @@ describe("Condition 5 — data scope ceiling: grantor cannot mint wider access t
           new Map([["hr:employees:view", "team"]]),
         ),
       } as never,
-      { log: jest.fn() } as never,
       { invalidate: jest.fn().mockResolvedValue(undefined) } as never,
     );
 

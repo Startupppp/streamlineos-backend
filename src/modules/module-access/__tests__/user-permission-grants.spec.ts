@@ -13,6 +13,7 @@ const txCalls = {
   versionBumped: 0,
   writeTx: null as unknown,
   bumpTx: null as unknown,
+  lastAuditOpts: null as { audit?: Record<string, unknown> } | null,
 };
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
@@ -46,9 +47,10 @@ jest.mock("../module-access.helpers", () => ({
 }));
 
 jest.mock("../../../common/rbac/access-mutation-commit", () => ({
-  commitAccessChange: (tx: unknown) => {
+  commitAccessChange: (tx: unknown, _orgId: unknown, opts: { audit?: Record<string, unknown> }) => {
     txCalls.versionBumped += 1;
     txCalls.bumpTx = tx;
+    txCalls.lastAuditOpts = opts ?? null;
     return Promise.resolve();
   },
 }));
@@ -92,7 +94,6 @@ function build(deps: Deps) {
       deps.resolved ?? new Map([["hr:employees:view", "all"], ["hr:employees:manage", "all"]]),
     ),
   };
-  const audit = { log: jest.fn() };
   const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
   const cache = { invalidate: cacheInvalidate };
 
@@ -105,11 +106,10 @@ function build(deps: Deps) {
     db,
     moduleAccess as never,
     access as never,
-    audit as never,
     cache as never,
   );
 
-  return { service, moduleAccess, access, audit, findFirst, cacheInvalidate };
+  return { service, moduleAccess, access, findFirst, cacheInvalidate };
 }
 
 beforeEach(() => {
@@ -118,6 +118,7 @@ beforeEach(() => {
   txCalls.versionBumped = 0;
   txCalls.writeTx = null;
   txCalls.bumpTx = null;
+  txCalls.lastAuditOpts = null;
 });
 
 describe("attaching capability to one person", () => {
@@ -350,18 +351,17 @@ describe("revocation takes effect without re-authenticating", () => {
 });
 
 describe("the change is explainable afterwards", () => {
-  it("records who granted what to whom", async () => {
-    const { service, audit } = build({});
+  it("records who granted what to whom so grants are attributable inside the same transaction", async () => {
+    const { service } = build({});
     await service.setGrants(ACTOR, "hr", 7, {
       items: [{ permissionKey: "hr:employees:view", scope: "all" }],
       reason: "covering payroll month-end",
     });
 
-    expect(audit.log).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(txCalls.lastAuditOpts).toMatchObject({
+      audit: expect.objectContaining({
         action: "access.user_permission_grants_set",
         userId: "u-admin",
-        orgId: ORG,
         resourceId: "7",
         metadata: expect.objectContaining({
           moduleKey: "hr",
@@ -369,18 +369,18 @@ describe("the change is explainable afterwards", () => {
           permissionKeys: ["hr:employees:view"],
         }),
       }),
-    );
+    });
   });
 
-  it("records a removal too", async () => {
-    const { service, audit } = build({});
+  it("records a removal so revocations are auditable inside the same transaction", async () => {
+    const { service } = build({});
     await service.removeGrant(ACTOR, "hr", 7, "hr:employees:view");
-    expect(audit.log).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(txCalls.lastAuditOpts).toMatchObject({
+      audit: expect.objectContaining({
         action: "access.user_permission_grant_removed",
         metadata: expect.objectContaining({ permissionKey: "hr:employees:view" }),
       }),
-    );
+    });
   });
 });
 

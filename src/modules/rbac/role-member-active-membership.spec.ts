@@ -186,7 +186,7 @@ describe("RoleMemberService — the version bump shares the writer's transaction
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.insert).toHaveBeenCalledTimes(1);
-    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, expect.anything());
   });
 
   it("removeRoleMember bumps the version on the same handle the assignment was deleted on", async () => {
@@ -200,6 +200,6 @@ describe("RoleMemberService — the version bump shares the writer's transaction
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.delete).toHaveBeenCalledTimes(1);
-    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, expect.anything());
   });
 });

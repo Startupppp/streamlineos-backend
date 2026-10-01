@@ -1,17 +1,3 @@
-/**
- * access-mutation-commit — unit specs
- *
- * Each spec describes ONE intent:
- *   BE-114  bump lives in the same transaction as the mutation
- *   BE-85   afterCommit hook runs inline when registerAfterCommit returns false
- *   audit   row is written atomically when opts.audit is supplied
- *   revoke  cache-busting work is registered after commit, not before
- *
- * BE-134: test names carry the reason — what breaks if the assertion is wrong.
- * BE-136: transaction mocks invoke their callback so code inside actually runs.
- * BE-141: every positive has a paired negative that can't be vacuously green.
- */
-
 import { commitAccessChange, type CommitAccessAudit } from "../access-mutation-commit";
 import { bumpPermissionsVersion } from "../access-invalidate";
 import { getObservabilityContext } from "../../observability/observability-context";
@@ -34,7 +20,7 @@ jest.mock("../../tenant/tenant-context", () => ({
   registerAfterCommit: jest.fn().mockReturnValue(true),
 }));
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+
 
 function makeTx() {
   const insertedRows: unknown[] = [];
@@ -51,7 +37,7 @@ function makeTx() {
 
 const ORG = "org-commit-test";
 
-// ─── BE-114: bump in the same tx ─────────────────────────────────────────────
+
 
 describe("commitAccessChange — version bump", () => {
   beforeEach(() => jest.clearAllMocks());
@@ -76,7 +62,7 @@ describe("commitAccessChange — version bump", () => {
   });
 });
 
-// ─── audit row ────────────────────────────────────────────────────────────────
+
 
 describe("commitAccessChange — audit row", () => {
   beforeEach(() => jest.clearAllMocks());
@@ -153,7 +139,7 @@ describe("commitAccessChange — audit row", () => {
   });
 });
 
-// ─── BE-85: afterCommit inline fallback ───────────────────────────────────────
+
 
 describe("commitAccessChange — afterCommit (BE-85)", () => {
   beforeEach(() => jest.clearAllMocks());
