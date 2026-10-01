@@ -22,7 +22,7 @@ export default [
       },
       {
         file: "src/modules/build/core/project-crud/project-access.ts",
-        line: 349,
+        line: 359,
         anchor: /const \{ hasAccess, role \} = await resolveProjectAccess\(db, access, u, projectId\);/,
         note: "the project lookup that makes a foreign :projectId a 404",
       },
