@@ -1,5 +1,7 @@
 import { ConflictException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { PgDialect, getTableConfig } from "drizzle-orm/pg-core";
+import { timesheets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EntriesService } from "./entries.service";
 import { AccessService } from "../../access/access.service";
@@ -124,5 +126,27 @@ describe("EntriesService.createEntry – 23505 guard", () => {
         hours: 1,
       }),
     ).rejects.toBe(unrelated);
+  });
+});
+
+describe("uniq_timesheets_work_log predicate (BUG-TS-BE-006)", () => {
+  const declared = getTableConfig(timesheets).indexes.find(
+    (ix) => ix.config.name === "uniq_timesheets_work_log",
+  );
+
+  it("is declared, unique, and keyed on org / membership / date", () => {
+    expect(declared).toBeDefined();
+    expect(declared!.config.unique).toBe(true);
+    expect(declared!.config.columns.map((c) => (c as { name: string }).name)).toEqual([
+      "org_id",
+      "user_membership_id",
+      "date",
+    ]);
+  });
+
+  it("excludes voided rows, so a void frees its day for the next entry", () => {
+    const predicate = new PgDialect().sqlToQuery(declared!.config.where!).sql;
+    expect(predicate).toContain("ticket_id IS NULL");
+    expect(predicate).toContain("voided_at IS NULL");
   });
 });

@@ -80,7 +80,9 @@ export const timesheets = pgTable("timesheets", {
   index("idx_timesheets_org_billing").on(table.orgId, table.isBillable, table.invoicingStatus),
   index("idx_timesheets_period").on(table.timesheetPeriodId),
   index("idx_timesheets_timer_session").on(table.timerSessionId),
-  uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userMembershipId, table.date).where(sql`ticket_id IS NULL`),
+  // One live work-log entry per person per day. Voided rows are excluded, or a
+  // void would keep holding its day against the next entry (BUG-TS-BE-006).
+  uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userMembershipId, table.date).where(sql`ticket_id IS NULL AND voided_at IS NULL`),
   index("idx_timesheets_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
   index("idx_timesheets_org_locked_by_membership").on(table.orgId, table.lockedByMembershipId),
   foreignKey({
