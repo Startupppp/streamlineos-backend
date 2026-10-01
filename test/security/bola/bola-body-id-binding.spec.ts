@@ -325,7 +325,18 @@ describe("the surface, enumerated from the committed contract", () => {
  * `ActivitiesController_timeline` went `filter-in-org-query` -> `never-read` on that commit alone.
  * The file-size programme will keep producing that shape, so the fix belongs in the analyser.
  */
-const WRITTEN_UNRESOLVED_BASELINE = 225;
+const WRITTEN_UNRESOLVED_BASELINE = 168;
+
+const WRITTEN_ADMITTED_SINCE_F6D12E138: ReadonlyArray<readonly [string, string]> = [
+  ["JobTemplatesController_create|jobLevelId", "job_templates carries fk_job_templates_job_level_id_org (org_id, job_level_id), so another organisation's job level cannot land"],
+  ["JobTemplatesController_update|jobLevelId", "job_templates carries fk_job_templates_job_level_id_org (org_id, job_level_id), so another organisation's job level cannot land"],
+  ["KbContentHealthController_assign|assigneeMembershipId", "kb_health_items carries fk_kb_health_items_org_assignee (org_id, assignee_membership_id), so another organisation's membership cannot land"],
+  ["IncidentsController_createIncident|releaseId", "project_incidents carries fk_project_incidents_org_release (org_id, release_id), so another organisation's release cannot land"],
+];
+
+const WRITTEN_OPEN_SINCE_F6D12E138: ReadonlyArray<readonly [string, string]> = [
+  ["IncidentsController_addFollowUpAction|ownerId", "incident follow-up owner_id references the global users table with no org column, so another organisation's user id lands while an unknown one raises a FK error; owned by the Build lane"],
+];
 const UNRESOLVED_BASELINE = 151;
 
 const UNRESOLVED_ADMITTED_SINCE_F6D12E138: ReadonlyArray<readonly [string, string]> = [
@@ -451,7 +462,6 @@ describe("findings", () => {
 
   it("does not add an unresolved body or query id beyond the 151 measured at f6d12e138 (156 less the 5 since resolved), excusing only sites admitted by name with a reason, so the open Build site keeps it red until it is fixed", () => {
     const counts = summarize(bindings);
-    expect(counts["written-unresolved"]).toBeLessThanOrEqual(WRITTEN_UNRESOLVED_BASELINE);
     const admitted = new Set(UNRESOLVED_ADMITTED_SINCE_F6D12E138.map(([site]) => site));
     const counted = bindings
       .filter((b) => b.verdict === "unresolved")
@@ -461,6 +471,20 @@ describe("findings", () => {
       count: Math.min(counted.length, UNRESOLVED_BASELINE),
       open: [],
     });
+  });
+
+  it("does not add a written-unresolved id beyond the 168 measured at f6d12e138 (181 less the 13 since resolved), excusing only the composite-tenant-FK sites admitted by name, so the open Build site keeps it red until it is fixed", () => {
+    const admitted = new Set(WRITTEN_ADMITTED_SINCE_F6D12E138.map(([site]) => site));
+    const counted = bindings
+      .filter((b) => b.verdict === "written-unresolved")
+      .map((b) => `${b.operationId}|${b.field}`)
+      .filter((site) => !admitted.has(site));
+    expect({ count: counted.length, open: WRITTEN_OPEN_SINCE_F6D12E138.filter(([site]) => counted.includes(site)) }).toEqual({
+      count: Math.min(counted.length, WRITTEN_UNRESOLVED_BASELINE),
+      open: [],
+    });
+    const written = new Set(bindings.filter((b) => b.verdict === "written-unresolved").map((b) => `${b.operationId}|${b.field}`));
+    expect(WRITTEN_ADMITTED_SINCE_F6D12E138.map(([site]) => site).filter((site) => !written.has(site))).toEqual([]);
   });
 
   it("every unresolved site admitted since f6d12e138 is still unresolved, so an excuse cannot outlive the site it excuses", () => {
