@@ -44,7 +44,7 @@ import {
   roleAssignments,
   users,
 } from "../../../db/schema";
-import { bumpPermissionsVersion, type DbOrTx } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange, type DbOrTx } from "../../../common/rbac/access-mutation-commit";
 import { assertMayAssignRole } from "../../rbac/assert-role-assignment";
 import { resolveModuleStandingRole } from "../../rbac/resolve-module-standing-role";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -618,7 +618,7 @@ export class InvitationAcceptanceService {
       )
       .onConflictDoNothing();
 
-    await bumpPermissionsVersion(tx, orgId);
+    await commitAccessChange(tx, orgId);
   }
 
   async decline(input: DeclineInvitationInput): Promise<{ ok: true }> {

@@ -37,8 +37,6 @@ import {
 } from "./lib/module-audit-log";
 import { setModuleRolePermissions } from "./module-role-permissions";
 
-export { invalidateRoleAssigneePages } from "./module-role-permissions";
-
 export interface ModuleRoleView {
   roleId: number;
   name: string;
@@ -195,7 +193,7 @@ export class ModuleAccessService {
   ): Promise<{ success: true; version: number }> {
     await this.assertModuleAccess(actor, moduleKey, "manage");
     return setModuleRolePermissions(
-      { db: this.db, access: this.access, cache: this.cache, audit: this.audit },
+      { db: this.db, access: this.access, cache: this.cache },
       actor,
       moduleKey,
       roleId,

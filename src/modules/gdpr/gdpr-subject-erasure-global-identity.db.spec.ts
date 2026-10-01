@@ -56,8 +56,8 @@
  *     node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
  *     --testPathPattern="gdpr-subject-erasure-global-identity.db"
  */
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../common/auth/membership-state.service", () => ({

@@ -44,7 +44,7 @@ export async function moduleStanding(
   orgId: string,
   targetMembershipId: number,
 ): Promise<Observation> {
-  const service = new ModuleStandingMutationsService(world.db, accessFor(world), cache, audit);
+  const service = new ModuleStandingMutationsService(world.db, accessFor(world), cache);
   const actor = actorFor(standing, orgId);
   const mark = world.writes.length;
   return settle(
@@ -68,7 +68,7 @@ export async function roleMemberAdd(
   principalId: string,
 ): Promise<Observation> {
   const dispatch = standIn<NotificationDispatchService>({ emit: async () => ({ delivered: 0 }) });
-  const service = new RoleMemberService(world.db, cache, audit, dispatch, accessFor(world));
+  const service = new RoleMemberService(world.db, cache, dispatch, accessFor(world));
   const mark = world.writes.length;
   return settle(
     () => inTenant(world, orgId, () => service.addRoleMember(actorFor(standing, orgId), roleId, { principalType: "user", principalId })),

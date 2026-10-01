@@ -1,7 +1,7 @@
 import { Logger } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { roleAssignments, roles } from "../../db/schema";
-import { bumpPermissionsVersion, type DbOrTx } from "./access-invalidate";
+import { commitAccessChange, type DbOrTx } from "./access-mutation-commit";
 import { ORG_MEMBER_ROLES } from "./org-roles";
 
 const logger = new Logger("StructuralRoleAssignment");
@@ -97,5 +97,5 @@ export async function syncStructuralRoleAssignments(
         ),
       );
 
-  await bumpPermissionsVersion(tx, orgId);
+  await commitAccessChange(tx, orgId);
 }

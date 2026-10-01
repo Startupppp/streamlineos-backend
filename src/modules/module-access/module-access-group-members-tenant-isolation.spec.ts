@@ -34,12 +34,11 @@ describe("ModuleAccessGroupMembersService — cross-tenant isolation", () => {
   }
 
   const makeCache = () => ({ cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never);
-  const makeAudit = () => ({ log: jest.fn().mockResolvedValue(undefined) } as never);
   const makeGroupPolicy = () => ({ permissionKeys: jest.fn().mockReturnValue(new Set()) } as never);
 
   it("scopes group members query to the requesting org (tenant isolation)", async () => {
     const wheres: unknown[] = [];
-    const svc = new ModuleAccessGroupMembersService(makeDb(wheres), makeCache(), makeAudit(), makeGroupPolicy());
+    const svc = new ModuleAccessGroupMembersService(makeDb(wheres), makeCache(), makeGroupPolicy());
 
     await svc.fetchGroupMembers(ATTACKER, 1);
 
@@ -51,7 +50,7 @@ describe("ModuleAccessGroupMembersService — cross-tenant isolation", () => {
 
   it("returns members for the owning org (same-tenant control)", async () => {
     const wheres: unknown[] = [];
-    const svc = new ModuleAccessGroupMembersService(makeDb(wheres), makeCache(), makeAudit(), makeGroupPolicy());
+    const svc = new ModuleAccessGroupMembersService(makeDb(wheres), makeCache(), makeGroupPolicy());
 
     const result = await svc.fetchGroupMembers(OWNER, 1);
 

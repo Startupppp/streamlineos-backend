@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import type { CacheService } from "../../common/cache/cache.service";
 import { stubService } from "../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../access/access.service";
 import { PrincipalGroupsService } from "./principal-groups.service";
@@ -39,7 +40,7 @@ describe("PrincipalGroupsService — cross-tenant isolation", () => {
   it("returns empty groups for a different org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb(null, []);
     const mockAccess = stubService<AccessService>({});
-    const svc = new PrincipalGroupsService(db, mockAccess);
+    const svc = new PrincipalGroupsService(db, mockAccess, stubService<CacheService>({}));
     const result = await svc.list(ATTACKER, { limit: 20 });
     expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalled();
@@ -49,7 +50,7 @@ describe("PrincipalGroupsService — cross-tenant isolation", () => {
   it("throws NotFoundException when group belongs to a different org (cross-tenant isolation)", async () => {
     const { db } = makeDb(null);
     const mockAccess = stubService<AccessService>({});
-    const svc = new PrincipalGroupsService(db, mockAccess);
+    const svc = new PrincipalGroupsService(db, mockAccess, stubService<CacheService>({}));
     await expect(svc.getMembers(ATTACKER, GROUP_ID)).rejects.toThrow(NotFoundException);
   });
 
@@ -57,7 +58,7 @@ describe("PrincipalGroupsService — cross-tenant isolation", () => {
     const groupRow = { id: GROUP_ID, orgId: OWNER, name: "Devs", kind: "custom" };
     const { db } = makeDb(groupRow, [groupRow]);
     const mockAccess = stubService<AccessService>({});
-    const svc = new PrincipalGroupsService(db, mockAccess);
+    const svc = new PrincipalGroupsService(db, mockAccess, stubService<CacheService>({}));
     const result = await svc.list(OWNER, { limit: 20 });
     expect(result.data).toHaveLength(1);
   });

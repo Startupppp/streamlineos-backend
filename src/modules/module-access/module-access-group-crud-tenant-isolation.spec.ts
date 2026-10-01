@@ -58,12 +58,11 @@ describe("ModuleAccessGroupCrudService — cross-tenant isolation", () => {
   } as never);
 
   const makeAccess = () => ({ hasPermission: jest.fn().mockResolvedValue(false) } as never);
-  const makeAudit = () => ({ log: jest.fn().mockResolvedValue(undefined) } as never);
   const makeGroupPolicy = () => ({ permissionKeys: jest.fn().mockReturnValue(new Set()) } as never);
 
   it("scopes group list to the requesting org (tenant isolation)", async () => {
     const wheres: unknown[] = [];
-    const svc = new ModuleAccessGroupCrudService(makeDb(wheres), makeAccess(), makeCache(), makeAudit(), makeGroupPolicy());
+    const svc = new ModuleAccessGroupCrudService(makeDb(wheres), makeAccess(), makeCache(), makeGroupPolicy());
 
     await svc.listGroups(ATTACKER, "build", 1);
 
@@ -74,7 +73,7 @@ describe("ModuleAccessGroupCrudService — cross-tenant isolation", () => {
 
   it("returns a cursor page with a data array for the owning org (same-tenant control)", async () => {
     const wheres: unknown[] = [];
-    const svc = new ModuleAccessGroupCrudService(makeDb(wheres), makeAccess(), makeCache(), makeAudit(), makeGroupPolicy());
+    const svc = new ModuleAccessGroupCrudService(makeDb(wheres), makeAccess(), makeCache(), makeGroupPolicy());
 
     const result = await svc.listGroups(OWNER, "build", 1);
 

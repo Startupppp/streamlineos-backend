@@ -4,7 +4,7 @@ import { OwnershipTransferResponseService } from "../ownership-transfer-response
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import { revokeModuleOwnerRole, assertModuleOwnerRoleAssigned } from "../module-owner-role.helper";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -15,7 +15,7 @@ import { OrganizationSagaService } from "../../organization/core/lifecycle/organ
 jest.mock("../../../common/tenant/run-in-tenant-transaction");
 jest.mock("../../../common/auth/membership-state.service");
 jest.mock("../../../common/rbac/sync-structural-role");
-jest.mock("../../../common/rbac/access-invalidate");
+jest.mock("../../../common/rbac/access-mutation-commit");
 jest.mock("../module-owner-role.helper");
 
 type SelectChain = {
@@ -121,7 +121,7 @@ describe("applyModuleTransfer — stale-owner detection", () => {
     jest.resetAllMocks();
     jest.mocked(bustMembershipStatusCache).mockResolvedValue(undefined as never);
     jest.mocked(syncStructuralRoleAssignment).mockResolvedValue(undefined);
-    jest.mocked(bumpPermissionsVersion).mockResolvedValue(undefined);
+    jest.mocked(commitAccessChange).mockResolvedValue(undefined);
     jest.mocked(revokeModuleOwnerRole).mockResolvedValue(undefined);
     jest.mocked(assertModuleOwnerRoleAssigned).mockResolvedValue(undefined);
   });
@@ -206,7 +206,7 @@ describe("applyOrgTransfer — stale-owner detection", () => {
     jest.resetAllMocks();
     jest.mocked(bustMembershipStatusCache).mockResolvedValue(undefined as never);
     jest.mocked(syncStructuralRoleAssignment).mockResolvedValue(undefined);
-    jest.mocked(bumpPermissionsVersion).mockResolvedValue(undefined);
+    jest.mocked(commitAccessChange).mockResolvedValue(undefined);
     jest.mocked(revokeModuleOwnerRole).mockResolvedValue(undefined);
     jest.mocked(assertModuleOwnerRoleAssigned).mockResolvedValue(undefined);
   });

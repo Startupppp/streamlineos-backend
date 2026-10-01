@@ -31,10 +31,9 @@ describe("RoleMemberService — cross-tenant isolation", () => {
   it("throws NotFoundException when role belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
     const mockCache = { invalidate: jest.fn() } as never;
-    const mockAudit = { log: jest.fn() } as never;
     const mockDispatch = { emit: jest.fn() } as never;
     const mockAccess = {} as never;
-    const svc = new RoleMemberService(db, mockCache, mockAudit, mockDispatch, mockAccess);
+    const svc = new RoleMemberService(db, mockCache, mockDispatch, mockAccess);
     await expect(svc.getRoleMembers(ATTACKER, ROLE_ID)).rejects.toThrow(NotFoundException);
   });
 
@@ -42,10 +41,9 @@ describe("RoleMemberService — cross-tenant isolation", () => {
     const roleRow = { id: ROLE_ID, orgId: OWNER, name: "Devs", slug: "devs" };
     const db = makeDb(roleRow);
     const mockCache = { invalidate: jest.fn() } as never;
-    const mockAudit = { log: jest.fn() } as never;
     const mockDispatch = { emit: jest.fn() } as never;
     const mockAccess = {} as never;
-    const svc = new RoleMemberService(db, mockCache, mockAudit, mockDispatch, mockAccess);
+    const svc = new RoleMemberService(db, mockCache, mockDispatch, mockAccess);
     const result = await svc.getRoleMembers(OWNER, ROLE_ID);
     expect(result).toBeDefined();
   });

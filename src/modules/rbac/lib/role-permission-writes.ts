@@ -1,16 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import {
-  organizationMembers,
-  roleAssignments,
-  rolePermissionGrants,
-  roles,
-} from "../../../db/schema";
+import { rolePermissionGrants, roles } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { AuditService } from "../../../common/audit/audit.service";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
@@ -54,39 +48,8 @@ export type RoleRow = typeof roles.$inferSelect;
 export interface RoleWriteDeps {
   readonly db: Db;
   readonly cache: CacheService;
-  readonly audit: AuditService;
   readonly access: AccessService;
   readonly getRole: (orgId: string, roleId: number) => Promise<RoleRow>;
-}
-
-async function invalidateRoleHolderSessions(
-  deps: RoleWriteDeps,
-  orgId: string,
-  roleId: number,
-): Promise<void> {
-  const assignees = await deps.db
-    .select({ userId: organizationMembers.userId })
-    .from(roleAssignments)
-    .innerJoin(
-      organizationMembers,
-      and(
-        eq(organizationMembers.orgId, roleAssignments.orgId),
-        eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-      ),
-    )
-    .where(
-      and(
-        eq(roleAssignments.orgId, orgId),
-        eq(roleAssignments.roleId, roleId),
-      ),
-    )
-    .limit(500);
-  // One pipelined call, not one round trip per assignee. `Promise.all` made the
-  // 500 concurrent, which hides the cost in wall-clock without removing it;
-  // `invalidateMany` is the CacheService method that exists for exactly this.
-  await deps.cache.invalidateMany(
-    assignees.map((a) => CACHE_KEYS.userSession(a.userId)),
-  );
 }
 
 async function assertGrantable(
@@ -185,20 +148,21 @@ export async function setRolePermissions(
       );
     }
 
-    await bumpPermissionsVersion(tx, actor.orgId);
+    await commitAccessChange(tx, actor.orgId, {
+      audit: {
+        action: "role.permissions.set",
+        userId: actor.userId,
+        targetId: String(roleId),
+        targetType: "role",
+        metadata: { count: deduped.size },
+      },
+      revoke: {
+        cache: deps.cache,
+        loses: [{ kind: "role-holders", roleId }],
+        listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+      },
+    });
   }, { orgId: actor.orgId });
-
-  await deps.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-  await invalidateRoleHolderSessions(deps, actor.orgId, roleId);
-
-  deps.audit.log({
-    action: "role.permissions.set",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    targetId: String(roleId),
-    targetType: "role",
-    metadata: { count: deduped.size },
-  });
 
   return { success: true, version: nextVersion };
 }

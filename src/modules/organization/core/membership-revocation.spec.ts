@@ -532,25 +532,28 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
     });
   });
 
-  describe("access caches are busted immediately and post-commit", () => {
-    it("busts cache immediately before the tenant transaction", async () => {
-      const { tx } = buildTx();
-      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
-      const { service, mockDb } = await buildService();
-
-      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
-
-      expect(mockBustMembershipStatusCache).toHaveBeenCalled();
-    });
-
-    it("registers a post-commit re-bust via registerAfterCommit", async () => {
+  describe("access caches are busted after commit, never before it", () => {
+    it("does not bust before commit so a concurrent read cannot refill the cache with the still-active membership", async () => {
       const { tx } = buildTx();
       mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
       const { service } = await buildService();
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(mockRegisterAfterCommit).toHaveBeenCalledTimes(2);
+      expect(mockBustMembershipStatusCache).not.toHaveBeenCalled();
+      for (const [hook] of mockRegisterAfterCommit.mock.calls) await hook();
+      expect(mockBustMembershipStatusCache).toHaveBeenCalledWith(expect.anything(), USER_ID);
+    });
+
+    it("busts inline when there is no transaction to defer to so the revocation is never dropped", async () => {
+      const { tx } = buildTx();
+      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
+      const { service } = await buildService();
+      mockRegisterAfterCommit.mockImplementation(() => false);
+
+      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
+
+      expect(mockBustMembershipStatusCache).toHaveBeenCalledWith(expect.anything(), USER_ID);
     });
   });
 

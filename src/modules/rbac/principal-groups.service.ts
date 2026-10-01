@@ -17,7 +17,8 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { isUniqueViolation } from "../../common/db/postgres-error";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { CacheService } from "../../common/cache/cache.service";
+import { commitAccessChange, type AccessLoss } from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 // NOT `import type`: TypeScript erases a type-only import, so emitDecoratorMetadata
@@ -41,7 +42,12 @@ export class PrincipalGroupsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly cache: CacheService,
   ) {}
+
+  private revoking(loss: AccessLoss) {
+    return { revoke: { cache: this.cache, loses: [loss] } };
+  }
 
   private async assertGroupBelongsToOrg(orgId: string, groupId: string) {
     const group = await this.db.query.principalGroups.findFirst({
@@ -207,7 +213,11 @@ export class PrincipalGroupsService {
             organizationMembershipId: input.membershipId,
           })
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(
+          tx,
+          actor.orgId,
+          this.revoking({ kind: "memberships", membershipIds: [input.membershipId] }),
+        );
       },
       { orgId: actor.orgId },
     );
@@ -234,7 +244,11 @@ export class PrincipalGroupsService {
               eq(principalGroupMembers.organizationMembershipId, membershipId),
             ),
           );
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(
+          tx,
+          actor.orgId,
+          this.revoking({ kind: "memberships", membershipIds: [membershipId] }),
+        );
       },
       { orgId: actor.orgId },
     );
@@ -295,7 +309,7 @@ export class PrincipalGroupsService {
             roleId: input.roleId,
           })
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, this.revoking({ kind: "group-members", groupId }));
       },
       { orgId: actor.orgId },
     );
@@ -322,7 +336,7 @@ export class PrincipalGroupsService {
               eq(groupRoleAssignments.roleId, roleId),
             ),
           );
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, this.revoking({ kind: "group-members", groupId }));
       },
       { orgId: actor.orgId },
     );

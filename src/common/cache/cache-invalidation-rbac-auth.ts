@@ -58,7 +58,7 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     invalidation: {
       kind: "write",
       events: [
-        "scheduleMembershipBust (common/org/membership-bust.ts) on any membership status change",
+        "scheduleStandingRevocation and commitAccessChange revoke intents (common/rbac/access-mutation-commit.ts) on any membership status change",
         "InvitationAcceptanceService.accept",
         "OrgMemberDepartureService (leave/remove member)",
         "OrgMembershipService.updateMember",
@@ -72,7 +72,7 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     invalidation: {
       kind: "write",
       events: [
-        "scheduleMembershipBust / scheduleMembershipBustMany (common/org/membership-bust.ts) on any membership status change",
+        "scheduleStandingRevocation and commitAccessChange revoke intents (common/rbac/access-mutation-commit.ts) on any membership status change",
         "OrgMembershipService.updateMember and OrgMemberDepartureService (leave/remove/deactivate)",
         "InvitationAcceptanceService.accept",
         "OrgLifecycleService, OrgPurgeService and CronOrgPurgeWorkerService (whole-org suspension/purge, batched)",

@@ -8,6 +8,10 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import { AccessService } from "../access/access.service";
 import { RoleMemberService } from "./role-member.service";
 
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: jest.fn().mockImplementation(
     (_db: unknown, fn: (tx: unknown) => Promise<void>) => {

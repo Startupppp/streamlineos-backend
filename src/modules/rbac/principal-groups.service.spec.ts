@@ -44,7 +44,7 @@ function makeService(writeError: Error): PrincipalGroupsService {
       set: jest.fn().mockReturnValue({ where: jest.fn().mockRejectedValue(writeError) }),
     }),
   } as unknown as Db;
-  return new PrincipalGroupsService(db, {} as never);
+  return new PrincipalGroupsService(db, {} as never, {} as never);
 }
 
 describe("PrincipalGroupsService — duplicate names", () => {

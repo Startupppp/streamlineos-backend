@@ -11,15 +11,15 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 
 const txDeletes: number[] = [];
 const txInserted: Record<string, unknown>[] = [];
 let txVersionBumped = 0;
 const txHandles: { write: unknown; bump: unknown } = { write: null, bump: null };
 
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockImplementation((tx: unknown) => {
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockImplementation((tx: unknown) => {
     txVersionBumped += 1;
     txHandles.bump = tx;
     return Promise.resolve();
@@ -115,7 +115,7 @@ beforeEach(() => {
   txVersionBumped = 0;
   txHandles.write = null;
   txHandles.bump = null;
-  (bumpPermissionsVersion as jest.Mock).mockClear();
+  (commitAccessChange as jest.Mock).mockClear();
 });
 
 describe("Condition 1 — module standing gate bites for isOrgOwner=false with no module standing", () => {
@@ -368,7 +368,6 @@ describe("Condition 4 — direct grants are tied to membership, not role", () =>
           new Map([["hr:employees:view", "all"]]),
         ),
       } as never,
-      { log: jest.fn() } as never,
       { invalidate: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
@@ -396,7 +395,6 @@ describe("Condition 4 — direct grants are tied to membership, not role", () =>
       mockDb as never,
       { assertModuleAccess: jest.fn().mockResolvedValue(undefined) } as never,
       { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) } as never,
-      { log: jest.fn() } as never,
       { invalidate: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
@@ -429,7 +427,6 @@ describe("Condition 5 — data scope ceiling: grantor cannot mint wider access t
           new Map([["hr:employees:view", "team"]]),
         ),
       } as never,
-      { log: jest.fn() } as never,
       { invalidate: jest.fn().mockResolvedValue(undefined) } as never,
     );
 

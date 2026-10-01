@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import type { CacheService } from "../../common/cache/cache.service";
 import type { AuditService } from "../../common/audit/audit.service";
 import { stubService } from "../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../access/access.service";
@@ -69,7 +70,7 @@ describe("RolesService — cross-tenant isolation", () => {
     const mockAccess = stubService<AccessService>({ resolveUserPermissions: jest.fn().mockResolvedValue({}) });
     const mockRolePerm = stubService<RolePermissionService>({ getRolePermissions: jest.fn().mockResolvedValue([]) });
     const mockRoleMember = stubService<RoleMemberService>({});
-    const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
+    const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember, stubService<CacheService>({}));
     const result = await svc.getRoles(ATTACKER, { limit: 20 });
     expect(result.data).toHaveLength(0);
     const pageWhere = whereCalls[0];
@@ -85,7 +86,7 @@ describe("RolesService — cross-tenant isolation", () => {
     const mockAccess = stubService<AccessService>({ resolveUserPermissions: jest.fn().mockResolvedValue({}) });
     const mockRolePerm = stubService<RolePermissionService>({});
     const mockRoleMember = stubService<RoleMemberService>({});
-    const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
+    const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember, stubService<CacheService>({}));
     await expect(svc.getRole(ATTACKER, ROLE_ID)).rejects.toThrow(NotFoundException);
   });
 
@@ -96,7 +97,7 @@ describe("RolesService — cross-tenant isolation", () => {
     const mockAccess = stubService<AccessService>({ resolveUserPermissions: jest.fn().mockResolvedValue({}) });
     const mockRolePerm = stubService<RolePermissionService>({ getRolePermissions: jest.fn().mockResolvedValue([]) });
     const mockRoleMember = stubService<RoleMemberService>({});
-    const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
+    const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember, stubService<CacheService>({}));
     const result = await svc.getRoles(OWNER, { limit: 20 });
     expect(result.data).toHaveLength(1);
   });

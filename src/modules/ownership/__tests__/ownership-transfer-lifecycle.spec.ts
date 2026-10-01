@@ -6,7 +6,7 @@ import type { TenantTx } from "../../../common/tenant/with-tenant";
 import { assertTransitionAllowed } from "../../organization/core/lifecycle/organization-lifecycle-transitions";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import { revokeModuleOwnerRole, assertModuleOwnerRoleAssigned } from "../module-owner-role.helper";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -17,7 +17,7 @@ import { OrganizationSagaService } from "../../organization/core/lifecycle/organ
 jest.mock("../../../common/tenant/run-in-tenant-transaction");
 jest.mock("../../../common/auth/membership-state.service");
 jest.mock("../../../common/rbac/sync-structural-role");
-jest.mock("../../../common/rbac/access-invalidate");
+jest.mock("../../../common/rbac/access-mutation-commit");
 jest.mock("../module-owner-role.helper");
 
 type SelectChain = {
@@ -147,7 +147,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
 
     jest.mocked(bustMembershipStatusCache).mockImplementation(() => Promise.resolve());
     jest.mocked(syncStructuralRoleAssignment).mockImplementation(() => Promise.resolve());
-    jest.mocked(bumpPermissionsVersion).mockImplementation(() => Promise.resolve());
+    jest.mocked(commitAccessChange).mockImplementation(() => Promise.resolve());
     jest.mocked(revokeModuleOwnerRole).mockImplementation(() => Promise.resolve());
     jest.mocked(assertModuleOwnerRoleAssigned).mockImplementation(() => Promise.resolve());
 
@@ -295,7 +295,19 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
       expect(syncStructuralRoleAssignment).toHaveBeenCalledTimes(2);
       expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(txMock, ORG, 1, "ORG_ADMIN");
       expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(txMock, ORG, 2, "OWNER");
-      expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
+      expect(commitAccessChange).toHaveBeenCalledWith(
+        txMock,
+        ORG,
+        expect.objectContaining({
+          audit: expect.objectContaining({ action: "ownership.transfer_accepted" }),
+          revoke: expect.objectContaining({
+            loses: [{ kind: "standing", userIds: expect.arrayContaining([expect.any(String)]) }],
+          }),
+          notify: expect.objectContaining({
+            events: [expect.objectContaining({ eventKey: "ownership.transfer.accepted" })],
+          }),
+        }),
+      );
     });
 
     it("writes the owner_membership_id repoint and the transfer's ACCEPTED stamp on that same handle", async () => {
@@ -345,7 +357,19 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
       expect(txMock.insert).toHaveBeenCalledTimes(1);
       expect(revokeModuleOwnerRole).toHaveBeenCalledWith(txMock, ORG, "hr", 1);
       expect(assertModuleOwnerRoleAssigned).toHaveBeenCalledWith(txMock, ORG, "hr", 2);
-      expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
+      expect(commitAccessChange).toHaveBeenCalledWith(
+        txMock,
+        ORG,
+        expect.objectContaining({
+          audit: expect.objectContaining({ action: "ownership.transfer_accepted" }),
+          revoke: expect.objectContaining({
+            loses: [{ kind: "standing", userIds: expect.arrayContaining([expect.any(String)]) }],
+          }),
+          notify: expect.objectContaining({
+            events: [expect.objectContaining({ eventKey: "ownership.transfer.accepted" })],
+          }),
+        }),
+      );
     });
 
     it("leaves the org's structural roles untouched — a module handover is not an org handover", async () => {

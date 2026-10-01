@@ -1,4 +1,5 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
+import { ModuleDisabledException } from "../../common/http/api-exceptions";
 import { moduleAccessDenied } from "./module-access-errors";
 import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import type { Db } from "../../db/drizzle.module";
@@ -74,7 +75,7 @@ export async function assertModuleEnabled(
 ): Promise<void> {
   assertManagedModule(moduleKey);
   if (!(await deps.isModuleEnabled(orgId, moduleKey)))
-    throw new ForbiddenException(`The ${moduleKey} module is not enabled`);
+    throw new ModuleDisabledException(moduleKey, "org-disabled");
 }
 
 export async function assertModuleAccessPolicy(

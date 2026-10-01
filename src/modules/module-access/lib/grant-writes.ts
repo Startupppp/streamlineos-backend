@@ -3,15 +3,13 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { organizationMembers, userPermissionGrants } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import {
   assertPermissionsGrantable,
   buildPermissionAdministeringModuleMap,
   toGrantableSet,
 } from "../../../common/rbac/grantability";
-import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService, SCOPE_RANK } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -42,7 +40,6 @@ export interface TargetMembership {
 export interface GrantWriteDeps {
   readonly db: Db;
   readonly cache: CacheService;
-  readonly audit: AuditService;
   readonly access: AccessService;
   readonly moduleAccess: ModuleAccessService;
   readonly moduleKeys: (moduleKey: string) => Set<string>;
@@ -112,23 +109,24 @@ export async function setGrants(
         ),
       );
     if (rows.length > 0) await tx.insert(userPermissionGrants).values(rows);
-    await bumpPermissionsVersion(tx, actor.orgId);
+    await commitAccessChange(tx, actor.orgId, {
+      audit: {
+        action: "access.user_permission_grants_set",
+        userId: actor.userId,
+        resourceType: "organization_member",
+        resourceId: String(membershipId),
+        metadata: {
+          moduleKey,
+          targetUserId: target.userId,
+          permissionKeys: Array.from(requested.keys()),
+        },
+      },
+      revoke: {
+        cache: deps.cache,
+        loses: [{ kind: "permissions", userIds: [target.userId] }],
+      },
+    });
   });
-
-  deps.audit.log({
-    action: "access.user_permission_grants_set",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    resourceType: "organization_member",
-    resourceId: String(membershipId),
-    metadata: {
-      moduleKey,
-      targetUserId: target.userId,
-      permissionKeys: Array.from(requested.keys()),
-    },
-  });
-
-  await deps.cache.invalidate(CACHE_KEYS.userSession(target.userId));
 
   return { success: true, granted: rows.length };
 }

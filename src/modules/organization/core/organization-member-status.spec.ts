@@ -513,7 +513,7 @@ describe("OrgMembershipService — module-ownership guards", () => {
       expect(revokeAllForUser).not.toHaveBeenCalled();
     });
 
-    it("preserves the selected suspended org and invalidates again after commit", async () => {
+    it("preserves the selected suspended org and invalidates the session only after commit", async () => {
       const findFirst = jest.fn().mockResolvedValue({
         isOwner: false,
         status: "ACTIVE",
@@ -550,18 +550,16 @@ describe("OrgMembershipService — module-ownership guards", () => {
 
       expect(tx.delete).toHaveBeenCalledWith(orgUnitMembers);
       expect(revokeAllForUser).not.toHaveBeenCalled();
-      expect(cacheInvalidate).toHaveBeenCalledWith(
+      expect(cacheInvalidate).not.toHaveBeenCalledWith(
         CACHE_KEYS.userSession(MEMBER_ID),
       );
       expect(tx.update).not.toHaveBeenCalledWith(users);
       expect(afterCommit.length).toBeGreaterThanOrEqual(1);
 
       for (const hook of afterCommit) await hook();
-      expect(
-        cacheInvalidate.mock.calls.filter(
-          ([key]) => key === CACHE_KEYS.userSession(MEMBER_ID),
-        ),
-      ).toHaveLength(2);
+      expect(cacheInvalidate).toHaveBeenCalledWith(
+        CACHE_KEYS.userSession(MEMBER_ID),
+      );
     });
 
     it("selects the restored organization without changing global account state", async () => {
