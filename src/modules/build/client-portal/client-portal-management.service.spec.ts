@@ -109,7 +109,6 @@ describe("ClientPortalManagementService.publishPortal — lifecycle gate: sets p
     let selectCount = 0;
 
     const db = {
-      select: projectGateSelect([projectAccessRow()]),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({

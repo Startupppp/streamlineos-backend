@@ -9,6 +9,8 @@ import { ManagedProductsService } from "src/modules/build/managed-products/manag
 import { ClientPortalService } from "src/modules/build/client-portal/client-portal.service";
 import type { Db } from "src/db/drizzle.module";
 import type { AccessService } from "src/modules/access/access.service";
+import type { CurrentUserContext } from "src/common/auth/backend-claims";
+import { humanSessionPrincipal } from "src/common/auth/principal";
 
 const dialect = new PgDialect();
 const BACKEND_ROOT = resolve(__dirname, "..", "..");
@@ -30,8 +32,20 @@ const MEMBERSHIP_A = 5;
 
 const audit = { log: jest.fn() } as never;
 const accessStub = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Map<string, string>()),
+  scopeFor: jest.fn(async (_actor: CurrentUserContext, key: string) => (key === "build:view" ? "own" : "none")),
 } as unknown as AccessService;
+
+function scopeActor(orgId: string): CurrentUserContext {
+  return {
+    orgId,
+    userId: USER_A,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s-a",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(MEMBERSHIP_A, false),
+  };
+}
 
 function makeScopeDirectoryDb(resolveWith: unknown[] = []) {
   const capturedWheres: unknown[] = [];
@@ -82,7 +96,7 @@ describe("BSN-04-042 — cross-organization isolation: scope-directory resolve",
   it("resolveScopeDirectory binds the caller's orgId in the project membership WHERE clause", async () => {
     const { db, capturedWheres } = makeScopeDirectoryDb([]);
     await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_A}`],
+      scopeActor(ORG_A), [`project:${PROJECT_KEY_A}`],
     );
     expect(capturedWheres.length).toBeGreaterThan(0);
     expect(renderParams(capturedWheres[0])).toContain(ORG_A);
@@ -91,7 +105,7 @@ describe("BSN-04-042 — cross-organization isolation: scope-directory resolve",
   it("resolveScopeDirectory returns nothing for a project key belonging to a foreign org", async () => {
     const { db } = makeScopeDirectoryDb([]);
     const result = await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_B}`],
+      scopeActor(ORG_A), [`project:${PROJECT_KEY_B}`],
     );
     expect(result).toEqual([]);
   });
@@ -101,7 +115,7 @@ describe("BSN-04-042 — cross-organization isolation: scope-directory resolve",
       { id: PROJECT_KEY_A, name: "My Project", key: "MYPRJ", status: "ACTIVE", managedProductId: null, clientMembershipId: null },
     ]);
     const result = await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_A}`],
+      scopeActor(ORG_A), [`project:${PROJECT_KEY_A}`],
     );
     expect(result.length).toBe(1);
     expect(result[0]?.id).toBe(String(PROJECT_KEY_A));
@@ -110,7 +124,7 @@ describe("BSN-04-042 — cross-organization isolation: scope-directory resolve",
   it("resolveScopeDirectory binds orgId in the product WHERE clause", async () => {
     const { db, capturedWheres } = makeScopeDirectoryDb([]);
     await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`product:${PRODUCT_A}`],
+      scopeActor(ORG_A), [`product:${PRODUCT_A}`],
     );
     expect(renderParams(capturedWheres[0])).toContain(ORG_A);
   });
@@ -118,7 +132,7 @@ describe("BSN-04-042 — cross-organization isolation: scope-directory resolve",
   it("org-B cannot retrieve org-A's project by guessing its key", async () => {
     const { db } = makeScopeDirectoryDb([]);
     const result = await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_B, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_A}`],
+      scopeActor(ORG_B), [`project:${PROJECT_KEY_A}`],
     );
     expect(result).toEqual([]);
   });
@@ -126,7 +140,7 @@ describe("BSN-04-042 — cross-organization isolation: scope-directory resolve",
   it("the caller's orgId is NOT org-B even when the key contains org-B's project id", async () => {
     const { db, capturedWheres } = makeScopeDirectoryDb([]);
     await new ScopeDirectoryService(db, accessStub).resolveScopeDirectory(
-      ORG_A, USER_A, MEMBERSHIP_A, [`project:${PROJECT_KEY_B}`],
+      scopeActor(ORG_A), [`project:${PROJECT_KEY_B}`],
     );
     const params = renderParams(capturedWheres[0]);
     expect(params).toContain(ORG_A);

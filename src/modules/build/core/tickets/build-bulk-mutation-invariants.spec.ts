@@ -21,7 +21,8 @@ const actor: CurrentUserContext = {
 
 function projectAccessChain() {
   const rows = [projectAccessRow()];
-  const chain = {
+  interface AccessChain { from: () => AccessChain; where: () => AccessChain; limit: jest.Mock }
+  const chain: AccessChain = {
     from: jest.fn(() => chain), where: jest.fn(() => chain), limit: jest.fn().mockResolvedValue(rows),
   };
   return chain;

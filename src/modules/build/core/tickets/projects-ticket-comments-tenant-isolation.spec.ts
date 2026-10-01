@@ -74,7 +74,7 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
 
   beforeEach(() => {
     jest.mocked(decideTicketRead).mockImplementation(async (db) => {
-      const ticket: { projectId: number } | null = await db.query.tickets.findFirst();
+      const ticket = await db.query.tickets.findFirst();
       if (!ticket) return { kind: "missing" };
       return { kind: "allowed", projectId: ticket.projectId, projectState: "ACTIVE" };
     });

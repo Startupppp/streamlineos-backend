@@ -81,7 +81,7 @@ describe("the delete guard's blocker lookup", () => {
       db,
       {} as never,
       {} as never,
-      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { scopeFor: jest.fn() },
       { log: jest.fn() } as never,
     );
 
@@ -141,7 +141,7 @@ describe("the delete guard's blocker lookup", () => {
       db,
       { enqueue: jest.fn() } as never,
       { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn(), delByPrefix: jest.fn() } as never,
-      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { scopeFor: jest.fn() },
       { log: jest.fn() } as never,
     );
 

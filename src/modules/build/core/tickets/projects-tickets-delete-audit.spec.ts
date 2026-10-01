@@ -41,7 +41,7 @@ function harness(existing: { id: number; projectId: number; title: string } | un
     db,
     { enqueue: jest.fn().mockResolvedValue(undefined) } as unknown as ProjectsWebhooksDispatchService,
     { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
-    { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+    { scopeFor: jest.fn() },
     { log } as never,
   );
   return { service, log };

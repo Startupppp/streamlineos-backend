@@ -68,7 +68,7 @@ function harness(enqueueFails: boolean) {
       db,
       webhooks,
       cache as never,
-      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { scopeFor: jest.fn() },
       { log: jest.fn() } as never,
     ),
     enqueue,
@@ -118,7 +118,7 @@ describe("Build mutation and webhook intent atomicity", () => {
       db,
       { enqueue } as never,
       {} as never,
-      { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
+      { scopeFor: jest.fn() },
       { log: jest.fn() } as never,
     );
 

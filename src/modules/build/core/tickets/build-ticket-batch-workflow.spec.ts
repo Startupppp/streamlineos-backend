@@ -57,7 +57,7 @@ describe("validateBatchTransition — capacity reservation uses only the changin
     const rows = [makeRow(1, "DONE"), makeRow(2, "TODO"), makeRow(3, "TODO")];
     const { db } = makeWorkflowDb([], [{ id: 1, name: "DONE", wipLimit: null }]);
 
-    await validateBatchTransition(db, actor, PROJECT_ID, rows, "DONE", "MEMBER");
+    await validateBatchTransition(db, actor, PROJECT_ID, rows, "DONE", { role: "MEMBER", bypassesWorkflow: false });
 
     expect(reserveTicketCapacity).toHaveBeenCalledTimes(1);
     const [, , , incoming, excludedIds] = (reserveTicketCapacity as jest.Mock).mock.calls[0] as [
@@ -71,7 +71,7 @@ describe("validateBatchTransition — capacity reservation uses only the changin
     const rows = [makeRow(1, "DONE"), makeRow(2, "DONE")];
     const { db } = makeWorkflowDb([], [{ id: 1, name: "DONE", wipLimit: null }]);
 
-    await validateBatchTransition(db, actor, PROJECT_ID, rows, "DONE", "MEMBER");
+    await validateBatchTransition(db, actor, PROJECT_ID, rows, "DONE", { role: "MEMBER", bypassesWorkflow: false });
 
     expect(reserveTicketCapacity).not.toHaveBeenCalled();
   });
@@ -80,7 +80,7 @@ describe("validateBatchTransition — capacity reservation uses only the changin
     const rows = [makeRow(1, "TODO"), makeRow(2, "TODO")];
     const { db } = makeWorkflowDb([], [{ id: 1, name: "DONE", wipLimit: null }]);
 
-    await validateBatchTransition(db, actor, PROJECT_ID, rows, "DONE", "MEMBER");
+    await validateBatchTransition(db, actor, PROJECT_ID, rows, "DONE", { role: "MEMBER", bypassesWorkflow: false });
 
     expect(reserveTicketCapacity).toHaveBeenCalledTimes(1);
     const [, , , incoming, excludedIds] = (reserveTicketCapacity as jest.Mock).mock.calls[0] as [
