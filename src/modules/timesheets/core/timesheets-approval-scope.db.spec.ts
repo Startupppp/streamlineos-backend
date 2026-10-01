@@ -180,21 +180,19 @@ describeDb("approval arm — real database, app role, tenant GUC", () => {
   });
 
   /**
-   * `it.failing` ON PURPOSE, and the most important line in this file.
+   * The row-level agreement invariant, and the most important assertion in this file.
    *
-   * On this branch the overdue queue narrows with `membershipTeamScope` while
-   * `periodInApprovalScope` answers with `approvalQueueScope`, so at team scope the list
-   * shows a direct report's period and the detail then refuses it. Measured here against
-   * Postgres: period 7, status 403. The fix composing the two predicates into
-   * `approvalQueueTeamScope` lives on `feat/timesheets-overdue-agree` (8fb45fd54), which is
-   * not an ancestor of this branch; applied to this worktree it turns this body green,
-   * verified before it was reverted.
+   * The overdue queue narrows with `membershipTeamScope` while `periodInApprovalScope`
+   * answers with `approvalQueueTeamScope`, which composes that same reporting-graph arm
+   * with the approver equality. Before that composition landed (8fb45fd54) this body
+   * failed against Postgres with period 7 at status 403: the list showed a direct
+   * report's period and the detail refused it.
    *
-   * So this is pinned as a known failure rather than deleted or written to agree with the
-   * defect. The moment the fix lands here, jest reports "Failing test passed even though it
-   * was supposed to fail" and whoever merges flips `it.failing` to `it`.
+   * A unit test cannot reach this. The rendered-SQL assertion on
+   * `feat/timesheets-overdue-agree` proves both surfaces issue the same narrowing SQL;
+   * only two real queries prove Postgres returns the same rows for both.
    */
-  it.failing("agrees between the overdue list and the detail read at team scope: every listed period opens", async () => {
+  it("agrees between the overdue list and the detail read at team scope: every listed period opens", async () => {
     const queue = await overdue(APPROVALS_TEAM).listOverdue(actor(), { page: 1, limit: 50 } as never);
     const ids = queue.items.map((i) => i.periodId);
     expect(ids).toContain(MGR_OWN_OVERDUE);
