@@ -20,7 +20,8 @@ import type { HrAuditService } from "src/modules/hr/core/hr-audit.service";
 import type { HrEffectiveChangesService } from "src/modules/hr/core/hr-effective-changes.service";
 import { AssetsService } from "src/modules/hr/directory/assets.service";
 import { patchAssetReturnSchema, patchDeviceSchema } from "src/modules/hr/directory/dto/hr-directory.schemas";
-import type { AdapterBinding, Observation, Scenario } from "../matrix.types";
+import type { Observation, Scenario } from "../matrix.types";
+import { TENANT_ONLY, pair } from "./isolation-kit";
 import { cache } from "../adapters/real-services";
 import { tenantBound } from "../adapters/hr-adapter";
 import { settle } from "../matrix-runner";
@@ -82,20 +83,6 @@ export function hrRows(): Map<Table, Row[]> {
     [users, [{ id: DEVICE_HOLDER_A, firstName: "Dee", lastName: "Holder", email: "dee@example.com" }]],
   ]);
 }
-
-function pair(
-  base: Omit<Scenario, "id" | "tenant" | "expected" | "because" | "pairedWith" | "bindings">,
-  id: string,
-  allow: { readonly because: string; readonly bindings: readonly AdapterBinding[] },
-  deny: { readonly because: string; readonly bindings: readonly AdapterBinding[] },
-): Scenario[] {
-  return [
-    { ...base, id: `${id}-same-tenant`, tenant: "same", expected: "allow", because: allow.because, bindings: allow.bindings },
-    { ...base, id: `${id}-cross-tenant`, tenant: "other", expected: "404", because: deny.because, pairedWith: `${id}-same-tenant`, bindings: deny.bindings },
-  ];
-}
-
-const TENANT_ONLY = { actor: "tenant-only", state: "normal" } satisfies Pick<Scenario, "actor" | "state">;
 
 function headcount(world: WorldDb): Scenario[] {
   const service = new HrAnalyticsPlusService(world.db, cache, new HrCommandCenterAnalyticsService(world.db, cache));
