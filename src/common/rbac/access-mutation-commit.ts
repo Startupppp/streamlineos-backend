@@ -34,13 +34,7 @@ export type CommitAccessAudit = AccessCommitActorFields & {
   metadata?: Record<string, unknown>;
 };
 
-export interface SessionRevoker {
-  revokeAllForUser(userId: string): Promise<unknown>;
-}
-
-export interface AccessNotifier<E> {
-  emit(event: E): Promise<unknown>;
-}
+export type SessionRevoker = { revokeAllForUser(userId: string): Promise<unknown> };
 
 export type AccessLoss =
   | { kind: "permissions"; userIds: readonly string[] }
@@ -56,15 +50,10 @@ export interface AccessRevocation {
   listKeys?: readonly ExactCacheKey[];
 }
 
-export interface AccessNotification<E> {
-  via: AccessNotifier<E>;
-  events: readonly E[];
-}
-
 export interface CommitAccessOpts<E = never> {
   audit?: CommitAccessAudit;
   revoke?: AccessRevocation;
-  notify?: AccessNotification<E>;
+  notify?: { via: { emit(event: E): Promise<unknown> }; events: readonly E[] };
   afterCommit?: () => Promise<void>;
 }
 
@@ -99,10 +88,7 @@ async function writeAudit(tx: DbOrTx, orgId: string, entry: CommitAccessAudit): 
   });
 }
 
-interface MemberPageRow {
-  membershipId: number;
-  userId: string;
-}
+type MemberPageRow = { membershipId: number; userId: string };
 
 async function collectMemberPages(
   fetchPage: (afterMembershipId: number, limit: number) => Promise<MemberPageRow[]>,

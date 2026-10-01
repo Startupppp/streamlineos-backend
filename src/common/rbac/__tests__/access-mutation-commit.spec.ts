@@ -118,7 +118,7 @@ beforeEach(() => {
   jest.mocked(bustMembershipStatusCache).mockResolvedValue(undefined);
   jest.mocked(bustMembershipStatusCacheMany).mockResolvedValue(undefined);
   jest.mocked(getObservabilityContext).mockReturnValue(undefined);
-  jest.mocked(getImpersonationContext).mockReturnValue(null);
+  jest.mocked(getImpersonationContext).mockReturnValue(undefined);
 });
 
 describe("commitAccessChange — version bump", () => {
