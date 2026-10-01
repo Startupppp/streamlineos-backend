@@ -105,8 +105,8 @@ Evidence:
 - `src/modules/build/core/custom-fields/projects-custom-fields.controller.ts:90` — handler binds both projectId and ticketId and forwards both
 - `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:174` — the terminal service receives the authenticated actor and route ids
 - `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:175` — canonical ticket authorization runs before the values query
-- `src/modules/build/core/project-crud/project-access.ts:341` — tenant, project, and ticket are bound in one lookup
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:347` — tenant, project, and ticket are bound in one lookup
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/custom-field-values`
 
@@ -124,7 +124,7 @@ Evidence:
 - `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:231` — the terminal service receives the authenticated actor and route ids
 - `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:237` — canonical ticket authorization runs before validation or mutation
 - `src/modules/build/core/custom-fields/projects-custom-fields.service.ts:242` — body field ids are independently bound to the same project
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `PATCH /build/:projectId/custom-states/:stateId`
 
@@ -229,8 +229,8 @@ Evidence:
 
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:78` — bound to the URL project
 - `src/modules/build/core/tickets/projects-tickets-query.service.ts:108` — actor-aware ticket authorization runs before the subtask query
-- `src/modules/build/core/project-crud/project-access.ts:341` — the lookup binds tenant, project, and ticket
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:347` — the lookup binds tenant, project, and ticket
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `GET /build/:projectId/tickets/:ticketId/watchers`
 
@@ -246,7 +246,7 @@ Evidence:
 
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:117` — bound to the URL project
 - `src/modules/build/core/tickets/projects-ticket-watchers.service.ts:33` — actor-aware authorization runs before the watcher query
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/watchers`
 
@@ -262,7 +262,7 @@ Evidence:
 
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:130` — bound to the URL project
 - `src/modules/build/core/tickets/projects-ticket-watchers.service.ts:72` — authorization precedes member resolution and insertion
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId/watchers`
 
@@ -278,7 +278,7 @@ Evidence:
 
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:143` — bound to the URL project
 - `src/modules/build/core/tickets/projects-ticket-watchers.service.ts:120` — authorization precedes the watcher delete
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/labels`
 
@@ -294,7 +294,7 @@ Evidence:
 
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:157` — bound to the URL project
 - `src/modules/build/core/tickets/projects-ticket-labels.service.ts:31` — authorization precedes the label mapping insert
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/attachments`
 
@@ -311,7 +311,7 @@ Evidence:
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:184` — bound to the URL project
 - `src/modules/build/core/tickets/projects-ticket-links.service.ts:72` — authorization precedes the attachment insert
 - `src/modules/build/core/tickets/projects-ticket-links.service.ts:37` — the private guard is the canonical ticket decision
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `GET /build/:projectId/tickets/:ticketId/related-links`
 
@@ -326,8 +326,8 @@ Blast radius: Intra-tenant, not cross-tenant: ticketRelatedLinks.orgId was alrea
 Evidence:
 
 - `src/modules/build/core/tickets/projects-ticket-links.service.ts:37` — the fix — the private helper now delegates to the shared gate the sibling already used
-- `src/modules/build/core/project-crud/project-access.ts:306` — the parent is now bound in SQL, not only compared in JavaScript
-- `src/modules/build/core/project-crud/project-access.ts:270` — the project-membership assertion that was entirely absent before
+- `src/modules/build/core/project-crud/project-access.ts:312` — the parent is now bound in SQL, not only compared in JavaScript
+- `src/modules/build/core/project-crud/project-access.ts:276` — the project-membership assertion that was entirely absent before
 - `src/modules/build/core/tickets/projects-ticket-relations.service.ts:64` — the sibling in the same controller whose shape the fix copies
 
 ### CLOSED — `POST /build/:projectId/tickets/:ticketId/related-links`
@@ -344,7 +344,7 @@ Evidence:
 
 - `src/modules/build/core/tickets/projects-ticket-links.service.ts:37` — the shared helper both related-link handlers call — now gated
 - `src/modules/build/core/tickets/projects-ticket-links.service.ts:157` — org was already bound on the INSERT — the org dimension was never the hole
-- `src/modules/build/core/project-crud/project-access.ts:349` — the refusal the outsider now hits
+- `src/modules/build/core/project-crud/project-access.ts:355` — the refusal the outsider now hits
 
 ### CLOSED — `PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId`
 
@@ -525,7 +525,7 @@ Evidence:
 - `src/modules/build/core/tickets/projects-tickets.controller.ts:271` — the complete authenticated actor reaches the service
 - `src/modules/build/core/tickets/projects-tickets-delete.service.ts:43` — the terminal service accepts CurrentUserContext
 - `src/modules/build/core/tickets/projects-tickets-delete.service.ts:50` — canonical ticket authorization runs before the pre-read and delete path
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### CLOSED — `DELETE /build/:projectId/webhooks/:webhookId`
 
@@ -540,8 +540,8 @@ Blast radius: Intra-tenant. orgId is bound. A webhook registered against project
 Evidence:
 
 - `src/modules/build/core/webhooks/projects-webhooks.controller.ts:60` — bound to the URL project
-- `src/modules/build/core/webhooks/projects-webhooks.service.ts:49` — bound to the URL project
-- `src/modules/build/core/webhooks/projects-webhooks.service.ts:49` — bound to the URL project
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:48` — bound to the URL project
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:48` — bound to the URL project
 
 ### CLOSED — `GET /build/:projectId/sprints/:sprintId`
 
@@ -856,7 +856,7 @@ POST /build/:projectId/labels. Org is bound twice. The handler forwards the acto
 
 - `src/modules/build/core/project-crud/project-resources.controller.ts:227` — the handler forwards the actor and the url project together
 - `src/modules/build/core/members/projects-members.service.ts:444` — the url project is resolved under the caller's org before the write
-- `src/modules/build/core/project-crud/project-access.ts:359` — the project lookup that makes a foreign :projectId a 404
+- `src/modules/build/core/project-crud/project-access.ts:365` — the project lookup that makes a foreign :projectId a 404
 - `src/modules/build/core/lib/projects-labels.service.ts:23` — org is bound as an INSERT column, not a predicate — the form the static pass cannot see
 
 ### VERIFIED — `POST /build/templates`
@@ -895,7 +895,7 @@ GET /build/:projectId/tickets/:ticketId/relations. ProjectsTicketRelationsServic
 
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:89` — handler binds both projectId and ticketId and forwards both
 - `src/modules/build/core/tickets/projects-ticket-relations.service.ts:59` — signature
-- `src/modules/build/core/project-crud/project-access.ts:341` — assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch
+- `src/modules/build/core/project-crud/project-access.ts:347` — assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch
 
 ### VERIFIED — `POST /build/:projectId/tickets/:ticketId/relations`
 
@@ -925,7 +925,7 @@ DELETE /build/:projectId/tickets/:ticketId/labels/:labelId. ProjectsTicketLabels
 
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:183` — handler binds projectId, ticketId and labelId and forwards all three
 - `src/modules/build/core/tickets/projects-ticket-labels.service.ts:48` — actor-aware authorization runs before deletion
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### VERIFIED — `GET /build/:projectId/tickets/:ticketId/git-links`
 
@@ -936,7 +936,7 @@ GET /build/:projectId/tickets/:ticketId/git-links. ProjectsTicketLinksService.ge
 - `src/modules/build/core/tickets/projects-ticket-associations.controller.ts:210` — handler binds both projectId and ticketId and forwards both
 - `src/modules/build/core/tickets/projects-ticket-links.service.ts:41` — actor-aware authorization runs before the git link query
 - `src/modules/build/core/tickets/projects-ticket-links.service.ts:37` — the private guard is the canonical ticket decision
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### VERIFIED — `PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId`
 
@@ -967,7 +967,7 @@ GET /build/:projectId/tickets/:ticketId/checklists. ProjectsTicketChecklistsServ
 - `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:48` — handler binds both projectId and ticketId and forwards both
 - `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:91` — actor-aware project and DataScope authorization runs first
 - `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:69` — the private guard is the canonical ticket decision
-- `src/modules/build/core/project-crud/project-access.ts:341` — ticket lookup binds id+projectId+orgId; 404 on mismatch
+- `src/modules/build/core/project-crud/project-access.ts:347` — ticket lookup binds id+projectId+orgId; 404 on mismatch
 
 ### VERIFIED — `POST /build/:projectId/tickets/:ticketId/checklists`
 
@@ -978,7 +978,7 @@ POST /build/:projectId/tickets/:ticketId/checklists. ProjectsTicketChecklistsSer
 - `src/modules/build/core/tickets/projects-ticket-checklists.controller.ts:61` — handler binds both projectId and ticketId and forwards both
 - `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:127` — actor-aware project and DataScope authorization runs first
 - `src/modules/build/core/tickets/projects-ticket-checklists.service.ts:69` — the private guard is the canonical ticket decision
-- `src/modules/build/core/project-crud/project-access.ts:341` — ticket lookup binds id+projectId+orgId; 404 on mismatch
+- `src/modules/build/core/project-crud/project-access.ts:347` — ticket lookup binds id+projectId+orgId; 404 on mismatch
 
 ### VERIFIED — `GET /build/:projectId/tickets/:ticketId/comments/:commentId`
 
@@ -1044,8 +1044,8 @@ GET /build/:projectId/tickets/:ticketId/activity. The controller forwards the ac
 - `src/modules/build/core/tickets/projects-tickets.controller.ts:211` — handler binds both projectId and ticketId and forwards both
 - `src/modules/build/core/tickets/projects-tickets-query.service.ts:122` — signature carries the actor and route ids
 - `src/modules/build/core/tickets/projects-tickets-query.service.ts:128` — canonical ticket authorization runs before the activity query
-- `src/modules/build/core/project-crud/project-access.ts:341` — assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch
-- `src/modules/build/core/project-crud/project-access.ts:349` — project membership and ticket DataScope are both enforced
+- `src/modules/build/core/project-crud/project-access.ts:347` — assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch
+- `src/modules/build/core/project-crud/project-access.ts:355` — project membership and ticket DataScope are both enforced
 
 ### VERIFIED — `GET /build/:projectId/tickets/key/:ticketNumber`
 
@@ -1076,10 +1076,10 @@ POST /build/:projectId/tickets/:ticketId/restore. restoreTicket runs assertTicke
 PATCH /build/:projectId/webhooks/:webhookId. Query-enforced, the strongest of the six read in this pass: the service hoists one `tenantMatch` conjunction binding orgId and projectId and applies it to the pre-read SELECT, to the UPDATE itself, and to the optimistic-concurrency re-read. The parent binding is therefore inside the mutating statement rather than in a preceding assert, so it survives the deletion of any helper. A valid webhookId under a foreign projectId 404s. orgId comes from u.orgId and is never read from the body.
 
 - `src/modules/build/core/webhooks/projects-webhooks.controller.ts:77` — the controller supplies the tenant from the authenticated actor
-- `src/modules/build/core/webhooks/projects-webhooks.service.ts:206` — one conjunction is reused by every statement in the method
-- `src/modules/build/core/webhooks/projects-webhooks.service.ts:208` — the tenant is a predicate, not a written value
-- `src/modules/build/core/webhooks/projects-webhooks.service.ts:209` — the URL project is bound in the same conjunction
-- `src/modules/build/core/webhooks/projects-webhooks.service.ts:237` — the UPDATE itself carries the binding, so it is not assert-dependent
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:160` — one conjunction is reused by every statement in the method
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:219` — the tenant is a predicate, not a written value
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:220` — the URL project is bound in the same conjunction
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:191` — the UPDATE itself carries the binding, so it is not assert-dependent
 
 ### VERIFIED — `GET /build/:projectId/webhooks/:webhookId/deliveries`
 
@@ -1088,8 +1088,8 @@ PATCH /build/:projectId/webhooks/:webhookId. Query-enforced, the strongest of th
 GET /build/:projectId/webhooks/:webhookId/deliveries. ProjectsWebhooksService.listDeliveries(orgId, projectId, webhookId) opens with assertWebhookOwnership(orgId, projectId, webhookId), whose WHERE binds id=webhookId AND orgId=orgId AND projectId=projectId together and 404s on mismatch, before querying webhookDeliveries filtered by the already-verified webhookId.
 
 - `src/modules/build/core/webhooks/projects-webhooks.controller.ts:97` — handler binds both projectId and webhookId and forwards both
-- `src/modules/build/core/webhooks/projects-webhooks.service.ts:314` — signature takes projectId
-- `src/modules/build/core/webhooks/projects-webhooks.service.ts:295` — ownership check binds id+orgId+projectId; 404 on mismatch
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:261` — signature takes projectId
+- `src/modules/build/core/webhooks/projects-webhooks.service.ts:242` — ownership check binds id+orgId+projectId; 404 on mismatch
 
 ### VERIFIED — `POST /build/:projectId/webhooks/:webhookId/test`
 
@@ -1099,7 +1099,7 @@ POST /build/:projectId/webhooks/:webhookId/test. The controller itself calls `aw
 
 - `src/modules/build/core/webhooks/projects-webhooks.controller.ts:111` — handler binds both projectId and webhookId
 - `src/modules/build/core/webhooks/projects-webhooks.controller.ts:116` — controller-level ownership check runs before dispatch.sendTest
-- `src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts:133` — signature
+- `src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts:81` — signature
 
 ### VERIFIED — `GET /build/:projectId/sprints`
 

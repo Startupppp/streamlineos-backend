@@ -1,6 +1,7 @@
 import { FilesController } from "src/modules/build/files/files.controller";
 import { ProjectsTicketAssociationsController } from "src/modules/build/core/tickets/projects-ticket-associations.controller";
 import { ProjectsCustomFieldsService, ProjectsWebhooksService } from "src/modules/build/core";
+import { WebhookEndpointService } from "src/modules/integrations/core/webhook-endpoint.service";
 import { IntakeService, ViewsService } from "src/modules/build/execution/workspace.service";
 import { ModulesService } from "src/modules/build/execution/modules.service";
 import { createWebhookSchema } from "src/modules/build/core/dto/webhook.schemas";
@@ -22,7 +23,7 @@ const WRITERS: ReadonlyArray<{ readonly id: string; readonly route: string; read
     id: "webhooks",
     route: "POST /build/:projectId/webhooks",
     write: (world, orgId) =>
-      new ProjectsWebhooksService(world.db).createWebhook(
+      new ProjectsWebhooksService(world.db, new WebhookEndpointService(world.db)).createWebhook(
         orgId,
         PROJECT_A,
         userOf("module:admin", orgId),

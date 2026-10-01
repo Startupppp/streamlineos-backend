@@ -2974,12 +2974,12 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 341,
+          "line": 347,
           "note": "tenant, project, and ticket are bound in one lookup"
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -3052,7 +3052,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -3852,7 +3852,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 359,
+          "line": 365,
           "note": "the project lookup that makes a foreign :projectId a 404"
         },
         {
@@ -6194,12 +6194,12 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 341,
+          "line": 347,
           "note": "the lookup binds tenant, project, and ticket"
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -6260,7 +6260,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 341,
+          "line": 347,
           "note": "assertTicketReadAccess binds orgId+projectId+ticketId together; 404 (via NotFoundException) on mismatch"
         }
       ]
@@ -6447,7 +6447,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -6510,7 +6510,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -6573,7 +6573,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -6636,7 +6636,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -6701,7 +6701,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -6769,7 +6769,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -6835,7 +6835,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -6891,12 +6891,12 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 306,
+          "line": 312,
           "note": "the parent is now bound in SQL, not only compared in JavaScript"
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 270,
+          "line": 276,
           "note": "the project-membership assertion that was entirely absent before"
         },
         {
@@ -6964,7 +6964,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "the refusal the outsider now hits"
         }
       ]
@@ -7160,7 +7160,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 341,
+          "line": 347,
           "note": "ticket lookup binds id+projectId+orgId; 404 on mismatch"
         }
       ]
@@ -7228,7 +7228,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 341,
+          "line": 347,
           "note": "ticket lookup binds id+projectId+orgId; 404 on mismatch"
         }
       ]
@@ -8520,12 +8520,12 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 341,
+          "line": 347,
           "note": "assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch"
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -8788,7 +8788,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 349,
+          "line": 355,
           "note": "project membership and ticket DataScope are both enforced"
         }
       ]
@@ -8889,7 +8889,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:40",
+      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:39",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -8932,7 +8932,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:159",
+      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:116",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -8977,9 +8977,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:200",
+      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:154",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:200",
+      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:154",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -8995,22 +8995,22 @@
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 206,
+          "line": 160,
           "note": "one conjunction is reused by every statement in the method"
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 208,
+          "line": 219,
           "note": "the tenant is a predicate, not a written value"
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 209,
+          "line": 220,
           "note": "the URL project is bound in the same conjunction"
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 237,
+          "line": 191,
           "note": "the UPDATE itself carries the binding, so it is not assert-dependent"
         }
       ]
@@ -9050,9 +9050,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:257",
+      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:211",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:257",
+      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:211",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -9068,12 +9068,12 @@
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 49,
+          "line": 48,
           "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 49,
+          "line": 48,
           "note": "bound to the URL project"
         }
       ]
@@ -9113,9 +9113,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:314",
+      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:261",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:314",
+      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:261",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -9129,12 +9129,12 @@
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 314,
+          "line": 261,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 295,
+          "line": 242,
           "note": "ownership check binds id+orgId+projectId; 404 on mismatch"
         }
       ]
@@ -9174,9 +9174,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts:133",
+      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts:81",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts:133",
+      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts:81",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -9197,7 +9197,7 @@
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks-dispatch.service.ts",
-          "line": 133,
+          "line": 81,
           "note": "signature"
         }
       ]
