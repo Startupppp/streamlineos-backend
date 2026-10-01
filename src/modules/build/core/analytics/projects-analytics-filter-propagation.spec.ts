@@ -104,7 +104,7 @@ describe("ProjectsAnalyticsService — filter propagation (C5)", () => {
     const keys: string[] = [];
     const { rawDb: db1 } = makeDb({ memberRow: { id: 42 } });
     const cache = makeCacheCapturing(keys);
-    const service = await analyticsService(db1 as never, cache);
+    const service = await analyticsService(db1, cache);
 
     await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, {});
     await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { ownerId: "user-abc" });
@@ -117,7 +117,7 @@ describe("ProjectsAnalyticsService — filter propagation (C5)", () => {
     const keys: string[] = [];
     const { rawDb } = makeDb();
     const cache = makeCacheCapturing(keys);
-    const service = await analyticsService(rawDb as never, cache);
+    const service = await analyticsService(rawDb, cache);
 
     await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, {});
     await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { teamId: 5 });
@@ -130,7 +130,7 @@ describe("ProjectsAnalyticsService — filter propagation (C5)", () => {
     const keys: string[] = [];
     const { rawDb } = makeDb();
     const cache = makeCacheCapturing(keys);
-    const service = await analyticsService(rawDb as never, cache);
+    const service = await analyticsService(rawDb, cache);
 
     await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { range: "7d" });
     await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { range: "30d" });

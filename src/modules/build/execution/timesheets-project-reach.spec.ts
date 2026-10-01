@@ -47,7 +47,7 @@ function makeDb(project: ProjectAccessRow | null) {
   const findMany = jest.fn().mockResolvedValue([]);
   const ticketFindFirst = jest.fn().mockResolvedValue({ id: TICKET_ID });
   const countWhere = jest.fn().mockResolvedValue([{ total: 0 }]);
-  const billingWhere = jest.fn(() => ({ groupBy: () => Promise.resolve([]) }));
+  const billingWhere = jest.fn((_condition: SQL) => ({ groupBy: () => Promise.resolve([]) }));
   const billingChain = { innerJoin: () => billingChain, where: billingWhere };
   const select = jest.fn((fields?: object) => {
     if (fields !== undefined && "memberRole" in fields)
@@ -89,25 +89,25 @@ function listedWhere(db: ReturnType<typeof makeDb>): string {
 describe("Build time entries are limited to projects the caller reaches", () => {
   it("GET /build/:projectId/tickets/:ticketId/time-entries conceals a same-org project the caller does not reach as 404", async () => {
     const { db, svc } = await build(projectAccessRow());
-    await expect(svc.listTicketTimeEntries(actor, PROJECT_ID, TICKET_ID, { limit: 20 })).rejects.toThrow(NotFoundException);
+    await expect(svc.listTicketTimeEntries(actor, PROJECT_ID, TICKET_ID, { page: 1, limit: 20 })).rejects.toThrow(NotFoundException);
     expect(db.findMany).not.toHaveBeenCalled();
   });
 
   it("GET /build/:projectId/tickets/:ticketId/time-entries answers 404 for a project outside the caller's organisation", async () => {
     const { db, svc } = await build(null);
-    await expect(svc.listTicketTimeEntries(actor, PROJECT_ID, TICKET_ID, { limit: 20 })).rejects.toThrow(NotFoundException);
+    await expect(svc.listTicketTimeEntries(actor, PROJECT_ID, TICKET_ID, { page: 1, limit: 20 })).rejects.toThrow(NotFoundException);
     expect(db.findMany).not.toHaveBeenCalled();
   });
 
   it("GET /build/:projectId/tickets/:ticketId/time-entries lists entries for a project member", async () => {
     const { db, svc } = await build(projectAccessRow({ memberRole: "MEMBER" }));
-    await expect(svc.listTicketTimeEntries(actor, PROJECT_ID, TICKET_ID, { limit: 20 })).resolves.toBeDefined();
+    await expect(svc.listTicketTimeEntries(actor, PROJECT_ID, TICKET_ID, { page: 1, limit: 20 })).resolves.toBeDefined();
     expect(db.findMany).toHaveBeenCalledTimes(1);
   });
 
   it("GET /build/time-entries keeps the caller's own entries and otherwise only entries on projects they reach", async () => {
     const { db, svc } = await build(projectAccessRow());
-    await svc.listTimeEntries(actor, { limit: 20 });
+    await svc.listTimeEntries(actor, { page: 1, limit: 20 });
     const where = listedWhere(db);
     expect(where).toContain('"timesheets"."user_membership_id" =');
     expect(where).toContain('"timesheets"."project_id" IN (SELECT "build"."projects"."id"');
@@ -116,7 +116,7 @@ describe("Build time entries are limited to projects the caller reaches", () => 
 
   it("GET /build/time-entries/team applies the same project reach before the timesheet scope", async () => {
     const { db, svc } = await build(projectAccessRow());
-    await svc.teamTimesheets(actor, { limit: 20 });
+    await svc.teamTimesheets(actor, { page: 1, limit: 20 });
     expect(listedWhere(db)).toContain('"timesheets"."project_id" IN (SELECT "build"."projects"."id"');
   });
 
@@ -129,7 +129,7 @@ describe("Build time entries are limited to projects the caller reaches", () => 
 
   it("an organisation-wide build:manage holder reaches every project, so the reach clause is a tautology (control)", async () => {
     const { db, svc } = await build(projectAccessRow(), { ...MANAGER_STANDING, "build:timesheets:manage": "all" });
-    await svc.listTimeEntries(actor, { limit: 20 });
+    await svc.listTimeEntries(actor, { page: 1, limit: 20 });
     const where = listedWhere(db);
     expect(where).toContain('"build"."projects"."org_id" = $3 AND true)');
     expect(where).not.toContain('"project_members"');

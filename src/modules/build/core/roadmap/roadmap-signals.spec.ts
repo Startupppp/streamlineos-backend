@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { orgWideRoadmapAccess, roadmapActor } from "./__tests__/roadmap-access-double";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
@@ -355,7 +356,7 @@ describe("loadRoadmapDeliveryProgress — an unlinked item costs no query", () =
     const progress = await loadRoadmapDeliveryProgress(db, ORG, {
       projectId: null,
       epicTicketId: null,
-    });
+    }, sql`true`);
     expect(select).not.toHaveBeenCalled();
     expect(progress).toEqual({
       projectId: null,
@@ -379,7 +380,7 @@ describe("loadRoadmapDeliveryProgress — an unlinked item costs no query", () =
     const progress = await loadRoadmapDeliveryProgress(db, ORG, {
       projectId: null,
       epicTicketId: 42,
-    });
+    }, sql`true`);
     expect(select).toHaveBeenCalledTimes(1);
     expect(progress).toMatchObject({ source: "epic_ticket", progressPercent: 25 });
   });
