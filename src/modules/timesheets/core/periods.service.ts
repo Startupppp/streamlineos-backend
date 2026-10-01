@@ -295,14 +295,26 @@ export class PeriodsService {
     const actorMembId = actingMembershipId(u.principal);
     const row = await this.reader.getPeriodWithUser(u.orgId, periodId);
     if (!row) throw new NotFoundException("Period not found");
-    if (row.status !== "LOCKED" && row.lockedAt == null) {
+    // Strictly LOCKED: the old compound condition only refused when the status
+    // was not LOCKED *and* lockedAt was null, so an APPROVED period carrying a
+    // stray lockedAt could be "unlocked" out of a state it was never in.
+    // Migration 1705 moved the rows that already had that shape onto LOCKED.
+    if (row.status !== "LOCKED") {
       throw new ConflictException("Period is not locked");
     }
 
     await this.db.transaction(async (tx) => {
-      await tx.update(timesheetPeriods)
+      const [transition] = await tx.update(timesheetPeriods)
         .set({ status: "APPROVED", lockedAt: null, updatedAt: new Date() })
-        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
+        .where(
+          and(
+            eq(timesheetPeriods.id, periodId),
+            eq(timesheetPeriods.orgId, u.orgId),
+            eq(timesheetPeriods.status, "LOCKED"),
+          ),
+        )
+        .returning({ id: timesheetPeriods.id });
+      if (!transition) throw new ConflictException("Period is not locked");
 
       await tx.update(timesheets)
         .set({ lockedAt: null, lockedByMembershipId: null, updatedAt: new Date() })

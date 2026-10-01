@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { outboxEvents } from "../../../../db/schema/common/outbox";
 import {
@@ -353,6 +354,13 @@ function rejectScript(seq: number): Script {
   };
 }
 
+function unlockScript(status: "LOCKED" | "APPROVED", lockedAt: Date | null): Script {
+  return {
+    selects: [[timesheetPeriods, [[{ ...SUBMITTED_ROW, status, lockedAt }]]]],
+    transitions: [[transitionRow("APPROVED", 7)]],
+  };
+}
+
 function lockScript(seq: number, userMembershipId: number | null = WORKER_MEMBERSHIP): Script {
   return {
     selects: [[timesheetPeriods, [[{ ...SUBMITTED_ROW, status: "APPROVED", userMembershipId }]]]],
@@ -537,6 +545,33 @@ describe("TS-24 period lifecycle durable rows", () => {
       await service.approvePeriod(APPROVER, PERIOD_ID);
 
       expect(outbox.map((r) => r.eventType)).toEqual(["timesheets.period.approved"]);
+    });
+  });
+
+  describe("unlock", () => {
+    it("unlocks a LOCKED period", async () => {
+      const { db, periodUpdates } = makeDb(unlockScript("LOCKED", new Date("2026-09-09T00:00:00.000Z")), []);
+
+      await periodsService(db, makeNotifications([])).unlockPeriod(APPROVER, PERIOD_ID);
+
+      expect(periodUpdates()[0]).toMatchObject({ status: "APPROVED", lockedAt: null });
+    });
+
+    it("refuses an APPROVED period carrying a stray lockedAt", async () => {
+      const { db, periodUpdates } = makeDb(unlockScript("APPROVED", new Date("2026-09-09T00:00:00.000Z")), []);
+
+      await expect(
+        periodsService(db, makeNotifications([])).unlockPeriod(APPROVER, PERIOD_ID),
+      ).rejects.toThrow(ConflictException);
+      expect(periodUpdates()).toEqual([]);
+    });
+
+    it("refuses an APPROVED period that was never locked", async () => {
+      const { db } = makeDb(unlockScript("APPROVED", null), []);
+
+      await expect(
+        periodsService(db, makeNotifications([])).unlockPeriod(APPROVER, PERIOD_ID),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
