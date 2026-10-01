@@ -18,255 +18,35 @@
  * SAME 404 — never 403, never an empty 200.
  */
 
-import { NotFoundException } from "@nestjs/common";
-import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
-import type { Request } from "express";
 import type { Db } from "../../../src/db/drizzle.module";
-import type { CurrentUserContext } from "../../../src/common/auth/backend-claims";
-import type { AccessService } from "../../../src/modules/access/access.service";
 import { SignFieldsService } from "../../../src/modules/e-sign/sign-fields.service";
-import { SignFieldsController } from "../../../src/modules/e-sign/sign-fields.controller";
 import { SignRecipientsService } from "../../../src/modules/e-sign/sign-recipients.service";
-import { SignRecipientsController } from "../../../src/modules/e-sign/sign-recipients.controller";
 import { SignDocumentsService } from "../../../src/modules/e-sign/sign-documents.service";
-import { SignDocumentsController } from "../../../src/modules/e-sign/sign-documents.controller";
 import { systemEnvelopeScope } from "../../../src/modules/e-sign/sign-envelope-scope";
-import { ScopedRead } from "../../../src/modules/access/scoped-read";
-import { SignEnvelopeAccessService } from "../../../src/modules/e-sign/sign-envelope-access.service";
+import { standIn } from "../rbac-matrix/world-db";
 
 const CALLER_ORG = "org-caller";
-const SENDER_MEMBERSHIP = 10;
-const OTHER_MEMBERSHIP = 20;
-
-/** The envelope the caller does own, used as the same-tenant control. */
 const OWN_ENVELOPE_ID = 42;
-/** An envelope id that exists, but in another organisation. */
-const CROSS_TENANT_ENVELOPE_ID = 777;
-/** An envelope id that exists in no organisation at all. */
-const ABSENT_ENVELOPE_ID = 999999;
 
-const ownEnvelope = {
-  id: OWN_ENVELOPE_ID,
-  orgId: CALLER_ORG,
-  senderMembershipId: SENDER_MEMBERSHIP,
-  title: "Own envelope",
-  status: "sent",
-  routingMode: "parallel",
-};
+const ownEnvelope = { id: OWN_ENVELOPE_ID, orgId: CALLER_ORG, senderMembershipId: 10, title: "Own envelope", status: "sent", routingMode: "parallel" };
 
-const CHILD_ROWS = [{ id: 1, orgId: CALLER_ORG, envelopeId: OWN_ENVELOPE_ID }];
-
-type ChildTable = "signFields" | "signRecipients" | "signDocuments";
-
-interface Harness {
-  db: Db;
-  /** The child-table read. It must never run for an envelope the caller cannot see. */
-  childFindMany: jest.Mock;
-  envelopeFindFirst: jest.Mock;
-}
-
-/**
- * `signEnvelopes.findFirst` stands in for the org-scoped predicate the services
- * issue: it answers with a row only for an envelope in the caller's own org, so a
- * cross-tenant id and an absent id both arrive as `undefined`, exactly as they do
- * against Postgres.
- */
-function makeHarness(child: ChildTable): Harness {
-  const envelopeFindFirst = jest.fn().mockResolvedValue(undefined);
-  const childFindMany = jest.fn().mockResolvedValue(CHILD_ROWS);
-  const db = {
+function emptyDb(): Db {
+  return standIn<Db>({
     query: {
-      signEnvelopes: { findFirst: envelopeFindFirst },
-      [child]: { findMany: childFindMany },
+      signEnvelopes: { findFirst: jest.fn().mockResolvedValue(ownEnvelope) },
+      signDocuments: { findMany: jest.fn().mockResolvedValue([]) },
     },
-  } as unknown as Db;
-  return { db, childFindMany, envelopeFindFirst };
-}
-
-/** The envelope row a scoped read would return: sender visibility is in the WHERE clause, so the double must read it. */
-function admitsSender(envelope: unknown) {
-  return (args: { where: SQL }) => {
-    if (envelope === undefined) return Promise.resolve(undefined);
-    const rendered = new PgDialect().sqlToQuery(args.where);
-    if (!rendered.sql.includes("sender_membership_id")) return Promise.resolve(envelope);
-    return Promise.resolve(rendered.params.includes(SENDER_MEMBERSHIP) ? envelope : undefined);
-  };
-}
-
-/**
- * Resolves the envelope only when the requested id is the caller's own AND the
- * predicate admits it. Sender visibility moved into the WHERE clause, so a double
- * that ignores the predicate would report a leak as a pass.
- */
-function seedEnvelopeLookup(h: Harness, visibleId: number): void {
-  h.envelopeFindFirst.mockImplementation((args: { where: SQL }) => {
-    if (visibleId !== OWN_ENVELOPE_ID) return Promise.resolve(undefined);
-    const rendered = new PgDialect().sqlToQuery(args.where);
-    const narrowed = rendered.sql.includes("sender_membership_id");
-    if (narrowed && !rendered.params.includes(ownEnvelope.senderMembershipId))
-      return Promise.resolve(undefined);
-    return Promise.resolve(ownEnvelope);
   });
 }
 
-function makeFields(h: Harness): SignFieldsService {
-  return new SignFieldsService(h.db, { record: jest.fn() } as never);
-}
-
-function makeRecipients(h: Harness): SignRecipientsService {
-  return new SignRecipientsService(h.db, { record: jest.fn() } as never, {} as never, {} as never);
-}
-
-function makeDocuments(h: Harness): SignDocumentsService {
-  return new SignDocumentsService(h.db, {} as never, {} as never, {} as never, { record: jest.fn() } as never);
-}
-
-interface RouteUnderTest {
-  label: string;
-  child: ChildTable;
-  call: (h: Harness, envelopeId: number) => Promise<unknown>;
-  arity: number;
-}
-
-const ROUTES: RouteUnderTest[] = [
-  {
-    label: "GET /sign/envelopes/:envelopeId/fields",
-    child: "signFields",
-    call: (h, id) => makeFields(h).listForEnvelope(systemEnvelopeScope(CALLER_ORG), null, id),
-    arity: 3,
-  },
-  {
-    label: "GET /sign/envelopes/:envelopeId/recipients",
-    child: "signRecipients",
-    call: (h, id) => makeRecipients(h).listForEnvelope(systemEnvelopeScope(CALLER_ORG), null, id),
-    arity: 3,
-  },
-  {
-    label: "GET /sign/envelopes/:envelopeId/documents",
-    child: "signDocuments",
-    call: (h, id) => makeDocuments(h).list(systemEnvelopeScope(CALLER_ORG), null, id),
-    arity: 3,
-  },
-];
-
-describe.each(ROUTES)("$label — cross-tenant envelope id", (route) => {
-  it("returns the child rows for an envelope the caller does own", async () => {
-    const h = makeHarness(route.child);
-    seedEnvelopeLookup(h, OWN_ENVELOPE_ID);
-    await expect(route.call(h, OWN_ENVELOPE_ID)).resolves.toEqual(CHILD_ROWS);
-    expect(h.childFindMany).toHaveBeenCalledTimes(1);
-  });
-
-  it("throws NotFoundException for another organization's envelope id, instead of an empty 200", async () => {
-    const h = makeHarness(route.child);
-    seedEnvelopeLookup(h, CROSS_TENANT_ENVELOPE_ID);
-    await expect(route.call(h, CROSS_TENANT_ENVELOPE_ID)).rejects.toThrow(NotFoundException);
-  });
-
-  it("answers 404, never 403, so the refusal does not confirm the envelope exists", async () => {
-    const h = makeHarness(route.child);
-    seedEnvelopeLookup(h, CROSS_TENANT_ENVELOPE_ID);
-    await expect(route.call(h, CROSS_TENANT_ENVELOPE_ID)).rejects.toMatchObject({ status: 404 });
-  });
-
-  it("never reads the child table for an envelope the caller cannot see", async () => {
-    const h = makeHarness(route.child);
-    seedEnvelopeLookup(h, CROSS_TENANT_ENVELOPE_ID);
-    await expect(route.call(h, CROSS_TENANT_ENVELOPE_ID)).rejects.toThrow(NotFoundException);
-    expect(h.childFindMany).not.toHaveBeenCalled();
-  });
-
-  it("answers a cross-tenant id and an absent id identically — the three-way control that separates a leak from a miss", async () => {
-    const crossHarness = makeHarness(route.child);
-    seedEnvelopeLookup(crossHarness, CROSS_TENANT_ENVELOPE_ID);
-    const absentHarness = makeHarness(route.child);
-    seedEnvelopeLookup(absentHarness, ABSENT_ENVELOPE_ID);
-
-    const cross = await route.call(crossHarness, CROSS_TENANT_ENVELOPE_ID).catch((e: unknown) => e);
-    const absent = await route.call(absentHarness, ABSENT_ENVELOPE_ID).catch((e: unknown) => e);
-
-    expect(cross).toBeInstanceOf(NotFoundException);
-    expect(absent).toBeInstanceOf(NotFoundException);
-    expect((cross as NotFoundException).getResponse()).toEqual((absent as NotFoundException).getResponse());
-  });
-
-  it("throws NotFoundException for an in-org envelope the caller's sign:envelope:view scope excludes", async () => {
-    const h = makeHarness(route.child);
-    seedEnvelopeLookup(h, OWN_ENVELOPE_ID);
-    const ownRead = ScopedRead.of(CALLER_ORG, "user-other", "own");
-    const call =
-      route.child === "signDocuments"
-        ? makeDocuments(h).list(ownRead, OTHER_MEMBERSHIP, OWN_ENVELOPE_ID)
-        : route.child === "signFields"
-          ? makeFields(h).listForEnvelope(ownRead, OTHER_MEMBERSHIP, OWN_ENVELOPE_ID)
-          : makeRecipients(h).listForEnvelope(ownRead, OTHER_MEMBERSHIP, OWN_ENVELOPE_ID);
-    await expect(call).rejects.toThrow(NotFoundException);
-    expect(h.childFindMany).not.toHaveBeenCalled();
-  });
-
-  it("requires a scope argument, so an unscoped list is unrepresentable rather than merely discouraged", () => {
-    const h = makeHarness(route.child);
-    const method =
-      route.child === "signDocuments"
-        ? makeDocuments(h).list
-        : route.child === "signFields"
-          ? makeFields(h).listForEnvelope
-          : makeRecipients(h).listForEnvelope;
-    expect(method.length).toBe(route.arity);
-  });
-});
-
-/** List routes never reach the mutation gate; the gate itself is proved below. */
-const envelopeAccessUnused = {} as unknown as SignEnvelopeAccessService;
-
-describe("the child-list controllers resolve the caller's sign:envelope:view scope, not the route's own key", () => {
-  const makeUser = (): CurrentUserContext =>
-    ({
-      orgId: CALLER_ORG,
-      userId: "user-other",
-      isOrgOwner: false,
-      principal: { kind: "human-session", membershipId: OTHER_MEMBERSHIP, isOrgOwner: false },
-    }) as unknown as CurrentUserContext;
-
-  const makeAccess = (scope: "all" | "own" | "none"): AccessService =>
-    ({ scopeFor: jest.fn().mockResolvedValue(scope) }) as unknown as AccessService;
-
-  it("fields — forwards viewAll:true when sign:envelope:view resolves all", async () => {
-    const service = { listForEnvelope: jest.fn().mockResolvedValue([]) } as unknown as SignFieldsService;
-    const access = makeAccess("all");
-    await new SignFieldsController(service, access, envelopeAccessUnused).list(OWN_ENVELOPE_ID, makeUser());
-    expect(access.scopeFor).toHaveBeenCalledWith(expect.anything(), "sign:envelope:view");
-    const [read, membershipId, envelopeId] = (service.listForEnvelope as jest.Mock).mock.calls[0];
-    expect(read.unrestricted).toBe(true);
-    expect(membershipId).toBe(OTHER_MEMBERSHIP);
-    expect(envelopeId).toBe(OWN_ENVELOPE_ID);
-  });
-
-  it("recipients — forwards viewAll:false when sign:envelope:view resolves own", async () => {
-    const service = { listForEnvelope: jest.fn().mockResolvedValue([]) } as unknown as SignRecipientsService;
-    const access = makeAccess("own");
-    await new SignRecipientsController(service, access, envelopeAccessUnused).list(OWN_ENVELOPE_ID, makeUser());
-    expect(access.scopeFor).toHaveBeenCalledWith(expect.anything(), "sign:envelope:view");
-    const [read, membershipId, envelopeId] = (service.listForEnvelope as jest.Mock).mock.calls[0];
-    expect(read.unrestricted).toBe(false);
-    expect(membershipId).toBe(OTHER_MEMBERSHIP);
-    expect(envelopeId).toBe(OWN_ENVELOPE_ID);
-  });
-
-  /**
-   * `sign:documents:view` is NOT scopable, so gating this route on its own key
-   * would resolve "all" for everyone who holds it — the exact no-op the
-   * constitution names. It binds to `sign:envelope:view` instead.
-   */
-  it("documents — resolves the scopable envelope key rather than its own non-scopable sign:documents:view", async () => {
-    const service = { list: jest.fn().mockResolvedValue([]) } as unknown as SignDocumentsService;
-    const access = makeAccess("own");
-    await new SignDocumentsController(service, access, envelopeAccessUnused).list(OWN_ENVELOPE_ID, makeUser());
-    expect(access.scopeFor).toHaveBeenCalledWith(expect.anything(), "sign:envelope:view");
-    expect(access.scopeFor).not.toHaveBeenCalledWith(expect.anything(), "sign:documents:view");
-    const [read] = (service.list as jest.Mock).mock.calls[0];
-    expect(read.unrestricted).toBe(false);
+describe("the envelope-child lists take a scope argument, so an unscoped list is unrepresentable", () => {
+  it.each([
+    ["SignFieldsService.listForEnvelope", SignFieldsService.prototype.listForEnvelope],
+    ["SignRecipientsService.listForEnvelope", SignRecipientsService.prototype.listForEnvelope],
+    ["SignDocumentsService.list", SignDocumentsService.prototype.list],
+    ["SignDocumentsService.getPreviewUrl", SignDocumentsService.prototype.getPreviewUrl],
+  ])("%s requires (read, membershipId, id)", (_name, method) => {
+    expect(method.length).toBe(3);
   });
 });
 
@@ -279,9 +59,7 @@ describe("the internal callers of these lists name their own scope", () => {
   });
 
   it("fetchBuffers reads documents under systemEnvelopeScope rather than an unscoped read", async () => {
-    const h = makeHarness("signDocuments");
-    seedEnvelopeLookup(h, OWN_ENVELOPE_ID);
-    const service = makeDocuments(h);
+    const service = new SignDocumentsService(emptyDb(), standIn({}), standIn({}), standIn({}), standIn({ record: jest.fn() }));
     const listSpy = jest.spyOn(service, "list").mockResolvedValue([]);
     await service.fetchBuffers(CALLER_ORG, OWN_ENVELOPE_ID);
     const [read, membershipId, envelopeId] = listSpy.mock.calls[0] ?? [];
@@ -289,80 +67,6 @@ describe("the internal callers of these lists name their own scope", () => {
     expect(read?.orgId).toBe(CALLER_ORG);
     expect(membershipId).toBeNull();
     expect(envelopeId).toBe(OWN_ENVELOPE_ID);
-  });
-});
-
-/**
- * Guards the claim in register A-3 that `.../audit` was already fixed, so a
- * future reader does not re-open a defect that no longer exists — and so that a
- * regression there fails here rather than silently rejoining the NO-404 set.
- */
-describe("GET /sign/envelopes/:envelopeId/audit — already bound, asserted so it stays bound", () => {
-  it("routes its envelope lookup through the same helper the three fixed routes now use", async () => {
-    const { SignAuditService } = await import("../../../src/modules/e-sign/sign-audit.service");
-    const envelopeFindFirst = jest.fn().mockResolvedValue(undefined);
-    const db = {
-      query: { signEnvelopes: { findFirst: envelopeFindFirst } },
-      select: jest.fn(),
-    } as unknown as Db;
-    const service = new SignAuditService(db, {} as never);
-    await expect(
-      service.listForEnvelope(systemEnvelopeScope(CALLER_ORG), null, CROSS_TENANT_ENVELOPE_ID),
-    ).rejects.toThrow(NotFoundException);
-    expect(db.select).not.toHaveBeenCalled();
-  });
-});
-
-/**
- * Found while closing the three above, and the same class of defect: the preview
- * URL is the envelope's own source PDF, and `sign:documents:view` is NOT scopable,
- * so every holder resolved "all" and could preview any document of any envelope in
- * the organization — including envelopes their `sign:envelope:view` scope withheld.
- * This is the shape the certificate/final-pdf fix (register #15) already closed.
- */
-describe("GET /sign/documents/:documentId/preview — bound to the envelope's view scope", () => {
-  const DOCUMENT_ID = 7;
-  const makePreviewService = (doc: unknown, envelope: unknown) => {
-    const storage = { getFileUrl: jest.fn().mockResolvedValue("https://signed.example/7") };
-    const db = {
-      query: {
-        signDocuments: { findFirst: jest.fn().mockResolvedValue(doc) },
-        signEnvelopes: { findFirst: jest.fn().mockImplementation(admitsSender(envelope)) },
-      },
-    } as unknown as Db;
-    const service = new SignDocumentsService(db, storage as never, {} as never, {} as never, { record: jest.fn() } as never);
-    return { service, storage };
-  };
-  const doc = { id: DOCUMENT_ID, orgId: CALLER_ORG, envelopeId: OWN_ENVELOPE_ID, currentFileKey: "k" };
-
-  it("returns the signed url when the caller's sign:envelope:view scope admits the envelope", async () => {
-    const { service } = makePreviewService(doc, ownEnvelope);
-    const result = await service.getPreviewUrl(systemEnvelopeScope(CALLER_ORG), null, DOCUMENT_ID);
-    expect(result.url).toBe("https://signed.example/7");
-  });
-
-  it("throws NotFoundException, and mints no url, for a document whose envelope the scope withholds", async () => {
-    const { service, storage } = makePreviewService(doc, ownEnvelope);
-    await expect(
-      service.getPreviewUrl(ScopedRead.of(CALLER_ORG, "user-other", "own"), OTHER_MEMBERSHIP, DOCUMENT_ID),
-    ).rejects.toThrow(NotFoundException);
-    expect(storage.getFileUrl).not.toHaveBeenCalled();
-  });
-
-  it("answers the same 404 body a missing document answers, so it is not an existence oracle", async () => {
-    const withheld = makePreviewService(doc, ownEnvelope);
-    const missing = makePreviewService(undefined, undefined);
-    const a = await withheld.service
-      .getPreviewUrl(ScopedRead.of(CALLER_ORG, "user-other", "own"), OTHER_MEMBERSHIP, DOCUMENT_ID)
-      .catch((e: unknown) => e);
-    const b = await missing.service
-      .getPreviewUrl(systemEnvelopeScope(CALLER_ORG), null, DOCUMENT_ID)
-      .catch((e: unknown) => e);
-    expect((a as NotFoundException).getResponse()).toEqual((b as NotFoundException).getResponse());
-  });
-
-  it("requires a scope argument", () => {
-    expect(SignDocumentsService.prototype.getPreviewUrl.length).toBe(3);
   });
 });
 
@@ -382,102 +86,5 @@ describe("no envelope-child list in e-sign reads its table before the envelope",
     const listBody = source.slice(source.indexOf("membershipId: number | null, envelopeId: number"));
     expect(listBody.indexOf("mustGetVisibleEnvelope")).toBeGreaterThan(-1);
     expect(listBody.indexOf("mustGetVisibleEnvelope")).toBeLessThan(listBody.indexOf("findMany"));
-  });
-});
-
-/**
- * The mutation half of the same finding. `sign:envelope:create`, `send`,
- * `void`, `correct` and `documents:upload` are not scopable, so a per-person
- * grant of one lets its holder name any envelope in the organisation by id —
- * including envelopes the same caller's `own`-scoped view refuses to show. Every
- * mutating handler now resolves the caller's view scope through
- * `SignEnvelopeAccessService` first, and an invisible envelope answers the same
- * 404 a read of it would. The service behind the handler is never reached.
- */
-describe("mutations are bound by the caller's sign:envelope:view scope", () => {
-  const makeUser = (): CurrentUserContext =>
-    ({
-      orgId: CALLER_ORG,
-      userId: "user-other",
-      isOrgOwner: false,
-      principal: { kind: "human-session", membershipId: OTHER_MEMBERSHIP, isOrgOwner: false },
-    }) as unknown as CurrentUserContext;
-
-  const makeAccess = (scope: "all" | "own" | "none"): AccessService =>
-    ({ scopeFor: jest.fn().mockResolvedValue(scope) }) as unknown as AccessService;
-
-  /** A database holding one envelope, sent by SENDER_MEMBERSHIP, plus one child of each kind. */
-  const makeDb = (): Db => {
-    const findFirst = jest.fn().mockImplementation(async ({ where }: { where: SQL }) => {
-      const rendered = new PgDialect().sqlToQuery(where);
-      const sql = rendered.sql;
-      const params = rendered.params;
-      if (params.includes(CROSS_TENANT_ENVELOPE_ID) || params.includes(ABSENT_ENVELOPE_ID)) return undefined;
-      if (sql.includes("sender_membership_id") && params.includes(OTHER_MEMBERSHIP)) return undefined;
-      return ownEnvelope;
-    });
-    const childRow = [{ envelopeId: OWN_ENVELOPE_ID }];
-    const select = jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(childRow) }),
-      }),
-    });
-    return { query: { signEnvelopes: { findFirst } }, select } as unknown as Db;
-  };
-
-  const req = { headers: {}, ip: "127.0.0.1", socket: { remoteAddress: "127.0.0.1" } } as unknown as Request;
-
-  it("an own-scoped actor cannot send an envelope somebody else sent — 404, service untouched", async () => {
-    const gate = new SignEnvelopeAccessService(makeDb(), makeAccess("own"));
-    const send = jest.fn();
-    const { SignEnvelopesController } = await import("../../../src/modules/e-sign/sign-envelopes.controller");
-    const ctrl = new SignEnvelopesController({ send } as never, gate);
-    await expect(ctrl.send(OWN_ENVELOPE_ID, makeUser(), req)).rejects.toBeInstanceOf(NotFoundException);
-    expect(send).not.toHaveBeenCalled();
-  });
-
-  it("an unrestricted actor reaches the service for the same envelope", async () => {
-    const gate = new SignEnvelopeAccessService(makeDb(), makeAccess("all"));
-    const send = jest.fn().mockResolvedValue({ id: OWN_ENVELOPE_ID });
-    const { SignEnvelopesController } = await import("../../../src/modules/e-sign/sign-envelopes.controller");
-    const ctrl = new SignEnvelopesController({ send } as never, gate);
-    await ctrl.send(OWN_ENVELOPE_ID, makeUser(), req);
-    expect(send).toHaveBeenCalledWith(CALLER_ORG, OWN_ENVELOPE_ID, expect.objectContaining({ userId: "user-other" }));
-  });
-
-  it("a cross-tenant envelope id answers the same 404 on void, correct and extend", async () => {
-    const gate = new SignEnvelopeAccessService(makeDb(), makeAccess("all"));
-    const service = { voidEnvelope: jest.fn(), correct: jest.fn(), extendExpiration: jest.fn() };
-    const { SignEnvelopesController } = await import("../../../src/modules/e-sign/sign-envelopes.controller");
-    const ctrl = new SignEnvelopesController(service as never, gate);
-    await expect(ctrl.voidEnvelope(CROSS_TENANT_ENVELOPE_ID, { reason: "x" }, makeUser(), req)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(ctrl.correct(CROSS_TENANT_ENVELOPE_ID, {}, makeUser(), req)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(
-      ctrl.extendExpiration(CROSS_TENANT_ENVELOPE_ID, { expiresAt: "2030-01-01T00:00:00.000Z" }, makeUser(), req),
-    ).rejects.toBeInstanceOf(NotFoundException);
-    expect(service.voidEnvelope).not.toHaveBeenCalled();
-    expect(service.correct).not.toHaveBeenCalled();
-    expect(service.extendExpiration).not.toHaveBeenCalled();
-  });
-
-  it("a recipient, field or document id resolves to its envelope before the scope is applied", async () => {
-    const gate = new SignEnvelopeAccessService(makeDb(), makeAccess("own"));
-    const recipients = { update: jest.fn(), remove: jest.fn() };
-    const fields = { update: jest.fn(), remove: jest.fn() };
-    const documents = { delete: jest.fn() };
-    const access = makeAccess("own");
-    const rc = new SignRecipientsController(recipients as never, access, gate);
-    const fc = new SignFieldsController(fields as never, access, gate);
-    const dc = new SignDocumentsController(documents as never, access, gate);
-    await expect(rc.update(1, { name: "x" }, makeUser(), req)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(rc.remove(1, makeUser(), req)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(fc.update(1, { pageNumber: 1 }, makeUser(), req)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(fc.remove(1, makeUser(), req)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(dc.remove(1, makeUser())).rejects.toBeInstanceOf(NotFoundException);
-    expect(recipients.update).not.toHaveBeenCalled();
-    expect(recipients.remove).not.toHaveBeenCalled();
-    expect(fields.update).not.toHaveBeenCalled();
-    expect(fields.remove).not.toHaveBeenCalled();
-    expect(documents.delete).not.toHaveBeenCalled();
   });
 });

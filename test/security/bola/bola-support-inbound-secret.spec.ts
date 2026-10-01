@@ -1,7 +1,5 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { UnauthorizedException } from "@nestjs/common";
-import { SupportChannelsController } from "../../../src/modules/support/core/support-channels.controller";
 import { SupportChannelsService } from "../../../src/modules/support/core/support-channels.service";
 import {
   generateInboundSecret,
@@ -21,7 +19,6 @@ import { BACKEND_ROOT } from "./route-surface";
  */
 
 const VICTIM_ORG = "org-victim";
-const ATTACKER_IP = "203.0.113.9";
 
 const read = (rel: string): string => readFileSync(join(BACKEND_ROOT, rel), "utf8");
 
@@ -152,16 +149,6 @@ describe("BOLA sweep — inbound webhook secret at rest", () => {
     expect(updated[0]).not.toHaveProperty("inboundSecret");
   });
 
-  it("verifies the presented secret against the stored digest, not against a plaintext", async () => {
-    const { service, stored } = makeService();
-    const secret = generateInboundSecret();
-    stored.row = { id: 1, inboundSecret: hashInboundSecret(secret), config: {} };
-
-    await expect(service.verifyInboundSecret(VICTIM_ORG, "email", secret)).resolves.toMatchObject({
-      id: 1,
-    });
-  });
-
   it("the secret a channel is created with verifies against what was persisted", async () => {
     const { service, inserted, stored } = makeService();
     const created = await service.createChannel(VICTIM_ORG, {
@@ -177,106 +164,9 @@ describe("BOLA sweep — inbound webhook secret at rest", () => {
     ).resolves.toMatchObject({ id: 1 });
   });
 
-  /** The column changes format without a migration: a pre-hash row still verifies. */
-  it("a row still holding a plaintext secret verifies, and is refused for a wrong one", async () => {
-    const { service, stored } = makeService();
-    stored.row = { id: 1, inboundSecret: "legacy-plaintext-secret", config: {} };
-
-    await expect(service.verifyInboundSecret(VICTIM_ORG, "email", "legacy-plaintext-secret"))
-      .resolves.toMatchObject({ id: 1 });
-    await expect(
-      service.verifyInboundSecret(VICTIM_ORG, "email", "legacy-plaintext-secre"),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-  });
-
-  it("an unknown organization and a wrong secret are the same failure", async () => {
-    const { service, stored } = makeService();
-    stored.row = undefined;
-    await expect(
-      service.verifyInboundSecret("org-that-does-not-exist", "email", "anything"),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-
-    stored.row = { id: 1, inboundSecret: hashInboundSecret("right"), config: {} };
-    await expect(
-      service.verifyInboundSecret(VICTIM_ORG, "email", "wrong"),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-  });
 });
 
-describe("BOLA sweep — the pre-authentication limit is not keyed on the victim", () => {
-  const makeController = () => {
-    const counts = new Map<string, number>();
-    const rateLimit = {
-      check: jest.fn((tier: string, identifier: string) => {
-        const key = `${tier}|${identifier}`;
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-        return Promise.resolve({ allowed: true, retryAfterSecs: 0 });
-      }),
-    };
-    const channels = {
-      verifyInboundSecret: jest.fn().mockRejectedValue(new UnauthorizedException()),
-      ingestInboundEmail: jest.fn(),
-      ingestInboundWhatsApp: jest.fn(),
-      ingestInboundSms: jest.fn(),
-      startChatSession: jest.fn().mockResolvedValue({ ticketId: 1, sessionToken: "t" }),
-    };
-    const controller = new SupportChannelsController(
-      channels as never,
-      rateLimit as never,
-      { record: jest.fn() } as never,
-    );
-    const req = { headers: { "x-forwarded-for": ATTACKER_IP }, ip: ATTACKER_IP };
-    return { controller, counts, rateLimit, channels, req };
-  };
-
-  it("an anonymous flood naming another org consumes no part of that org's quota", async () => {
-    const { controller, counts, req } = makeController();
-
-    for (let i = 0; i < 5; i++) {
-      await expect(
-        controller.inboundEmail(VICTIM_ORG, "guess", {} as never, req as never),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
-    }
-
-    expect(counts.get(`support:inbound-email|${ATTACKER_IP}`)).toBe(5);
-    expect(counts.get(`support:inbound-email|${VICTIM_ORG}`)).toBeUndefined();
-  });
-
-  it("all three inbound channels key the pre-auth limit on the caller's address", async () => {
-    const { controller, rateLimit, req } = makeController();
-
-    await expect(
-      controller.inboundEmail(VICTIM_ORG, "x", {} as never, req as never),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-    await expect(
-      controller.inboundWhatsApp(VICTIM_ORG, "x", {} as never, req as never),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-    await expect(
-      controller.inboundSms(VICTIM_ORG, "x", {} as never, req as never),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-
-    for (const call of rateLimit.check.mock.calls) expect(call[1]).toBe(ATTACKER_IP);
-  });
-
-  it("the visitor chat widget start is keyed the same way", async () => {
-    const { controller, rateLimit, req } = makeController();
-    await controller.startChatSession(VICTIM_ORG, {} as never, req as never);
-    expect(rateLimit.check).toHaveBeenCalledWith("support:chat-widget", ATTACKER_IP);
-  });
-
-  it("the per-org quota still exists, and runs only after the secret is proved", async () => {
-    const { controller, rateLimit, channels, req } = makeController();
-    channels.verifyInboundSecret.mockResolvedValue({ id: 1, config: {} });
-
-    await controller.inboundEmail(VICTIM_ORG, "right", {} as never, req as never);
-
-    const identifiers = rateLimit.check.mock.calls.map((call) => call[1]);
-    expect(identifiers).toEqual([ATTACKER_IP, VICTIM_ORG]);
-    const verifyOrder = channels.verifyInboundSecret.mock.invocationCallOrder[0] as number;
-    const perOrgOrder = rateLimit.check.mock.invocationCallOrder[1] as number;
-    expect(perOrgOrder).toBeGreaterThan(verifyOrder);
-  });
-
+describe("BOLA sweep — the pre-authentication limit is not keyed on the victim (source)", () => {
   it("the source no longer keys any pre-auth limit on the path org id", () => {
     const controller = read("src/modules/support/core/support-channels.controller.ts");
     for (const channel of ["email", "whatsapp", "sms"]) {

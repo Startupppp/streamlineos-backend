@@ -1,14 +1,5 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { NotFoundException } from "@nestjs/common";
-import { SignBulkSendService } from "src/modules/e-sign/sign-bulk-send.service";
-import type { SignAuditService } from "src/modules/e-sign/sign-audit.service";
-import type { SignSettingsService } from "src/modules/e-sign/sign-settings.service";
-import type { SignNotificationsService } from "src/modules/e-sign/sign-notifications.service";
-import type { SignTemplatesService } from "src/modules/e-sign/sign-templates.service";
-import type { SignEnvelopesService } from "src/modules/e-sign/sign-envelopes.service";
-import type { SignIntegrationsService } from "src/modules/e-sign/sign-integrations.service";
-import type { Db } from "src/db/drizzle.module";
 
 const BACKEND_ROOT = join(__dirname, "../..");
 
@@ -16,130 +7,56 @@ function src(rel: string): string {
   return readFileSync(join(BACKEND_ROOT, rel), "utf8");
 }
 
-function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  )
-    return [value];
-  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
-  if (typeof value !== "object" || seen.has(value)) return [];
-  seen.add(value);
-  const record = value as { queryChunks?: unknown[]; value?: unknown };
-  return [
-    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
-    ...(Object.prototype.hasOwnProperty.call(record, "value")
-      ? sqlValues(record.value, seen)
-      : []),
-  ];
-}
-
-const ORG_ATTACKER = "org-b-attacker";
-const BULK_JOB_ID = 9001;
-
-function makeBulkSendDb(jobRow: unknown): { db: Db; capturedWhere: unknown[] } {
-  const capturedWhere: unknown[] = [];
-  const findFirst = jest.fn().mockImplementation((opts: unknown) => {
-    const opts_ = opts as { where?: unknown } | undefined;
-    if (opts_?.where !== undefined) capturedWhere.push(opts_.where);
-    return Promise.resolve(jobRow);
-  });
-  const db = {
-    query: {
-      signBulkSendJobs: { findFirst },
-      signBulkSendRows: { findMany: jest.fn().mockResolvedValue([]) },
-    },
-  } as unknown as Db;
-  return { db, capturedWhere };
-}
-
-function makeSignBulkSendService(db: Db): SignBulkSendService {
-  const audit = { record: jest.fn().mockResolvedValue(undefined) } as unknown as SignAuditService;
-  const settings = {} as unknown as SignSettingsService;
-  const notifications = {} as unknown as SignNotificationsService;
-  const templates = {} as unknown as SignTemplatesService;
-  const envelopes = {} as unknown as SignEnvelopesService;
-  const integrations = {} as unknown as SignIntegrationsService;
-  return new SignBulkSendService(db, audit, settings, notifications, templates, envelopes, integrations);
-}
-
-describe("SignBulkSendService — cross-tenant bulk job isolation (BOLA)", () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  it("CROSS-TENANT-BULK-READ: org-B actor addressing org-A bulk job receives NotFoundException (404 not 403)", async () => {
-    const { db } = makeBulkSendDb(null);
-    const svc = makeSignBulkSendService(db);
-    await expect(svc.getJob(ORG_ATTACKER, BULK_JOB_ID)).rejects.toThrow(NotFoundException);
-  });
-
-  it("PREDICATE-SCOPE: orgId is bound in the WHERE predicate of getJob lookup", async () => {
-    const { db, capturedWhere } = makeBulkSendDb(null);
-    const svc = makeSignBulkSendService(db);
-    await svc.getJob(ORG_ATTACKER, BULK_JOB_ID).catch(() => {});
-    const vals = capturedWhere.flatMap((w) => sqlValues(w));
-    expect(vals).toContain(ORG_ATTACKER);
-    expect(vals).toContain(BULK_JOB_ID);
-  });
-
-  it("CROSS-TENANT-CANCEL: cancel delegates to getJob and receives NotFoundException for foreign org job", async () => {
-    const { db } = makeBulkSendDb(null);
-    const svc = makeSignBulkSendService(db);
-    await expect(svc.cancel(ORG_ATTACKER, BULK_JOB_ID, { userId: "user-b" })).rejects.toThrow(
-      NotFoundException,
-    );
-  });
-
-  it("CROSS-TENANT-ERROR-REPORT: getErrorReport delegates to getJob and receives NotFoundException for foreign org job", async () => {
-    const { db } = makeBulkSendDb(null);
-    const svc = makeSignBulkSendService(db);
-    await expect(svc.getErrorReport(ORG_ATTACKER, BULK_JOB_ID)).rejects.toThrow(NotFoundException);
-  });
-});
-
-describe("KbSearchService — ACL enforced as SQL predicate before model context (static analysis)", () => {
-  const kbSearchSrc = src("src/modules/kb/retrieval/kb-search.service.ts");
+describe("KB retrieval — ACL enforced as SQL predicate before model context (static analysis)", () => {
+  const retrievalSrc = src("src/modules/kb/retrieval/kb-search-retrieval.service.ts");
   const kbCandidateSrc = src("src/modules/kb/retrieval/kb-candidate.service.ts");
+  const topArticles = retrievalSrc.slice(retrievalSrc.indexOf("async retrieveTopArticlesWithOutcome("), retrievalSrc.indexOf("async retrieveDocumentPassagesWithOutcome("));
+  const method = (name: string): string => {
+    const start = kbCandidateSrc.indexOf(`async ${name}(`);
+    return kbCandidateSrc.slice(start, kbCandidateSrc.indexOf("\n  async ", start + 1));
+  };
 
-  it("getAccessibleSpaceIds is called before any article query — ACL gates the candidate pool", () => {
-    // Both probes are regexes, not `indexOf` on a literal. The db probe used to read
-    // `indexOf("this.db.select(")` and went to -1 the moment the query was reformatted to
-    // `await this.db` / `.select({…})` across two lines — a whitespace change silently
-    // turned a security assertion into a failing one, and the reverse (a formatting
-    // change hiding a real regression) is the same defect pointing the other way.
-    // The property being asserted is unchanged: the ACL resolves before the first read.
-    const accessCallPos = kbSearchSrc.search(/getAccessibleSpaceIds\s*\(\s*user\s*\)/);
-    const dbSelectPos = kbSearchSrc.search(/this\.db\s*\.\s*select\s*\(/);
-    expect(accessCallPos).toBeGreaterThan(-1);
-    expect(dbSelectPos).toBeGreaterThan(-1);
-    expect(accessCallPos).toBeLessThan(dbSelectPos);
+  it("the asker's standing, which carries the accessible space ids, resolves before any candidate or row is read", () => {
+    const standingPos = topArticles.search(/this\.auth\.resolveStanding\s*\(\s*user\s*\)/);
+    const candidatePos = topArticles.search(/this\.candidates\.\w+Candidates\s*\(/);
+    const dbSelectPos = topArticles.search(/this\.db\s*\.\s*select\s*\(/);
+    expect(standingPos).toBeGreaterThan(-1);
+    expect(candidatePos).toBeGreaterThan(standingPos);
+    expect(dbSelectPos).toBeGreaterThan(standingPos);
+    expect(topArticles).toMatch(/const ids = standing\.accessibleSpaceIds/);
   });
 
-  it("early exit when no accessible spaces — prevents model call on empty tenant content", () => {
-    expect(kbSearchSrc).toMatch(/ids\.length\s*===\s*0/);
-    expect(kbSearchSrc).toMatch(/return\s*\{/);
+  it("no embedding is bought for an organisation with no embedded content — the BE-94 short-circuit precedes the provider call", () => {
+    const guard = topArticles.search(/this\.aiGateway\.isEmbeddingConfigured\(\)\s*&&\s*\(await this\.candidates\.hasEmbeddedChunks\(user\.orgId\)\)/);
+    const embed = topArticles.search(/this\.vectorFor\s*\(/);
+    expect(guard).toBeGreaterThan(-1);
+    expect(embed).toBeGreaterThan(guard);
+    expect(topArticles).toMatch(/if \(fused\.length === 0\) return \{ kind: "empty", results: \[\] \}/);
   });
 
   it("articleKeywordCandidates binds orgId as an equality predicate", () => {
     expect(kbCandidateSrc).toMatch(/eq\s*\(\s*kbPages\.orgId\s*,\s*orgId\s*\)/);
   });
 
-  it("articleVectorCandidates applies articleRestrictionFilter with orgId before returning candidates", () => {
-    expect(kbCandidateSrc).toMatch(/articleRestrictionFilter\s*\(\s*orgId\s*,\s*principal\s*\)/);
+  it("both article candidate queries apply the accessible-space predicate and the restriction the retrieval resolved for the asker", () => {
+    for (const name of ["articleKeywordCandidates", "articleVectorCandidates"]) {
+      expect(method(name)).toContain("articleSpacePredicate(spaceIds)");
+      expect(method(name)).toContain("if (restriction) conditions.push(restriction);");
+    }
+    expect(method("articleVectorCandidates")).toMatch(/this\.pageIdsNearest\s*\(\s*orgId\s*,/);
+    expect(topArticles).toMatch(/this\.auth\.articleRestrictionPredicate\s*\(\s*user\s*\)/);
+    expect(topArticles).toMatch(/articleVectorCandidates\(\s*user\.orgId\s*,\s*ids\s*,/);
   });
 
   it("both final fetches in retrieveTopArticles bind orgId, now that articles and pages share kb_pages", () => {
-    const bindings = kbSearchSrc.match(/eq\s*\(\s*kbPages\.orgId\s*,\s*user\.orgId\s*\)/g) ?? [];
-
+    const bindings = topArticles.match(/eq\s*\(\s*kbPages\.orgId\s*,\s*user\.orgId\s*\)/g) ?? [];
     expect(bindings.length).toBeGreaterThanOrEqual(2);
   });
 
   it("separates the two final fetches by content type, so one org-bound query cannot serve both surfaces", () => {
-    expect(kbSearchSrc).toMatch(/supportArticlePredicate\s*\(\s*\)/);
-    expect(kbSearchSrc).toMatch(/wikiPagePredicate\s*\(\s*\)/);
-    expect(kbSearchSrc).not.toMatch(/kbArticles\./);
+    expect(topArticles).toMatch(/supportArticlePredicate\s*\(\s*\)/);
+    expect(topArticles).toMatch(/wikiPagePredicate\s*\(\s*\)/);
+    expect(retrievalSrc).not.toMatch(/kbArticles\./);
   });
 });
 

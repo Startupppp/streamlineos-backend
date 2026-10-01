@@ -1887,20 +1887,61 @@ function renderJson(files, rows) {
 }
 
 const RBAC_MATRIX_LEDGER = join(REPO_ROOT, ".artifacts", "rbac-matrix-ledger.json");
+const RBAC_MATRIX_GATE = join(REPO_ROOT, "src", "scripts", "check-rbac-matrix-ledger.mjs");
 
-function printRbacMatrixLedger() {
+function currentMatrixDigest() {
+  const result = req("node:child_process").spawnSync(process.execPath, [RBAC_MATRIX_GATE, "--digest"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function printRbacMatrixLedger(rows) {
   console.log("");
   if (!existsSync(RBAC_MATRIX_LEDGER)) {
-    console.log("RBAC matrix ledger: not produced in this tree. Run `pnpm check:rbac-matrix-ledger` to execute it.");
-    return;
+    console.error("RBAC matrix ledger: MISSING. Run `pnpm check:rbac-matrix-ledger` first; the census does not pass on an unproven matrix.");
+    return 1;
   }
   const ledger = JSON.parse(readFileSync(RBAC_MATRIX_LEDGER, "utf8"));
-  const executable = ledger.entries.filter((entry) => entry.kind === "executable").length;
+  const digest = currentMatrixDigest();
+  if (ledger.version !== 2 || ledger.sourceDigest === undefined || digest === null || ledger.sourceDigest !== digest) {
+    console.error(
+      `RBAC matrix ledger: STALE (ledger digest ${ledger.sourceDigest ?? "none"}, tree digest ${digest ?? "unknown"}). Re-run \`pnpm check:rbac-matrix-ledger\`.`,
+    );
+    return 1;
+  }
+  const bindings = ledger.entries.filter((entry) => entry.kind === "binding");
+  const suites = ledger.entries.filter((entry) => entry.kind === "suite");
   console.log(
-    `RBAC matrix ledger: proven ${ledger.proven} · failed ${ledger.failed} · unrun ${ledger.unrun} · total ${ledger.total} (executable ${executable}, declared ${ledger.total - executable})`,
+    `RBAC matrix ledger: scenarios ${ledger.scenarios} · proven ${ledger.proven} · failed ${ledger.failed} · unrun ${ledger.unrun} · total ${ledger.total} (bindings ${bindings.length}, evidence suites ${suites.length})`,
   );
-  for (const entry of ledger.entries.filter((candidate) => candidate.status === "failed"))
-    console.log(`  FAILED  ${entry.id}: ${entry.detail}`);
+  const rowKeys = new Set(rows.map((row) => row.key));
+  const proven = new Map();
+  const danglingCovers = new Set();
+  for (const entry of bindings)
+    for (const key of entry.covers ?? []) {
+      if (!rowKeys.has(key)) danglingCovers.add(`${entry.scenario} -> ${key}`);
+      if (entry.status !== "proven") continue;
+      const list = proven.get(key) ?? [];
+      list.push(`${entry.scenario}@${entry.adapter}`);
+      proven.set(key, list);
+    }
+  console.log(`  matrix-proven handlers: ${proven.size} of ${rows.length}`);
+  for (const [key, list] of [...proven].sort(([a], [b]) => a.localeCompare(b)))
+    console.log(`    ${key}  <- ${list.length} proven binding(s): ${list.slice(0, 4).join(", ")}${list.length > 4 ? ", ..." : ""}`);
+  const failed = ledger.entries.filter((entry) => entry.status === "failed");
+  const requiredUnrun = ledger.entries.filter((entry) => entry.status === "unrun" && entry.required);
+  for (const entry of failed) console.error(`  FAILED  ${entry.id}: ${entry.detail}`);
+  for (const entry of requiredUnrun) console.error(`  REQUIRED UNRUN  ${entry.id}`);
+  for (const dangling of danglingCovers) console.error(`  COVERS NO HANDLER  ${dangling}`);
+  if (failed.length > 0 || requiredUnrun.length > 0 || danglingCovers.size > 0) {
+    console.error(
+      `RBAC matrix ledger: ${failed.length} failed, ${requiredUnrun.length} required unrun, ${danglingCovers.size} scenario cover(s) naming no census handler — the census does not pass on that.`,
+    );
+    return 1;
+  }
+  return 0;
 }
 
 // ── Runner ───────────────────────────────────────────────────────────────────
@@ -1964,7 +2005,8 @@ function run(checkOnly) {
   console.log("Verified: REVIEWED hand-read verdicts all match their source anchors.");
   console.log("Not verified: actual runtime behavior (RLS, network calls, post-commit hooks) — use e2e/integration tests for those.");
   console.log("Not verified: non-Build modules (HR, KB, billing, etc.) — this census is scoped to src/modules/build/**.");
-  printRbacMatrixLedger();
+  const matrixVerdict = printRbacMatrixLedger(rows);
+  if (matrixVerdict !== 0) return matrixVerdict;
 
   if (existsSync(OUT_RATCHET)) {
     const ratchet = JSON.parse(readFileSync(OUT_RATCHET, "utf8"));

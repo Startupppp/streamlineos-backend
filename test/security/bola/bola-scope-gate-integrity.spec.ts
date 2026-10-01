@@ -213,7 +213,8 @@ describe("BOLA sweep — realtime capability is tenant-checked at grant time", (
 
   it("chat: the channel list comes from a membership query, not from the request", () => {
     const source = read("src/modules/chat/chat-realtime.controller.ts");
-    expect(source).toMatch(/listMemberChannelIds\s*\(\s*u\.orgId\s*,\s*u\.userId\s*\)/);
+    expect(source).toMatch(/listMemberChannelIds\s*\(\s*actorOf\s*\(\s*u\s*\)\s*\)/);
+    expect(read("src/modules/entity-reference/entity-actor.ts")).toMatch(/orgId:\s*u\.orgId,\s*userId:\s*u\.userId/);
     expect(read("src/modules/chat/chat-channel-list.service.ts")).toContain(
       "eq(chatChannels.orgId, orgId)",
     );

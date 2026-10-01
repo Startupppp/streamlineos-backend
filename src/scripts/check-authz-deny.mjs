@@ -117,6 +117,7 @@
 import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { LEDGER_PATH as MATRIX_LEDGER_PATH, freshness as matrixFreshness } from "./check-rbac-matrix-ledger.mjs";
 
 const ARGV = process.argv.slice(2);
 const SELF_TEST = ARGV.includes("--self-test");
@@ -509,6 +510,34 @@ export function coverageLink(handler, spec, injected) {
   return null;
 }
 
+const MATRIX_DENY_KIND = { "403": "403", "402": "MODULE-DENIED", "404": "CROSS-TENANT-404" };
+const MATRIX_ROUTE_RE = /\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[^\s?]+)/g;
+
+export function matrixDenyIndex(ledger) {
+  const index = new Map();
+  for (const entry of ledger?.entries ?? []) {
+    if (entry.kind !== "binding" || entry.status !== "proven" || entry.expected === "allow") continue;
+    if (entry.expected === "404" && entry.tenant !== "other") continue;
+    const kind = MATRIX_DENY_KIND[entry.expected];
+    if (kind === undefined) continue;
+    for (const match of String(entry.entry).matchAll(MATRIX_ROUTE_RE)) {
+      const key = `${match[1].toLowerCase()} ${normalisePath(match[2])}`;
+      const kinds = index.get(key) ?? new Map();
+      kinds.set(kind, [...(kinds.get(kind) ?? []), entry.id]);
+      index.set(key, kinds);
+    }
+  }
+  return index;
+}
+
+export function matrixDenyLink(handler, index) {
+  const kinds = index.get(`${handler.verb} ${handler.route}`);
+  if (kinds === undefined) return null;
+  const admissible = admissibleDeny(handler.gateKinds ?? ["permission"]);
+  for (const [kind, ids] of kinds) if (admissible.has(kind)) return `MATRIX ${kind} ${ids[0]}`;
+  return null;
+}
+
 // ─── walking ─────────────────────────────────────────────────────────────────
 
 function walk(dir, test, out) {
@@ -576,6 +605,24 @@ function runSelfTest() {
   };
 
   // -- unit assertions on the classifier -------------------------------------
+
+  const matrixFixture = {
+    entries: [
+      { kind: "binding", id: "deny@http", status: "proven", expected: "403", tenant: "same", entry: "GET /hr/items/:itemId -> X" },
+      { kind: "binding", id: "foreign@http", status: "proven", expected: "404", tenant: "other", entry: "DELETE /hr/items/:itemId" },
+      { kind: "binding", id: "same404@http", status: "proven", expected: "404", tenant: "same", entry: "POST /hr/items/:itemId" },
+      { kind: "binding", id: "failed@http", status: "failed", expected: "403", tenant: "same", entry: "PATCH /hr/items/:itemId" },
+      { kind: "binding", id: "allow@http", status: "proven", expected: "allow", tenant: "same", entry: "PUT /hr/items/:itemId" },
+    ],
+  };
+  const matrixIndexFixture = matrixDenyIndex(matrixFixture);
+  const permissionHandler = (verb) => ({ verb, route: "/hr/items/*", gateKinds: ["permission"] });
+  assert("a proven matrix 403 covers a permission-gated handler", matrixDenyLink(permissionHandler("get"), matrixIndexFixture) === "MATRIX 403 deny@http");
+  assert("a proven cross-tenant matrix 404 covers a permission-gated handler", matrixDenyLink(permissionHandler("delete"), matrixIndexFixture) !== null);
+  assert("an in-tenant matrix 404 is not a deny", matrixDenyLink(permissionHandler("post"), matrixIndexFixture) === null);
+  assert("a failed matrix binding covers nothing", matrixDenyLink(permissionHandler("patch"), matrixIndexFixture) === null);
+  assert("a proven matrix allow covers nothing", matrixDenyLink(permissionHandler("put"), matrixIndexFixture) === null);
+  assert("a matrix 403 does not vouch for a module gate", matrixDenyLink({ verb: "get", route: "/hr/items/*", gateKinds: ["module"] }, matrixIndexFixture) === null);
 
   assert("normalisePath maps :id to *", normalisePath("/hr/employees/:id") === "/hr/employees/*");
   assert("normalisePath maps a template hole to *", normalisePath("/hr/employees/${id}/pay") === "/hr/employees/*/pay");
@@ -841,6 +888,19 @@ if (denySpecs.length < MIN_DENY_SPECS) {
   process.exit(2);
 }
 
+const matrixLedger = existsSync(MATRIX_LEDGER_PATH) ? JSON.parse(readFileSync(MATRIX_LEDGER_PATH, "utf8")) : null;
+const matrixState = ROOT_OVERRIDE ? "not consulted under --root" : matrixFreshness(matrixLedger);
+const matrixIndex = matrixState === "fresh" ? matrixDenyIndex(matrixLedger) : new Map();
+let matrixProven = 0;
+for (const h of gated) {
+  if (h.link !== null) continue;
+  const link = matrixDenyLink(h, matrixIndex);
+  if (link === null) continue;
+  h.link = link;
+  h.coveredBy = relative(BACKEND_ROOT, MATRIX_LEDGER_PATH);
+  matrixProven++;
+}
+
 const covered = gated.filter((h) => h.link !== null);
 const uncovered = gated.filter((h) => h.link === null);
 const pct = Math.round((covered.length / gated.length) * 100);
@@ -911,6 +971,7 @@ console.log(`HTTP handlers             ${handlers.length}`);
 console.log(`  — authorization-gated   ${gated.length}`);
 console.log(`  — @AuthorizedInService  ${inService.length}  (INFO, not gated — see the header)`);
 console.log(`Gated handlers with a DECLARED deny test  ${covered.length} / ${gated.length}  (${pct}%)`);
+console.log(`  — covered only by a matrix-proven refusal  ${matrixProven}  (RBAC matrix ledger ${matrixState})`);
 console.log("");
 console.log("NOTE: this gate is static. It proves a deny test EXISTS and is attributable to the");
 console.log("      handler; it does not run it. Attribution is per spec FILE, not per it() block.");
