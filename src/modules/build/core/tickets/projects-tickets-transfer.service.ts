@@ -42,12 +42,10 @@ export class ProjectsTicketsTransferService {
 
   async exportTickets(u: CurrentUserContext, projectId: number, ticketIds?: number[]) {
     const read = await authorizeProjectTicketRead(this.db, this.access, u, projectId);
-    if (read.denied) return { rows: [], truncated: false };
+    const requestedIds = [...new Set(ticketIds ?? [])];
+    if (read.denied && requestedIds.length === 0) return { rows: [], truncated: false };
 
-    const ticketIdFilter =
-      ticketIds !== undefined && ticketIds.length > 0
-        ? [inArray(tickets.id, ticketIds)]
-        : [];
+    const ticketIdFilter = requestedIds.length > 0 ? [inArray(tickets.id, requestedIds)] : [];
 
     const fetched = await read.read(
       {
@@ -77,6 +75,8 @@ export class ProjectsTicketsTransferService {
         .limit(EXPORT_ROW_CAP + 1),
       () => [],
     );
+    if (requestedIds.length > 0 && fetched.length !== requestedIds.length)
+      throw new NotFoundException("One or more ticket IDs not found in this project");
 
     const truncated = fetched.length > EXPORT_ROW_CAP;
     const slice = truncated ? fetched.slice(0, EXPORT_ROW_CAP) : fetched;

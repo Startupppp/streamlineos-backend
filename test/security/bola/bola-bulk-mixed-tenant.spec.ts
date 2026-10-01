@@ -101,6 +101,8 @@ const REPAIRED_FAIL_WHOLE: readonly string[] = [
   "SurveyParticipantService.remind",
   "KbTagsService.setArticleTags",
   "ApprovalsBulkService.bulkReject",
+  "TicketExportService.exportTickets",
+  "ProjectsTicketsTransferService.exportTickets",
 ];
 
 /**
@@ -178,8 +180,6 @@ const ADMITTED_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
 
 const OPEN_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
   ["KbSearchRetrievalService.retrieveTopSourcesWithOutcome", "POST /kb/ask body sourceIds: a foreign source id is dropped and the answer is built from the caller's own sources"],
-  ["TicketExportService.exportTickets", "GET /build/:projectId/import-export/tickets/export?ticketIds: foreign ids are dropped from the export without a 404"],
-  ["ProjectsTicketsTransferService.exportTickets", "GET /build/:projectId/tickets/export ticketIds: foreign ids are dropped from the export without a 404"],
   ["KbPageTrashQueryService.purgeImpact", "POST /kb/pages/trash/purge-impact pageIds: the preview counts only visible ids and names none it dropped"],
 ];
 
