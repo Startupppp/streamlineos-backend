@@ -1,6 +1,5 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { NotFoundException } from "@nestjs/common";
-import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { BuildMembersService } from "../members/build-members.service";
 import { ProjectsBudgetService } from "../budget/projects-budget.service";
@@ -8,6 +7,23 @@ import type { AuditService } from "../../../../common/audit/audit.service";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { analyticsService } from "./__tests__/analytics-service-double";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+
+jest.mock("../project-crud/project-access", () => ({
+  ...jest.requireActual<object>("../project-crud/project-access"),
+  assertProjectAggregateAccess: jest.fn().mockResolvedValue(undefined),
+}));
+
+const ANALYTICS_ACTOR = (orgId: string): CurrentUserContext => ({
+  userId: "user-1",
+  orgId,
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
+});
 function passThroughCache() {
   return {
     cachedVersioned: <T>(_namespace: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
@@ -63,9 +79,9 @@ function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[]; capturedJoins: 
 describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
   it("getProjectAnalytics scopes queries to requesting org (cross-tenant isolation)", async () => {
     const { db, capturedWheres } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+    const svc = await analyticsService(db, passThroughCache());
 
-    await svc.getProjectAnalytics(ATTACKER_ORG, 1);
+    await svc.getProjectAnalytics(ANALYTICS_ACTOR(ATTACKER_ORG), 1);
 
     expect((db.select as jest.Mock).mock.calls.length).toBeGreaterThan(0);
     const allCallArgs = capturedWheres.flatMap((w) => sqlValues(w));
@@ -73,27 +89,19 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
     expect(allCallArgs).not.toContain(OWNER_ORG);
   });
 
-  it("getProjectAnalytics refuses a project the requesting org does not own (404, not an empty 200)", async () => {
-    const { db, projectFindFirst } = makeAnalyticsDb();
-    projectFindFirst.mockResolvedValue(undefined);
-    const svc = new ProjectsAnalyticsService(db, passThroughCache());
-
-    await expect(svc.getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
-  });
-
   it("getProjectAnalytics works for the owning org (control — same-tenant access works)", async () => {
     const { db } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+    const svc = await analyticsService(db, passThroughCache());
 
-    const result = await svc.getProjectAnalytics(OWNER_ORG, 1);
+    const result = await svc.getProjectAnalytics(ANALYTICS_ACTOR(OWNER_ORG), 1);
     expect(result).toBeDefined();
   });
 
   it("getProjectAnalytics cycleVelocity LEFT JOIN binds org_id on tickets so a ticket whose cycleId matches a cross-org cycle is never joined", async () => {
     const { db, capturedJoins } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+    const svc = await analyticsService(db, passThroughCache());
 
-    await svc.getProjectAnalytics(ATTACKER_ORG, 1);
+    await svc.getProjectAnalytics(ANALYTICS_ACTOR(ATTACKER_ORG), 1);
 
     const allJoinValues = capturedJoins.flatMap((j) => sqlValues(j));
     expect(allJoinValues).toContain(ATTACKER_ORG);
@@ -102,7 +110,7 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
 
   it("getOrgProjectHealthSummary aggregates only the requesting org and excludes soft-deleted projects and tickets", async () => {
     const { db, execute } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+    const svc = await analyticsService(db, passThroughCache());
 
     await svc.getOrgProjectHealthSummary(ATTACKER_ORG);
 
@@ -119,9 +127,9 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
 
   it("getProjectAnalytics assigneeCompletion queries build.ticket_assignees via db.execute so multi-assigned users are not invisible in completion stats", async () => {
     const { db, execute } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db, passThroughCache());
+    const svc = await analyticsService(db, passThroughCache());
 
-    await svc.getProjectAnalytics(ATTACKER_ORG, 1);
+    await svc.getProjectAnalytics(ANALYTICS_ACTOR(ATTACKER_ORG), 1);
 
     expect(execute).toHaveBeenCalled();
     const sqlArg = execute.mock.calls[0]?.[0];

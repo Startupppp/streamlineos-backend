@@ -89,7 +89,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
     [
       "GET /build/:projectId/analytics",
       (db) =>
-        new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1),
+        new ProjectsAnalyticsService(db, passThroughCache(), releasesAccess).getProjectAnalytics(releasesU, 1),
     ],
   ];
 
@@ -103,7 +103,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   it("GET /build/:projectId/analytics control reaches the raw execute() aggregate past the gate, so a resolved control is not an unreached one", async () => {
     const db = makeDb({ id: 1 });
-    const result = await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1);
+    const result = await new ProjectsAnalyticsService(db, passThroughCache(), releasesAccess).getProjectAnalytics(releasesU, 1);
 
     expect(result.assigneeCompletion).toEqual([
       { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: 3, completed: 1 },
@@ -118,7 +118,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   it("GET /build/:projectId/analytics never reaches execute() for a foreign project, so the 404 is the gate and not a downstream failure", async () => {
     const db = makeDb(undefined);
-    await expect(new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(
+    await expect(new ProjectsAnalyticsService(db, passThroughCache(), releasesAccess).getProjectAnalytics(releasesU, 1)).rejects.toThrow(
       NotFoundException,
     );
 
