@@ -21,6 +21,22 @@ export const entriesQuerySchema = z.object({
 }).strict();
 export type EntriesQuery = z.infer<typeof entriesQuerySchema>;
 
+/**
+ * Client-supplied fields of a time entry. `.strict()` rejects anything else,
+ * and EntriesService builds the insert field by field, so none of the
+ * following can be set from a request body — they are server-controlled:
+ *
+ *   orgId, userMembershipId, timesheetPeriodId  — from the auth context
+ *   status, submittedAt, approvedAt, approvedByMembershipId  — state machine
+ *   lockedAt, lockedByMembershipId  — period lock
+ *   voidedAt, voidReason  — the void route
+ *   payrollStatus, payrollExportId  — payroll export
+ *   invoicingStatus  — invoicing
+ *   billRate, costRate, currency, rateSource  — rate resolution on approval
+ *
+ * Adding a field here makes it client-writable. Keep this list current
+ * (BUG-TS-BE-004).
+ */
 export const createEntrySchema = z.object({
   date: dateString,
   hours: z.number().positive(),
@@ -34,6 +50,7 @@ export const createEntrySchema = z.object({
 }).strict();
 export type CreateEntryInput = z.infer<typeof createEntrySchema>;
 
+/** Client-editable fields only. See createEntrySchema for what is server-controlled. */
 export const updateEntrySchema = z.object({
   hours: z.number().positive().optional(),
   description: z.string().max(2000).optional().nullable(),
