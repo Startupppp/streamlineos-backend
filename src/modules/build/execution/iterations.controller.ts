@@ -320,6 +320,6 @@ export class EpicsController {
     @Param("epicId", ParseIntPipe) epicId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.epics.deleteEpic(u.orgId, projectId, epicId);
+    return this.epics.deleteEpic(u, projectId, epicId);
   }
 }

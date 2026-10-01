@@ -6,7 +6,7 @@ import {
   projects,
   tickets,
 } from "../../db/schema";
-import { allocateTicketNumbers } from "../build/core/lib/allocate-ticket-number";
+import { BuildTicketCreationService } from "../build/core/tickets";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../db/drizzle.types";
@@ -16,20 +16,17 @@ import { AccessService } from "../access/access.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 import { updateMirroredLeads } from "../party/party-legacy-leads";
-import { createMirroredClient, updateMirroredClient } from "../party/party-legacy-clients";
-import { isLegacyResolved, resolveLegacyParty } from "../party/party-legacy-seam";
+import {
+  createMirroredClient,
+  updateMirroredClient,
+} from "../party/party-legacy-clients";
+import {
+  isLegacyResolved,
+  resolveLegacyParty,
+} from "../party/party-legacy-seam";
 import { PartyMergeService } from "../party/party-merge.service";
 import type { LeadRow } from "../party/party-legacy-writer";
 
-/**
- * What happens when a lead becomes a customer.
- *
- * Split out of `lead-status.service.ts` by this batch: deciding whether a
- * transition is allowed is one job, and standing up the client, the account, the
- * onboarding ticket and the notifications behind it is another — and the second
- * one grew when conversion stopped being allowed to leave two Party records
- * behind.
- */
 @Injectable()
 export class LeadConversionService {
   constructor(
@@ -37,15 +34,9 @@ export class LeadConversionService {
     private readonly access: AccessService,
     private readonly dispatch: NotificationDispatchService,
     private readonly merges: PartyMergeService,
+    private readonly ticketCreation: BuildTicketCreationService,
   ) {}
 
-  /**
-   * The whole conversion: the client, its account, and the people to tell.
-   *
-   * The side effects are deliberately not awaited, exactly as they were before
-   * the split — an onboarding ticket that cannot be written must not fail the
-   * status change that has already happened.
-   */
   async convert(
     orgId: string,
     userId: string,
@@ -58,7 +49,10 @@ export class LeadConversionService {
   }
 
   private async getNextCrmAssignee(orgId: string): Promise<string | null> {
-    const csMembers = await this.access.membersWithPermission(orgId, "support:tickets:manage");
+    const csMembers = await this.access.membersWithPermission(
+      orgId,
+      "support:tickets:manage",
+    );
 
     if (csMembers.length === 0) return null;
 
@@ -92,14 +86,6 @@ export class LeadConversionService {
     return assignee;
   }
 
-  /**
-   * Whether this lead has already become a client.
-   *
-   * Asked of Party rather than of `clients.lead_id`: after the collapse below,
-   * the lead and the client are one party, so the client ids that party answers
-   * for *are* the clients this lead became. The legacy column is still written
-   * for the modules that have not migrated, but it is no longer what decides.
-   */
   private async alreadyAClient(
     tx: TenantTx,
     orgId: string,
@@ -212,25 +198,6 @@ export class LeadConversionService {
       );
   }
 
-  /**
-   * One Party for the relationship, not one per label it has worn.
-   *
-   * `createMirroredClient` always inserts a new party, because inserting one is
-   * the only way `clients` has to acquire a Party at all. So a conversion
-   * momentarily produces a second record for somebody who already has one, and
-   * this collapses it back — as a *merge* rather than an UPDATE, because
-   * `PartyMergeService` snapshots both rows, re-points the client's legacy id
-   * onto the survivor, records who decided it and can put the pair back. A
-   * hand-written re-point would do the visible half of that and none of the rest.
-   *
-   * The survivor is the lead's own party: `chooseSurvivor` keeps the older of the
-   * two, and a lead necessarily exists before the transition that converts it.
-   *
-   * Called after the transaction that created the client, not inside it: the
-   * merge service works on the ambient tenant handle rather than a `tx` passed
-   * down, and inside a nested transaction its reads would be looking for a client
-   * row that has not been committed yet.
-   */
   private async collapseOntoLeadParty(
     orgId: string,
     userId: string,
@@ -254,26 +221,20 @@ export class LeadConversionService {
       });
 
       if (outcome.survivorPartyId !== leadPartyId)
-        logger.error("Lead conversion kept the client's party, not the lead's", {
-          orgId,
-          leadPartyId,
-          survivorPartyId: outcome.survivorPartyId,
-        });
+        logger.error(
+          "Lead conversion kept the client's party, not the lead's",
+          {
+            orgId,
+            leadPartyId,
+            survivorPartyId: outcome.survivorPartyId,
+          },
+        );
 
-      // `planMerge` carries name, email, phone and notes across and deliberately
-      // nothing else, so the survivor keeps its own `lifetime_value` — which is
-      // null, because a lead has an expected value and not a lifetime one. Re-
-      // applied through the client writer so the legacy row is still derived in
-      // exactly one place.
       if (investmentValue !== null)
         await updateMirroredClient(this.db, orgId, clientId, {
           investmentValue,
         });
     } catch (error) {
-      // Not fatal to the conversion: the status change is already committed and
-      // the client already exists, so throwing would report a failure for work
-      // that succeeded. The pair is left for the duplicate detector, and this
-      // line is how anyone knows to look.
       logger.error("Failed to collapse a converted lead onto one party", {
         orgId,
         leadPartyId,
@@ -303,19 +264,20 @@ export class LeadConversionService {
           columns: { id: true },
         });
         if (!existingOnboardTicket) {
-          await this.db.transaction(async (tx) => {
-            const nextTicketNumber = await allocateTicketNumbers(tx, orgId, firstProject.id);
-            await tx.insert(tickets).values({
-              orgId,
-              title: `Onboard converted lead: ${lead.name}`,
-              description: `Lead "${lead.name}" has been converted.\nCompany: ${lead.company || "N/A"}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}`,
-              type: "TASK",
-              status: "TODO",
-              priority: "HIGH",
-              projectId: firstProject.id,
-              ticketNumber: nextTicketNumber,
-              reporterId: userId,
-            });
+          await this.ticketCreation.create({
+            orgId,
+            projectId: firstProject.id,
+            actor: { userId, membershipId: null },
+            drafts: [
+              {
+                title: `Onboard converted lead: ${lead.name}`,
+                description: `Lead "${lead.name}" has been converted.\nCompany: ${lead.company || "N/A"}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}`,
+                type: "TASK",
+                status: "TODO",
+                priority: "HIGH",
+                reporterId: userId,
+              },
+            ],
           });
         }
       }
@@ -344,9 +306,11 @@ export class LeadConversionService {
           message: `Client "${lead.name}" has been assigned to you for onboarding. Estimated investment: ${lead.potentialValue ?? "N/A"}.`,
           link: `/crm/clients`,
         });
-
     } catch (err) {
-      logSideEffectFailure("conversion notification emails", { orgId, leadId: lead.id })(err);
+      logSideEffectFailure("conversion notification emails", {
+        orgId,
+        leadId: lead.id,
+      })(err);
       return;
     }
   }

@@ -19,7 +19,7 @@ import {
 } from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { assertProjectInOrg } from "../core";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 
 @Injectable()
 export class EpicsService {
@@ -27,6 +27,7 @@ export class EpicsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ticketCreation: BuildTicketCreationService,
     private readonly ticketChange: ProjectsTicketsUpdateService,
+    private readonly ticketDelete: ProjectsTicketsDeleteService,
   ) {}
 
   async listEpics(orgId: string, projectId: number, query: EpicListQuery = {}) {
@@ -162,11 +163,11 @@ export class EpicsService {
     return updated;
   }
 
-  async deleteEpic(orgId: string, projectId: number, epicId: number) {
+  async deleteEpic(u: CurrentUserContext, projectId: number, epicId: number) {
     const epic = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, epicId),
-        eq(tickets.orgId, orgId),
+        eq(tickets.orgId, u.orgId),
         eq(tickets.projectId, projectId),
         eq(tickets.type, "EPIC"),
         isNull(tickets.deletedAt),
@@ -174,10 +175,7 @@ export class EpicsService {
       columns: { id: true },
     });
     if (!epic) throw new NotFoundException("Epic not found");
-    await this.db.transaction(async (tx) => {
-      await tx.update(tickets).set({ epicId: null }).where(and(eq(tickets.epicId, epicId), eq(tickets.orgId, orgId)));
-      await tx.delete(tickets).where(and(eq(tickets.id, epicId), eq(tickets.orgId, orgId)));
-    });
+    await this.ticketDelete.deleteTicket(u, projectId, epicId, false);
     return { success: true };
   }
 }
