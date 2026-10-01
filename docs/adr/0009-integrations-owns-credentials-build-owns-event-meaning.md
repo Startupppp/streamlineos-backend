@@ -1,6 +1,6 @@
 # ADR 0009: Integrations owns credentials and delivery; Build owns event meaning and mapping IDs
 
-**Status:** accepted — written from the architecture review (2026-10-01).
+**Status:** accepted and implemented (2026-10-01).
 **Date:** 2026-10-01.
 **Decision:** Build retains event meaning and provider mapping IDs. A deep
 Integrations module owns credentials, signing secrets, delivery mechanics,
@@ -53,11 +53,9 @@ Build retains:
 - the mapping ID that connects a Build project to an Integrations endpoint;
 - the decision of which events trigger a delivery intent.
 
-`core/webhooks/` is the current owner of the delivery enqueue path. Until
-Integrations owns a live delivery interface, this module may continue to enqueue
-outbox rows — but it must not generate or store signing secrets, and it must
-not own retry or circuit-breaker state. Secrets migrate to Integrations before
-any new provider is advertised.
+`core/webhooks/` owns webhook configuration and event meaning. It requests
+deliveries through Integrations and never generates or stores signing secrets,
+nor owns retry or circuit-breaker state.
 
 ## Consequences
 
@@ -83,3 +81,18 @@ payload and processes it idempotently.
 
 > Build knows what an event means and which mapping it belongs to. Integrations
 > knows how to deliver it and where the secrets live.
+
+## Implementation
+
+- `integrations/core/webhook-endpoint.service.ts` (`WebhookEndpointService`)
+  is the only writer of `integrations.webhook_credentials` and
+  `integrations.webhook_deliveries`: credential create/delete, delivery
+  requests, delivery history and stats, and the inline test delivery.
+- `integrations/core/webhook-delivery.service.ts` is the outbox consumer that
+  signs (`webhook-signing.ts`), sends, retries and trips the circuit breaker.
+- `build.project_webhooks.integrations_endpoint_id` is the mapping ID.
+- Migrations 1720-1724 created the tables and backfilled credentials and
+  delivery history; they are applied in production.
+- Contraction still pending: drop `build.project_webhooks.secret` and
+  `build.webhook_deliveries` after the backend that no longer reads them is
+  deployed.

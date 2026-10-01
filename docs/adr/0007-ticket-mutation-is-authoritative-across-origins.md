@@ -1,6 +1,6 @@
 # ADR 0007: ticket mutation is authoritative across all origins
 
-**Status:** accepted — written from the architecture review (2026-10-01).
+**Status:** accepted and implemented (2026-10-01).
 **Date:** 2026-10-01.
 **Decision:** every ticket mutation (manual, automation, git) routes through the
 deep ticket-change module. Automation decides *when* a rule runs; the ticket
@@ -73,3 +73,20 @@ that cross `applyTicketChange`.
 
 > Automation chooses when a rule fires. The ticket-change module decides how
 > every ticket mutation executes, regardless of origin.
+
+## Implementation
+
+- `core/automation/build-automation-actions.service.ts` runs every action as
+  system job `build.automation.apply-action` (`common/auth/system-jobs.ts`),
+  acting on behalf of the rule author.
+- Status, priority and assignee changes call `updateTicket` on the
+  `AUTOMATION_TICKET_CHANGE` token, bound in `core/projects.module.ts` to
+  `ProjectsTicketsUpdateService`, which runs `applyTicketChange`. The executor
+  reads the current version and passes it, so the CAS applies.
+- Labels go through `ProjectsTicketLabelsService.addTicketLabel`; comments go
+  through `ProjectsTicketCommentsService.addComment`.
+- `project-access.ts` grants a system job project reach only when its ceiling
+  covers `build:tickets:view`.
+- The loop guard stays in the runner: the after-commit run re-enters the
+  caller's `automationChainStorage` store, so `MAX_AUTOMATION_CHAIN_DEPTH`
+  holds across automation-triggered changes.

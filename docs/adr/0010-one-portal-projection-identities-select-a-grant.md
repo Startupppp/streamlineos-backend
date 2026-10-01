@@ -1,6 +1,6 @@
 # ADR 0010: one portal projection; identities only select a grant
 
-**Status:** accepted — written from the architecture review (2026-10-01).
+**Status:** accepted and implemented (2026-10-01).
 **Date:** 2026-10-01.
 **Decision:** there is one portal-projection implementation. An external client
 identity and an internal employee preview identity both select a portal grant
@@ -46,9 +46,8 @@ Identity resolution is the caller's job:
   and passes the same grant to the same projection.
 
 Neither identity path may call a projection function that skips grant selection.
-If the employee wants to preview without a grant, they select a special
-"unrestricted preview" grant that the projection recognizes and applies
-accordingly — the grant selection step never vanishes from the call chain.
+A preview for a project with no active grant returns 404; the frontend shows
+"No portal published yet".
 
 The owner module path is `backend/src/modules/build/client-portal/`. The portal
 projection sub-module lives there. See the architecture contract
@@ -77,3 +76,14 @@ neither identity path can return a projection from an expired grant.
 
 > Identities select a grant. The projection module owns the view. No path to a
 > portal projection may bypass grant selection.
+
+## Implementation
+
+- `client-portal/portal-projection.ts` exports `buildPortalProjection`, the one
+  projection. `client-portal/portal-projection.service.ts`
+  (`PortalProjectionService`) exposes it to other modules.
+- `client-portal/client-portal.service.ts` (preview) and
+  `modules/portal/client/portal-client.service.ts` (external client) both
+  select a grant, then call the same projection.
+- `modules/portal/client/portal-client-projection-parity.spec.ts` proves the
+  two identities get the same projection for the same grant.
