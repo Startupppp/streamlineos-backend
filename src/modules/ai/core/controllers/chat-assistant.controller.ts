@@ -27,6 +27,10 @@ import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { AuthCtx } from "../../../../common/auth/auth-context.decorator";
+import type { AuthContext } from "../../../../common/auth/auth-context";
+import { administeringModuleOf } from "../../../../common/rbac/module-vocabulary";
+import { ModuleDisabledException } from "../../../../common/http/api-exceptions";
 import { NoTenantTransaction } from "../../../../common/tenant";
 import { z } from "zod";
 import { ChatAssistantService } from "../services/chat-assistant.service";
@@ -204,7 +208,11 @@ export class ChatAssistantController {
   @NoTenantTransaction()
   @ResponseSchema(confirmActionResponseSchema)
   @Validate({ body: confirmActionBodySchema })
-  async confirmAction(@Body() body: z.infer<typeof confirmActionBodySchema>, @CurrentUser() u: CurrentUserContext) {
+  async confirmAction(
+    @Body() body: z.infer<typeof confirmActionBodySchema>,
+    @CurrentUser() u: CurrentUserContext,
+    @AuthCtx() authCtx: AuthContext,
+  ) {
     const flags = await this.orgFeatures.getFlags(u.orgId);
     if (!flags.aiChat) {
       throw new ForbiddenException("AI chat is disabled for this organization.");
@@ -219,8 +227,30 @@ export class ChatAssistantController {
     const definition = findConfirmableAction(action);
     if (!definition) throw new BadRequestException(`Unknown action type: ${action}`);
 
+    const moduleKey = administeringModuleOf(definition.permission);
+    const availability = await authCtx.moduleAvailable(moduleKey);
+    if (!availability.available) {
+      this.confirmation.auditDeniedExecution({
+        proposalId,
+        orgId: u.orgId,
+        userId: u.userId,
+        action,
+        reason: `module ${moduleKey} unavailable: ${availability.reason}`,
+      });
+      throw new ModuleDisabledException(moduleKey, availability.reason);
+    }
+
     const denyReason = await this.toolAccess.denyReason(u, definition.permission);
-    if (denyReason) throw new ForbiddenException(denyReason);
+    if (denyReason) {
+      this.confirmation.auditDeniedExecution({
+        proposalId,
+        orgId: u.orgId,
+        userId: u.userId,
+        action,
+        reason: denyReason,
+      });
+      throw new ForbiddenException(denyReason);
+    }
 
     const input = definition.payload.safeParse(payload);
     if (!input.success)

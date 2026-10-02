@@ -60,6 +60,7 @@ describe("chat invite link SQL predicates — rendered with PgDialect so the DB 
 
   beforeEach(async () => {
     mockDb = buildMock();
+    mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: CHANNEL_ID, isPrivate: false, entityType: null, entityId: null });
     mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: MEMBERSHIP_ID });
     const module = await Test.createTestingModule({
       providers: [

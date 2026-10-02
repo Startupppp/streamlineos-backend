@@ -46,6 +46,7 @@ import { ChatAssistantController } from "./chat-assistant.controller";
 import { ProjectsTicketsService } from "../../../build/core/tickets";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import type { AuthContext } from "../../../../common/auth/auth-context";
 
 const ACTOR: CurrentUserContext = {
   userId: "user_confirm",
@@ -56,6 +57,11 @@ const ACTOR: CurrentUserContext = {
   tokenScopes: null,
   principal: humanSessionPrincipal(9, false),
 };
+
+const MODULE_AVAILABLE = {
+  actor: ACTOR,
+  moduleAvailable: async () => ({ available: true as const }),
+} as unknown as AuthContext;
 
 function makeController(payload: Record<string, unknown>) {
   const updateTicket = jest.fn().mockResolvedValue({ updated: true, updatedAt: "2026-09-03T00:00:00.000Z" });
@@ -72,7 +78,9 @@ function makeController(payload: Record<string, unknown>) {
 
   const moduleRef = {
     get: jest.fn((token: unknown) =>
-      token === ProjectsTicketsService ? { updateTicket } : {},
+      token === ProjectsTicketsService
+        ? { updateTicketFromSystem: updateTicket }
+        : {},
     ),
   };
 
@@ -90,18 +98,18 @@ function makeController(payload: Record<string, unknown>) {
 }
 
 describe("POST /chat/confirm — ticket.updateStatus", () => {
-  it("delegates to ProjectsTicketsService.updateTicket rather than writing the column", async () => {
+  it("delegates to ProjectsTicketsService.updateTicketFromSystem rather than writing the column", async () => {
     const { controller, updateTicket, moduleRef } = makeController({
       ticketId: 4231,
       status: "IN_REVIEW",
       title: "Fix the thing",
     });
 
-    const outcome = await controller.confirmAction({ token: "1.2.3" }, ACTOR);
+    const outcome = await controller.confirmAction({ token: "1.2.3" }, ACTOR, MODULE_AVAILABLE);
 
     expect(moduleRef.get).toHaveBeenCalledWith(ProjectsTicketsService, { strict: false });
     expect(updateTicket).toHaveBeenCalledTimes(1);
-    expect(updateTicket).toHaveBeenCalledWith(ACTOR, 4231, { status: "IN_REVIEW" });
+    expect(updateTicket).toHaveBeenCalledWith(ACTOR, null, 4231, { status: "IN_REVIEW" });
     expect(outcome).toMatchObject({
       ok: true,
       result: { ticketId: 4231, status: "IN_REVIEW" },
@@ -111,7 +119,7 @@ describe("POST /chat/confirm — ticket.updateStatus", () => {
   it("passes the actor through, so checkProjectAccess and the scope still apply", async () => {
     const { controller, updateTicket } = makeController({ ticketId: 7, status: "DONE" });
 
-    await controller.confirmAction({ token: "1.2.3" }, ACTOR);
+    await controller.confirmAction({ token: "1.2.3" }, ACTOR, MODULE_AVAILABLE);
 
     const [actorArg] = updateTicket.mock.calls[0] as [CurrentUserContext];
     expect(actorArg).toBe(ACTOR);
@@ -121,7 +129,7 @@ describe("POST /chat/confirm — ticket.updateStatus", () => {
     const { controller, updateTicket, markExecuted } = makeController({ ticketId: 7, status: "NOPE" });
     updateTicket.mockRejectedValue(new BadRequestException("Invalid ticket status"));
 
-    await expect(controller.confirmAction({ token: "1.2.3" }, ACTOR)).rejects.toBeInstanceOf(
+    await expect(controller.confirmAction({ token: "1.2.3" }, ACTOR, MODULE_AVAILABLE)).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(markExecuted).not.toHaveBeenCalled();
@@ -135,7 +143,7 @@ describe("POST /chat/confirm — ticket.updateStatus", () => {
   ])("rejects %s with 400 and never reaches the service", async (_label, payload) => {
     const { controller, updateTicket, markExecuted } = makeController(payload);
 
-    await expect(controller.confirmAction({ token: "1.2.3" }, ACTOR)).rejects.toBeInstanceOf(
+    await expect(controller.confirmAction({ token: "1.2.3" }, ACTOR, MODULE_AVAILABLE)).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(updateTicket).not.toHaveBeenCalled();

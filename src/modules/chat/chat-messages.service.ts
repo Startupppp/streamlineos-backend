@@ -21,7 +21,10 @@ import type { TenantTx } from "../../db/drizzle.types";
 import { logger } from "../../common/logger/logger.service";
 import { resolveMentionedUserIds } from "./chat-mentions";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
-import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  runInTenantTransaction,
+  runInNewTenantTransaction,
+} from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
@@ -150,7 +153,7 @@ export class ChatMessagesService {
     const fanoutEventId = randomUUID();
     let sendResult;
     try {
-      sendResult = await this.db.transaction(async (tx) => {
+      sendResult = await runInTenantTransaction(this.db, async (tx) => {
         const [channel] = await tx
           .select({ id: chatChannels.id, type: chatChannels.type, isArchived: chatChannels.isArchived })
           .from(chatChannels)
@@ -291,7 +294,7 @@ export class ChatMessagesService {
           senderImage: senderRow?.image ?? null,
           channelType: channel.type ?? null,
         };
-      });
+      }, { orgId });
     } catch (error: unknown) {
       if (error instanceof DuplicateSendError && body.clientKey) {
         const winner = await this.findByClientKey(orgId, channelId, body.clientKey);

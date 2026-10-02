@@ -4,6 +4,15 @@ import { chatChannelMembers, chatChannels, chatMessages } from "../../db/schema"
 import type { Db } from "../../db/drizzle.module";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { assertChannelMember } from "./chat-channel-authorization";
+import type { MuteDuration } from "./dto/chat.schemas";
+
+const MUTE_UNTIL_FROM: Record<MuteDuration, () => Date> = {
+  "15m": () => new Date(Date.now() + 900_000),
+  "1h": () => new Date(Date.now() + 3_600_000),
+  "8h": () => new Date(Date.now() + 28_800_000),
+  "24h": () => new Date(Date.now() + 86_400_000),
+  "forever": () => new Date("2099-12-31"),
+};
 
 export function channelHighWaterMark(channelId: number, orgId: string) {
   return sql<number>`COALESCE((SELECT ${chatChannels.messageCount} FROM ${chatChannels} WHERE ${chatChannels.id} = ${channelId} AND ${chatChannels.orgId} = ${orgId}), 0)`;
@@ -97,18 +106,9 @@ export class ChatChannelMemberState {
     return { ok: true };
   }
 
-  async muteChannel(channelId: number, userId: string, duration: string, orgId: string) {
+  async muteChannel(channelId: number, userId: string, duration: MuteDuration, orgId: string) {
     const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
-    const until =
-      duration === "forever"
-        ? new Date("2099-12-31")
-        : duration === "24h"
-          ? new Date(Date.now() + 86400_000)
-          : duration === "8h"
-            ? new Date(Date.now() + 28800_000)
-            : duration === "1h"
-              ? new Date(Date.now() + 3600_000)
-              : new Date(Date.now() + 900_000);
+    const until = MUTE_UNTIL_FROM[duration]();
     await this.db
       .update(chatChannelMembers)
       .set({ mutedUntil: until })

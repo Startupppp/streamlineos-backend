@@ -8,6 +8,11 @@ import type { Db } from "../../../db/drizzle.module";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: async (_db: unknown, fn: (tx: unknown) => Promise<unknown>, _opts?: unknown) => fn(_db),
+  runInNewTenantTransaction: async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
 jest.mock("../../../common/tenant/tenant-context", () => ({
   ...jest.requireActual("../../../common/tenant/tenant-context"),
   registerAfterCommit: jest.fn(() => true),

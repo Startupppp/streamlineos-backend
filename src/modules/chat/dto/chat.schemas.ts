@@ -125,12 +125,18 @@ export const pinMessageSchema = z.object({
 
 export const addMemberSchema = z.object({ userId: z.string().min(1) }).strict();
 
+export const CHANNEL_MEMBER_ROLES = ["ADMIN", "MEMBER"] as const;
+export const NOTIFICATION_PREFERENCES = ["DEFAULT", "ALL", "MENTIONS", "NOTHING"] as const;
+export const CHANNEL_TYPES = ["DIRECT", "GROUP", "PUBLIC", "PRIVATE"] as const;
+
 export const muteChannelSchema = z.object({
   duration: z.enum(["15m", "1h", "8h", "24h", "forever"]),
 }).strict();
 
+export type MuteDuration = z.infer<typeof muteChannelSchema>["duration"];
+
 export const notificationPreferenceSchema = z.object({
-  preference: z.enum(["DEFAULT", "ALL", "MENTIONS", "NOTHING"]),
+  preference: z.enum(NOTIFICATION_PREFERENCES),
 }).strict();
 
 export const updateChatOrgSettingsSchema = z.object({
@@ -190,4 +196,4 @@ export const entityActionOptionsSchema = z.object({
 
 export type EntityActionOptionsInput = z.infer<typeof entityActionOptionsSchema>;
 
-export const memberRoleSchema = z.object({ role: z.enum(["ADMIN", "MEMBER"]) }).strict();
+export const memberRoleSchema = z.object({ role: z.enum(CHANNEL_MEMBER_ROLES) }).strict();
