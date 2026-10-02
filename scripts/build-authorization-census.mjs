@@ -1195,6 +1195,7 @@ const PROJECT_DECISION_FNS = new Set([
   "assertProjectVisible",
   "assertProjectVisibleForWrite",
   "assertCanManageProject",
+  "assertCanManageProjectLink",
   "authorizeProjectUpdate",
   "assertProjectAggregateAccess",
   "authorizeProjectTicketRead",

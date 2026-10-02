@@ -706,7 +706,7 @@ GET /build/approvals/inbox. Every row is bound to approverMembershipId = the cal
 - `src/modules/build/approvals/approvals.controller.ts:75` — the acting membership from the authenticated principal reaches the read
 - `src/modules/build/approvals/approvals-read.service.ts:82` — the inbox predicate is the per-approver condition
 - `src/modules/build/approvals/build-inbox-count.service.ts:13` — rows are bound to the caller as the assigned approver
-- `src/modules/build/core/project-crud/project-access.ts:479` — the decision path lets the assigned approver act without project reach
+- `src/modules/build/core/project-crud/project-access.ts:488` — the decision path lets the assigned approver act without project reach
 
 ### VERIFIED — `GET /build/:projectId/approvals/:approvalId`
 
@@ -1738,10 +1738,10 @@ POST /build/portfolios. An org-level route with no path parameters, so no parent
 
 `PortfoliosController.unlinkProject` — `src/modules/build/portfolios/portfolios.controller.ts:124`
 
-DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls loadPortfolio(orgId, portfolioId) first, whose WHERE binds id=portfolioId AND orgId (404 on a foreign portfolioId), then deletes the link row scoped by portfolioId+projectId+orgId. Because portfolioId is already proven to belong to this org, and orgId is repeated on the delete, a projectId belonging to another org's portfolio simply matches zero rows — it can never unlink a link row outside the caller's own org, and cannot affect the project row itself (only the join-table association). The caller must also manage the project being unlinked (assertCanManageProject).
+DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls loadPortfolio(orgId, portfolioId) first, whose WHERE binds id=portfolioId AND orgId (404 on a foreign portfolioId), then deletes the link row scoped by portfolioId+projectId+orgId. Because portfolioId is already proven to belong to this org, and orgId is repeated on the delete, a projectId belonging to another org's portfolio simply matches zero rows — it can never unlink a link row outside the caller's own org, and cannot affect the project row itself (only the join-table association). The caller must also manage the project being unlinked (assertCanManageProjectLink, which skips the archived/completed lock).
 
 - `src/modules/build/portfolios/portfolios.controller.ts:134` — the authenticated actor and both path params reach the service
-- `src/modules/build/portfolios/portfolios.service.ts:372` — unlinking requires manage on the project itself: 404 cross-tenant, 403 in-tenant
+- `src/modules/build/portfolios/portfolios.service.ts:372` — unlinking requires manage on the project itself: 404 cross-tenant, 403 in-tenant; an archived or completed project may still be unlinked
 - `src/modules/build/portfolios/portfolios.service.ts:348` — binds portfolioId to orgId via loadPortfolio before the delete
 - `src/modules/build/portfolios/portfolios.service.ts:379` — DELETE WHERE clause scopes to portfolioId + projectId + orgId together
 
@@ -1749,10 +1749,10 @@ DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls l
 
 `ProgramsController.unlinkProject` — `src/modules/build/portfolios/programs.controller.ts:124`
 
-DELETE /build/programs/:programId/projects/:projectId. Structurally identical to portfolios#unlinkProject: loadProgram(orgId, programId) binds programId to orgId (404 on a foreign programId), then the DELETE's WHERE scopes to programId+projectId+orgId. A projectId belonging to another org's program matches zero rows. The caller must also manage the project being unlinked (assertCanManageProject).
+DELETE /build/programs/:programId/projects/:projectId. Structurally identical to portfolios#unlinkProject: loadProgram(orgId, programId) binds programId to orgId (404 on a foreign programId), then the DELETE's WHERE scopes to programId+projectId+orgId. A projectId belonging to another org's program matches zero rows. The caller must also manage the project being unlinked (assertCanManageProjectLink, which skips the archived/completed lock).
 
 - `src/modules/build/portfolios/programs.controller.ts:134` — the authenticated actor and both path params reach the service
-- `src/modules/build/portfolios/programs.service.ts:435` — unlinking requires manage on the project itself: 404 cross-tenant, 403 in-tenant
+- `src/modules/build/portfolios/programs.service.ts:435` — unlinking requires manage on the project itself: 404 cross-tenant, 403 in-tenant; an archived or completed project may still be unlinked
 - `src/modules/build/portfolios/programs.service.ts:411` — binds programId to orgId via loadProgram before the delete
 - `src/modules/build/portfolios/programs.service.ts:442` — DELETE WHERE clause scopes to programId + projectId + orgId together
 
@@ -2320,15 +2320,15 @@ PATCH /build/:projectId/workflow/statuses/:statusId/wip. updateWipLimit calls as
 | VERIFIED | POST | `/build/portfolios` | `src/modules/build/portfolios/portfolios.controller.ts:75` | `createPortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | N/A (no project-owned resource) | unresolved | NO (mutating) |
 | VERIFIED | PATCH | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:87` | `updatePortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [portfolioId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/portfolios/:portfolioId` | `src/modules/build/portfolios/portfolios.controller.ts:99` | `deletePortfolio` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [portfolioId] | NO (mutating) |
-| VERIFIED | POST | `/build/portfolios/:portfolioId/projects` | `src/modules/build/portfolios/portfolios.controller.ts:111` | `linkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertCanManageProject) | complete [portfolioId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/portfolios/:portfolioId/projects/:projectId` | `src/modules/build/portfolios/portfolios.controller.ts:124` | `unlinkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertCanManageProject) | complete [portfolioId, projectId] | NO (mutating) |
+| VERIFIED | POST | `/build/portfolios/:portfolioId/projects` | `src/modules/build/portfolios/portfolios.controller.ts:111` | `linkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertCanManageProjectLink) | complete [portfolioId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/portfolios/:portfolioId/projects/:projectId` | `src/modules/build/portfolios/portfolios.controller.ts:124` | `unlinkProject` | @RequirePermission("build:portfolios:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertCanManageProjectLink) | complete [portfolioId, projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/programs` | `src/modules/build/portfolios/programs.controller.ts:52` | `listPrograms` | @RequirePermission("build:programs:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (resolveProjectReach) | unresolved | n/a |
 | VERIFIED | GET | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:63` | `getProgram` | @RequirePermission("build:programs:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (resolveProjectReach) | complete [programId] | n/a |
 | VERIFIED | POST | `/build/programs` | `src/modules/build/portfolios/programs.controller.ts:75` | `createProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | unresolved | NO (mutating) |
 | VERIFIED | PATCH | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:87` | `updateProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [programId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/programs/:programId` | `src/modules/build/portfolios/programs.controller.ts:99` | `deleteProgram` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | N/A (no project-owned resource) | complete [programId] | NO (mutating) |
-| VERIFIED | POST | `/build/programs/:programId/projects` | `src/modules/build/portfolios/programs.controller.ts:111` | `linkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertCanManageProject) | complete [programId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/programs/:programId/projects/:projectId` | `src/modules/build/portfolios/programs.controller.ts:124` | `unlinkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertCanManageProject) | complete [programId, projectId] | NO (mutating) |
+| VERIFIED | POST | `/build/programs/:programId/projects` | `src/modules/build/portfolios/programs.controller.ts:111` | `linkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertCanManageProjectLink) | complete [programId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/programs/:programId/projects/:projectId` | `src/modules/build/portfolios/programs.controller.ts:124` | `unlinkProject` | @RequirePermission("build:programs:manage") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertCanManageProjectLink) | complete [programId, projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/bugs` | `src/modules/build/qa/bugs.controller.ts:47` | `listBugs` | @RequirePermission("build:bugs:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectAccess) | unresolved | n/a |
 | VERIFIED | GET | `/build/:projectId/bugs/:bugId` | `src/modules/build/qa/bugs.controller.ts:59` | `getBug` | @RequirePermission("build:bugs:view") | @RequireModule("build") | OK | BOUND | BOUND | ENFORCED (assertProjectAccess) | complete [projectId, bugId] | n/a |
 | VERIFIED | POST | `/build/:projectId/bugs` | `src/modules/build/qa/bugs.controller.ts:71` | `createBug` | @RequirePermission("build:bugs:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ENFORCED (assertProjectWriteAccess) | unresolved | NO (mutating) |
