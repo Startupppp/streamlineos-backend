@@ -1,13 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, ne, sql } from "drizzle-orm";
-import {
-  invoices,
-  organizationMembers,
-  subscriptions,
-} from "../../../db/schema";
+import { eq, sql } from "drizzle-orm";
+import { invoices, subscriptions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { PlanLimitsService } from "./plan-limits.service";
+import { seatInvitationCount, seatMemberCount } from "./seat-definition";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
 
 @Injectable()
@@ -52,23 +49,16 @@ export class BillingAccountOverview {
   }
 
   async getSeatInfo(orgId: string) {
-    const [{ seatLimit }, memberRows, invitationRows] = await Promise.all([
+    // The seat definition admission enforces, not a copy of it (BUG-HRMS-001).
+    const [{ seatLimit }, counts] = await Promise.all([
       this.planLimits.getEntitlements(orgId),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), ne(organizationMembers.status, "LEFT"))),
       this.db.execute(sql`
-        SELECT COUNT(*)::int AS count FROM invitations
-        WHERE org_id = ${orgId}
-          AND status = 'PENDING'
-          AND accepted_at IS NULL
-          AND expires_at > NOW()
+        SELECT ${seatMemberCount(orgId)} AS members, ${seatInvitationCount(orgId)} AS invitations
       `),
     ]);
 
-    const activeMembers = Number(memberRows[0]?.count ?? 0);
-    const pendingInvitations = Number(invitationRows[0]?.["count"] ?? 0);
+    const activeMembers = Number(counts[0]?.["members"] ?? 0);
+    const pendingInvitations = Number(counts[0]?.["invitations"] ?? 0);
     const used = activeMembers + pendingInvitations;
 
     return {
