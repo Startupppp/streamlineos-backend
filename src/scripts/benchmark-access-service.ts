@@ -54,7 +54,7 @@ const mockMfa: MfaPolicyService = {
   isMfaRequired: () => never("mfa.isMfaRequired"),
 } as unknown as MfaPolicyService;
 
-const mockMembershipState = new MembershipStateService(mockDb, mockCache);
+const mockMembershipState = new MembershipStateService(mockDb);
 
 async function run() {
   if (SELF_TEST) {
@@ -90,7 +90,7 @@ async function run() {
   }
 
   console.log("Constructing AccessService with stub dependencies...");
-  const mockVersionCache = new AccessVersionCache(mockDb, mockCache);
+  const mockVersionCache = new AccessVersionCache(mockDb);
   const svc = new AccessService(
     mockDb,
     mockCache,

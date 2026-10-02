@@ -163,9 +163,6 @@ export class OrgProfileService {
     // cache is dropped — an `update()` racing an unawaited write re-cached the outgoing org.
     await this.indexService.activate(userId, targetOrgId);
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    if (outgoingOrgId && outgoingOrgId !== targetOrgId) {
-      await this.cache.invalidate(CACHE_KEYS.accessVersion(outgoingOrgId));
-    }
 
     this.audit.log({
       action: "org.switched",

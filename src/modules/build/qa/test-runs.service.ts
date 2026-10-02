@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
   assertRestorable,
@@ -16,6 +16,7 @@ import type {
   CreateBugFromResultInput,
   CreateTestRunInput,
   RunResultsQuery,
+  TestRunListQuery,
   UpdateTestResultInput,
   UpdateTestRunInput,
 } from "./dto/qa.schemas";
@@ -53,7 +54,7 @@ export class TestRunsService {
   async listRuns(
     u: CurrentUserContext,
     projectId: number,
-    query: { status?: "not_started" | "in_progress" | "completed" | "aborted"; cursor?: number },
+    query: TestRunListQuery,
   ) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const conditions = [
@@ -62,6 +63,7 @@ export class TestRunsService {
       isNull(testRuns.deletedAt),
     ];
     if (query.status) conditions.push(eq(testRuns.status, query.status));
+    if (query.q) conditions.push(sql`to_tsvector('english', coalesce(${testRuns.name},'')) @@ plainto_tsquery('english', ${query.q})`);
     if (query.cursor !== undefined) conditions.push(gt(testRuns.id, query.cursor));
     const rawRuns = await this.db
       .select()
@@ -194,7 +196,7 @@ export class TestRunsService {
   }
 
   async createRun(u: CurrentUserContext, projectId: number, input: CreateTestRunInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const binding = await this.resolveCycleBinding(u.orgId, input);
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
@@ -281,7 +283,7 @@ export class TestRunsService {
     runId: number,
     input: UpdateTestRunInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const userId = u.userId;
     const existing = await this.db.query.testRuns.findFirst({
@@ -326,7 +328,7 @@ export class TestRunsService {
   }
 
   async deleteRun(u: CurrentUserContext, projectId: number, runId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.testRuns.findFirst({
       where: and(
@@ -354,7 +356,7 @@ export class TestRunsService {
   }
 
   async restoreRun(u: CurrentUserContext, projectId: number, runId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.testRuns.findFirst({
       where: and(
@@ -398,7 +400,7 @@ export class TestRunsService {
     resultId: number,
     input: UpdateTestResultInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const executorId = u.userId;
     const existing = await this.db.query.testRunResults.findFirst({
@@ -435,7 +437,7 @@ export class TestRunsService {
     resultId: number,
     input: CreateBugFromResultInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const userId = u.userId;
     const result = await this.db.query.testRunResults.findFirst({

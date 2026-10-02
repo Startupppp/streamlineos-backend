@@ -1,28 +1,14 @@
 import { runWithTenantContext } from "src/common/tenant/tenant-context";
-import type { CacheService } from "src/common/cache/cache.service";
-import type { AuditService } from "src/common/audit/audit.service";
 import type { PlanLimitsService } from "src/modules/billing/core/plan-limits.service";
-import type { NotificationDispatchService } from "src/modules/notifications/notification-dispatch.service";
 import { assertModuleAccessPolicy, moduleAccessPolicyDeps } from "src/modules/module-access/module-access.helpers";
 import { ModuleStandingMutationsService } from "src/modules/module-access/module-standing-mutations.service";
-import { RoleMemberService } from "src/modules/rbac/role-member.service";
 import { RecruitmentJobsService } from "src/modules/hr/recruitment/recruitment-jobs.service";
-import { assertProjectAccess, assertTicketReadAccess } from "src/modules/build/core/project-crud/project-access";
-import { MilestonesService } from "src/modules/build/execution/workspace.service";
+import { assertProjectAccess, assertTicketReadAccess } from "src/modules/build/core";
 import { settle } from "../matrix-runner";
 import type { Observation } from "../matrix.types";
-import { MATRIX_MODULE, accessFor, actorFor, type Standing } from "../standings";
+import { MATRIX_MODULE, accessFor, actorFor, type Standing, type Variant } from "../standings";
 import { boundValues, standIn, type WorldDb } from "../world-db";
-
-const cache = standIn<CacheService>({
-  invalidate: async () => undefined,
-  invalidateMany: async () => undefined,
-  invalidateNamespace: async () => undefined,
-  invalidateNamespaceForOrg: async () => undefined,
-  cachedVersioned: async (_key: string, _ttl: number, load: () => Promise<unknown>) => load(),
-});
-
-const audit = standIn<AuditService>({ log: () => undefined });
+import { cache, milestonesService, roleMemberService } from "./real-services";
 
 export function inTenant<T>(world: WorldDb, orgId: string, work: () => Promise<T>): Promise<T> {
   return runWithTenantContext({ orgId, audience: "INTERNAL", tx: world.tx, afterCommit: [] }, work);
@@ -30,6 +16,10 @@ export function inTenant<T>(world: WorldDb, orgId: string, work: () => Promise<T
 
 function writesSince(world: WorldDb, mark: number, table: string): number {
   return world.writes.slice(mark).filter((write) => write.table === table).length;
+}
+
+function writeGate(world: WorldDb, mark: number, table: string): (value: unknown) => Readonly<Record<string, boolean>> {
+  return (value) => ({ writesOnlyWhenAllowed: (value === undefined) === (writesSince(world, mark, table) === 0) });
 }
 
 export async function moduleAccessManage(world: WorldDb, standing: Standing, orgId: string): Promise<Observation> {
@@ -54,9 +44,7 @@ export async function moduleStanding(
           ? service.grantAdminStanding(actor, MATRIX_MODULE, targetMembershipId)
           : service.revokeStanding(actor, MATRIX_MODULE, targetMembershipId),
       ),
-    (value) => ({
-      writesOnlyWhenAllowed: (value === undefined) === (writesSince(world, mark, "role_assignments") === 0),
-    }),
+    writeGate(world, mark, "role_assignments"),
   );
 }
 
@@ -67,21 +55,24 @@ export async function roleMemberAdd(
   roleId: number,
   principalId: string,
 ): Promise<Observation> {
-  const dispatch = standIn<NotificationDispatchService>({ emit: async () => ({ delivered: 0 }) });
-  const service = new RoleMemberService(world.db, cache, dispatch, accessFor(world));
+  const service = roleMemberService(world);
   const mark = world.writes.length;
   return settle(
     () => inTenant(world, orgId, () => service.addRoleMember(actorFor(standing, orgId), roleId, { principalType: "user", principalId })),
-    (value) => ({
-      writesOnlyWhenAllowed: (value === undefined) === (writesSince(world, mark, "role_assignments") === 0),
-    }),
+    writeGate(world, mark, "role_assignments"),
   );
 }
 
-export async function projectAccess(world: WorldDb, standing: Standing, orgId: string, projectId: number): Promise<Observation> {
+export async function projectAccess(
+  world: WorldDb,
+  standing: Standing,
+  orgId: string,
+  projectId: number,
+  variant?: Variant,
+): Promise<Observation> {
   const mark = world.reads.length;
   return settle(
-    () => assertProjectAccess(world.db, accessFor(world), actorFor(standing, orgId), projectId),
+    () => assertProjectAccess(world.db, accessFor(world), actorFor(standing, orgId, variant), projectId),
     () => ({ projectLookupRan: world.reads.slice(mark).some((read) => read.table === "projects") }),
   );
 }
@@ -94,7 +85,7 @@ export async function milestoneLifecycle(
   projectId: number,
   milestoneId: number,
 ): Promise<Observation> {
-  const service = new MilestonesService(world.db, accessFor(world), audit);
+  const service = milestonesService(world);
   const actor = actorFor(standing, orgId);
   const mark = world.writes.length;
   return settle(
@@ -102,21 +93,7 @@ export async function milestoneLifecycle(
       verb === "delete"
         ? service.deleteMilestone(actor, projectId, milestoneId)
         : service.restoreMilestone(actor, projectId, milestoneId),
-    (value) => ({
-      writesOnlyWhenAllowed: (value === undefined) === (writesSince(world, mark, "project_milestones") === 0),
-    }),
-  );
-}
-
-export async function projectWrite(
-  world: WorldDb,
-  orgId: string,
-  write: (orgId: string) => Promise<unknown>,
-): Promise<Observation> {
-  const mark = world.writes.length;
-  return settle(
-    () => write(orgId),
-    (value) => ({ insertsOnlyWhenAllowed: (value === undefined) === (world.writes.length === mark) }),
+    writeGate(world, mark, "project_milestones"),
   );
 }
 
@@ -126,8 +103,11 @@ export async function ticketRead(
   orgId: string,
   projectId: number,
   ticketId: number,
+  variant?: Variant,
 ): Promise<Observation> {
-  return settle(() => assertTicketReadAccess(world.db, accessFor(world), actorFor(standing, orgId), projectId, ticketId));
+  return settle(() =>
+    assertTicketReadAccess(world.db, accessFor(world), actorFor(standing, orgId, variant), projectId, ticketId),
+  );
 }
 
 export async function recruiterRemoval(
@@ -155,8 +135,6 @@ export async function recruiterRemoval(
         deletesOnlyWhenAllowed: (value === undefined) === (deletes.length === 0),
         deleteBindsJobAndRecruiter:
           deletes.length === 0 || (deleteBound.includes(jobId) && deleteBound.includes(recruiterUserId)),
-        reportsSuccess:
-          value === undefined || (typeof value === "object" && value !== null && "success" in value && value.success === true),
       };
     },
   );

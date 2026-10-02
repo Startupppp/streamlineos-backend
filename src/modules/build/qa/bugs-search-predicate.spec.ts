@@ -6,6 +6,7 @@ import type { BuildTicketCreationService, ProjectsTicketsUpdateService, Projects
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 
@@ -24,13 +25,9 @@ function buildDb(captured: Captured) {
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([]),
   };
+  const projectRow = { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) };
   return {
-    query: {
-      projects: {
-        findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }),
-      },
-    },
-    select: jest.fn().mockReturnValue(builder),
+    select: jest.fn().mockReturnValueOnce(projectRow).mockReturnValue(builder),
   } as unknown as Db;
 }
 
@@ -46,7 +43,7 @@ function makeOwner(orgId: string): CurrentUserContext {
   };
 }
 
-const mockAccess = {} as AccessService;
+const mockAccess = principalAccess() as unknown as AccessService;
 const mockAudit = {} as AuditService;
 
 describe("BugsService.listBugs — search predicate shape (BE-49)", () => {

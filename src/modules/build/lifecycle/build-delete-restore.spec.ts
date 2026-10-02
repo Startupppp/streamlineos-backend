@@ -1,17 +1,19 @@
+import { orgWideRoadmapAccess } from "../__tests__/roadmap-access-double";
 import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { ProjectsRoadmapService } from "../core/roadmap/projects-roadmap.service";
-import { ProjectsFeedbackService } from "../core/feedback/projects-feedback.service";
-import { ProjectsReleasesService } from "../core/releases/projects-releases.service";
+import { ProjectsRoadmapService, ProjectsFeedbackService, ProjectsReleasesService } from "../core";
 import { TestManagementService } from "../qa/test-management.service";
 import { TestRunsService } from "../qa/test-runs.service";
 import { MilestonesService } from "../execution/workspace.service";
 import { WhiteboardsService } from "../execution/whiteboards.service";
 import { BugsService } from "../qa/bugs.service";
+import { projectAccessRow } from "../__tests__/project-access-doubles";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
+import { EpicsService } from "../execution/epics.service";
 
 const ORG = "org-1";
 const USER = "user-7";
@@ -36,9 +38,10 @@ function auditDouble(): { audit: AuditService; log: jest.Mock } {
 }
 
 function accessDouble(): AccessService {
-  const double: Pick<AccessService, "resolveUserPermissions" | "holds"> = {
+  const double: Pick<AccessService, "resolveUserPermissions" | "holds" | "scopeFor"> = {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>(["build:manage"])),
     holds: jest.fn().mockResolvedValue(true),
+    scopeFor: jest.fn().mockResolvedValue("all"),
   };
   return double as AccessService;
 }
@@ -70,8 +73,20 @@ function makeDb(
       ),
     },
     update: written.update,
+    select: jest.fn(() => projectRowChain()),
     ...extra,
   } as unknown as Db;
+}
+
+function projectRowChain() {
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    limit: async () => [projectAccessRow()],
+    orderBy: () => chain,
+    for: async () => [{ id: 55, allowed: true }],
+  };
+  return chain;
 }
 
 const DELETED = { deletedAt: new Date("2026-01-01T00:00:00Z") };
@@ -81,7 +96,7 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
   it("deleteRoadmap audits build.roadmap_item.deleted", async () => {
     const written = updateDouble([{ id: 9 }]);
     const { audit, log } = auditDouble();
-    const svc = new ProjectsRoadmapService(makeDb({}, written), audit);
+    const svc = new ProjectsRoadmapService(makeDb({}, written), audit, orgWideRoadmapAccess());
     await expect(svc.deleteRoadmap(ORG, USER, 9)).resolves.toEqual({ success: true });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: "build.roadmap_item.deleted", userId: USER, orgId: ORG, resourceId: "9" }),
@@ -131,21 +146,32 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
   it("deleteRun audits build.test_run.deleted", async () => {
     const written = updateDouble([]);
     const { audit, log } = auditDouble();
-    const svc = new TestRunsService(makeDb({ testRuns: { id: 5 } }, written), accessDouble(), audit);
+    const svc = new TestRunsService(makeDb({ testRuns: { id: 5 } }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService);
     await expect(svc.deleteRun(makeU(), PROJECT, 5)).resolves.toEqual({ success: true });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: "build.test_run.deleted", resourceId: "5" }),
     );
   });
 
-  it("deleteBug audits bug.deleted, the parallel soft-delete path onto tickets", async () => {
+  it("deleteBug delegates to ProjectsTicketsDeleteService.deleteTicket which writes the bug.deleted audit row", async () => {
     const written = updateDouble([]);
-    const { audit, log } = auditDouble();
-    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit);
-    await expect(svc.deleteBug(makeU(), PROJECT, 77)).resolves.toEqual({ success: true });
-    expect(log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "bug.deleted", resourceId: "77" }),
-    );
+    const { audit } = auditDouble();
+    const deleteTicket = jest.fn().mockResolvedValue({ deleted: true });
+    const ticketDelete = { deleteTicket } as unknown as ProjectsTicketsDeleteService;
+    const u = makeU();
+    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, ticketDelete);
+    await expect(svc.deleteBug(u, PROJECT, 77)).resolves.toEqual({ success: true });
+    expect(deleteTicket).toHaveBeenCalledWith(u, PROJECT, 77, false);
+  });
+
+  it("deleteEpic delegates to ProjectsTicketsDeleteService.deleteTicket which writes the epic.deleted audit row", async () => {
+    const written = updateDouble([]);
+    const deleteTicket = jest.fn().mockResolvedValue({ deleted: true });
+    const ticketDelete = { deleteTicket } as unknown as ProjectsTicketsDeleteService;
+    const u = makeU();
+    const svc = new EpicsService(makeDb({ tickets: { id: 55 } }, written), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, ticketDelete, accessDouble());
+    await expect(svc.deleteEpic(u, PROJECT, 55)).resolves.toEqual({ success: true });
+    expect(deleteTicket).toHaveBeenCalledWith(u, PROJECT, 55, false);
   });
 
   it("deleteMilestone audits build.milestone.deleted", async () => {
@@ -161,8 +187,9 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
   it("deleteWhiteboard audits build.whiteboard.deleted", async () => {
     const written = updateDouble([]);
     const { audit, log } = auditDouble();
+    const projectGate = { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) };
     const boardSelect = {
-      select: jest.fn().mockReturnValue({
+      select: jest.fn((projection: Record<string, unknown>) => "onTeam" in projection ? projectGate : {
         from: jest.fn().mockReturnValue({
           leftJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
@@ -188,7 +215,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
   it("restoreRoadmap clears deletedAt and audits build.roadmap_item.restored", async () => {
     const written = updateDouble([{ id: 9 }]);
     const { audit, log } = auditDouble();
-    const svc = new ProjectsRoadmapService(makeDb({ roadmapItems: DELETED }, written), audit);
+    const svc = new ProjectsRoadmapService(makeDb({ roadmapItems: DELETED }, written), audit, orgWideRoadmapAccess());
     await expect(svc.restoreRoadmap(ORG, USER, 9)).resolves.toEqual({ success: true });
     expect(written.set).toHaveBeenCalledWith({ deletedAt: null });
     expect(log).toHaveBeenCalledWith(
@@ -199,7 +226,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
   it("restoreRoadmap refuses a live roadmap item with 409 and writes nothing", async () => {
     const written = updateDouble([{ id: 9 }]);
     const { audit, log } = auditDouble();
-    const svc = new ProjectsRoadmapService(makeDb({ roadmapItems: LIVE }, written), audit);
+    const svc = new ProjectsRoadmapService(makeDb({ roadmapItems: LIVE }, written), audit, orgWideRoadmapAccess());
     await expect(svc.restoreRoadmap(ORG, USER, 9)).rejects.toThrow(ConflictException);
     expect(written.update).not.toHaveBeenCalled();
     expect(log).not.toHaveBeenCalled();
@@ -260,7 +287,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
   it("restoreRun clears deletedAt and audits build.test_run.restored", async () => {
     const written = updateDouble([{ id: 5 }]);
     const { audit, log } = auditDouble();
-    const svc = new TestRunsService(makeDb({ testRuns: DELETED }, written), accessDouble(), audit);
+    const svc = new TestRunsService(makeDb({ testRuns: DELETED }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService);
     await expect(svc.restoreRun(makeU(), PROJECT, 5)).resolves.toEqual({ success: true });
     expect(written.set).toHaveBeenCalledWith({ deletedAt: null });
     expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: "build.test_run.restored" }));
@@ -299,9 +326,9 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
     const { audit, log } = auditDouble();
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
         projectMilestones: { findFirst: jest.fn().mockResolvedValue(DELETED) },
       },
+      select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) })),
       update: written.update,
     } as unknown as Db;
     const svc = new MilestonesService(db, accessDouble(), audit);

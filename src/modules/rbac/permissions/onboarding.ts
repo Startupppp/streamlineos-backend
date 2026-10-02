@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const ONBOARDING_PERMISSIONS: Permission[] = [
+export const ONBOARDING_PERMISSIONS = definePermissions([
   {
     name: "onboarding:module-checklists:view",
     resource: "onboarding:module-checklists",
@@ -36,4 +36,4 @@ export const ONBOARDING_PERMISSIONS: Permission[] = [
     description: "Complete own or assigned employee onboarding tasks",
     scopable: false,
   },
-];
+]);

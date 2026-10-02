@@ -3,8 +3,10 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { Db } from "../../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { BugsService } from "../bugs.service";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../../core/tickets";
 import { bugRowSchema } from "../dto/qa-response.schemas";
 import { tickets, workItemQaDetails } from "../../../../db/schema";
+import { projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 3;
@@ -22,9 +24,7 @@ function makeU(): CurrentUserContext {
 }
 
 function makeAccess(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
-  } as unknown as AccessService;
+  return standingAccess({ "build:manage": "all" }) as unknown as AccessService;
 }
 
 const audit = { log: jest.fn() } as never;
@@ -62,6 +62,7 @@ function sidecarLessBugRow() {
     deletedAt: null,
     createdAt: new Date("2026-09-01T00:00:00.000Z"),
     updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+    version: 1,
   };
   for (const field of QA_SIDECAR_FIELDS) row[field] = null;
   return row;
@@ -70,7 +71,8 @@ function sidecarLessBugRow() {
 function listDb(rows: unknown[]) {
   const joinArgs: unknown[] = [];
   const projections: unknown[] = [];
-  const select = jest.fn().mockImplementation((projection: unknown) => {
+  const projectRow = { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) };
+  const select = jest.fn().mockImplementationOnce(() => projectRow).mockImplementation((projection: unknown) => {
     projections.push(projection);
     return {
       from: jest.fn().mockImplementation((table: unknown) => ({
@@ -86,9 +88,6 @@ function listDb(rows: unknown[]) {
     };
   });
   const db = {
-    query: {
-      projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
-    },
     select,
   } as unknown as Db;
   return { db, joinArgs, projections };
@@ -97,7 +96,7 @@ function listDb(rows: unknown[]) {
 describe("a BUG work item created outside the QA surface still surfaces through listBugs", () => {
   it("joins the QA sidecar with a LEFT JOIN, so a BUG ticket that has no work_item_qa_details row is still returned", async () => {
     const { db, joinArgs } = listDb([sidecarLessBugRow()]);
-    const svc = new BugsService(db, makeAccess(), audit);
+    const svc = new BugsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
     const rows = await svc.listBugs(makeU(), PROJECT_ID, {});
 
@@ -108,7 +107,7 @@ describe("a BUG work item created outside the QA surface still surfaces through 
 
   it("reports every QA field as null for a sidecar-less bug, which is the only signal a caller has that it was never filed through the QA surface", async () => {
     const { db } = listDb([sidecarLessBugRow()]);
-    const svc = new BugsService(db, makeAccess(), audit);
+    const svc = new BugsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
     const [row] = (await svc.listBugs(makeU(), PROJECT_ID, {})) as Record<string, unknown>[];
 
@@ -124,7 +123,7 @@ describe("a BUG work item created outside the QA surface still surfaces through 
 
   it("projects every QA sidecar field the contract declares, so a null here means an absent sidecar and never an omitted column", async () => {
     const { db, projections } = listDb([sidecarLessBugRow()]);
-    const svc = new BugsService(db, makeAccess(), audit);
+    const svc = new BugsService(db, makeAccess(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
     await svc.listBugs(makeU(), PROJECT_ID, {});
 

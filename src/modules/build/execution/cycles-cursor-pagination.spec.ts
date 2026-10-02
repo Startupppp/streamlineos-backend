@@ -1,8 +1,29 @@
 import { CyclesService } from "./cycles.service";
 import { decodeCursor } from "../../../common/pagination/cursor";
 import type { Db } from "../../../db/drizzle.module";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../../modules/access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual<typeof import("../core/project-crud/project-access")>("../core/project-crud/project-access"),
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
 
 const ORG_ID = "org-cursor-99";
+const ACTOR: CurrentUserContext = {
+  userId: "u-owner",
+  orgId: ORG_ID,
+  role: "OWNER",
+  isOrgOwner: true,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
+};
 const PROJECT_ID = 12;
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -74,8 +95,8 @@ describe("CyclesService — cursor pagination", () => {
   it("returns hasMore=false and no cursor when the row count does not exceed the limit", async () => {
     const row = makeBaseRow(1, "2026-10-01");
     const db = makeDb([row]);
-    const service = new CyclesService(db as never);
-    const page = await service.listCycles(ORG_ID, PROJECT_ID, { limit: 10 });
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    const page = await service.listCycles(ACTOR, PROJECT_ID, { limit: 10 });
 
     expect(page.data).toHaveLength(1);
     expect(page.pagination.hasMore).toBe(false);
@@ -86,8 +107,8 @@ describe("CyclesService — cursor pagination", () => {
     const row1 = makeBaseRow(1, "2026-10-01");
     const row2 = makeBaseRow(2, "2026-10-15");
     const db = makeDb([row1, row2]);
-    const service = new CyclesService(db as never);
-    const page = await service.listCycles(ORG_ID, PROJECT_ID, { limit: 1 });
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    const page = await service.listCycles(ACTOR, PROJECT_ID, { limit: 1 });
 
     expect(page.data).toHaveLength(1);
     expect(page.pagination.hasMore).toBe(true);
@@ -98,8 +119,8 @@ describe("CyclesService — cursor pagination", () => {
     const rowA = makeBaseRow(3, "2026-11-01", "Alpha");
     const rowB = makeBaseRow(7, "2026-11-01", "Beta");
     const db = makeDb([rowA, rowB]);
-    const service = new CyclesService(db as never);
-    const page = await service.listCycles(ORG_ID, PROJECT_ID, { limit: 1 });
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    const page = await service.listCycles(ACTOR, PROJECT_ID, { limit: 1 });
 
     expect(page.data).toHaveLength(1);
     expect(page.pagination.hasMore).toBe(true);
@@ -113,8 +134,8 @@ describe("CyclesService — cursor pagination", () => {
     const rowY = makeBaseRow(11, "2026-11-01", "Second");
     const rowZ = makeBaseRow(12, "2026-11-15", "Third");
     const db = makeDb([rowX, rowY, rowZ]);
-    const service = new CyclesService(db as never);
-    const page = await service.listCycles(ORG_ID, PROJECT_ID, { limit: 2 });
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    const page = await service.listCycles(ACTOR, PROJECT_ID, { limit: 2 });
 
     expect(page.data).toHaveLength(2);
     expect(page.pagination.hasMore).toBe(true);
@@ -125,8 +146,8 @@ describe("CyclesService — cursor pagination", () => {
 
   it("returns an empty cursor page instead of a bare array when there are no matching cycles", async () => {
     const db = makeDb([]);
-    const service = new CyclesService(db as never);
-    const page = await service.listCycles(ORG_ID, PROJECT_ID, {});
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    const page = await service.listCycles(ACTOR, PROJECT_ID, {});
 
     expect(Array.isArray(page)).toBe(false);
     expect(page.data).toEqual([]);
@@ -140,8 +161,8 @@ describe("CyclesService — server-side filters applied to SQL", () => {
     const capturedConds: unknown[] = [];
     const row = makeBaseRow(1, "2026-10-01", "Sprint Alpha");
     const db = makeDb([row], capturedConds);
-    const service = new CyclesService(db as never);
-    await service.listCycles(ORG_ID, PROJECT_ID, { q: "Alpha" });
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    await service.listCycles(ACTOR, PROJECT_ID, { q: "Alpha" });
 
     const values = sqlValues(capturedConds);
     expect(values.some((v) => typeof v === "string" && v.includes("Alpha"))).toBe(true);
@@ -151,8 +172,8 @@ describe("CyclesService — server-side filters applied to SQL", () => {
     const capturedConds: unknown[] = [];
     const row = makeBaseRow(1, "2026-10-01");
     const db = makeDb([row], capturedConds);
-    const service = new CyclesService(db as never);
-    await service.listCycles(ORG_ID, PROJECT_ID, { from: "2026-09-15" });
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    await service.listCycles(ACTOR, PROJECT_ID, { from: "2026-09-15" });
 
     const values = sqlValues(capturedConds);
     expect(values).toContain("2026-09-15");
@@ -162,8 +183,8 @@ describe("CyclesService — server-side filters applied to SQL", () => {
     const capturedConds: unknown[] = [];
     const row = makeBaseRow(1, "2026-10-01");
     const db = makeDb([row], capturedConds);
-    const service = new CyclesService(db as never);
-    await service.listCycles(ORG_ID, PROJECT_ID, { to: "2026-10-31" });
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    await service.listCycles(ACTOR, PROJECT_ID, { to: "2026-10-31" });
 
     const values = sqlValues(capturedConds);
     expect(values).toContain("2026-10-31");
@@ -173,8 +194,8 @@ describe("CyclesService — server-side filters applied to SQL", () => {
     const capturedConds: unknown[] = [];
     const row = makeBaseRow(1, "2026-10-01");
     const db = makeDb([row], capturedConds);
-    const service = new CyclesService(db as never);
-    await service.listCycles(ORG_ID, PROJECT_ID, { status: "active" });
+    const service = new CyclesService(db, stubService<AccessService>({}));
+    await service.listCycles(ACTOR, PROJECT_ID, { status: "active" });
 
     const values = sqlValues(capturedConds);
     expect(values).toContain("active");

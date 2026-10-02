@@ -6,6 +6,8 @@ import { projectStatuses } from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { bulkReorderStatesSchema, type BulkReorderStatesInput } from "../dto/projects.schemas";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 10;
@@ -15,7 +17,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     userId: "user-1",
     orgId: ORG,
     isOrgOwner: true,
-    principal: { type: "member", membershipId: 1 },
+    principal: humanSessionPrincipal(1, true),
     ...overrides,
   } as unknown as CurrentUserContext;
 }
@@ -34,15 +36,22 @@ function makeDb(rows: StateRow[]) {
       projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
       projectMembers: undefined,
     },
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue(
-            store.rows.map((r) => ({ id: r.id, order: r.order })),
-          ),
+    select: jest
+      .fn()
+      .mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([projectAccessRow()]) }),
+        }),
+      })
+      .mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue(
+              store.rows.map((r) => ({ id: r.id, order: r.order })),
+            ),
+          }),
         }),
       }),
-    }),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
@@ -92,7 +101,7 @@ function makeDb(rows: StateRow[]) {
   return { db, store };
 }
 
-const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) };
+const access = standingAccess(MANAGER_STANDING);
 
 function makeService(db: Db) {
   return new ProjectsCustomStatesService(db, access as never);

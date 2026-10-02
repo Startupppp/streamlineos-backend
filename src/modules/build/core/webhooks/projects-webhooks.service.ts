@@ -8,7 +8,10 @@ import type {
   ListWebhooksQuery,
   UpdateWebhookInput,
 } from "../dto/webhook.schemas";
-import { assertProjectInOrg } from "../project-crud/project-access";
+import { assertCanManageProject, assertProjectVisible } from "../project-crud/project-access";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { AccessService } from "../../../access/access.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { buildIdCursorPage } from "../../../../common/pagination/cursor";
 import { TicketVersionConflictException } from "../tickets";
 import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
@@ -34,14 +37,17 @@ export class ProjectsWebhooksService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly webhookEndpoint: WebhookEndpointService,
+    private readonly access: AccessService,
+    private readonly dispatch: ProjectsWebhooksDispatchService,
   ) {}
 
   async listWebhooks(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
     filters: ListWebhooksQuery = {},
   ) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
 
     const conditions = [
       eq(projectWebhooks.orgId, orgId),
@@ -114,12 +120,12 @@ export class ProjectsWebhooksService {
   }
 
   async createWebhook(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
-    createdBy: string,
     data: CreateWebhookInput,
   ) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+    await assertCanManageProject(this.db, this.access, actor, projectId);
+    const { orgId, userId: createdBy } = actor;
 
     return this.db.transaction(async (tx) => {
       const { id: credId, secretSetAt } = await this.webhookEndpoint.createCredential(
@@ -152,11 +158,13 @@ export class ProjectsWebhooksService {
   }
 
   async updateWebhook(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
     webhookId: number,
     data: UpdateWebhookInput,
   ) {
+    await assertCanManageProject(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const tenantMatch = and(
       eq(projectWebhooks.id, webhookId),
       eq(projectWebhooks.orgId, orgId),
@@ -208,7 +216,9 @@ export class ProjectsWebhooksService {
     };
   }
 
-  async deleteWebhook(orgId: string, projectId: number, webhookId: number) {
+  async deleteWebhook(actor: CurrentUserContext, projectId: number, webhookId: number) {
+    await assertCanManageProject(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     await this.db.transaction(async (tx) => {
       const [row] = await tx
         .select({ integrationsEndpointId: projectWebhooks.integrationsEndpointId })
@@ -223,7 +233,7 @@ export class ProjectsWebhooksService {
         .limit(1);
       if (!row) throw new NotFoundException("Webhook not found");
 
-      await tx
+      const deleted = await tx
         .delete(projectWebhooks)
         .where(
           and(
@@ -231,7 +241,9 @@ export class ProjectsWebhooksService {
             eq(projectWebhooks.projectId, projectId),
             eq(projectWebhooks.orgId, orgId),
           ),
-        );
+        )
+        .returning({ id: projectWebhooks.id });
+      if (deleted.length === 0) throw new NotFoundException("Webhook not found");
 
       if (row.integrationsEndpointId) {
         await this.webhookEndpoint.deleteCredential(tx, orgId, row.integrationsEndpointId);
@@ -239,7 +251,7 @@ export class ProjectsWebhooksService {
     });
   }
 
-  async assertWebhookOwnership(
+  private async assertWebhookOwnership(
     orgId: string,
     projectId: number,
     webhookId: number,
@@ -258,8 +270,15 @@ export class ProjectsWebhooksService {
     if (!row[0]) throw new NotFoundException("Webhook not found");
   }
 
-  async listDeliveries(orgId: string, projectId: number, webhookId: number) {
-    await this.assertWebhookOwnership(orgId, projectId, webhookId);
-    return this.webhookEndpoint.listDeliveries(orgId, webhookId);
+  async listDeliveries(actor: CurrentUserContext, projectId: number, webhookId: number) {
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    await this.assertWebhookOwnership(actor.orgId, projectId, webhookId);
+    return this.webhookEndpoint.listDeliveries(actor.orgId, webhookId);
+  }
+
+  async sendTest(actor: CurrentUserContext, projectId: number, webhookId: number) {
+    await assertCanManageProject(this.db, this.access, actor, projectId);
+    await this.assertWebhookOwnership(actor.orgId, projectId, webhookId);
+    return this.dispatch.sendTest(actor.orgId, projectId, webhookId);
   }
 }

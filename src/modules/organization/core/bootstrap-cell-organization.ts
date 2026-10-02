@@ -1,7 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { organizations, users } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
-import type { CacheService } from "../../../common/cache/cache.service";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
@@ -48,13 +47,12 @@ export interface BootstrapCellOrganizationInput {
 
 export async function bootstrapCellOrganization(
   db: Db,
-  cache: CacheService,
   input: BootstrapCellOrganizationInput,
 ): Promise<void> {
   const { orgId, userId } = input;
   const moduleKeys = input.moduleKeys ?? DEFAULT_SKIP_MODULES;
 
-  await withMembershipMutations(cache, (membership) =>
+  await withMembershipMutations((membership) =>
     runInNewTenantTransaction(db, orgId, async (tx) => {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${`organization-bootstrap:${orgId}`}, 0))`,

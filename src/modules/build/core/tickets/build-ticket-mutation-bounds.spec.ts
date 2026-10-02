@@ -4,6 +4,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { AccessService } from "../../../access/access.service";
 import type { Db } from "../../../../db/drizzle.types";
 import { bulkMutateTickets } from "./build-ticket-bulk-mutation";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111",
@@ -36,8 +37,14 @@ function makeDb(ids: number[]) {
     for: jest.fn().mockReturnThis(),
     then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
   };
+  const projectAccessChain = {
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([projectAccessRow()]),
+  };
   const db = {
-    select: jest.fn(() => chain),
+    mutationRead: chain,
+    select: jest.fn().mockReturnValueOnce(projectAccessChain).mockReturnValue(chain),
     update: jest.fn(() => ({
       set: jest.fn(() => ({ where: jest.fn(() => ({ returning: jest.fn().mockResolvedValue(rows) })) })),
     })),
@@ -71,13 +78,14 @@ describe("build ticket mutation reads are bounded by their caller", () => {
     expect(db.select).not.toHaveBeenCalled();
   });
 
-  it("reads the maximum batch in exactly one statement", async () => {
+  it("reads the maximum batch in exactly one locking statement after the one project-access decision", async () => {
     const ticketIds = Array.from({ length: 100 }, (_, index) => index + 1);
     const db = makeDb(ticketIds);
 
     await bulkMutateTickets(db as unknown as Db, access, actor, 1, { ticketIds });
 
-    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(db.mutationRead.for).toHaveBeenCalledTimes(1);
   });
 
   it("deduplicates before applying the cap, so repeats cannot smuggle the batch past 100", async () => {
@@ -86,7 +94,8 @@ describe("build ticket mutation reads are bounded by their caller", () => {
 
     await bulkMutateTickets(db as unknown as Db, access, actor, 1, { ticketIds: [...unique, ...unique] });
 
-    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(db.mutationRead.for).toHaveBeenCalledTimes(1);
   });
 
   it("still refuses when the ids are unique and one over the cap", async () => {

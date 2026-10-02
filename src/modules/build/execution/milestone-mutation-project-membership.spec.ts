@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService } from "./workspace.service";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 1;
@@ -20,9 +21,7 @@ const actor: CurrentUserContext = {
   principal: humanSessionPrincipal(7, false),
 };
 
-const access = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-} as unknown as AccessService;
+const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
 
 function makeDb(isProjectMember: boolean) {
   const chain: Record<string, jest.Mock> = {};
@@ -31,7 +30,7 @@ function makeDb(isProjectMember: boolean) {
   chain["innerJoin"] = jest.fn(self);
   chain["leftJoin"] = jest.fn(self);
   chain["where"] = jest.fn(self);
-  chain["limit"] = jest.fn(() => Promise.resolve(isProjectMember ? [{ role: "MEMBER" }] : []));
+  chain["limit"] = jest.fn(() => Promise.resolve([projectAccessRow({ memberRole: isProjectMember ? "MEMBER" : null })]));
   chain["groupBy"] = jest.fn(() => Promise.resolve([]));
   const returning = jest.fn(() => Promise.resolve([{ id: MILESTONE_ID, ownerMembershipId: null, version: 2 }]));
   const update = jest.fn(() => ({ set: () => ({ where: () => ({ returning }) }) }));

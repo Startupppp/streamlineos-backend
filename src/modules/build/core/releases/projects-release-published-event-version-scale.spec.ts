@@ -13,6 +13,7 @@ import {
 } from "../../../../db/schema";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-rel-scale-1";
 const MEMBERSHIP_ID = 5;
@@ -114,6 +115,20 @@ function makeDb(store: Store): { db: Db; outbox: Row[] } {
     jest.fn(async (args: { where?: unknown }) => rows.find((row) => matches(args.where, row)));
 
   const selectFrom = (table: unknown) => {
+    if (table === projects) {
+      return {
+        where: (where: unknown) => ({
+          limit: async () =>
+            store.projects
+              .filter((row) => matches(where, row))
+              .map((row) =>
+                projectAccessRow({
+                  memberRole: store.projectMembers.find((member) => member.projectId === row.id)?.role === "ADMIN" ? "ADMIN" : null,
+                }),
+              ),
+        }),
+      };
+    }
     if (table === projectMembers) {
       const chain: Record<string, unknown> = {
         innerJoin: () => chain,
@@ -195,9 +210,7 @@ function makeU(): CurrentUserContext {
 }
 
 function makeAccess(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-  } as unknown as AccessService;
+  return standingAccess(MEMBER_STANDING) as unknown as AccessService;
 }
 
 function makeService(store: Store) {

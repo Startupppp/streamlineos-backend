@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   portfolioProjects,
@@ -15,13 +15,16 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
 import {
   buildCursorPage,
   decodeCursor,
 } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { resolveProjectCounts } from "./portfolio-project-counts";
-import { assertProjectInOrg, escapeLike } from "../core";
+import { assertCanManageProjectLink, escapeLike, resolveProjectReach } from "../core";
+import { reachableProjectIdsSql } from "./reachable-linked-projects";
 import type {
   CreatePortfolioInput,
   LinkedProjectsQuery,
@@ -39,6 +42,7 @@ export class PortfoliosService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
   private async loadPortfolio(
@@ -60,7 +64,9 @@ export class PortfoliosService {
     return row;
   }
 
-  async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
+  async listPortfolios(u: CurrentUserContext, query: ListPortfoliosQuery) {
+    const { orgId } = u;
+    const reach = await resolveProjectReach(this.access, u);
     const portfolio = alias(projectPortfolios, "portfolio");
     const { cursor, limit, q, status, sort } = query;
     const pos = decodeCursor(cursor);
@@ -109,6 +115,7 @@ export class PortfoliosService {
             AND linked_project.deleted_at IS NULL
           WHERE link.portfolio_id = portfolio.id
             AND link.org_id = portfolio.org_id
+            AND link.project_id IN ${reachableProjectIdsSql(orgId, reach.where)}
         )`,
       })
       .from(portfolio)
@@ -125,6 +132,7 @@ export class PortfoliosService {
   private async pagePortfolioProjects(
     orgId: string,
     portfolioId: number,
+    reach: SQL,
     query: LinkedProjectsQuery,
   ) {
     const { cursor, limit } = query;
@@ -153,6 +161,7 @@ export class PortfoliosService {
           eq(portfolioProjects.portfolioId, portfolioId),
           eq(portfolioProjects.orgId, orgId),
           isNull(projects.deletedAt),
+          reach,
           pos ? keysetBeforeId(portfolioProjects.createdAt, projects.id, pos) : undefined,
         ),
       )
@@ -222,10 +231,14 @@ export class PortfoliosService {
     };
   }
 
-  async getPortfolio(orgId: string, portfolioId: number, query: PortfolioDetailQuery) {
-    const portfolio = await this.loadPortfolio(orgId, portfolioId);
+  async getPortfolio(u: CurrentUserContext, portfolioId: number, query: PortfolioDetailQuery) {
+    const { orgId } = u;
+    const [portfolio, reach] = await Promise.all([
+      this.loadPortfolio(orgId, portfolioId),
+      resolveProjectReach(this.access, u),
+    ]);
     const [projects, programs] = await Promise.all([
-      this.pagePortfolioProjects(orgId, portfolioId, {
+      this.pagePortfolioProjects(orgId, portfolioId, reach.where, {
         cursor: query.projectsCursor,
         limit: query.projectsLimit,
       }),
@@ -327,13 +340,13 @@ export class PortfoliosService {
   }
 
   async linkProject(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     portfolioId: number,
     input: LinkProjectInput,
   ) {
+    const { orgId, userId } = u;
     await this.loadPortfolio(orgId, portfolioId);
-    await assertProjectInOrg(this.db, orgId, input.projectId);
+    await assertCanManageProjectLink(this.db, this.access, u, input.projectId);
     await this.db
       .insert(portfolioProjects)
       .values({ orgId, portfolioId, projectId: input.projectId })
@@ -350,12 +363,13 @@ export class PortfoliosService {
   }
 
   async unlinkProject(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     portfolioId: number,
     projectId: number,
   ) {
+    const { orgId, userId } = u;
     await this.loadPortfolio(orgId, portfolioId);
+    await assertCanManageProjectLink(this.db, this.access, u, projectId);
     await this.db
       .delete(portfolioProjects)
       .where(

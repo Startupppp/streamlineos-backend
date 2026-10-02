@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   incidentUpdates,
@@ -12,7 +12,7 @@ import type { TenantTx } from "../../../db/drizzle.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { UNRESOLVED_FOLLOW_UP_STATUSES } from "./dto/incidents.schemas";
 import type {
   AddIncidentDecisionInput,
@@ -25,29 +25,11 @@ import type {
   UpdateIncidentInput,
 } from "./dto/incidents.schemas";
 import { loadIncidentChildren } from "./incident-children";
-import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
+import { buildTupleCursorPage } from "../../../common/pagination/cursor";
+import { INCIDENT_PAGE_SIZE, NULL_DETECTED_AT, decodeIncidentCursor } from "./incident-cursor";
+import { assertUsersInOrg } from "../../../common/tenant/org-membership";
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-const NULL_DETECTED_AT = "__NULL_DETECTED_AT__";
-const INCIDENT_PAGE_SIZE = 100;
-
-function decodeIncidentCursor(cursor: string | undefined) {
-  if (!cursor) return undefined;
-  const parts = decodeTupleCursor(cursor, 2);
-  if (!parts) throw new BadRequestException("Invalid pagination cursor");
-  const [detectedAtValue, idValue] = parts;
-  const id = Number(idValue);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > 2_147_483_647) {
-    throw new BadRequestException("Invalid pagination cursor");
-  }
-  if (detectedAtValue === NULL_DETECTED_AT) return { id, detectedAt: null };
-  const detectedAt = new Date(detectedAtValue);
-  if (Number.isNaN(detectedAt.getTime()) || detectedAt.toISOString() !== detectedAtValue) {
-    throw new BadRequestException("Invalid pagination cursor");
-  }
-  return { id, detectedAt };
-}
-
 type IncidentRow = typeof projectIncidents.$inferSelect;
 type IncidentPatch = Partial<typeof projectIncidents.$inferInsert>;
 type SlaFields = Pick<IncidentPatch, "respondedAt" | "resolvedAt">;
@@ -153,7 +135,8 @@ export class IncidentsService {
   }
 
   async createIncident(u: CurrentUserContext, projectId: number, input: CreateIncidentInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
+    await assertUsersInOrg(this.db, u.orgId, input.ownerId ? [input.ownerId] : []);
     const [incident] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
@@ -199,7 +182,8 @@ export class IncidentsService {
     incidentId: number,
     input: UpdateIncidentInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
+    await assertUsersInOrg(this.db, u.orgId, input.ownerId ? [input.ownerId] : []);
     const current = await this.loadIncident(u.orgId, projectId, incidentId);
     const patch: IncidentPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -300,7 +284,7 @@ export class IncidentsService {
   }
 
   async deleteIncident(u: CurrentUserContext, projectId: number, incidentId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
     await this.db
       .update(projectIncidents)
@@ -328,7 +312,7 @@ export class IncidentsService {
     incidentId: number,
     input: AddIncidentUpdateInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const current = await this.loadIncident(u.orgId, projectId, incidentId);
 
     if (current.status === "closed" && input.newStatus !== undefined && input.newStatus !== "closed") {
@@ -399,7 +383,7 @@ export class IncidentsService {
     incidentId: number,
     input: AddIncidentDecisionInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
 
     const [decision] = await this.db
@@ -430,8 +414,9 @@ export class IncidentsService {
     incidentId: number,
     input: CreateFollowUpActionInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
+    await assertUsersInOrg(this.db, u.orgId, input.ownerId ? [input.ownerId] : []);
 
     const [action] = await this.db
       .insert(incidentFollowUpActions)
@@ -464,8 +449,9 @@ export class IncidentsService {
     followUpActionId: number,
     input: UpdateFollowUpActionInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadIncident(u.orgId, projectId, incidentId);
+    await assertUsersInOrg(this.db, u.orgId, input.ownerId ? [input.ownerId] : []);
 
     const patch: Partial<typeof incidentFollowUpActions.$inferInsert> = {};
     if (input.title !== undefined) patch.title = input.title;

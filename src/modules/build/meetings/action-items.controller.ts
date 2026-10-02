@@ -47,7 +47,7 @@ export class ActionItemsController {
     @Body() body: CreateActionItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createItem(u.orgId, u.userId, projectId, meetingId, body);
+    return this.svc.createItem(u, projectId, meetingId, body);
   }
 
   @Patch(":itemId")
@@ -61,7 +61,7 @@ export class ActionItemsController {
     @Body() body: UpdateActionItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateItem(u.orgId, u.userId, projectId, meetingId, itemId, body);
+    return this.svc.updateItem(u, projectId, meetingId, itemId, body);
   }
 
   @Delete(":itemId")
@@ -75,7 +75,7 @@ export class ActionItemsController {
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteItem(u.orgId, u.userId, projectId, meetingId, itemId);
+    return this.svc.deleteItem(u, projectId, meetingId, itemId);
   }
 
   @Post(":itemId/convert-to-task")
@@ -90,6 +90,6 @@ export class ActionItemsController {
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.convertToTask(u.orgId, u.userId, projectId, meetingId, itemId);
+    return this.svc.convertToTask(u, projectId, meetingId, itemId);
   }
 }

@@ -1,9 +1,9 @@
+import { actorIn, programsService } from "./__tests__/portfolio-spec-fixtures";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import type { PgSelectBase, SelectedFields } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
-import { AuditService } from "../../../common/audit/audit.service";
 import { listProgramsQuerySchema } from "./dto/portfolios.schemas";
 import { ProgramsService } from "./programs.service";
 
@@ -45,8 +45,8 @@ function renderListSql(query: Parameters<ProgramsService["listPrograms"]>[1]): P
     },
   } as unknown as Db;
 
-  return new ProgramsService(db, {} as AuditService)
-    .listPrograms("org-1", query)
+  return programsService(db)
+    .then((svc) => svc.listPrograms(actorIn("org-1"), query))
     .then(() => rendered);
 }
 

@@ -1,5 +1,9 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import type { AccessService } from "../../../access/access.service";
+import { MEMBER_STANDING, principalAccess } from "../../__tests__/project-access-doubles";
+
+const memberAccess = () => principalAccess(MEMBER_STANDING) as unknown as AccessService;
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { AllWorkQuery } from "../dto/projects.schemas";
@@ -77,7 +81,7 @@ describe("getAllWork assignee UNION — independently indexable branches (BE-81)
       execute: capturedExecute,
     } as unknown as Db;
 
-    const svc = new ProjectsWorkQueryService(db);
+    const svc = new ProjectsWorkQueryService(db, memberAccess());
     await svc.getAllWork(ACTOR, makeQuery());
 
     renderedUnionSql = dialect.sqlToQuery(capturedExecute.mock.calls[0]?.[0]);
@@ -142,7 +146,7 @@ describe("getAllWork assignee UNION — shared-createdAt tiebreak pagination", (
       .mockReturnValueOnce(makeChain([]));
 
     const db1 = { select: select1, execute: execute1 } as unknown as Db;
-    const svc1 = new ProjectsWorkQueryService(db1);
+    const svc1 = new ProjectsWorkQueryService(db1, memberAccess());
     const page1 = await svc1.getAllWork(ACTOR, makeQuery({ limit: 1 }));
 
     expect(page1.data.map((r) => r.id)).toEqual([20]);
@@ -157,7 +161,7 @@ describe("getAllWork assignee UNION — shared-createdAt tiebreak pagination", (
       .mockReturnValueOnce(makeChain([]));
 
     const db2 = { select: select2, execute: execute2 } as unknown as Db;
-    const svc2 = new ProjectsWorkQueryService(db2);
+    const svc2 = new ProjectsWorkQueryService(db2, memberAccess());
     const page2 = await svc2.getAllWork(ACTOR, makeQuery({ limit: 1, cursor: cursor1! }));
 
     expect(page2.data.map((r) => r.id)).toEqual([10]);
@@ -189,7 +193,7 @@ describe("getAllWork scope=mine assignee UNION — no OR between the null check 
       execute,
     } as unknown as Db;
 
-    const svc = new ProjectsWorkQueryService(db);
+    const svc = new ProjectsWorkQueryService(db, memberAccess());
     await svc.getAllWork(ACTOR, makeQuery({ scope: "mine" }));
 
     idSql = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   and,
   desc,
@@ -104,10 +104,10 @@ export class KbPageTrashQueryService {
           predicate,
         ),
       );
-    const visibleIds = found.map((p) => p.id);
-    if (visibleIds.length === 0) {
-      return { pageCount: 0, descendantCount: 0 };
-    }
+    const visible = new Set(found.map((p) => p.id));
+    if (input.pageIds.some((id) => !visible.has(id)))
+      throw new NotFoundException("One or more pages not found");
+    const visibleIds = [...visible];
     const subtreeIds = await this.db.transaction((tx) =>
       collectSubtreeIds(tx, orgId, visibleIds),
     );

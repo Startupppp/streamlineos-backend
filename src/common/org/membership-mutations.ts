@@ -1,9 +1,9 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { organizationMembers } from "../../db/schema";
-import type { CacheService } from "../cache/cache.service";
 import {
   commitAccessChange,
-  scheduleStandingRevocation,
+  scheduleStandingChange,
+  type CommitAccessOpts,
   type DbOrTx,
 } from "../rbac/access-mutation-commit";
 import {
@@ -37,9 +37,8 @@ export class MembershipMutations {
     this.pending.add(userId);
   }
 
-  async [DRAIN](cache: CacheService): Promise<void> {
-    if (this.pending.size === 0) return;
-    await scheduleStandingRevocation(cache, [...this.pending]);
+  async [DRAIN](): Promise<void> {
+    await scheduleStandingChange([...this.pending]);
   }
 
   // organizations.owner_membership_id and organization_members.org_id point at each other, so a bootstrap needs the id first.
@@ -144,9 +143,10 @@ export class MembershipMutations {
     return byUserId;
   }
 
-  async changeRole(
+  async changeRole<E = never>(
     tx: DbOrTx,
     input: { orgId: string; userId: string; role: string },
+    access?: CommitAccessOpts<E>,
   ): Promise<number | null> {
     const [member] = await tx
       .update(organizationMembers)
@@ -160,13 +160,14 @@ export class MembershipMutations {
       .returning({ id: organizationMembers.id });
     this.record(input.userId);
     if (!member) return null;
-    await syncStructuralRoleAssignment(tx, input.orgId, member.id, input.role);
+    await syncStructuralRoleAssignment(tx, input.orgId, member.id, input.role, access);
     return member.id;
   }
 
-  async changeRoles(
+  async changeRoles<E = never>(
     tx: DbOrTx,
     input: { orgId: string; userIds: readonly string[]; role: string },
+    access?: CommitAccessOpts<E>,
   ): Promise<number[]> {
     if (input.userIds.length === 0) return [];
     const rows = await tx
@@ -181,11 +182,11 @@ export class MembershipMutations {
       .returning({ id: organizationMembers.id });
     for (const userId of input.userIds) this.record(userId);
     const membershipIds = rows.map((row) => row.id);
-    await syncStructuralRoleAssignments(tx, input.orgId, membershipIds, input.role);
+    await syncStructuralRoleAssignments(tx, input.orgId, membershipIds, input.role, access);
     return membershipIds;
   }
 
-  async setLifecycleStatus(
+  async setLifecycleStatus<E = never>(
     tx: DbOrTx,
     input: {
       orgId: string;
@@ -193,6 +194,7 @@ export class MembershipMutations {
       status: MembershipStatus;
       occurredAt: Date;
     },
+    access?: CommitAccessOpts<E>,
   ): Promise<void> {
     await tx
       .update(organizationMembers)
@@ -203,7 +205,7 @@ export class MembershipMutations {
           eq(organizationMembers.orgId, input.orgId),
         ),
       );
-    await commitAccessChange(tx, input.orgId);
+    await commitAccessChange(tx, input.orgId, access);
     this.record(input.userId);
   }
 
@@ -212,7 +214,7 @@ export class MembershipMutations {
    * permission version bump: the column grants nothing, it records that every
    * onboarding task closed.
    *
-   * It is still a membership write and still needs the bust, because the guard
+   * It is still a membership write and still needs the standing clear, because the guard
    * caches the whole row — two writers were setting it directly
    * (`cron/cron-hr.service.ts` and `hr/onboarding/core/onboarding-submission.service.ts`),
    * which is the second-writer shape `check:membership-writes` exists to stop.
@@ -274,9 +276,10 @@ export class MembershipMutations {
     this.record(input.to.userId);
   }
 
-  async deleteMembership(
+  async deleteMembership<E = never>(
     tx: DbOrTx,
     input: { orgId: string; userId: string },
+    access?: CommitAccessOpts<E>,
   ): Promise<void> {
     await tx
       .delete(organizationMembers)
@@ -286,7 +289,7 @@ export class MembershipMutations {
           eq(organizationMembers.userId, input.userId),
         ),
       );
-    await commitAccessChange(tx, input.orgId);
+    await commitAccessChange(tx, input.orgId, access);
     this.record(input.userId);
   }
 
@@ -307,13 +310,12 @@ export class MembershipMutations {
   }
 }
 
-// `run` rejecting drains nothing, so a rolled-back membership change publishes no bust.
+// `run` rejecting drains nothing, so a rolled-back membership change publishes no standing change.
 export async function withMembershipMutations<T>(
-  cache: CacheService,
   run: (mutations: MembershipMutations) => Promise<T>,
 ): Promise<T> {
   const mutations = new MembershipMutations();
   const result = await run(mutations);
-  await mutations[DRAIN](cache);
+  await mutations[DRAIN]();
   return result;
 }

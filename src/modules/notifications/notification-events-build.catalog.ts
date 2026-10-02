@@ -6,6 +6,9 @@ import {
 } from "./notification-event-channel-policy";
 import { notificationEvent } from "./notification-event-factory";
 
+export const BUILD_RELEASE_RESOURCE = "build.release";
+export const BUILD_APPROVAL_RESOURCE = "build.approval";
+
 export const BUILD_NOTIFICATION_EVENTS = [
   notificationEvent("build.ticket.assigned", "build", "PROJECTS", "Task assigned to you", {
     defaultPriority: "HIGH", defaultChannels: IN_APP_PUSH_EMAIL,
@@ -31,13 +34,14 @@ export const BUILD_NOTIFICATION_EVENTS = [
   }),
   notificationEvent("build.release.published", "build", "PROJECTS", "Release published", {
     defaultPriority: "LOW", defaultType: "SUCCESS", defaultChannels: IN_APP,
+    visibilityResourceKind: BUILD_RELEASE_RESOURCE,
   }),
   notificationEvent("build.blocker.created", "build", "PROJECTS", "Blocker reported", {
     defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IN_APP_EMAIL,
     visibilityResourceKind: BUILD_TICKET_RESOURCE,
   }),
   notificationEvent("build.approval.requested", "build", "WORKFLOW", "Approval requested", {
-    defaultPriority: "HIGH", defaultChannels: IN_APP_EMAIL,
+    defaultPriority: "HIGH", defaultChannels: IN_APP_EMAIL, visibilityResourceKind: BUILD_APPROVAL_RESOURCE,
   }),
   notificationEvent("build.project.member_added", "build", "PROJECTS", "Added to a project", {
     defaultChannels: IN_APP_EMAIL,

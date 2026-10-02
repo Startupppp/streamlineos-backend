@@ -111,7 +111,7 @@ export class ManagedProductsController {
     @Query() query: ProductInsightsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getProductInsights(u.orgId, managedProductId, query);
+    return this.svc.getProductInsights(u, managedProductId, query);
   }
 
   @Delete(":managedProductId")

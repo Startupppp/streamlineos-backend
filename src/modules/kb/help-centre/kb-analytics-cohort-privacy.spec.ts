@@ -171,7 +171,7 @@ describe("KB content-gap analytics — the raw search strings of a cohort smalle
 
   it("floors the no-results cohort above one while still projecting the query string it would otherwise disclose", async () => {
     const { db, havings, selected } = makeGapDb();
-    const service = new KbContentGapService(db as never, {} as never, {} as never);
+    const service = new KbContentGapService(db as never, {} as never);
 
     await service.noResults("org-1", {});
 
@@ -183,7 +183,7 @@ describe("KB content-gap analytics — the raw search strings of a cohort smalle
 
   it("floors the content-gap cohort on the same constant", async () => {
     const { db, havings, selected } = makeGapDb();
-    const service = new KbContentGapService(db as never, {} as never, {} as never);
+    const service = new KbContentGapService(db as never, {} as never);
 
     await service.contentGaps("org-1", {});
 

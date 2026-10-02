@@ -2,6 +2,8 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EntityReferenceService } from "../../entity-reference/entity-reference.service";
+import type { Db } from "../../../db/drizzle.module";
+import { assertChannelMember, assertChannelAdmin } from "../chat-channel-authorization";
 import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
 import { ChatChannelMemberState } from "../chat-channel-member-state";
 import { ChatMessageTimelineService } from "../chat-message-timeline.service";
@@ -584,5 +586,106 @@ describe("ChatMessageTimelineService — thread BOLA", () => {
     const result = await svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date("2020-01-01"), undefined, 50);
     expect(Array.isArray(result.messages)).toBe(true);
     expect(result).toHaveProperty("hasMore");
+  });
+});
+
+describe("canonical assertChannelMember — 404-not-403 invariant (proved once for all callers)", () => {
+  const MEMBERSHIP_ID_CANON = 55;
+
+  function makeCanonDb(overrides: Partial<{
+    channelRow: { id: number; isPrivate: boolean; entityType: string | null; entityId: string | null } | null;
+    orgMemberRow: { id: number; isOwner: boolean } | null;
+    channelMemberRow: { role: string } | null;
+  }> = {}) {
+    const {
+      channelRow = { id: CHANNEL_ID, isPrivate: false, entityType: null, entityId: null },
+      orgMemberRow = { id: MEMBERSHIP_ID_CANON, isOwner: false },
+      channelMemberRow = { role: "MEMBER" },
+    } = overrides;
+    return {
+      query: {
+        chatChannels: { findFirst: jest.fn().mockResolvedValue(channelRow) },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue(orgMemberRow) },
+        chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(channelMemberRow) },
+      },
+    } as unknown as Db;
+  }
+
+  it("DENY: cross-tenant channel id → 404, never 403 (channel row scoped by orgId)", async () => {
+    const db = makeCanonDb({ channelRow: null });
+    const err = await assertChannelMember(db, CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(err).not.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("DENY: same-org non-active-member → 403 (in-tenant permission denial, existence ok to reveal)", async () => {
+    const db = makeCanonDb({ orgMemberRow: null, channelMemberRow: null });
+    const err = await assertChannelMember(db, CHANNEL_ID, USER_ATTACKER, ORG_OWNER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+  });
+
+  it("DENY: private-channel non-member → 404, never 403 (existence concealed)", async () => {
+    const db = makeCanonDb({ channelRow: { id: CHANNEL_ID, isPrivate: true, entityType: null, entityId: null }, channelMemberRow: null });
+    const err = await assertChannelMember(db, CHANNEL_ID, USER_ATTACKER, ORG_OWNER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(err).not.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("DENY: public-channel non-member → 403 (existence ok to reveal, membership denied)", async () => {
+    const db = makeCanonDb({ channelRow: { id: CHANNEL_ID, isPrivate: false, entityType: null, entityId: null }, channelMemberRow: null });
+    const err = await assertChannelMember(db, CHANNEL_ID, USER_ATTACKER, ORG_OWNER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err).not.toBeInstanceOf(NotFoundException);
+  });
+
+  it("ALLOW: channel member → returns standing with the expected membershipId", async () => {
+    const db = makeCanonDb();
+    const standing = await assertChannelMember(db, CHANNEL_ID, USER_OWNER, ORG_OWNER);
+    expect(standing.membershipId).toBe(MEMBERSHIP_ID_CANON);
+    expect(standing.role).toBe("MEMBER");
+  });
+});
+
+describe("canonical assertChannelAdmin — role requirement proved once for all callers", () => {
+  const MEMBERSHIP_ID_ADMIN = 77;
+
+  function makeAdminDb(role: string, channelFound = true, orgMemberFound = true) {
+    return {
+      query: {
+        chatChannels: {
+          findFirst: jest.fn().mockResolvedValue(
+            channelFound ? { id: CHANNEL_ID, isPrivate: false, entityType: null, entityId: null } : null,
+          ),
+        },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue(
+            orgMemberFound ? { id: MEMBERSHIP_ID_ADMIN, isOwner: false } : null,
+          ),
+        },
+        chatChannelMembers: {
+          findFirst: jest.fn().mockResolvedValue(role ? { role } : null),
+        },
+      },
+    } as unknown as Db;
+  }
+
+  it("DENY: non-admin member → 403", async () => {
+    const db = makeAdminDb("MEMBER");
+    const err = await assertChannelAdmin(db, CHANNEL_ID, USER_OWNER, ORG_OWNER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+  });
+
+  it("DENY: cross-tenant channel → 404 before role is checked", async () => {
+    const db = makeAdminDb("ADMIN", false);
+    const err = await assertChannelAdmin(db, CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(err).not.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("ALLOW: admin member → returns membershipId as a number", async () => {
+    const db = makeAdminDb("ADMIN");
+    const result = await assertChannelAdmin(db, CHANNEL_ID, USER_OWNER, ORG_OWNER);
+    expect(typeof result).toBe("number");
+    expect(result).toBe(MEMBERSHIP_ID_ADMIN);
   });
 });

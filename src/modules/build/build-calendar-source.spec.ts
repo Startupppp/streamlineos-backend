@@ -4,6 +4,11 @@ import { sourceLoadEvents, sourceLoadTruncated } from "../calendar/calendar-even
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CALENDAR_PER_SOURCE_CAP, CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import { Test } from "@nestjs/testing";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { AccessService } from "../access/access.service";
+import { MembershipStateService } from "../../common/auth/membership-state.service";
+import { MEMBER_STANDING, principalAccess } from "./__tests__/project-access-doubles";
 
 const MEMBERSHIP_ID = 77;
 
@@ -14,48 +19,54 @@ const ctx: CalendarSourceContext = {
   end: new Date("2026-08-31"),
 };
 
-function buildDb(ticketRows: unknown[], membershipRows: { id: number }[] = [{ id: MEMBERSHIP_ID }]): unknown {
-  let callCount = 0;
+let capturedWhere: SQL | undefined;
+
+function buildDb(ticketRows: unknown[]): unknown {
   return {
-    select: jest.fn().mockImplementation(() => {
-      callCount++;
-      const idx = callCount;
-
-      if (idx === 1) {
-        return {
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue(membershipRows),
-            }),
-          }),
-        };
-      }
-
-      return {
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockResolvedValue(ticketRows),
+    select: jest.fn().mockImplementation(() => ({
+      from: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockImplementation(function (this: unknown, where: SQL) {
+          capturedWhere = where;
+          return this;
         }),
-      };
-    }),
+        limit: jest.fn().mockResolvedValue(ticketRows),
+      }),
+    })),
   };
 }
 
-async function buildSource(db: unknown): Promise<BuildCalendarSource> {
+async function buildSource(db: unknown, membership: { active: boolean; isOwner: boolean } = { active: true, isOwner: false }): Promise<BuildCalendarSource> {
   const module = await Test.createTestingModule({
     providers: [
       BuildCalendarSource,
       { provide: DRIZZLE, useValue: db },
       { provide: CalendarSourceRegistry, useValue: { register: jest.fn() } },
+      { provide: AccessService, useValue: principalAccess(MEMBER_STANDING) },
+      {
+        provide: MembershipStateService,
+        useValue: {
+          resolve: jest.fn().mockResolvedValue({
+            active: membership.active,
+            isOwner: membership.isOwner,
+            role: "MEMBER",
+            membershipId: membership.active ? MEMBERSHIP_ID : null,
+          }),
+        },
+      },
     ],
   }).compile();
   return module.get(BuildCalendarSource);
 }
 
+const renderedWhere = () => {
+  if (!capturedWhere) throw new Error("the calendar read must carry a predicate");
+  return new PgDialect().sqlToQuery(capturedWhere).sql;
+};
+
 describe("BuildCalendarSource", () => {
   it("has the expected key, label and module", () => {
-    const source = new BuildCalendarSource(null as never, { register: jest.fn() } as never);
+    const source = new BuildCalendarSource(null as never, { register: jest.fn() } as never, null as never, null as never);
     expect(source.key).toBe("build");
     expect(source.label).toBe("Build");
     expect(source.module).toBe("build");
@@ -69,7 +80,7 @@ describe("BuildCalendarSource", () => {
   });
 
   it("returns an empty event list when the caller has no active org membership so a non-member or suspended user sees no calendar events", async () => {
-    const source = await buildSource(buildDb([], []));
+    const source = await buildSource(buildDb([]), { active: false, isOwner: false });
     const result = await source.load(ctx);
     expect(sourceLoadEvents(result)).toHaveLength(0);
     expect(sourceLoadTruncated(result)).toBe(false);
@@ -103,10 +114,17 @@ describe("BuildCalendarSource", () => {
     expect(proj?.meta["projectId"]).toBe(3);
   });
 
-  it("only surfaces tickets reachable by the user's active membership so tickets in inaccessible projects are excluded", async () => {
+  it("filters a member's calendar through the project-access ticket visibility rule", async () => {
     const source = await buildSource(buildDb([]));
-    const result = await source.load(ctx);
-    expect(sourceLoadEvents(result)).toHaveLength(0);
+    await source.load(ctx);
+    expect(renderedWhere()).toContain("project_members");
+    expect(renderedWhere()).toContain("project_team_assignments");
+  });
+
+  it("gives the org owner every project, matching the owner bypass of the project list", async () => {
+    const source = await buildSource(buildDb([]), { active: true, isOwner: true });
+    await source.load(ctx);
+    expect(renderedWhere()).not.toContain("project_members");
   });
 
   it("skips rows where dueDate is null", async () => {
@@ -139,7 +157,7 @@ describe("BuildCalendarSource", () => {
   });
 
   it("has no per-source module gate — CalendarSourceRegistry gates on source.module before calling load (see calendar-source.registry.spec.ts)", () => {
-    const source = new BuildCalendarSource(null as never, { register: jest.fn() } as never);
+    const source = new BuildCalendarSource(null as never, { register: jest.fn() } as never, null as never, null as never);
     expect(source.module).toBe("build");
   });
 

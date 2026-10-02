@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const KB_PERMISSIONS: Permission[] = [
+export const KB_PERMISSIONS = definePermissions([
   {
     name: "kb:articles:view",
     resource: "kb:articles",
@@ -135,4 +135,4 @@ export const KB_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage knowledge base settings",
   },
-];
+]);

@@ -85,7 +85,7 @@ export async function assertTransitionAllowed(
   context: {
     userId: string;
     userProjectRole: string | null;
-    isOrgOwner: boolean;
+    bypassesWorkflow: boolean;
     ticketId: number;
   },
   prefetched?: PrefetchedWorkflow,
@@ -115,7 +115,7 @@ export async function assertTransitionAllowed(
     );
   }
 
-  const bypassPrivilege = context.isOrgOwner;
+  const bypassPrivilege = context.bypassesWorkflow;
 
   const readTicketRequiredFields = () =>
     db

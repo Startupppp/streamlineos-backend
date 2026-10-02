@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import { tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -18,8 +18,14 @@ import {
   microsecondCursorValue,
 } from "../../../common/pagination/keyset";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
-import { assertProjectInOrg } from "../core";
+import {
+  assertProjectAccess,
+  assertProjectVisible,
+  authorizeTicketMutation,
+  readMutationTickets,
+} from "../core";
 import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { AccessService } from "../../access/access.service";
 
 @Injectable()
 export class EpicsService {
@@ -28,10 +34,12 @@ export class EpicsService {
     private readonly ticketCreation: BuildTicketCreationService,
     private readonly ticketChange: ProjectsTicketsUpdateService,
     private readonly ticketDelete: ProjectsTicketsDeleteService,
+    private readonly access: AccessService,
   ) {}
 
-  async listEpics(orgId: string, projectId: number, query: EpicListQuery = {}) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async listEpics(actor: CurrentUserContext, projectId: number, query: EpicListQuery = {}) {
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const limit = Math.min(query.limit ?? PAGE_SIZE_CAP, PAGE_SIZE_CAP);
     const position = decodeTimestampCursor(query.cursor);
     const conditions: (SQL<unknown> | undefined)[] = [
@@ -42,7 +50,7 @@ export class EpicsService {
       query.status ? eq(tickets.status, query.status) : undefined,
       query.health ? eq(tickets.health, query.health) : undefined,
       query.q && query.q.trim()
-        ? ilike(tickets.title, `%${query.q.trim().replace(/[%_\\]/g, "\\$&")}%`)
+        ? sql`to_tsvector('english', coalesce(${tickets.title},'')) @@ plainto_tsquery('english', ${query.q.trim()})`
         : undefined,
       query.ownerId
         ? sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${query.ownerId})`
@@ -107,8 +115,9 @@ export class EpicsService {
     }));
   }
 
-  async createEpic(orgId: string, userId: string, projectId: number, input: CreateEpicInput) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async createEpic(actor: CurrentUserContext, projectId: number, input: CreateEpicInput) {
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const { orgId, userId } = actor;
     const created = await this.ticketCreation.create({
       orgId,
       projectId,
@@ -164,6 +173,7 @@ export class EpicsService {
   }
 
   async deleteEpic(u: CurrentUserContext, projectId: number, epicId: number) {
+    await this.authorizeEpicMutation(u, projectId, epicId);
     const epic = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, epicId),
@@ -177,5 +187,10 @@ export class EpicsService {
     if (!epic) throw new NotFoundException("Epic not found");
     await this.ticketDelete.deleteTicket(u, projectId, epicId, false);
     return { success: true };
+  }
+
+  private async authorizeEpicMutation(actor: CurrentUserContext, projectId: number, epicId: number) {
+    const policy = await authorizeTicketMutation(this.db, this.access, actor, projectId);
+    await readMutationTickets(this.db, actor, projectId, [epicId], policy);
   }
 }

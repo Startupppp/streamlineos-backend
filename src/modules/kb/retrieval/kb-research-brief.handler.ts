@@ -1,5 +1,5 @@
 import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
-import { and, eq, gte, sql, sum } from "drizzle-orm";
+import { and, eq, gte, sum } from "drizzle-orm";
 import { kbResearchBriefs, organizationMembers } from "../../../db/schema";
 import { kbAiInteractions } from "../../../db/schema/kb/ai-interactions";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -15,6 +15,7 @@ import {
   humanSessionPrincipal,
 } from "../../../common/auth/principal";
 import { buildResearchBriefGraph, runResearchBrief } from "./kb-research-brief.graph";
+import { orgHasIndexedContent } from "./kb-retrieval.service";
 
 @Injectable()
 export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
@@ -43,7 +44,7 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
       .where(and(eq(kbResearchBriefs.id, briefId), eq(kbResearchBriefs.orgId, job.orgId)));
 
     try {
-      const hasContent = await this.orgHasIndexedContent(job.orgId);
+      const hasContent = await orgHasIndexedContent(this.db, job.orgId);
       if (!hasContent) {
         await this.db
           .update(kbResearchBriefs)
@@ -126,13 +127,6 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
       provider: firstRow[0]?.provider ?? null,
       model: firstRow[0]?.model ?? null,
     };
-  }
-
-  private async orgHasIndexedContent(orgId: string): Promise<boolean> {
-    const rows = await this.db.execute(
-      sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
-    );
-    return rows.length > 0;
   }
 
   private async buildUserContext(job: AiJobContext): Promise<CurrentUserContext> {

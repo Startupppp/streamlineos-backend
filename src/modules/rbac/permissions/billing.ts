@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const BILLING_PERMISSIONS: Permission[] = [
+export const BILLING_PERMISSIONS = definePermissions([
   {
     name: "billing:subscription:view",
     resource: "billing:subscription",
@@ -134,4 +134,4 @@ export const BILLING_PERMISSIONS: Permission[] = [
     description: "Approve/reject/send enterprise quotes",
     scopable: false,
   },
-];
+]);

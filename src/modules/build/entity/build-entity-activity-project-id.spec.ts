@@ -1,6 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { BuildEntityActions } from "./build-entity.actions";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -57,6 +57,15 @@ function makeTxCapture(): {
   return { tx, getCapturedActivity: () => capturedValues };
 }
 
+function writableProjectSelect(): jest.Mock {
+  const limit = jest.fn().mockResolvedValue([{ state: "ACTIVE", reachable: true }]);
+  const where = jest.fn().mockReturnValue({ limit });
+  const from = jest.fn().mockReturnValue({ where });
+  return jest.fn().mockReturnValue({ from });
+}
+
+const REACH = sql`true`;
+
 async function buildService(
   db: object,
 ): Promise<BuildEntityActions> {
@@ -100,13 +109,14 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 99 }) },
         projects: { findFirst: jest.fn() },
       },
+      select: writableProjectSelect(),
       transaction: jest.fn().mockImplementation(
         async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
       ),
     };
 
     const service = await buildService(db);
-    const result = await service.run(OWNER, TICKET_REF, "status", { status: "IN_PROGRESS" });
+    const result = await service.run(OWNER, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
     expect(result.ok).toBe(true);
     expect(getCapturedActivity()?.["projectId"]).toBe(PROJECT_ID);
@@ -122,13 +132,14 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 55 }) },
         projects: { findFirst: jest.fn() },
       },
+      select: writableProjectSelect(),
       transaction: jest.fn().mockImplementation(
         async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
       ),
     };
 
     const service = await buildService(db);
-    const result = await service.run(OWNER, TICKET_REF, "assign", { assigneeId: "user_2" });
+    const result = await service.run(OWNER, TICKET_REF, "assign", { assigneeId: "user_2" }, REACH);
 
     expect(result.ok).toBe(true);
     expect(getCapturedActivity()?.["projectId"]).toBe(PROJECT_ID);
@@ -144,13 +155,14 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 99 }) },
         projects: { findFirst: jest.fn() },
       },
+      select: writableProjectSelect(),
       transaction: jest.fn().mockImplementation(
         async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
       ),
     };
 
     const service = await buildService(db);
-    const result = await service.run(OWNER, TICKET_REF, "due-date", { dueDate: "2027-01-01" });
+    const result = await service.run(OWNER, TICKET_REF, "due-date", { dueDate: "2027-01-01" }, REACH);
 
     expect(result.ok).toBe(true);
     expect(getCapturedActivity()?.["projectId"]).toBe(PROJECT_ID);

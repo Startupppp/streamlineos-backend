@@ -2,6 +2,9 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import type { AccessService } from "../../../access/access.service";
+import type { StandingScopes } from "../../__tests__/project-access-doubles";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ScopeDirectoryService } from "../scope-directory.service";
 
 const dialect = new PgDialect();
@@ -63,13 +66,26 @@ export function makeDb(responses: TableResponses) {
   return { db, calls };
 }
 
-export function makeAccess(buildManageScope: string | null = "all"): AccessService {
-  const perms = buildManageScope !== null
-    ? new Map([["build:manage", buildManageScope]])
-    : new Map<string, string>();
+export function makeAccess(buildManageScope: StandingScopes[string] | null = "all"): AccessService {
+  const scopes: StandingScopes = {
+    "build:manage": buildManageScope ?? "none",
+    "build:view": "own",
+  };
   return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(perms),
+    scopeFor: jest.fn(async (_actor: CurrentUserContext, key: string) => scopes[key] ?? "none"),
   } as unknown as AccessService;
+}
+
+export function actor(membershipId: number | null, orgId: string = ORG): CurrentUserContext {
+  return {
+    orgId,
+    userId: USER,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s-1",
+    tokenScopes: null,
+    principal: membershipId === null ? ACCOUNT_ONLY_PRINCIPAL : humanSessionPrincipal(membershipId, false),
+  };
 }
 
 export function makeSvc(db: Db, access: AccessService = makeAccess()) {

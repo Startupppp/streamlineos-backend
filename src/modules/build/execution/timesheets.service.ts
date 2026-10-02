@@ -21,7 +21,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { membershipScope } from "../../timesheets/core/timesheets-core-scope";
 import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
-import { resolveTimesheetsScope } from "./timesheets-scope";
+import { resolveTimesheetsScope, timesheetProjectReachSql } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
 import { timeEntryCursorPredicate, timeEntryPage } from "./timesheets-pagination";
 import { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
@@ -34,7 +34,8 @@ import type {
   TimeEntryPaginationQuery,
   UpdateEntryInput,
 } from "./dto/timesheets.schemas";
-import { assertProjectAccess, assertProjectInOrg } from "../core";
+import { assertProjectWriteAccess } from "../core";
+import { assertProjectVisible } from "../core";
 
 @Injectable()
 export class TimesheetsService {
@@ -71,7 +72,7 @@ export class TimesheetsService {
   async listTimeEntries(user: CurrentUserContext, query: TimeEntriesListQuery) {
     const limit = query.limit;
     const cursorPredicate = timeEntryCursorPredicate(query.cursor);
-    if (query.projectId) await assertProjectInOrg(this.db, user.orgId, query.projectId);
+    if (query.projectId) await assertProjectVisible(this.db, this.access, user, query.projectId);
     if (query.ticketId) {
       const ticket = await this.db.query.tickets.findFirst({ where: and(
         eq(tickets.id, query.ticketId), eq(tickets.orgId, user.orgId), isNull(tickets.deletedAt),
@@ -80,10 +81,13 @@ export class TimesheetsService {
       if (!ticket) throw new NotFoundException("Ticket not found");
     }
 
-    const read = await resolveTimesheetsScope(this.access, user);
+    const [read, projectReach] = await Promise.all([
+      resolveTimesheetsScope(this.access, user),
+      timesheetProjectReachSql(this.access, user),
+    ]);
     const membershipId = actingMembershipId(user.principal);
 
-    const conditions = [eq(timesheets.orgId, user.orgId), isNull(timesheets.voidedAt)];
+    const conditions = [eq(timesheets.orgId, user.orgId), isNull(timesheets.voidedAt), projectReach];
     if (query.ticketId)
       conditions.push(eq(timesheets.ticketId, query.ticketId));
     conditions.push(
@@ -322,6 +326,7 @@ export class TimesheetsService {
     const conditions = [
       eq(timesheets.orgId, user.orgId),
       isNull(timesheets.voidedAt),
+      await timesheetProjectReachSql(this.access, user),
       read.compose(
         { tenant: timesheets.orgId, scope: membershipScope(membershipId, timesheets.userMembershipId) },
         ({ sql: w }) => w,
@@ -363,7 +368,10 @@ export class TimesheetsService {
   }
 
   async billingSummary(user: CurrentUserContext, query: BillingSummaryQuery) {
-    const isAdmin = await this.access.holds(user, "build:manage");
+    const [isAdmin, projectReach] = await Promise.all([
+      this.access.holds(user, "build:manage"),
+      timesheetProjectReachSql(this.access, user, tickets.projectId),
+    ]);
     const { orgId, userId } = user;
     const startDate = query.startDate;
     const endDate = query.endDate;
@@ -377,6 +385,7 @@ export class TimesheetsService {
         const conditions = [
           eq(timesheets.orgId, orgId),
           eq(timesheets.isBillable, true),
+          projectReach,
         ];
         if (!isAdmin) {
           const [selfMember] = await this.db
@@ -428,7 +437,7 @@ export class TimesheetsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    await assertProjectAccess(this.db, this.access, user, projectId);
+    await assertProjectWriteAccess(this.db, this.access, user, projectId);
 
     const entryDate = formatDateOnly(input.date);
     const settings = await this.periodService.loadSettings(user.orgId);

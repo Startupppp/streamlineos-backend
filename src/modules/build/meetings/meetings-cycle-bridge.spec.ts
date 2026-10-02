@@ -8,6 +8,7 @@ import * as projectAccessSeam from "../core";
 
 jest.mock("../core/project-crud/project-access", () => ({
   assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
   assertProjectInOrg: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -121,6 +122,7 @@ function makeHarness(opts: {
 beforeEach(() => {
   jest.clearAllMocks();
   (projectAccessSeam.assertProjectAccess as jest.Mock).mockResolvedValue(undefined);
+  (projectAccessSeam.assertProjectWriteAccess as jest.Mock).mockResolvedValue(undefined);
 });
 
 describe("MeetingsService.createMeeting — cycleId binding", () => {
@@ -158,7 +160,7 @@ describe("MeetingsService.updateMeeting — cycleId binding", () => {
     const { svc, updatedPatches } = makeHarness({
       selectScript: [],
     });
-    await svc.updateMeeting("org-1", "user-7", 1, 2, { title: "Renamed" });
+    await svc.updateMeeting(makeU(), 1, 2, { title: "Renamed" });
     expect(Object.keys(updatedPatches[0]!)).not.toContain("cycleId");
   });
 
@@ -167,7 +169,7 @@ describe("MeetingsService.updateMeeting — cycleId binding", () => {
       selectScript: [],
       updatedRow: { ...MEETING_ROW, cycleId: 77 },
     });
-    await svc.updateMeeting("org-1", "user-7", 1, 2, { cycleId: 77 });
+    await svc.updateMeeting(makeU(), 1, 2, { cycleId: 77 });
     expect(updatedPatches[0]).toMatchObject({ cycleId: 77 });
   });
 
@@ -176,7 +178,7 @@ describe("MeetingsService.updateMeeting — cycleId binding", () => {
       selectScript: [],
       updatedRow: { ...MEETING_ROW, cycleId: null },
     });
-    await svc.updateMeeting("org-1", "user-7", 1, 2, { cycleId: null });
+    await svc.updateMeeting(makeU(), 1, 2, { cycleId: null });
     expect(updatedPatches[0]).toMatchObject({ cycleId: null });
   });
 });
@@ -208,7 +210,7 @@ describe("MeetingsService — sprintId removal guard", () => {
       selectScript: [],
       updatedRow: { ...MEETING_ROW, cycleId: 55 },
     });
-    await svc.updateMeeting("org-1", "user-7", 1, 2, { cycleId: 55 });
+    await svc.updateMeeting(makeU(), 1, 2, { cycleId: 55 });
     expect(Object.keys(updatedPatches[0]!)).not.toContain("sprintId");
   });
 
@@ -217,7 +219,7 @@ describe("MeetingsService — sprintId removal guard", () => {
       selectScript: [],
       updatedRow: { ...MEETING_ROW, cycleId: 55 },
     });
-    const row = await svc.updateMeeting("org-1", "user-7", 1, 2, { cycleId: 55 });
+    const row = await svc.updateMeeting(makeU(), 1, 2, { cycleId: 55 });
     expect(row).not.toHaveProperty("sprintId");
   });
 

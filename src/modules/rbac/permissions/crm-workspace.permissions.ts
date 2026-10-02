@@ -1,4 +1,4 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
 /**
  * CRM catalog: activities, settings, AI, tasks, campaigns, offer fulfilment,
@@ -7,7 +7,7 @@ import type { Permission } from "./types";
  * One slice of `CRM_PERMISSIONS`. `crm.ts` spreads the slices in a fixed
  * order and that order is the catalog order; nothing imports a slice directly.
  */
-export const CRM_WORKSPACE_PERMISSIONS: Permission[] = [
+export const CRM_WORKSPACE_PERMISSIONS = definePermissions([
   {
     name: "crm:activities:view",
     resource: "crm:activities",
@@ -176,4 +176,4 @@ export const CRM_WORKSPACE_PERMISSIONS: Permission[] = [
     action: "escalate",
     description: "Escalate an issue, task or complaint above its owner",
   },
-];
+]);

@@ -1,7 +1,11 @@
 import { Logger } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { roleAssignments, roles } from "../../db/schema";
-import { commitAccessChange, type DbOrTx } from "./access-mutation-commit";
+import {
+  commitAccessChange,
+  type CommitAccessOpts,
+  type DbOrTx,
+} from "./access-mutation-commit";
 import { ORG_MEMBER_ROLES } from "./org-roles";
 
 const logger = new Logger("StructuralRoleAssignment");
@@ -9,23 +13,39 @@ const logger = new Logger("StructuralRoleAssignment");
 const STRUCTURAL_ROLE_SLUGS = [ORG_MEMBER_ROLES.ORG_ADMIN, ORG_MEMBER_ROLES.MEMBER];
 
 /** Keeps `role_assignments` in step with a membership's structural role. */
-export function syncStructuralRoleAssignment(
+export function syncStructuralRoleAssignment<E = never>(
   tx: DbOrTx,
   orgId: string,
   organizationMembershipId: number,
   role: string,
+  access?: CommitAccessOpts<E>,
 ): Promise<void> {
-  return syncStructuralRoleAssignments(tx, orgId, [organizationMembershipId], role);
+  return syncStructuralRoleAssignments(tx, orgId, [organizationMembershipId], role, access);
 }
 
-export async function syncStructuralRoleAssignments(
+export async function syncStructuralRoleAssignments<E = never>(
   tx: DbOrTx,
   orgId: string,
   organizationMembershipIds: readonly number[],
   role: string,
+  access?: CommitAccessOpts<E>,
 ): Promise<void> {
-  const membershipIds = [...new Set(organizationMembershipIds)];
-  if (membershipIds.length === 0) return;
+  const wrote = await writeStructuralRoleAssignments(
+    tx,
+    orgId,
+    [...new Set(organizationMembershipIds)],
+    role,
+  );
+  if (wrote || access) await commitAccessChange(tx, orgId, access);
+}
+
+async function writeStructuralRoleAssignments(
+  tx: DbOrTx,
+  orgId: string,
+  membershipIds: readonly number[],
+  role: string,
+): Promise<boolean> {
+  if (membershipIds.length === 0) return false;
 
   const structuralRoles = await tx
     .select({ id: roles.id, slug: roles.slug })
@@ -46,7 +66,7 @@ export async function syncStructuralRoleAssignments(
         "Structural role rows missing for org; the member will resolve to zero permissions until system roles are seeded",
         { orgId, organizationMembershipIds: membershipIds, role },
       );
-    return;
+    return false;
   }
 
   const grantRoleId =
@@ -92,10 +112,9 @@ export async function syncStructuralRoleAssignments(
       .where(
         and(
           eq(roleAssignments.orgId, orgId),
-          inArray(roleAssignments.organizationMembershipId, membershipIds),
+          inArray(roleAssignments.organizationMembershipId, [...membershipIds]),
           inArray(roleAssignments.roleId, revokeRoleIds),
         ),
       );
-
-  await commitAccessChange(tx, orgId);
+  return true;
 }

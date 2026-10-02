@@ -5,7 +5,9 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../../common/cache/cache-keys";
-import { assertProjectInOrg } from "../project-crud/project-access";
+import { assertProjectAggregateAccess } from "../project-crud/project-access";
+import { AccessService } from "../../../access/access.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import {
   type ProjectAnalyticsQuery,
 } from "../dto/analytics.schemas";
@@ -15,10 +17,12 @@ export class ProjectsAnalyticsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
-  async getProjectAnalytics(orgId: string, projectId: number, query?: ProjectAnalyticsQuery) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async getProjectAnalytics(actor: CurrentUserContext, projectId: number, query?: ProjectAnalyticsQuery) {
+    await assertProjectAggregateAccess(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const cacheKey = `${String(projectId)}:r${query?.range ?? "all"}:o${query?.ownerId ?? ""}:t${query?.teamId ?? ""}`;
     return this.cache.cachedVersioned(
       `build:analytics:${orgId}`,

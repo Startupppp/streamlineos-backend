@@ -8,7 +8,7 @@ jest.mock("../../../common/rbac/sync-structural-role", () => ({
   syncStructuralRoleAssignment: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../../common/auth/membership-state.service", () => ({
-  bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
+  membershipStandingChannel: { publish: jest.fn() },
 }));
 jest.mock("./salary-profile-seed.helper", () => ({
   seedEmployeeSalaryProfile: jest.fn().mockResolvedValue(undefined),

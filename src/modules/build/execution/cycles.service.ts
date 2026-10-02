@@ -25,7 +25,10 @@ import type {
   CycleListQuery,
   UpdateCycleInput,
 } from "./dto/iterations.schemas";
-import { assertProjectInOrg } from "../core";
+import { assertProjectAccess } from "../core";
+import { assertProjectVisible } from "../core";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 import { TicketVersionConflictException } from "../core/tickets";
 import {
@@ -36,10 +39,14 @@ import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 @Injectable()
 export class CyclesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  async listCycles(orgId: string, projectId: number, query: CycleListQuery) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async listCycles(actor: CurrentUserContext, projectId: number, query: CycleListQuery) {
+    await assertProjectVisible(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const limit = Math.min(query.limit ?? 50, PAGE_SIZE_CAP);
     const cursor = decodeIntegerCursor(query.cursor);
 
@@ -136,12 +143,12 @@ export class CyclesService {
   }
 
   async createCycle(
-    orgId: string,
-    userId: string,
+    actor: CurrentUserContext,
     projectId: number,
     input: CreateCycleInput,
   ) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const { orgId, userId } = actor;
     const overlapping = await this.db
       .select({ id: cycles.id })
       .from(cycles)
@@ -200,12 +207,13 @@ export class CyclesService {
   }
 
   async updateCycle(
-    orgId: string,
+    actor: CurrentUserContext,
     projectId: number,
     cycleId: number,
     input: UpdateCycleInput,
   ) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     const before = await this.db.query.cycles.findFirst({
       where: and(
         eq(cycles.id, cycleId),
@@ -278,8 +286,9 @@ export class CyclesService {
     return updated;
   }
 
-  async deleteCycle(orgId: string, projectId: number, cycleId: number) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async deleteCycle(actor: CurrentUserContext, projectId: number, cycleId: number) {
+    await assertProjectAccess(this.db, this.access, actor, projectId);
+    const { orgId } = actor;
     await this.db.transaction(async (tx) => {
       await tx
         .update(tickets)

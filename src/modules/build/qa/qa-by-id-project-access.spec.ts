@@ -5,7 +5,13 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestManagementService } from "./test-management.service";
 import { TestRunsService } from "./test-runs.service";
+import type { BuildTicketCreationService } from "../core/tickets";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  standingAccess,
+} from "../__tests__/project-access-doubles";
 
 const MEMBERSHIP_ID = 7;
 const ORG = "org-1";
@@ -25,14 +31,12 @@ function makeU(): CurrentUserContext {
 }
 
 function makeAccessWithoutBuildManage() {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-  } as unknown as AccessService;
+  return standingAccess(MEMBER_STANDING) as unknown as AccessService;
 }
 
 const audit = { log: jest.fn() } as never;
 
-function membershipProbe(rows: Array<{ role: string }>) {
+function membershipProbe(rows: unknown[]) {
   const limit = jest.fn().mockResolvedValue(rows);
   const where = jest.fn().mockReturnValue({ limit });
   const innerJoin = jest
@@ -79,7 +83,7 @@ function makeNonMemberDb(): DeniedDb {
       testRuns: { findFirst: rowFindFirst },
       testRunResults: { findFirst: rowFindFirst },
     },
-    select: jest.fn().mockImplementation(() => membershipProbe([])),
+    select: jest.fn().mockImplementation(() => membershipProbe([projectAccessRow()])),
     update,
     insert,
     transaction,
@@ -91,9 +95,8 @@ function memberSelect(bodyChains: Array<() => unknown>) {
   let call = 0;
   return jest.fn().mockImplementation(() => {
     call += 1;
-    if (call === 1) return membershipProbe([{ role: "MEMBER" }]);
-    if (call === 2) return membershipProbe([]);
-    const chain = bodyChains[call - 3];
+    if (call === 1) return membershipProbe([projectAccessRow({ memberRole: "MEMBER" })]);
+    const chain = bodyChains[call - 2];
     return chain ? chain() : membershipProbe([]);
   });
 }
@@ -255,7 +258,7 @@ describe("TestManagementService — by-id routes gate on project membership, not
 describe("TestRunsService — by-id routes gate on project membership, not only orgId", () => {
   it("refuses getRun for an in-tenant non-member of the project before it reads the row", async () => {
     const { db, rowFindFirst } = makeNonMemberDb();
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.getRun(makeU(), PROJECT_ID, 5)).rejects.toThrow(ForbiddenException);
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -280,14 +283,14 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
       },
       select: memberSelect([resultsChain]),
     } as unknown as Db;
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.getRun(makeU(), PROJECT_ID, 5)).resolves.toMatchObject({ id: 5, results: [] });
   });
 
   it("refuses listRunResults for an in-tenant non-member of the project before it reads the rows", async () => {
     const { db, rowFindFirst } = makeNonMemberDb();
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.listRunResults(makeU(), PROJECT_ID, 5, { limit: 50 })).rejects.toThrow(
       ForbiddenException,
@@ -314,7 +317,7 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
       },
       select: memberSelect([rowsChain]),
     } as unknown as Db;
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.listRunResults(makeU(), PROJECT_ID, 5, { limit: 50 })).resolves.toMatchObject({
       data: [],
@@ -325,7 +328,7 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
 
   it("refuses updateRun for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update } = makeNonMemberDb();
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.updateRun(makeU(), PROJECT_ID, 5, { name: "hijacked" })).rejects.toThrow(
       ForbiddenException,
@@ -352,7 +355,7 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
       select: memberSelect([]),
       update,
     } as unknown as Db;
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.updateRun(makeU(), PROJECT_ID, 5, { name: "renamed" })).resolves.toMatchObject({
       id: 5,
@@ -363,7 +366,7 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
 
   it("refuses deleteRun for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update } = makeNonMemberDb();
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.deleteRun(makeU(), PROJECT_ID, 5)).rejects.toThrow(ForbiddenException);
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -384,7 +387,7 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
       select: memberSelect([]),
       update,
     } as unknown as Db;
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.deleteRun(makeU(), PROJECT_ID, 5)).resolves.toEqual({ success: true });
     expect(update).toHaveBeenCalledTimes(1);
@@ -392,7 +395,7 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
 
   it("refuses updateResult for an in-tenant non-member of the project before it writes", async () => {
     const { db, rowFindFirst, update } = makeNonMemberDb();
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(
       svc.updateResult(makeU(), PROJECT_ID, 5, 3, { status: "passed" }),
@@ -417,7 +420,7 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
       select: memberSelect([]),
       update,
     } as unknown as Db;
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(svc.updateResult(makeU(), PROJECT_ID, 5, 3, { status: "passed" })).resolves.toMatchObject(
       { id: 3, status: "passed", executedBy: "user-7" },
@@ -427,7 +430,7 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
 
   it("refuses createBugFromResultConsolidated for an in-tenant non-member of the project before it opens a transaction", async () => {
     const { db, rowFindFirst, transaction } = makeNonMemberDb();
-    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
+    const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit, {} as unknown as BuildTicketCreationService);
 
     await expect(
       svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 5, 3, { description: "broken" }),

@@ -152,6 +152,15 @@ export class UserModuleAccessService {
             set: { enabled, updatedBy },
           });
         await commitAccessChange(tx, orgId, {
+          audit: {
+            action: enabled ? "module_access.user_enabled" : "module_access.user_disabled",
+            userId: updatedBy,
+            targetId: userId,
+            targetType: "user",
+            resourceType: "module",
+            resourceId: moduleKey,
+            metadata: { moduleKey, enabled, membershipId: member.id },
+          },
           revoke: { cache: this.cache, loses: [{ kind: "permissions", userIds: [userId] }] },
         });
       },

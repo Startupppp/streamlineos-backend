@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsWriteService } from "./projects-write.service";
+import { standingAccess } from "../../__tests__/project-access-doubles";
 
 describe("ProjectsWriteService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -14,7 +15,7 @@ describe("ProjectsWriteService — cross-tenant isolation", () => {
     } as unknown as Db;
   }
   const audit = { log: jest.fn() } as never;
-  const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as never;
+  const access = standingAccess({ "build:manage": "all", "build:delete": "all" }) as never;
   const projectsQuery = {} as never;
 
   it("throws NotFoundException when deleting a project from a different org (cross-tenant isolation)", async () => {

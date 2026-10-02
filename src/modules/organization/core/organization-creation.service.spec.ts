@@ -46,7 +46,6 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 jest.mock("../../../common/org/membership-mutations", () => ({
   withMembershipMutations: (
-    _cache: unknown,
     fn: (membership: unknown) => unknown,
   ) => fn({ allocateMembershipId: async () => 7, createOwnerMembership: async () => undefined }),
 }));
@@ -130,7 +129,10 @@ async function build(options: {
     providers: [
       OrganizationCreationService,
       { provide: DRIZZLE, useValue: db },
-      { provide: CacheService, useValue: { invalidate } },
+      {
+        provide: CacheService,
+        useValue: { invalidate, invalidateNamespace: jest.fn().mockResolvedValue(undefined) },
+      },
       {
         provide: AccountOrganizationIndexService,
         useValue: { refreshForUser, touchLastActivated, activate },
@@ -216,7 +218,6 @@ describe("OrganizationCreationService", () => {
     });
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
       expect.anything(),
-      expect.anything(),
       {
         orgId: "org-fixed",
         userId: "user-1",
@@ -255,7 +256,6 @@ describe("OrganizationCreationService", () => {
     expect(placeOrganization).not.toHaveBeenCalled();
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
       expect.anything(),
-      expect.anything(),
       expect.objectContaining({ region: "eu" }),
     );
   });
@@ -280,7 +280,6 @@ describe("OrganizationCreationService", () => {
       cellId: "ap-1",
     });
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
-      expect.anything(),
       expect.anything(),
       expect.objectContaining({ region: "ap" }),
     );
@@ -413,7 +412,6 @@ describe("OrganizationCreationService", () => {
     );
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
       expect.anything(),
-      expect.anything(),
       expect.objectContaining({
         slug: "acme",
         billingEmail: "billing@acme.test",
@@ -489,7 +487,7 @@ describe("bootstrapCellOrganization", () => {
       async (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
     );
 
-    await realBootstrap()({} as never, {} as never, INPUT);
+    await realBootstrap()({} as never, INPUT);
 
     expect(ensureManyFromUsers).toHaveBeenCalledTimes(1);
     const [handle, orgId, inputs] = ensureManyFromUsers.mock.calls[0] as [
@@ -526,7 +524,7 @@ describe("bootstrapCellOrganization", () => {
       async (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
     );
 
-    await realBootstrap()({} as never, {} as never, INPUT);
+    await realBootstrap()({} as never, INPUT);
 
     expect(ensureManyFromUsers).not.toHaveBeenCalled();
   });

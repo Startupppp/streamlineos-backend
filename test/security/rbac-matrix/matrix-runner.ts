@@ -1,13 +1,22 @@
 import { HttpException } from "@nestjs/common";
 import type {
+  AdapterBinding,
+  BindingEntry,
   CellStatus,
-  ExecutableCell,
+  EvidenceSuite,
   LedgerEntry,
-  MatrixCell,
   MatrixLedger,
   Observation,
   ObservedOutcome,
+  Scenario,
+  SuiteEntry,
 } from "./matrix.types";
+import { UnsupportedQuery } from "./world-db";
+
+export interface Verdict {
+  readonly status: CellStatus;
+  readonly detail: string | null;
+}
 
 export function outcomeOfStatus(status: number): ObservedOutcome {
   if (status === 402) return "402";
@@ -18,6 +27,7 @@ export function outcomeOfStatus(status: number): ObservedOutcome {
 }
 
 export function outcomeOfError(error: unknown): ObservedOutcome {
+  if (error instanceof UnsupportedQuery) return `unexpected:${error.message}`;
   if (error instanceof HttpException) return outcomeOfStatus(error.getStatus());
   return `unexpected:${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
 }
@@ -34,66 +44,106 @@ export async function settle(
   }
 }
 
-export function verdictOf(cell: ExecutableCell, observation: Observation): { status: CellStatus; detail: string | null } {
+export function verdictOf(scenario: Scenario, observation: Observation): Verdict {
   const failedChecks = Object.entries(observation.checks ?? {})
     .filter(([, held]) => !held)
     .map(([name]) => name);
-  if (observation.outcome === cell.expected && failedChecks.length === 0) return { status: "proven", detail: null };
-  const parts = [`expected ${cell.expected}, observed ${observation.outcome}`];
+  if (observation.outcome === scenario.expected && failedChecks.length === 0) return { status: "proven", detail: null };
+  const parts = [`expected ${scenario.expected}, observed ${observation.outcome}`];
   if (failedChecks.length > 0) parts.push(`failed checks: ${failedChecks.join(", ")}`);
   return { status: "failed", detail: parts.join("; ") };
 }
 
+export function bindingId(scenario: Scenario, binding: AdapterBinding): string {
+  return `${scenario.id}@${binding.adapter}`;
+}
+
 export class MatrixRunner {
-  private readonly cells = new Map<string, MatrixCell>();
-  private readonly results = new Map<string, { status: CellStatus; detail: string | null }>();
+  private readonly scenarios = new Map<string, Scenario>();
+  private readonly suites = new Map<string, EvidenceSuite>();
+  private readonly results = new Map<string, Verdict>();
+  private readonly suiteResults = new Map<string, Verdict>();
 
-  declare(cell: MatrixCell): void {
-    if (this.cells.has(cell.id)) throw new Error(`Duplicate cell id: ${cell.id}`);
-    this.cells.set(cell.id, cell);
+  declare(scenario: Scenario): void {
+    if (this.scenarios.has(scenario.id)) throw new Error(`Duplicate scenario id: ${scenario.id}`);
+    if (scenario.bindings.length === 0) throw new Error(`Scenario ${scenario.id} binds no adapter`);
+    const adapters = scenario.bindings.map((binding) => binding.adapter);
+    if (new Set(adapters).size !== adapters.length) throw new Error(`Scenario ${scenario.id} binds one adapter twice`);
+    this.scenarios.set(scenario.id, scenario);
   }
 
-  all(): readonly MatrixCell[] {
-    return [...this.cells.values()];
+  declareSuite(suite: EvidenceSuite): void {
+    if (this.suites.has(suite.id)) throw new Error(`Duplicate suite id: ${suite.id}`);
+    this.suites.set(suite.id, suite);
   }
 
-  executable(): readonly ExecutableCell[] {
-    return this.all().filter((cell): cell is ExecutableCell => cell.kind === "executable");
+  all(): readonly Scenario[] {
+    return [...this.scenarios.values()];
   }
 
-  find(id: string): MatrixCell | undefined {
-    return this.cells.get(id);
+  find(id: string): Scenario | undefined {
+    return this.scenarios.get(id);
   }
 
-  async execute(cell: ExecutableCell): Promise<{ status: CellStatus; detail: string | null }> {
-    let verdict: { status: CellStatus; detail: string | null };
+  async execute(scenario: Scenario, binding: AdapterBinding): Promise<Verdict> {
+    let verdict: Verdict;
     try {
-      verdict = verdictOf(cell, await cell.run());
+      verdict = verdictOf(scenario, await binding.run());
     } catch (error: unknown) {
       verdict = { status: "failed", detail: `adapter threw: ${outcomeOfError(error)}` };
     }
-    this.results.set(cell.id, verdict);
+    this.results.set(bindingId(scenario, binding), verdict);
     return verdict;
   }
 
+  recordSuite(id: string, verdict: Verdict): void {
+    if (!this.suites.has(id)) throw new Error(`Unknown suite id: ${id}`);
+    this.suiteResults.set(id, verdict);
+  }
+
   ledger(): MatrixLedger {
-    const entries: LedgerEntry[] = this.all().map((cell) => {
-      const result = this.results.get(cell.id) ?? { status: "unrun", detail: null };
+    const bindings: BindingEntry[] = this.all().flatMap((scenario) =>
+      scenario.bindings.map((binding): BindingEntry => {
+        const id = bindingId(scenario, binding);
+        const result = this.results.get(id) ?? { status: "unrun", detail: null };
+        return {
+          kind: "binding",
+          id,
+          scenario: scenario.id,
+          adapter: binding.adapter,
+          entry: binding.entry,
+          actor: scenario.actor,
+          resource: scenario.resource,
+          action: scenario.action,
+          tenant: scenario.tenant,
+          state: scenario.state,
+          expected: scenario.expected,
+          pairedWith: scenario.pairedWith ?? null,
+          covers: scenario.covers ?? [],
+          required: true,
+          status: result.status,
+          detail: result.detail,
+        };
+      }),
+    );
+    const suites: SuiteEntry[] = [...this.suites.values()].map((suite) => {
+      const result = this.suiteResults.get(suite.id);
       return {
-        id: cell.id,
-        kind: cell.kind,
-        required: cell.kind === "executable",
-        status: result.status,
-        adapter: cell.kind === "executable" ? cell.adapter : null,
-        standing: cell.kind === "executable" ? cell.standing : null,
-        expected: cell.kind === "executable" ? cell.expected : null,
-        evidenceSuite: cell.kind === "declared" ? cell.evidenceSuite : null,
-        detail: result.detail,
+        kind: "suite",
+        id: suite.id,
+        resource: suite.resource,
+        suite: suite.suite,
+        required: suite.runnable,
+        status: result?.status ?? "unrun",
+        detail: result?.detail ?? (suite.runnable ? null : suite.reason),
       };
     });
+    const entries: LedgerEntry[] = [...bindings, ...suites];
     const count = (status: CellStatus): number => entries.filter((entry) => entry.status === status).length;
     return {
-      version: 1,
+      version: 2,
+      generatedAt: new Date().toISOString(),
+      scenarios: this.scenarios.size,
       proven: count("proven"),
       failed: count("failed"),
       unrun: count("unrun"),

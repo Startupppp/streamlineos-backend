@@ -1,4 +1,4 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
 /**
  * CRM catalog: leads, targets, reports, data quality, call analysis and recording
@@ -7,7 +7,7 @@ import type { Permission } from "./types";
  * One slice of `CRM_PERMISSIONS`. `crm.ts` spreads the slices in a fixed
  * order and that order is the catalog order; nothing imports a slice directly.
  */
-export const CRM_SALES_PERMISSIONS: Permission[] = [
+export const CRM_SALES_PERMISSIONS = definePermissions([
   {
     name: "crm:leads:view",
     resource: "crm:leads",
@@ -224,4 +224,4 @@ export const CRM_SALES_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage deal forecasts and overrides",
   },
-];
+]);

@@ -9,6 +9,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
+import { principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 type OpenApiObject = Record<string, unknown>;
 
@@ -55,9 +56,17 @@ describe("client visibility response contract", () => {
         }),
       }),
     };
+    const projectAccessQuery = {
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([projectAccessRow()]) }),
+      }),
+    };
     const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
-      select: jest.fn().mockReturnValueOnce(ticketQuery).mockReturnValueOnce(milestoneQuery),
+      select: jest
+        .fn()
+        .mockReturnValueOnce(projectAccessQuery)
+        .mockReturnValueOnce(ticketQuery)
+        .mockReturnValueOnce(milestoneQuery),
     } as unknown as Db;
     const user: CurrentUserContext = {
       userId: "user-1",
@@ -68,7 +77,7 @@ describe("client visibility response contract", () => {
       tokenScopes: null,
       principal: humanSessionPrincipal(7, true),
     };
-    const access = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
+    const access = principalAccess() as unknown as AccessService;
     const audit = { log: jest.fn() } as unknown as AuditService;
 
     const result = await new ClientVisibilityService(db, access, audit).getVisibilitySummary(user, 1);

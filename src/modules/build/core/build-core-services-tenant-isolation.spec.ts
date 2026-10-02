@@ -9,7 +9,7 @@ jest.mock("./tickets/ticket-status.util", () => ({
 jest.mock("./project-crud/project-access", () => ({
   ...jest.requireActual("./project-crud/project-access"),
   authorizeProjectTicketRead: jest.fn(),
-  assertProjectVisible: jest.fn(),
+  assertProjectVisibleForWrite: jest.fn(),
 }));
 
 import { NotFoundException } from "@nestjs/common";
@@ -29,7 +29,7 @@ import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { resolveValidTicketStatuses } from "./tickets/ticket-status.util";
-import { assertProjectVisible, authorizeProjectTicketRead } from "./project-crud/project-access";
+import { assertProjectVisibleForWrite, authorizeProjectTicketRead } from "./project-crud/project-access";
 import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -80,7 +80,7 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
   }
 
   it("rejects import assignment without build:tickets:assign", async () => {
-    jest.mocked(assertProjectVisible).mockResolvedValue(undefined);
+    jest.mocked(assertProjectVisibleForWrite).mockResolvedValue(undefined);
     const holds = jest.fn().mockResolvedValue(false);
     const svc = makeTransferSvc({} as Partial<ProjectsTicketsReadService>, {} as Db, undefined, holds);
     await expect(

@@ -170,9 +170,13 @@ export class KbRetrievalService {
   }
 
   private async hasIndexedContent(orgId: string): Promise<boolean> {
-    const rows = await this.db.execute(
-      sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
-    );
-    return rows.length > 0;
+    return orgHasIndexedContent(this.db, orgId);
   }
+}
+
+export async function orgHasIndexedContent(db: Db, orgId: string): Promise<boolean> {
+  const rows = await db.execute(
+    sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
+  );
+  return rows.length > 0;
 }

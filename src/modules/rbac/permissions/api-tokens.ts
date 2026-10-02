@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const API_TOKEN_PERMISSIONS: Permission[] = [
+export const API_TOKEN_PERMISSIONS = definePermissions([
   {
     name: "settings:api-tokens:read",
     resource: "settings:api-tokens",
@@ -13,4 +13,4 @@ export const API_TOKEN_PERMISSIONS: Permission[] = [
     action: "write",
     description: "Create and revoke personal API tokens",
   },
-];
+]);

@@ -6,6 +6,11 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { TestRunsService } from "../test-runs.service";
 import { BuildTicketCreationService } from "../../core/tickets";
 import { tickets } from "../../../../db/schema";
+import {
+  MANAGER_STANDING,
+  projectAccessRow,
+  standingAccess,
+} from "../../__tests__/project-access-doubles";
 
 function makeTicketCreation() {
   return {
@@ -41,9 +46,7 @@ function makeU(): CurrentUserContext {
 }
 
 function makeAccess(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
-  } as unknown as AccessService;
+  return standingAccess(MANAGER_STANDING) as unknown as AccessService;
 }
 
 const audit = { log: jest.fn() } as never;
@@ -80,7 +83,11 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
         },
       },
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue(
+            Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([projectAccessRow()]) }),
+          ),
+        }),
       }),
       transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
@@ -124,7 +131,11 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
         },
       },
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue(
+            Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([projectAccessRow()]) }),
+          ),
+        }),
       }),
       transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
@@ -162,7 +173,11 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
         },
       },
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue(
+            Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([projectAccessRow()]) }),
+          ),
+        }),
       }),
       transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
@@ -182,7 +197,11 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
         testRunResults: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue(
+            Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([projectAccessRow()]) }),
+          ),
+        }),
       }),
       transaction: jest.fn(),
     } as unknown as Db;

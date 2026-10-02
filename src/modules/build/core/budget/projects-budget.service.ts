@@ -6,7 +6,7 @@ import { type Db } from "../../../../db/drizzle.module";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { UpdateBudgetInput } from "../dto/projects.schemas";
-import { assertProjectAccess } from "../project-crud/project-access";
+import { assertProjectAccess, assertProjectWriteAccess } from "../project-crud/project-access";
 
 const MINOR_UNITS_PER_MAJOR = 100;
 
@@ -207,7 +207,7 @@ export class ProjectsBudgetService {
   }
 
   async updateBudget(u: CurrentUserContext, projectId: number, input: UpdateBudgetInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
 
     const [updated] = await this.db
       .update(projects)

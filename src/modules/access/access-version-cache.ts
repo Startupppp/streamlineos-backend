@@ -4,36 +4,16 @@ import { accessVersions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import type { VersionEntry } from "./access.types";
 
-const VERSION_CACHE_TTL_MS = 1_000;
-export const SHARED_VERSION_TTL_SECONDS = 30;
+export const VERSION_CACHE_TTL_MS = 1_000;
 
 @Injectable()
 export class AccessVersionCache {
   private readonly versionCache = new Map<string, VersionEntry>();
   private readonly versionInFlight = new Map<string, Promise<number>>();
 
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
-  ) {}
-
-  configureStore(): void {
-    accessVersionChannel.useStore({
-      get: (orgId) => this.cache.get<number>(CACHE_KEYS.accessVersion(orgId)),
-      set: (orgId, version) =>
-        this.cache.set(
-          CACHE_KEYS.accessVersion(orgId),
-          version,
-          SHARED_VERSION_TTL_SECONDS,
-        ),
-      clear: (orgId) => this.cache.invalidate(CACHE_KEYS.accessVersion(orgId)),
-    });
-  }
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   clearForOrg(orgId: string): void {
     this.versionCache.delete(orgId);
@@ -60,8 +40,7 @@ export class AccessVersionCache {
     const existing = this.versionInFlight.get(orgId);
     if (existing) return existing;
 
-    const load = accessVersionChannel
-      .read(orgId, () => this.loadDurable(orgId))
+    const load = this.loadDurable(orgId)
       .then((version) => {
         this.versionCache.set(orgId, {
           version,

@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import type { CreateRiskInput, ListRisksQuery, UpdateRiskInput } from "./dto/governance.schemas";
 import type { OrgListRisksQuery } from "./dto/org-governance.schemas";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
@@ -151,7 +151,7 @@ export class RisksService {
   }
 
   async createRisk(u: CurrentUserContext, projectId: number, input: CreateRiskInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [risk] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
@@ -195,7 +195,7 @@ export class RisksService {
     riskId: number,
     input: UpdateRiskInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadRisk(u.orgId, projectId, riskId);
     const patch: RiskPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -226,7 +226,7 @@ export class RisksService {
   }
 
   async softDeleteRisk(u: CurrentUserContext, projectId: number, riskId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadRisk(u.orgId, projectId, riskId);
     await this.db
       .update(projectRisks)

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -21,7 +21,7 @@ import {
   resolveValidTicketStatuses,
   TicketVersionConflictException,
 } from "../core/tickets";
-import { isProjectMember, text } from "./build-entity-action-helpers";
+import { entityProjectWriteRefusal, text } from "./build-entity-action-helpers";
 import { createTicketFromAction } from "./build-entity-ticket-create";
 import { CacheService } from "../../../common/cache/cache.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
@@ -41,12 +41,13 @@ export class BuildEntityActions {
     reference: EntityReference,
     actionId: string,
     input: Record<string, unknown>,
+    reach: SQL,
   ): Promise<EntityActionResult> {
     const id = Number(reference.id);
     if (!Number.isInteger(id) || id <= 0) return { ok: false, reason: "not-found" };
 
     if (reference.type === "project" && actionId === "create-ticket") {
-      return createTicketFromAction(this.db, this.audit, this.ticketCreation, actor, id, input);
+      return createTicketFromAction(this.db, this.audit, this.ticketCreation, actor, id, input, reach);
     }
 
     if (reference.type !== "ticket") return { ok: false, reason: "invalid" };
@@ -67,8 +68,8 @@ export class BuildEntityActions {
     });
     if (!ticket?.projectId) return { ok: false, reason: "not-found" };
 
-    const allowed = await isProjectMember(this.db, actor, ticket.projectId);
-    if (!allowed) return { ok: false, reason: "forbidden" };
+    const refusal = await entityProjectWriteRefusal(this.db, actor, reach, ticket.projectId);
+    if (refusal !== null) return { ok: false, reason: refusal };
 
     const result = actionId === "status"
       ? await this.changeStatus(actor, ticket.id, ticket.projectId, ticket.status, input, ticket.version)

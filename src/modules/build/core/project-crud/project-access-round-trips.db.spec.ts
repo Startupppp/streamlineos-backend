@@ -122,9 +122,9 @@ describe("resolveProjectAccess round trips and duration, measured against a real
   const statements: string[] = [];
   const measured: { path: string; statements: number; ms: number; hasAccess: boolean; role: string | null }[] = [];
 
-  const access = {
-    resolveUserPermissions: async () => new Set<string>(),
-  } as unknown as AccessService;
+  const access: Pick<AccessService, "scopeFor"> = {
+    scopeFor: async (_user, key) => (key === "build:view" ? "own" : "none"),
+  };
 
   beforeAll(async () => {
     const url = requireApprovedDatabaseUrl({
@@ -165,32 +165,32 @@ describe("resolveProjectAccess round trips and duration, measured against a real
     return { result, count, ms };
   }
 
-  it("grants a direct project member in three statements, measured on a warmed connection so first-call setup traffic is not counted as an access round trip", async () => {
+  it("grants a direct project member in one statement, measured on a warmed connection so first-call setup traffic is not counted as an access round trip", async () => {
     const { result, count } = await measure("direct-member", actor(fixture!, fixture!.directUserId, fixture!.directMembershipId));
 
     expect(result.hasAccess).toBe(true);
-    expect(count).toBeLessThanOrEqual(3);
+    expect(count).toBe(1);
   }, 30_000);
 
-  it("grants a team-assigned member in the same three statements, so team access costs no extra round trip", async () => {
+  it("grants a team-assigned member in the same one statement, so team access costs no extra round trip", async () => {
     const { result, count } = await measure("team-member", actor(fixture!, fixture!.teamUserId, fixture!.teamMembershipId));
 
     expect(result.hasAccess).toBe(true);
-    expect(count).toBeLessThanOrEqual(3);
+    expect(count).toBe(1);
   }, 30_000);
 
-  it("denies an unrelated org member in the same three statements, so a denial is no cheaper to detect than a grant", async () => {
+  it("denies an unrelated org member in the same one statement, so a denial is no cheaper to detect than a grant", async () => {
     const { result, count } = await measure("denied", actor(fixture!, fixture!.deniedUserId, fixture!.deniedMembershipId));
 
     expect(result.hasAccess).toBe(false);
-    expect(count).toBeLessThanOrEqual(3);
+    expect(count).toBe(1);
   }, 30_000);
 
-  it("resolves the project manager without issuing either membership query, which is the one path that is genuinely cheaper", async () => {
+  it("resolves the project manager in the same one statement, because the manager, member and team columns ride on one row", async () => {
     const owner = actor(fixture!, fixture!.ownerUserId, fixture!.ownerMembershipId);
     const { result, count } = await measure("manager", owner);
 
     expect(result.role).toBe("MANAGER");
-    expect(count).toBeLessThan(3);
+    expect(count).toBe(1);
   }, 30_000);
 });

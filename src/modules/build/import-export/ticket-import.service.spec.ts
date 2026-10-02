@@ -13,6 +13,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { BuildTicketCreationService } from "../core/tickets";
 import { TicketImportService } from "./ticket-import.service";
 import type { TicketImportReport } from "./ticket-import-report";
+import { projectAccessRow, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 
 function makeTicketCreation() {
   return {
@@ -60,7 +61,7 @@ const manager: CurrentUserContext = {
 };
 
 interface DbOptions {
-  project?: { managerMembershipId: number | null };
+  project?: ProjectAccessRow;
   statuses?: string[];
   conflicting?: string[];
   maxTicketNumber?: number | null;
@@ -68,13 +69,14 @@ interface DbOptions {
 }
 
 interface DbState {
+  dataReads: number;
   batches: Record<string, unknown>[][];
   transactions: number;
   locks: number;
 }
 
 function makeDb(options: DbOptions = {}) {
-  const state: DbState = { batches: [], transactions: 0, locks: 0 };
+  const state: DbState = { dataReads: 0, batches: [], transactions: 0, locks: 0 };
   let batchCount = 0;
 
   const chainFor = (rows: unknown[]) => {
@@ -91,14 +93,12 @@ function makeDb(options: DbOptions = {}) {
   };
 
   const db: Record<string, unknown> = {
-    query: {
-      projects: {
-        findFirst: jest.fn(async () =>
-          "project" in options ? options.project : { managerMembershipId: null },
-        ),
-      },
-    },
     select: jest.fn((projection: Record<string, unknown>) => {
+      if ("manages" in projection) {
+        const project = "project" in options ? options.project : projectAccessRow();
+        return chainFor(project === undefined ? [] : [project]);
+      }
+      state.dataReads += 1;
       const field = Object.keys(projection)[0];
       if (field === "name")
         return chainFor((options.statuses ?? STATUSES).map((name) => ({ name })));
@@ -184,18 +184,18 @@ describe("TicketImportService.previewImport", () => {
 
 describe("TicketImportService authorization", () => {
   it("refuses a project that is not in the caller's organisation", async () => {
-    const { db } = makeDb({ project: undefined });
+    const { db, state } = makeDb({ project: undefined });
     const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
 
     await expect(
       service.previewImport(owner, PROJECT, { format: "csv", content: csv("Ship it") }),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(db.select).not.toHaveBeenCalled();
+    expect(state.dataReads).toBe(0);
   });
 
   it("refuses a caller who may reach the project but may not create tickets", async () => {
-    const { db, state } = makeDb({ project: { managerMembershipId: 7 } });
-    const service = new TicketImportService(db, makeAccess(false), makeFences());
+    const { db, state } = makeDb({ project: projectAccessRow({ manages: true }) });
+    const service = new TicketImportService(db, makeAccess(false), makeFences(), makeTicketCreation());
 
     await expect(
       service.commitImport(manager, PROJECT, {
@@ -468,5 +468,26 @@ describe("TicketImportService.commitImport idempotency", () => {
     expect(report.summary.rolledBack).toBe(1);
     expect(fences.fail).toHaveBeenCalledWith(9, ORG);
     expect(fences.complete).not.toHaveBeenCalled();
+  });
+});
+
+describe("TicketImportService — an archived project refuses imports", () => {
+  it("refuses a preview on an archived project with 409 and reads nothing", async () => {
+    const { db, state } = makeDb({ project: projectAccessRow({ state: "ARCHIVED" }) });
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
+
+    await expect(
+      service.previewImport(owner, PROJECT, { format: "csv", content: csv("Ship it") }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(state.dataReads).toBe(0);
+  });
+
+  it("previews the same import on an active project (control)", async () => {
+    const { db } = makeDb({ project: projectAccessRow({ state: "ACTIVE" }) });
+    const service = new TicketImportService(db, makeAccess(), makeFences(), makeTicketCreation());
+
+    await expect(
+      service.previewImport(owner, PROJECT, { format: "csv", content: csv("Ship it") }),
+    ).resolves.toMatchObject({ summary: { importable: 1 } });
   });
 });

@@ -45,8 +45,23 @@ export class PrincipalGroupsService {
     private readonly cache: CacheService,
   ) {}
 
-  private revoking(loss: AccessLoss) {
-    return { revoke: { cache: this.cache, loses: [loss] } };
+  private committing(
+    actor: CurrentUserContext,
+    action: string,
+    groupId: string,
+    loss: AccessLoss,
+    metadata: Record<string, unknown>,
+  ) {
+    return {
+      audit: {
+        action,
+        userId: actor.userId,
+        targetId: groupId,
+        targetType: "principal_group",
+        metadata,
+      },
+      revoke: { cache: this.cache, loses: [loss] },
+    };
   }
 
   private async assertGroupBelongsToOrg(orgId: string, groupId: string) {
@@ -216,7 +231,13 @@ export class PrincipalGroupsService {
         await commitAccessChange(
           tx,
           actor.orgId,
-          this.revoking({ kind: "memberships", membershipIds: [input.membershipId] }),
+          this.committing(
+            actor,
+            "principal_group.member_added",
+            groupId,
+            { kind: "memberships", membershipIds: [input.membershipId] },
+            { membershipId: input.membershipId },
+          ),
         );
       },
       { orgId: actor.orgId },
@@ -247,7 +268,13 @@ export class PrincipalGroupsService {
         await commitAccessChange(
           tx,
           actor.orgId,
-          this.revoking({ kind: "memberships", membershipIds: [membershipId] }),
+          this.committing(
+            actor,
+            "principal_group.member_removed",
+            groupId,
+            { kind: "memberships", membershipIds: [membershipId] },
+            { membershipId },
+          ),
         );
       },
       { orgId: actor.orgId },
@@ -309,7 +336,17 @@ export class PrincipalGroupsService {
             roleId: input.roleId,
           })
           .onConflictDoNothing();
-        await commitAccessChange(tx, actor.orgId, this.revoking({ kind: "group-members", groupId }));
+        await commitAccessChange(
+          tx,
+          actor.orgId,
+          this.committing(
+            actor,
+            "principal_group.role_assigned",
+            groupId,
+            { kind: "group-members", groupId },
+            { roleId: input.roleId },
+          ),
+        );
       },
       { orgId: actor.orgId },
     );
@@ -336,7 +373,17 @@ export class PrincipalGroupsService {
               eq(groupRoleAssignments.roleId, roleId),
             ),
           );
-        await commitAccessChange(tx, actor.orgId, this.revoking({ kind: "group-members", groupId }));
+        await commitAccessChange(
+          tx,
+          actor.orgId,
+          this.committing(
+            actor,
+            "principal_group.role_unassigned",
+            groupId,
+            { kind: "group-members", groupId },
+            { roleId },
+          ),
+        );
       },
       { orgId: actor.orgId },
     );

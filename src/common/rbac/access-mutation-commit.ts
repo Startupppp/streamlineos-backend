@@ -10,10 +10,7 @@ import {
 import { getObservabilityContext } from "../observability/observability-context";
 import { getImpersonationContext } from "../impersonation/impersonation-context";
 import { registerAfterCommit } from "../tenant/tenant-context";
-import {
-  bustMembershipStatusCache,
-  bustMembershipStatusCacheMany,
-} from "../auth/membership-state.service";
+import { membershipStandingChannel } from "../auth/membership-state.service";
 import type { CacheService } from "../cache/cache.service";
 import { CACHE_KEYS, type ExactCacheKey } from "../cache/cache-keys";
 import { bumpPermissionsVersion, type DbOrTx } from "./access-invalidate";
@@ -43,7 +40,7 @@ export type AccessLoss =
   | { kind: "memberships"; membershipIds: readonly number[] }
   | { kind: "group-members"; groupId: string }
   | { kind: "standing"; userIds: readonly string[] }
-  | { kind: "identity"; userId: string; sessions: SessionTombstones };
+  | { kind: "identity"; userId: string; sessions: SessionTombstones; sessionIds?: readonly string[] };
 
 export interface AccessRevocation {
   cache: CacheService;
@@ -54,7 +51,7 @@ export interface AccessRevocation {
 export interface CommitAccessOpts<E = never> {
   audit?: CommitAccessAudit;
   revoke?: AccessRevocation;
-  notify?: { via: { emit(event: E): Promise<unknown> }; events: readonly E[] };
+  notify?: { via: { emitInTx(tx: DbOrTx, events: readonly E[]): Promise<unknown> }; events: readonly E[] };
   afterCommit?: () => Promise<void>;
 }
 
@@ -206,13 +203,14 @@ async function resolveLosers(
 
 type RevocationPlan = { standing: readonly string[]; sessions: readonly string[]; listKeys: readonly ExactCacheKey[] };
 
-async function bust(cache: CacheService, keys: readonly ExactCacheKey[], standing: readonly string[]) {
+function publishStanding(userIds: readonly string[]): void {
+  for (const userId of userIds) membershipStandingChannel.publish(userId);
+}
+
+async function bust(cache: CacheService, keys: readonly ExactCacheKey[]): Promise<void> {
   const [onlyKey] = keys;
   if (keys.length === 1 && onlyKey !== undefined) await cache.invalidate(onlyKey);
   else if (keys.length > 1) await cache.invalidateMany(keys);
-  const [onlyUser] = standing;
-  if (standing.length === 1 && onlyUser !== undefined) await bustMembershipStatusCache(cache, onlyUser);
-  else if (standing.length > 1) await bustMembershipStatusCacheMany(cache, standing);
 }
 
 async function scheduleRevocation(cache: CacheService, plan: RevocationPlan): Promise<void> {
@@ -221,27 +219,40 @@ async function scheduleRevocation(cache: CacheService, plan: RevocationPlan): Pr
   ];
   const standing = [...new Set(plan.standing)];
   if (keys.length === 0 && standing.length === 0) return;
-  await afterCommitOrInline(() => bust(cache, keys, standing));
+  await afterCommitOrInline(async () => {
+    publishStanding(standing);
+    await bust(cache, keys);
+  });
+}
+
+export function scheduleStandingChange(userIds: readonly string[]): Promise<void> {
+  const standing = [...new Set(userIds)];
+  if (standing.length === 0) return Promise.resolve();
+  return afterCommitOrInline(async () => publishStanding(standing));
 }
 
 export function scheduleStandingRevocation(
   cache: CacheService,
   userIds: readonly string[],
-  { withSessions = false }: { withSessions?: boolean } = {},
 ): Promise<void> {
-  const sessions = withSessions ? userIds : [];
-  return scheduleRevocation(cache, { standing: userIds, sessions, listKeys: [] });
+  return scheduleRevocation(cache, { standing: userIds, sessions: userIds, listKeys: [] });
 }
 
 async function revokeSessions(
   tx: DbOrTx,
-  userId: string,
-  sessions: SessionTombstones,
+  { userId, sessions, sessionIds: only }: Extract<AccessLoss, { kind: "identity" }>,
 ): Promise<void> {
+  if (only?.length === 0) return;
   const revoked = await tx
     .update(userSessions)
     .set({ isRevoked: true })
-    .where(and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)))
+    .where(
+      and(
+        eq(userSessions.userId, userId),
+        eq(userSessions.isRevoked, false),
+        only ? inArray(userSessions.id, [...only]) : undefined,
+      ),
+    )
     .returning({ id: userSessions.id });
   if (revoked.length === 0) return;
   const sessionIds = revoked.map((row) => row.id);
@@ -257,7 +268,7 @@ async function revokeAccess(
   const standingUsers = new Set<string>();
   for (const loss of revocation.loses) {
     if (loss.kind === "identity") {
-      await revokeSessions(tx, loss.userId, loss.sessions);
+      await revokeSessions(tx, loss);
       standingUsers.add(loss.userId);
       continue;
     }
@@ -287,7 +298,6 @@ export async function commitAccessChange<E = never>(
   await bumpPermissionsVersion(tx, orgId);
   if (opts?.audit) await writeAudit(tx, orgId, opts.audit);
   if (opts?.revoke) await revokeAccess(tx, orgId, opts.revoke);
-  if (opts?.notify)
-    for (const event of opts.notify.events) await opts.notify.via.emit(event);
+  if (opts?.notify?.events.length) await opts.notify.via.emitInTx(tx, opts.notify.events);
   if (opts?.afterCommit) await afterCommitOrInline(opts.afterCommit);
 }

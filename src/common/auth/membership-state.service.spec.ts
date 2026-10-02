@@ -1,6 +1,5 @@
 import { MembershipStateService } from "./membership-state.service";
 import type { Db } from "../../db/drizzle.module";
-import type { CacheService } from "../cache/cache.service";
 
 const USER = "user-in-two-orgs";
 const ORG_A = "org-a";
@@ -13,39 +12,9 @@ function buildDb(): Db {
   } as unknown as Db;
 }
 
-function buildCache(): {
-  cache: CacheService;
-  keys: string[];
-  store: Map<string, unknown>;
-} {
-  const keys: string[] = [];
-  const store = new Map<string, unknown>();
-  const cache = {
-    cachedVersioned: async <T>(
-      namespace: string,
-      key: string,
-      fetcher: () => Promise<T>,
-    ): Promise<T> => {
-      const composed = `${namespace}:v1:${key}`;
-      keys.push(composed);
-      if (store.has(composed)) return store.get(composed) as T;
-      const value = await fetcher();
-      store.set(composed, value);
-      return value;
-    },
-    get: async () => null,
-    set: async () => undefined,
-    invalidate: async () => undefined,
-    invalidateNamespace: async () => undefined,
-  } as unknown as CacheService;
-  return { cache, keys, store };
-}
-
 describe("MembershipStateService resolves the acting membership per organization", () => {
   it("keys the cache entry by organization, so org A's answer is never served for org B", async () => {
-    const { cache, keys, store } = buildCache();
-    const db = buildDb();
-    const service = new MembershipStateService(db, cache);
+    const service = new MembershipStateService(buildDb());
 
     jest
       .spyOn(
@@ -68,18 +37,12 @@ describe("MembershipStateService resolves the acting membership per organization
     expect(inOrgB.membershipId).toBe(22);
     expect(inOrgA.isOwner).toBe(true);
     expect(inOrgB.isOwner).toBe(false);
-
-    expect(keys).toEqual([
-      `membership:status:${USER}:v1:${ORG_A}`,
-      `membership:status:${USER}:v1:${ORG_B}`,
-    ]);
-    expect(store.size).toBe(2);
+    await expect(service.resolve(USER, ORG_A)).resolves.toMatchObject({ membershipId: 11 });
+    await expect(service.resolve(USER, ORG_B)).resolves.toMatchObject({ membershipId: 22 });
   });
 
   it("serves the cached entry for the same organization without refetching", async () => {
-    const { cache } = buildCache();
-    const db = buildDb();
-    const service = new MembershipStateService(db, cache);
+    const service = new MembershipStateService(buildDb());
 
     const fetch = jest
       .spyOn(
@@ -102,9 +65,7 @@ describe("MembershipStateService resolves the acting membership per organization
   });
 
   it("reports no membership id when the person has no row in that organization", async () => {
-    const { cache } = buildCache();
-    const db = buildDb();
-    const service = new MembershipStateService(db, cache);
+    const service = new MembershipStateService(buildDb());
 
     jest
       .spyOn(
@@ -162,11 +123,7 @@ function buildDbReturning(rows: MembershipRow[]): Db {
 }
 
 async function resolveWithRow(partial: Partial<MembershipRow>) {
-  const { cache } = buildCache();
-  const service = new MembershipStateService(
-    buildDbReturning([{ ...LIVE_ROW, ...partial }]),
-    cache,
-  );
+  const service = new MembershipStateService(buildDbReturning([{ ...LIVE_ROW, ...partial }]));
   return service.resolve(USER, ORG_A);
 }
 
@@ -201,8 +158,7 @@ describe("MembershipStateService is the one definition of a live membership", ()
   });
 
   it("denies when there is no membership row at all", async () => {
-    const { cache } = buildCache();
-    const service = new MembershipStateService(buildDbReturning([]), cache);
+    const service = new MembershipStateService(buildDbReturning([]));
 
     await expect(service.resolve(USER, ORG_B)).resolves.toEqual({
       active: false,
@@ -212,31 +168,26 @@ describe("MembershipStateService is the one definition of a live membership", ()
     });
   });
 
-  // Was "denies, rather than throws". Swallowing the read into UNKNOWN cached "not a member" for
-  // the whole TTL, so one transient database error 403'd every route for the owner until it expired.
-  // Propagating is the fail-closed answer that does not outlive the failure: the request errors and
-  // nothing is written, so the next one asks again.
-  it("propagates a failed read instead of caching a denial", async () => {
-    const { cache, store } = buildCache();
+  it("propagates a failed read instead of caching a denial, so the next request asks the database again", async () => {
+    let failing = true;
+    const healthy = buildDbReturning([LIVE_ROW]);
     const db = {
-      transaction: async () => {
-        throw new Error("connection reset");
+      transaction: async (fn: (t: unknown) => Promise<unknown>) => {
+        if (failing) throw new Error("connection reset");
+        return healthy.transaction(fn);
       },
       execute: async () => undefined,
     } as unknown as Db;
+    const service = new MembershipStateService(db);
 
-    await expect(
-      new MembershipStateService(db, cache).resolve(USER, ORG_A),
-    ).rejects.toThrow("connection reset");
-
-    expect(store.size).toBe(0);
+    await expect(service.resolve(USER, ORG_A)).rejects.toThrow("connection reset");
+    failing = false;
+    await expect(service.resolve(USER, ORG_A)).resolves.toMatchObject({ active: true });
   });
 
   it("still denies, without throwing, when the read succeeds and finds nothing", async () => {
-    const { cache } = buildCache();
-
     await expect(
-      new MembershipStateService(buildDbReturning([]), cache).resolve(USER, ORG_A),
+      new MembershipStateService(buildDbReturning([])).resolve(USER, ORG_A),
     ).resolves.toEqual({
       active: false,
       isOwner: false,

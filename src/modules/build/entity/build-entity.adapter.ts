@@ -13,6 +13,7 @@ import {
   type EntityResolution,
 } from "../../entity-reference/entity-reference.types";
 import { BuildEntityActions } from "./build-entity.actions";
+import { entityProjectReach } from "./build-entity-action-helpers";
 import { BuildEntityReadsService, isTicketType, numericId } from "./build-entity-reads.service";
 
 interface AccessPort {
@@ -172,6 +173,6 @@ export class BuildEntityAdapter implements EntityAdapter {
     if (!holds(actor, permissions, action.key))
       return { ok: false, reason: "forbidden" };
 
-    return this.actions.run(actor, reference, actionId, input);
+    return this.actions.run(actor, reference, actionId, input, entityProjectReach(actor, permissions));
   }
 }

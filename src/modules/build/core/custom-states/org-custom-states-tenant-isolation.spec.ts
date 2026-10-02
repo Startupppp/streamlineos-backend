@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { ProjectsCustomStatesService } from "./projects-custom-states.service";
 import type { Db } from "../../../../db/drizzle.module";
 
@@ -42,7 +42,7 @@ describe("ProjectsCustomStatesService.listOrgCustomStates — tenant isolation",
     const { db, getCapturedWhere } = makeSelectChain([]);
     const svc = new ProjectsCustomStatesService(db, access as never);
 
-    await svc.listOrgCustomStates(ORG_A);
+    await svc.listOrgCustomStates(ORG_A, sql`true`);
 
     const whereSQL = getCapturedWhere();
     expect(whereSQL).toBeDefined();
@@ -55,7 +55,7 @@ describe("ProjectsCustomStatesService.listOrgCustomStates — tenant isolation",
     const { db, getCapturedJoin } = makeSelectChain([]);
     const svc = new ProjectsCustomStatesService(db, access as never);
 
-    await svc.listOrgCustomStates(ORG_A);
+    await svc.listOrgCustomStates(ORG_A, sql`true`);
 
     const joinSQL = getCapturedJoin();
     expect(joinSQL).toBeDefined();
@@ -72,7 +72,7 @@ describe("ProjectsCustomStatesService.listOrgCustomStates — tenant isolation",
     const { db } = makeSelectChain(rows);
     const svc = new ProjectsCustomStatesService(db, access as never);
 
-    const result = await svc.listOrgCustomStates(ORG_A);
+    const result = await svc.listOrgCustomStates(ORG_A, sql`true`);
 
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({ name: "CODE REVIEW" });
@@ -86,10 +86,27 @@ describe("ProjectsCustomStatesService.listOrgCustomStates — tenant isolation",
     const { db } = makeSelectChain(deduplicatedRows);
     const svc = new ProjectsCustomStatesService(db, access as never);
 
-    const result = await svc.listOrgCustomStates(ORG_A);
+    const result = await svc.listOrgCustomStates(ORG_A, sql`true`);
 
     expect((db.select as jest.Mock)).toHaveBeenCalledTimes(1);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("IN_REVIEW");
+  });
+  it("puts the caller's project reach inside the projects join, so states of unreachable projects are not listed", async () => {
+    const { db, getCapturedJoin } = makeSelectChain([]);
+    const svc = new ProjectsCustomStatesService(db, access as never);
+
+    await svc.listOrgCustomStates(ORG_A, sql`caller_reaches_project`);
+
+    expect(new PgDialect().sqlToQuery(getCapturedJoin() ?? sql`absent`).sql).toMatch(/caller_reaches_project/);
+  });
+
+  it("lists every live project's states when the caller's reach is org-wide", async () => {
+    const { db, getCapturedJoin } = makeSelectChain([]);
+    const svc = new ProjectsCustomStatesService(db, access as never);
+
+    await svc.listOrgCustomStates(ORG_A, sql`true`);
+
+    expect(new PgDialect().sqlToQuery(getCapturedJoin() ?? sql`absent`).sql).not.toMatch(/caller_reaches_project/);
   });
 });

@@ -7,13 +7,13 @@ import type { Db } from "../../../../db/drizzle.module";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import {
   projectReleases,
+  projects,
   releaseTickets,
   tickets,
   users,
 } from "../../../../db/schema";
 import type { CreateReleaseInput, ListReleasesQuery, OrgListReleasesQuery, UpdateReleaseInput } from "../dto/releases.schemas";
-import { assertProjectAccess } from "../project-crud/project-access";
-import { escapeLike } from "../lib/escape-like";
+import { assertProjectAccess, assertProjectWriteAccess, resolveProjectReach } from "../project-crud/project-access";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
 import { AuditService } from "../../../../common/audit/audit.service";
@@ -41,6 +41,7 @@ export class ProjectsReleasesService {
     const orgId = u.orgId;
     const { cursor, limit, status } = query;
     const pos = decodeIntegerCursor(cursor ?? null);
+    const reach = await resolveProjectReach(this.access, u);
     const rows = await this.db
       .select({
         id: projectReleases.id,
@@ -72,6 +73,7 @@ export class ProjectsReleasesService {
         and(
           eq(projectReleases.orgId, orgId),
           isNull(projectReleases.deletedAt),
+          sql`${projectReleases.projectId} IN (SELECT ${projects.id} FROM ${projects} WHERE ${projects.orgId} = ${orgId} AND ${projects.deletedAt} IS NULL AND ${reach.where})`,
           status ? eq(projectReleases.status, status) : undefined,
           pos ? lt(projectReleases.id, pos.id) : undefined,
         ),
@@ -121,7 +123,7 @@ export class ProjectsReleasesService {
         eq(projectReleases.orgId, orgId),
         isNull(projectReleases.deletedAt),
         status ? eq(projectReleases.status, status) : undefined,
-        q ? sql`${projectReleases.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
+        q ? sql`to_tsvector('english', coalesce(${projectReleases.name},'')) @@ plainto_tsquery('english', ${q})` : undefined,
         from ? gte(projectReleases.releaseDate, from) : undefined,
         to ? lte(projectReleases.releaseDate, to) : undefined,
         pos ? lt(projectReleases.id, pos.id) : undefined,
@@ -135,7 +137,7 @@ export class ProjectsReleasesService {
   }
 
   async createRelease(u: CurrentUserContext, projectId: number, data: CreateReleaseInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const [release] = await this.db.insert(projectReleases).values({
       orgId,
@@ -147,7 +149,7 @@ export class ProjectsReleasesService {
   }
 
   async updateRelease(u: CurrentUserContext, projectId: number, releaseId: number, data: UpdateReleaseInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const before = await this.db.query.projectReleases.findFirst({
       where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
@@ -201,7 +203,7 @@ export class ProjectsReleasesService {
   }
 
   async deleteRelease(u: CurrentUserContext, projectId: number, releaseId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const [stamped] = await this.db
       .update(projectReleases)
@@ -221,7 +223,7 @@ export class ProjectsReleasesService {
   }
 
   async restoreRelease(u: CurrentUserContext, projectId: number, releaseId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.projectReleases.findFirst({
       where: and(
@@ -259,7 +261,7 @@ export class ProjectsReleasesService {
   }
 
   async addTicketToRelease(u: CurrentUserContext, projectId: number, releaseId: number, ticketId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const release = await this.db.query.projectReleases.findFirst({
       where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
@@ -278,7 +280,7 @@ export class ProjectsReleasesService {
   }
 
   async removeTicketFromRelease(u: CurrentUserContext, projectId: number, releaseId: number, ticketId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const release = await this.db.query.projectReleases.findFirst({
       where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),

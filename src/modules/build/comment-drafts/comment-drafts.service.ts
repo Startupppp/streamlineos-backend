@@ -13,10 +13,34 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { GeneratedDraftAiOutput, UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
 import { COMMENT_DRAFT_MAX_RETRIES } from "./comment-drafts.constants";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { assertTicketReadAccess } from "../core";
+import { resolveTicketVisibility } from "../core";
 
 @Injectable()
 export class CommentDraftsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
+
+  async assertTicketReadable(actor: CurrentUserContext, ticketId: number): Promise<void> {
+    const [ticket] = await this.db
+      .select({ projectId: tickets.projectId })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.id, ticketId),
+          eq(tickets.orgId, actor.orgId),
+          isNull(tickets.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!ticket) throw new NotFoundException("Ticket not found");
+    await assertTicketReadAccess(this.db, this.access, actor, ticket.projectId, ticketId);
+  }
 
   private draftOwnerFilter(membershipId: number | null) {
     if (membershipId === null)
@@ -24,7 +48,10 @@ export class CommentDraftsService {
     return eq(commentDrafts.membershipId, membershipId);
   }
 
-  async listMine(orgId: string, membershipId: number | null, _userId: string) {
+  async listMine(actor: CurrentUserContext) {
+    const { orgId } = actor;
+    const ownedByCaller = this.draftOwnerFilter(actingMembershipId(actor.principal));
+    const visible = await resolveTicketVisibility(this.access, actor);
     const rows = await this.db
       .select({
         id: commentDrafts.id,
@@ -59,8 +86,9 @@ export class CommentDraftsService {
       .where(
         and(
           eq(commentDrafts.orgId, orgId),
-          this.draftOwnerFilter(membershipId),
+          ownedByCaller,
           isNull(tickets.deletedAt),
+          visible,
         ),
       )
       .orderBy(commentDrafts.updatedAt)
@@ -98,26 +126,13 @@ export class CommentDraftsService {
   }
 
   async upsert(
-    orgId: string,
-    membershipId: number | null,
-    userId: string,
+    actor: CurrentUserContext,
     ticketId: number,
     input: UpsertCommentDraftInput,
   ) {
-    const [ticket] = await this.db
-      .select({ id: tickets.id })
-      .from(tickets)
-      .where(
-        and(
-          eq(tickets.id, ticketId),
-          eq(tickets.orgId, orgId),
-          isNull(tickets.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (!ticket) throw new NotFoundException("Ticket not found");
-
+    await this.assertTicketReadable(actor, ticketId);
+    const { orgId } = actor;
+    const membershipId = actingMembershipId(actor.principal);
     if (membershipId === null)
       throw new ForbiddenException("Organization membership required");
     const [row] = await this.db

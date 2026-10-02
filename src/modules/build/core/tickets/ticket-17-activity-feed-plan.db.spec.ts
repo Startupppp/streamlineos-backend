@@ -5,6 +5,7 @@ import { Test } from "@nestjs/testing";
 import * as schema from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.module";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { AccessService } from "../../../access/access.service";
 import { ProjectsActivityFeedService } from "../activity/projects-activity-feed.service";
 import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
@@ -68,6 +69,13 @@ async function buildService(db: Db): Promise<ProjectsActivityFeedService> {
     providers: [
       ProjectsActivityFeedService,
       { provide: DRIZZLE, useValue: db },
+      {
+        provide: AccessService,
+        useValue: {
+          scopeFor: async () => "all",
+          resolveUserPermissions: async () => new Set<string>(),
+        },
+      },
     ],
   }).compile();
   return module.get(ProjectsActivityFeedService);

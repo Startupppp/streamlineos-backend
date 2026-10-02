@@ -1,11 +1,10 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { organizationMembers, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
-import { CacheService } from "../cache/cache.service";
-import { CACHE_KEYS } from "../cache/cache-keys";
+import { InProcessChannel } from "../rbac/access-version-channel";
 
 export interface MembershipState {
   active: boolean;
@@ -14,7 +13,8 @@ export interface MembershipState {
   membershipId: number | null;
 }
 
-const MEMBERSHIP_STATUS_TTL_SECONDS = 15;
+export const MEMBERSHIP_STATE_TTL_MS = 1_000;
+const SWEEP_THRESHOLD = 2_000;
 
 const UNKNOWN: MembershipState = {
   active: false,
@@ -23,73 +23,99 @@ const UNKNOWN: MembershipState = {
   membershipId: null,
 };
 
-/**
- * The `membership:status:<userId>` namespace is written out in full at each of
- * the three sites that touch it — the read in `resolve` and the two busts here —
- * rather than routed through a module-local helper.
- *
- * That is deliberate, and it is the fix for a real blind spot. `pnpm
- * check:namespace-coverage` pairs a `cachedVersioned` read with an
- * `invalidateNamespace` bump by resolving each namespace argument statically: a
- * string literal, a template literal, or a registered `CACHE_KEYS` factory.
- * A private `membershipStatusNamespace(userId)` is none of those, so the bump
- * resolved to nothing and the gate reported this namespace — the only
- * authorization-bearing one in the codebase — as "read but never bumped, served
- * stale forever". The bumps were real; they were merely unprovable. Keep the
- * literal at every site so the pairing stays checkable, and do not re-hide it
- * behind an indirection.
- */
-export async function bustMembershipStatusCache(
-  cache: CacheService,
-  userId: string,
-  _orgId?: string,
-): Promise<void> {
-  await cache.invalidate(CACHE_KEYS.membershipAccount(userId));
-  // One user namespace supports both targeted and all-organization busts in
-  // constant time. A targeted bust intentionally expires the user's other
-  // short-lived membership entries too; membership changes are rare and this
-  // avoids maintaining per-org generation counters.
-  await cache.invalidateNamespace(`membership:status:${userId}`);
+export const membershipStandingChannel = new InProcessChannel();
+
+interface Entry<T> {
+  value: T;
+  expiresAt: number;
 }
 
-/**
- * The whole-org form of the bust above, in two round trips per chunk instead of
- * two per user.
- *
- * Every caller that busts a membership for a LIST of users was written as
- * `Promise.all(userIds.map((id) => bustMembershipStatusCache(cache, id, orgId)))`,
- * which is a `DEL` and an `INCR` per user issued concurrently — six sites, the
- * widest of them reading members at `.limit(10000)`. The work is identical; only
- * the number of commands changes.
- */
-export async function bustMembershipStatusCacheMany(
-  cache: CacheService,
-  userIds: readonly string[],
-): Promise<void> {
-  if (userIds.length === 0) return;
-  await cache.invalidateMany(userIds.map((id) => CACHE_KEYS.membershipAccount(id)));
-  await cache.invalidateNamespaceMany(userIds.map((id) => `membership:status:${id}`));
+class LocalExpiringCache<T> {
+  private readonly entries = new Map<string, Map<string, Entry<T>>>();
+  private readonly inFlight = new Map<string, Promise<T>>();
+  private size = 0;
+  private generation = 0;
+
+  async read(userId: string, scope: string, load: () => Promise<T>): Promise<T> {
+    const hit = this.entries.get(userId)?.get(scope);
+    if (hit && hit.expiresAt > Date.now()) return hit.value;
+    const flightKey = `${userId}\u0000${scope}`;
+    const pending = this.inFlight.get(flightKey);
+    if (pending) return pending;
+    const startedAt = this.generation;
+    const flight: Promise<T> = load()
+      .then((value) => {
+        if (startedAt === this.generation) this.store(userId, scope, value);
+        return value;
+      })
+      .finally(() => {
+        if (this.inFlight.get(flightKey) === flight) this.inFlight.delete(flightKey);
+      });
+    this.inFlight.set(flightKey, flight);
+    return flight;
+  }
+
+  forgetUser(userId: string): void {
+    this.generation += 1;
+    this.size -= this.entries.get(userId)?.size ?? 0;
+    this.entries.delete(userId);
+    for (const key of this.inFlight.keys())
+      if (key.startsWith(`${userId}\u0000`)) this.inFlight.delete(key);
+  }
+
+  private store(userId: string, scope: string, value: T): void {
+    let byScope = this.entries.get(userId);
+    if (!byScope) {
+      byScope = new Map();
+      this.entries.set(userId, byScope);
+    }
+    if (!byScope.has(scope)) this.size += 1;
+    byScope.set(scope, { value, expiresAt: Date.now() + MEMBERSHIP_STATE_TTL_MS });
+    if (this.size > SWEEP_THRESHOLD) this.sweep();
+  }
+
+  private sweep(): void {
+    const now = Date.now();
+    for (const [userId, byScope] of this.entries) {
+      for (const [scope, entry] of byScope) {
+        if (entry.expiresAt > now) continue;
+        byScope.delete(scope);
+        this.size -= 1;
+      }
+      if (byScope.size === 0) this.entries.delete(userId);
+    }
+  }
 }
+
+const ACCOUNT_SCOPE = "account";
 
 @Injectable()
-export class MembershipStateService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
-  ) {}
+export class MembershipStateService implements OnModuleInit, OnModuleDestroy {
+  private readonly states = new LocalExpiringCache<MembershipState>();
+  private readonly accounts = new LocalExpiringCache<boolean>();
+  private unsubscribe: (() => void) | null = null;
+
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  onModuleInit(): void {
+    this.unsubscribe = membershipStandingChannel.subscribe((userId) => this.forgetUser(userId));
+  }
+
+  onModuleDestroy(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+  }
+
+  private forgetUser(userId: string): void {
+    this.states.forgetUser(userId);
+    this.accounts.forgetUser(userId);
+  }
 
   async resolve(userId: string, orgId: string): Promise<MembershipState> {
-    return this.cache.cachedVersioned(
-      `membership:status:${userId}`,
-      orgId,
-      () => this.fetchMembershipState(userId, orgId),
-      MEMBERSHIP_STATUS_TTL_SECONDS,
-    );
+    return this.states.read(userId, orgId, () => this.fetchMembershipState(userId, orgId));
   }
 
   private async fetchMembershipState(userId: string, orgId: string): Promise<MembershipState> {
-    // A thrown read must propagate: swallowing it into UNKNOWN cached "not a member" for the TTL
-    // and turned one transient database error into a 403 on every route for the owner.
     const rows = await runInTenantTransaction(
       this.db,
       (tx) =>
@@ -133,28 +159,20 @@ export class MembershipStateService {
   }
 
   async isAccountActive(userId: string): Promise<boolean> {
-    const key = CACHE_KEYS.membershipAccount(userId);
-    const cached = await this.cache.get<MembershipState>(key);
-    if (cached) return cached.active;
-
-    let active = false;
     try {
-      const rows = await this.db
-        .select({ isActive: users.isActive, deletedAt: users.deletedAt })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      const row = rows[0];
-      if (row) active = row.isActive && row.deletedAt === null;
+      return await this.accounts.read(userId, ACCOUNT_SCOPE, () => this.fetchAccountActive(userId));
     } catch {
-      active = false;
+      return false;
     }
+  }
 
-    await this.cache.set(
-      key,
-      { ...UNKNOWN, active },
-      MEMBERSHIP_STATUS_TTL_SECONDS,
-    );
-    return active;
+  private async fetchAccountActive(userId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ isActive: users.isActive, deletedAt: users.deletedAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const row = rows[0];
+    return row !== undefined && row.isActive && row.deletedAt === null;
   }
 }

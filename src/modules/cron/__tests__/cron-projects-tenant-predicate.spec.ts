@@ -4,6 +4,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { CronProjectsService } from "../cron-projects.service";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { BuildTicketCreationService } from "../../build/core/tickets";
 
 jest.mock("../../../common/tenant", () => ({
   forEachOrg: (db: unknown, _label: string, fn: (tx: unknown, orgId: string) => Promise<void>) =>
@@ -51,7 +52,7 @@ describe("CronProjectsService — the recurrence advance keeps the organisation 
   it("stops a past-end-date template with org_id AND id, never the surrogate id alone", async () => {
     const { db, updateWheres } = makeDb([EXPIRED_TEMPLATE]);
 
-    const result = await new CronProjectsService(db).spawnDueRecurringTickets();
+    const result = await new CronProjectsService(db, {} as unknown as BuildTicketCreationService).spawnDueRecurringTickets();
 
     expect(result.advanced).toBe(1);
     expect(updateWheres).toHaveLength(1);

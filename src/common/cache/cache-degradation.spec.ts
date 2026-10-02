@@ -317,8 +317,6 @@ describe("the outage memo cannot answer an authorization question", () => {
    */
   const AUTHORIZATION_KEYS: readonly string[] = [
     CACHE_KEYS.userSession("user-1"),
-    CACHE_KEYS.membershipAccount("user-1"),
-    CACHE_KEYS.accessVersion("org-1"),
     CACHE_KEYS.accessPerms("org-1", "user-1", 3),
     CACHE_KEYS.permissionsMatrix("org-1", 2),
     CACHE_KEYS.mfaOrgPolicy("org-1"),

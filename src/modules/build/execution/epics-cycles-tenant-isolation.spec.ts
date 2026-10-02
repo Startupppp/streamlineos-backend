@@ -3,9 +3,39 @@ import { NotFoundException } from "@nestjs/common";
 import { EpicsService } from "./epics.service";
 import { CyclesService } from "./cycles.service";
 import { epicRowSchema } from "./dto/execution-response.schemas";
-import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 type TxHandle = { insert: jest.Mock; execute: jest.Mock };
+
+type GateSource = {
+  query?: { projects?: { findFirst?: (args: { where: unknown }) => Promise<unknown> } };
+  select?: (fields?: Record<string, unknown>) => unknown;
+};
+
+function gated(db: Db): Db {
+  const source: GateSource = db as unknown as GateSource;
+  const ownSelect = source.select;
+  const select = (fields?: Record<string, unknown>) => {
+    if (fields === undefined || !("memberRole" in fields)) return ownSelect?.(fields);
+    return {
+      from: () => ({
+        where: (where: unknown) => ({
+          limit: async () => {
+            const found = await source.query?.projects?.findFirst?.({ where });
+            return found ? [projectAccessRow()] : [];
+          },
+        }),
+      }),
+    };
+  };
+  return { ...source, select } as unknown as Db;
+}
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -22,14 +52,51 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
 
+function owner(orgId: string): CurrentUserContext {
+  return {
+    userId: "u1",
+    orgId,
+    role: "OWNER",
+    isOrgOwner: true,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
+  };
+}
+
+async function epicsService(db: Db, ticketCreation: object = {}): Promise<EpicsService> {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      EpicsService,
+      { provide: DRIZZLE, useValue: gated(db) },
+      { provide: BuildTicketCreationService, useValue: ticketCreation },
+      { provide: ProjectsTicketsUpdateService, useValue: {} },
+      { provide: ProjectsTicketsDeleteService, useValue: {} },
+      { provide: AccessService, useValue: principalAccess() },
+    ],
+  }).compile();
+  return moduleRef.get(EpicsService);
+}
+
+async function cyclesService(db: Db): Promise<CyclesService> {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      CyclesService,
+      { provide: DRIZZLE, useValue: gated(db) },
+      { provide: AccessService, useValue: principalAccess() },
+    ],
+  }).compile();
+  return moduleRef.get(CyclesService);
+}
+
 describe("EpicsService — cross-tenant isolation", () => {
   it("listEpics refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const projectFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = { query: { projects: { findFirst: projectFindFirst }, tickets: { findMany } } } as unknown as Db;
-    const svc = new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
+    const svc = await epicsService(db);
 
-    await expect(svc.listEpics(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.listEpics(owner(ATTACKER_ORG), 1)).rejects.toThrow(NotFoundException);
 
     expect(findMany).not.toHaveBeenCalled();
     const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
@@ -48,9 +115,9 @@ describe("EpicsService — cross-tenant isolation", () => {
       },
       select: jest.fn().mockReturnValue({ from: relFrom }),
     } as unknown as Db;
-    const svc = new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
+    const svc = await epicsService(db);
 
-    const page = await svc.listEpics(OWNER_ORG, 1);
+    const page = await svc.listEpics(owner(OWNER_ORG), 1);
     expect(page.data).toHaveLength(1);
     expect(page.data[0]).toHaveProperty("dependencyCount", 0);
     expect(page.pagination).toEqual({ limit: 100, hasMore: false, nextCursor: null });
@@ -65,9 +132,9 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
       query: { projects: { findFirst: projectFindFirst } },
       transaction,
     } as unknown as Db;
-    const svc = new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
+    const svc = await epicsService(db);
 
-    await expect(svc.createEpic(ATTACKER_ORG, "u1", 1, { title: "Epic", startDate: undefined, dueDate: undefined })).rejects.toThrow(NotFoundException);
+    await expect(svc.createEpic(owner(ATTACKER_ORG), 1, { title: "Epic", startDate: undefined, dueDate: undefined })).rejects.toThrow(NotFoundException);
 
     expect(transaction).not.toHaveBeenCalled();
     const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
@@ -82,9 +149,9 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
       query: { projects: { findFirst: projectFindFirst } },
       transaction,
     } as unknown as Db;
-    const svc = new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
+    const svc = await epicsService(db);
 
-    await expect(svc.createEpic(OWNER_ORG, "u1", 999, { title: "Epic", startDate: undefined, dueDate: undefined })).rejects.toThrow(NotFoundException);
+    await expect(svc.createEpic(owner(OWNER_ORG), 999, { title: "Epic", startDate: undefined, dueDate: undefined })).rejects.toThrow(NotFoundException);
 
     expect(transaction).not.toHaveBeenCalled();
   });
@@ -95,14 +162,14 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
       create: jest.fn().mockResolvedValue({ tickets: [fakeEpic], command: {} }),
       createInTransaction: jest.fn(),
       publish: jest.fn(),
-    } as unknown as BuildTicketCreationService;
+    };
     const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
     const db = {
       query: { projects: { findFirst: projectFindFirst } },
     } as unknown as Db;
-    const svc = new EpicsService(db, ticketCreation, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
+    const svc = await epicsService(db, ticketCreation);
 
-    const result = await svc.createEpic(OWNER_ORG, "u1", 1, { title: "Epic", startDate: undefined, dueDate: undefined });
+    const result = await svc.createEpic(owner(OWNER_ORG), 1, { title: "Epic", startDate: undefined, dueDate: undefined });
 
     expect(result).toEqual(fakeEpic);
     expect(ticketCreation.create).toHaveBeenCalledTimes(1);
@@ -117,10 +184,10 @@ describe("CyclesService — cross-tenant isolation — createCycle", () => {
       query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue(selectChain),
     } as unknown as Db;
-    const svc = new CyclesService(db);
+    const svc = await cyclesService(db);
 
     await expect(
-      svc.createCycle(ATTACKER_ORG, "u1", 1, { name: "Cycle A", startDate: "2024-01-01", endDate: "2024-01-31" }),
+      svc.createCycle(owner(ATTACKER_ORG), 1, { name: "Cycle A", startDate: "2024-01-01", endDate: "2024-01-31" }),
     ).rejects.toThrow(NotFoundException);
 
     expect(projectFindFirst).toHaveBeenCalled();
@@ -140,9 +207,9 @@ describe("CyclesService — cross-tenant isolation — createCycle", () => {
       select: jest.fn().mockReturnValue(selectChain),
       insert: jest.fn().mockReturnValue({ values }),
     } as unknown as Db;
-    const svc = new CyclesService(db);
+    const svc = await cyclesService(db);
 
-    const result = await svc.createCycle(OWNER_ORG, "u1", 1, { name: "Cycle A", startDate: "2024-01-01", endDate: "2024-01-31" });
+    const result = await svc.createCycle(owner(OWNER_ORG), 1, { name: "Cycle A", startDate: "2024-01-01", endDate: "2024-01-31" });
     expect(result).toEqual(fakeCycle);
     expect(projectFindFirst).toHaveBeenCalled();
   });
@@ -156,9 +223,9 @@ describe("CyclesService — cross-tenant isolation", () => {
       query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
-    const svc = new CyclesService(db);
+    const svc = await cyclesService(db);
 
-    await expect(svc.listCycles(ATTACKER_ORG, 1, {})).rejects.toThrow(NotFoundException);
+    await expect(svc.listCycles(owner(ATTACKER_ORG), 1, {})).rejects.toThrow(NotFoundException);
 
     expect(where).not.toHaveBeenCalled();
     const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
@@ -179,9 +246,9 @@ describe("CyclesService — cross-tenant isolation", () => {
         return { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ groupBy: jest.fn().mockResolvedValue([]) }) }) };
       }),
     } as unknown as Db;
-    const svc = new CyclesService(db);
+    const svc = await cyclesService(db);
 
-    const result = await svc.listCycles(OWNER_ORG, 1, {});
+    const result = await svc.listCycles(owner(OWNER_ORG), 1, {});
     expect(result.data).toHaveLength(1);
     expect(result.data[0]?.orgId).toBe(OWNER_ORG);
   });
@@ -239,9 +306,9 @@ describe("CyclesService — cross-project scope within one org — updateCycle",
       select,
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
-    const svc = new CyclesService(db);
+    const svc = await cyclesService(db);
 
-    await svc.updateCycle(OWNER_ORG, 7, 99, { version: 1, name: "Renamed", startDate: undefined, endDate: undefined });
+    await svc.updateCycle(owner(OWNER_ORG), 7, 99, { version: 1, name: "Renamed", startDate: undefined, endDate: undefined });
 
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(7);
   });
@@ -252,9 +319,9 @@ describe("CyclesService — cross-project scope within one org — updateCycle",
       query: { projects: { findFirst: projectFindFirst } },
       update: jest.fn(),
     } as unknown as Db;
-    const svc = new CyclesService(db);
+    const svc = await cyclesService(db);
 
-    await expect(svc.updateCycle(ATTACKER_ORG, 7, 99, { name: "Renamed", version: 1, startDate: undefined, endDate: undefined })).rejects.toThrow(NotFoundException);
+    await expect(svc.updateCycle(owner(ATTACKER_ORG), 7, 99, { name: "Renamed", version: 1, startDate: undefined, endDate: undefined })).rejects.toThrow(NotFoundException);
     expect(db.update).not.toHaveBeenCalled();
   });
 });
@@ -271,9 +338,9 @@ describe("CyclesService — cross-project scope within one org — deleteCycle",
       query: { projects: { findFirst: projectFindFirst } },
       transaction: jest.fn(async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
-    const svc = new CyclesService(db);
+    const svc = await cyclesService(db);
 
-    await svc.deleteCycle(OWNER_ORG, 7, 99);
+    await svc.deleteCycle(owner(OWNER_ORG), 7, 99);
 
     expect(sqlValues(deleteWhere.mock.calls[0]?.[0])).toContain(7);
   });
@@ -284,9 +351,9 @@ describe("CyclesService — cross-project scope within one org — deleteCycle",
       query: { projects: { findFirst: projectFindFirst } },
       transaction: jest.fn(),
     } as unknown as Db;
-    const svc = new CyclesService(db);
+    const svc = await cyclesService(db);
 
-    await expect(svc.deleteCycle(ATTACKER_ORG, 7, 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteCycle(owner(ATTACKER_ORG), 7, 99)).rejects.toThrow(NotFoundException);
     expect(db.transaction).not.toHaveBeenCalled();
   });
 });

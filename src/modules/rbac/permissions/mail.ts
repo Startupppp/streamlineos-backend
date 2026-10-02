@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const MAIL_PERMISSIONS: Permission[] = [
+export const MAIL_PERMISSIONS = definePermissions([
   {
     name: "mail:inbox:view",
     resource: "mail:inbox",
@@ -25,4 +25,4 @@ export const MAIL_PERMISSIONS: Permission[] = [
     action: "use",
     description: "Use AI inbox summary, thread summary, and draft generation",
   },
-];
+]);

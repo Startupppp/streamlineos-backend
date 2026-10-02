@@ -85,7 +85,7 @@ function buildService(db: unknown): AccessService {
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
-    new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
+    new AccessVersionCache(wrappedDb),
     makeMembershipStateStub(),
   );
 }
@@ -171,7 +171,7 @@ describe("UserModuleAccessService.getUserDeniedModules — the same twin swallow
       db,
       { isCoreModule: jest.fn().mockReturnValue(false) } as unknown as EntitlementsService,
       {} as unknown as CacheService,
-      new AccessVersionCache(db, {} as unknown as CacheService),
+      new AccessVersionCache(db),
     );
 
     await expect(service.getUserDeniedModules("org-1", "user-1")).rejects.toBeDefined();

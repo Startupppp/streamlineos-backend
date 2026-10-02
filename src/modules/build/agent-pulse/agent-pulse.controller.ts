@@ -44,8 +44,7 @@ export class AgentPulseController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: AgentPulseQuery,
   ) {
-    const mid = actingMembershipId(u.principal);
-    return this.svc.getTopSignal(u.orgId, u.userId, mid, query);
+    return this.svc.getTopSignal(u, query);
   }
 
   @Get("badge")

@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import type { CreateTransitionInput, UpdateTransitionInput, WipLimitInput } from "./dto/workflow.schemas";
 
 type TransitionPatch = Partial<Pick<typeof workflowTransitions.$inferInsert,
@@ -63,7 +63,7 @@ export class WorkflowService {
 
   async createTransition(u: CurrentUserContext, projectId: number, input: CreateTransitionInput) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.assertStatusInProject(orgId, projectId, input.toStatusId);
     if (input.fromStatusId != null) {
       await this.assertStatusInProject(orgId, projectId, input.fromStatusId);
@@ -106,7 +106,7 @@ export class WorkflowService {
     input: UpdateTransitionInput,
   ) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadTransition(orgId, projectId, transitionId);
     const patch: TransitionPatch = {};
     if (input.fromStatusId !== undefined) {
@@ -146,7 +146,7 @@ export class WorkflowService {
 
   async deleteTransition(u: CurrentUserContext, projectId: number, transitionId: number) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadTransition(orgId, projectId, transitionId);
     await this.db
       .update(workflowTransitions)
@@ -186,7 +186,7 @@ export class WorkflowService {
 
   async updateWipLimit(u: CurrentUserContext, projectId: number, statusId: number, input: WipLimitInput) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.assertStatusInProject(orgId, projectId, statusId);
     const [updated] = await this.db
       .update(projectStatuses)

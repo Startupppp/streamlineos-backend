@@ -2,7 +2,7 @@ import { ChatChannelMembersImplementation } from "../chat-channel-members-implem
 import { ChatNotificationsService } from "../chat-notifications.service";
 import { CHAT_NOTIFICATION_EVENTS } from "../../notifications/notification-events-chat.catalog";
 import type { Db } from "../../../db/drizzle.module";
-import type { EntityReferenceService } from "../../entity-reference/entity-reference.types";
+import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import { ChatModule } from "../chat.module";
 
 jest.mock("../chat-channel-authorization", () => ({

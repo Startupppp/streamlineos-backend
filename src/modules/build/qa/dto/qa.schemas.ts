@@ -21,7 +21,7 @@ export const updateTestSuiteSchema = createTestSuiteSchema.partial().strict();
 
 export const testCaseListQuerySchema = z.object({
   suiteId: z.coerce.number().int().positive().optional(),
-  q: z.string().optional(),
+  q: z.string().max(200).optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
   automationStatus: z.enum(["manual", "automated", "planned"]).optional(),
   cursor: idCursorSchema,
@@ -44,6 +44,7 @@ export const updateTestCaseSchema = createTestCaseSchema.partial().strict();
 export const testRunListQuerySchema = z.object({
   status: z.enum(["not_started", "in_progress", "completed", "aborted"]).optional(),
   cursor: idCursorSchema,
+  q: z.string().max(200).optional(),
 }).strict();
 
 export const createTestRunSchema = z.object({

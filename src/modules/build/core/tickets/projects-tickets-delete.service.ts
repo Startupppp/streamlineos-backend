@@ -23,12 +23,15 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { AccessService } from "../../../access/access.service";
 import { AuditService } from "../../../../common/audit/audit.service";
-import {
-  assertTicketReadAccess,
-  type TicketReadAccess,
-} from "../project-crud/project-access";
+import { type TicketReadAccess, assertTicketWriteAccess } from "../project-crud/project-access";
 
 const BLOCKER_PROBE_LIMIT = 50;
+
+function ticketAuditAction(type: string): string {
+  if (type === "BUG") return "bug.deleted";
+  if (type === "EPIC") return "epic.deleted";
+  return "ticket.deleted";
+}
 
 @Injectable()
 export class ProjectsTicketsDeleteService {
@@ -47,7 +50,7 @@ export class ProjectsTicketsDeleteService {
     force: boolean,
   ) {
     const { orgId, userId } = u;
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId);
     const existing = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, ticketId),
@@ -55,7 +58,7 @@ export class ProjectsTicketsDeleteService {
         eq(tickets.orgId, orgId),
         isNull(tickets.deletedAt),
       ),
-      columns: { id: true, projectId: true, title: true },
+      columns: { id: true, projectId: true, title: true, type: true },
     });
     if (!existing || !existing.projectId)
       throw new NotFoundException("Ticket not found");
@@ -134,7 +137,7 @@ export class ProjectsTicketsDeleteService {
     });
 
     this.audit.log({
-      action: "ticket.deleted",
+      action: ticketAuditAction(existing.type),
       userId,
       orgId,
       targetId: String(ticketId),

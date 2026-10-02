@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { AccessService } from "../access/access.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { accessVersions, auditLogs } from "../../db/schema";
 import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -115,6 +116,7 @@ describe("UsersService direct member creation", () => {
         const chain = {
           values: () => chain,
           onConflictDoNothing: () => chain,
+          onConflictDoUpdate: () => chain,
           returning: () => Promise.resolve([{ id: 1 }]),
           then: (resolve: (rows: unknown[]) => unknown) => resolve([{ id: 1 }]),
         };
@@ -170,5 +172,7 @@ describe("UsersService direct member creation", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ eventType: "INVITE_ACCEPTED", actorId: "owner-1" });
     expect(events[0]["idempotencyKey"]).toMatch(/^member-added:org-1:/);
+    expect(insertedInto).toContain(auditLogs);
+    expect(insertedInto).toContain(accessVersions);
   });
 });

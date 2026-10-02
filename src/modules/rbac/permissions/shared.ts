@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const SHARED_PERMISSIONS: Permission[] = [
+export const SHARED_PERMISSIONS = definePermissions([
   {
     name: "tasks:read",
     resource: "tasks",
@@ -499,4 +499,4 @@ export const SHARED_PERMISSIONS: Permission[] = [
     action: "respond",
     description: "Accept or decline an ownership transfer directed at you",
   },
-];
+]);

@@ -121,7 +121,7 @@ export class CronOrgPurgeWorkerService {
     for (const memberUserId of memberUserIds) {
       await this.orgMembership.revokeOrgScopedAccess(orgId, memberUserId, "removed");
     }
-    await scheduleStandingRevocation(this.cache, memberUserIds, { withSessions: true });
+    await scheduleStandingRevocation(this.cache, memberUserIds);
   }
 
   private async purgeSingle(orgId: string): Promise<PurgeOutcome> {

@@ -18,6 +18,8 @@ import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { BuildRestoreResult } from "../dto/build-core-response.schemas";
 import { restoreTicketRows } from "../tickets/apply-ticket-change";
+import { AccessService } from "../../../access/access.service";
+import { assertCanDeleteProject } from "./project-access";
 
 @Injectable()
 export class ProjectsRestoreService {
@@ -25,12 +27,14 @@ export class ProjectsRestoreService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   async restoreProject(
     u: CurrentUserContext,
     projectId: number,
   ): Promise<BuildRestoreResult> {
+    await assertCanDeleteProject(this.access, u);
     const orgId = u.orgId;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, orgId)),

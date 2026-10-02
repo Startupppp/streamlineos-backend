@@ -4,7 +4,8 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { AccessService } from "../../../access/access.service";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { assertTicketReadAccess, assertTicketWriteAccess, decideTicketRead } from "../project-crud/project-access";
+import { ProjectsForbiddenTicketException } from "../../../../common/http/api-exceptions";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
@@ -21,6 +22,9 @@ import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.serv
 
 jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
+  assertProjectStateAllowsWrites: jest.fn(),
+  decideTicketRead: jest.fn(),
 }));
 
 const actor: CurrentUserContext = {
@@ -130,6 +134,12 @@ beforeEach(() => {
   jest
     .mocked(assertTicketReadAccess)
     .mockRejectedValue(new ForbiddenException("Ticket is outside your access scope"));
+  jest
+    .mocked(assertTicketWriteAccess)
+    .mockRejectedValue(new ForbiddenException("Ticket is outside your access scope"));
+  jest
+    .mocked(decideTicketRead)
+    .mockResolvedValue({ kind: "denied", reason: "NO_PROJECT_ACCESS", projectId: 7 });
 });
 
 describe("ticket subresource project access — watchers", () => {
@@ -159,11 +169,11 @@ describe("ticket subresource project access — labels", () => {
     ["removeTicketLabel", (service) => service.removeTicketLabel(actor, 7, 11, 3)],
   ];
 
-  it.each(cases)("%s authorizes before storage", async (_name, invoke) => {
+  it.each(cases)("%s authorizes the write before storage", async (_name, invoke) => {
     const service = await makeLabels();
 
     await expect(invoke(service)).rejects.toBeInstanceOf(ForbiddenException);
-    expect(assertTicketReadAccess).toHaveBeenCalledWith(
+    expect(assertTicketWriteAccess).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       actor,
@@ -246,16 +256,16 @@ describe("ticket comment project access", () => {
     ["deleteComment", (service) => service.deleteComment(actor, 7, 11, 13)],
   ];
 
-  it.each(cases)("%s authorizes before storage", async (_name, invoke) => {
+  it.each(cases)("%s authorizes through the project-access ticket decision before storage", async (_name, invoke) => {
     const service = await makeComments();
 
-    await expect(invoke(service)).rejects.toBeInstanceOf(ForbiddenException);
-    expect(assertTicketReadAccess).toHaveBeenCalledWith(
+    await expect(invoke(service)).rejects.toBeInstanceOf(ProjectsForbiddenTicketException);
+    expect(decideTicketRead).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       actor,
-      7,
       11,
+      { projectId: 7 },
     );
   });
 });

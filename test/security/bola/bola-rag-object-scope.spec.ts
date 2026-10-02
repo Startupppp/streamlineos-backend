@@ -10,6 +10,9 @@ import { KbSearchRetrievalService } from "../../../src/modules/kb/retrieval/kb-s
 import { KbCandidateService } from "../../../src/modules/kb/retrieval/kb-candidate.service";
 import { KbAskService } from "../../../src/modules/kb/retrieval/kb-ask.service";
 import { KbCitationVisibilityService } from "../../../src/modules/kb/retrieval/kb-citation-visibility.service";
+import { KbAskCitationService } from "../../../src/modules/kb/retrieval/kb-ask-citations.service";
+import { KbRetrievalService } from "../../../src/modules/kb/retrieval/kb-retrieval.service";
+import { REDIS } from "../../../src/common/cache/cache.service";
 import { KbLinkedDocumentAskSource } from "../../../src/modules/kb/linked-documents/kb-linked-document-ask-source";
 import { NO_LINKED_DOCUMENTS } from "../../../src/test/kb-linked-document-ask-source.spec-fixtures";
 import { KbAccessService } from "../../../src/modules/kb/core/kb-access.service";
@@ -117,7 +120,22 @@ const makeGateway = () => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
+const askerStanding = {
+  orgId: ORG,
+  userId: "user-1",
+  membershipId: ASKER_MEMBERSHIP,
+  roleSlugs: ["MEMBER"],
+  isOrgOwner: false,
+  isKbAdmin: false,
+  accessibleSpaceIds: [1],
+  accessibleProjectIds: [],
+  permissionsVersion: 1,
+};
+
 const makeKbAuth = () => ({
+  resolveStanding: jest.fn().mockResolvedValue(askerStanding),
+  resolveAccessibleSpaces: jest.fn().mockResolvedValue({ spaceIds: [1], cacheOutcome: "bypass" }),
+  articleRestrictionPredicate: jest.fn().mockResolvedValue(null),
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
   assertPageAccess: jest
     .fn()
@@ -148,10 +166,13 @@ function buildSearch(scope: DataScope) {
   return { search, retrieval, db, recorded, executed, inserted, gateway, events, access, scopes };
 }
 
+const SUPPORT_ARTICLE_BRANCH = '"kb_pages"."content_type" = ';
+
 const articleQueries = (recorded: RecordedQuery[]): RecordedQuery[] =>
   recorded.filter(
     (q) =>
       (q.table === "kb_pages" || (q.table === "kb_article_chunks" && q.joins.includes("kb_pages"))) &&
+      q.sql.includes(SUPPORT_ARTICLE_BRANCH) &&
       (ownerBoundIn(q) !== undefined || refusesEverything(q)),
   );
 
@@ -202,6 +223,7 @@ describe("BOLA sweep — RAG retrieval binds the direct read's object-level scop
     const results = await retrieval.retrieveTopArticles(asker(), "compensation", 6);
 
     expect(results).toEqual([]);
+    expect(articleQueries(recorded).length).toBeGreaterThanOrEqual(2);
     for (const query of articleQueries(recorded)) expect(refusesEverything(query)).toBe(true);
   });
 
@@ -238,25 +260,34 @@ describe("BOLA sweep — the RAG predicate is the direct read's predicate", () =
     expect(compiled.sql).toContain('"kb_pages"."org_id"');
   });
 
-  it("both `GET /kb/search` and retrieval spend the filter, not a post-filter", () => {
-    const source = readFileSync(
-      join(BACKEND_ROOT, "src/modules/kb/retrieval/kb-search.service.ts"),
-      "utf8",
-    );
-    expect(source).toContain("articleOwnerScopeFilter(read, user)");
-    expect(source).toContain("const ownerFilter = await this.articleOwnerFilterFor(user)");
-    expect(source).toMatch(/principal,\s*ownerFilter,\s*spaceId/);
-    expect(source).toContain("articleConditions.push(ownerFilter)");
+  const read = (rel: string): string =>
+    readFileSync(join(BACKEND_ROOT, "src/modules/kb/retrieval", rel), "utf8");
+
+  it("both `GET /kb/search` and retrieval spend the filter in SQL, not a post-filter, now that the owner filter lives once in kb-article-owner-scope.ts", () => {
+    const ownerScope = read("kb-article-owner-scope.ts");
+    expect(ownerScope).toContain("return articleOwnerScopeFilter(read, user)");
+
+    const search = read("kb-search.service.ts");
+    expect(search).toContain("scope: articleOwnerScope(membershipId)");
+    expect(search).toMatch(/scope\.compose\(\s*\{\s*tenant: kbPages\.orgId,\s*scope: articleOwnerScope\(membershipId\),\s*and: domain,/);
+
+    const retrieval = read("kb-search-retrieval.service.ts");
+    expect(retrieval).toContain("this.articleOwnerFilterFor(user)");
+    expect(retrieval).toMatch(/restriction,\s*ownerFilter,\s*spaceId/);
+    expect(retrieval).toContain("articleConditions.push(ownerFilter)");
   });
 
-  it("retrieval resolves the scope itself, so no caller can hand it a wider one", () => {
-    const source = readFileSync(
-      join(BACKEND_ROOT, "src/modules/kb/retrieval/kb-search.service.ts"),
-      "utf8",
-    );
-    const method = source.slice(source.indexOf("async articleOwnerFilterFor"));
-    expect(method.slice(0, 400)).toContain("resolveKbArticlesViewScope(this.scopes, user)");
-    expect(source).not.toMatch(/retrieveTopArticles\([^)]*scope: DataScope/);
+  it("retrieval resolves the scope itself through the one shared resolver, so no caller can hand it a wider one", () => {
+    const ownerScope = read("kb-article-owner-scope.ts");
+    const resolver = ownerScope.slice(ownerScope.indexOf("export async function resolveArticleOwnerFilter"));
+    expect(resolver.slice(0, 300)).toContain("resolveKbArticlesViewScope(scopes, user)");
+
+    for (const file of ["kb-search.service.ts", "kb-search-retrieval.service.ts"]) {
+      const source = read(file);
+      const method = source.slice(source.indexOf("async articleOwnerFilterFor"));
+      expect([file, method.slice(0, 200)]).toEqual([file, expect.stringContaining("resolveArticleOwnerFilter(this.scopes, user)")]);
+      expect(source).not.toMatch(/retrieveTopArticles\([^)]*scope: DataScope/);
+    }
   });
 });
 
@@ -313,7 +344,9 @@ describe("BOLA sweep — POST /kb/ask context window", () => {
   const buildAsk = async (scope: DataScope) => {
     const built = buildSearch(scope);
     const module = await Test.createTestingModule({ providers: [
-      KbAskService, KbCitationVisibilityService,
+      KbAskService, KbCitationVisibilityService, KbAskCitationService, KbRetrievalService,
+      { provide: KbSearchRetrievalService, useValue: built.retrieval },
+      { provide: REDIS, useValue: null },
       { provide: KbLinkedDocumentAskSource, useValue: NO_LINKED_DOCUMENTS },
       { provide: DRIZZLE, useValue: built.db },
       { provide: AiGatewayService, useValue: built.gateway },

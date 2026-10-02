@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const SUPPORT_PERMISSIONS: Permission[] = [
+export const SUPPORT_PERMISSIONS = definePermissions([
   {
     name: "support:kb:view",
     resource: "support:kb",
@@ -148,4 +148,4 @@ export const SUPPORT_PERMISSIONS: Permission[] = [
     description:
       "Trigger gap detection, draft KB articles from gaps, and dismiss gaps",
   },
-];
+]);

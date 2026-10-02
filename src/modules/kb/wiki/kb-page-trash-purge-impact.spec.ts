@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import { KbPageTrashQueryService } from "./kb-page-trash-query.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -71,13 +72,29 @@ describe("KbPageTrashQueryService.purgeImpact — dependency impact before a des
     expect(result).toEqual({ pageCount: 1, descendantCount: 0 });
   });
 
-  it("excludes a page hidden from the actor from both counts, so impact cannot confirm a hidden page's existence", async () => {
+  it("refuses the whole preview with 404 when one requested id is another organisation's or hidden, instead of counting only the visible ones", async () => {
     const db = makeDb([{ id: 1 }], { 1: [1] });
+    const subtreeWalk = jest.spyOn(db, "transaction");
     const svc = service(db, makeAuth());
 
-    const result = await svc.purgeImpact(userInOrg, { pageIds: [1, 999] });
+    await expect(svc.purgeImpact(userInOrg, { pageIds: [1, 999] })).rejects.toBeInstanceOf(NotFoundException);
+    expect(subtreeWalk).not.toHaveBeenCalled();
+  });
 
-    expect(result).toEqual({ pageCount: 1, descendantCount: 0 });
+  it("answers an all-foreign list with the same 404 as a mixed one, so the refusal is not an existence oracle", async () => {
+    const db = makeDb([], {});
+    const svc = service(db, makeAuth());
+
+    await expect(svc.purgeImpact(userInOrg, { pageIds: [999] })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("previews a list whose every id is the caller's own, duplicates included", async () => {
+    const db = makeDb([{ id: 1 }, { id: 2 }], { 1: [1, 10], 2: [2] });
+    const svc = service(db, makeAuth());
+
+    const result = await svc.purgeImpact(userInOrg, { pageIds: [1, 2, 2] });
+
+    expect(result).toEqual({ pageCount: 2, descendantCount: 1 });
   });
 
   it("opens exactly one transaction for a ten-page batch — not one BEGIN per page id", async () => {

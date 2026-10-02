@@ -2,7 +2,6 @@ import { BadRequestException, ConflictException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import { revokeModuleOwnerRole, assertModuleOwnerRoleAssigned } from "../module-owner-role.helper";
@@ -94,7 +93,7 @@ async function buildService(mockDb: object) {
       },
       {
         provide: NotificationDispatchService,
-        useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+        useValue: { emit: jest.fn().mockResolvedValue(undefined), emitInTx: jest.fn().mockResolvedValue(undefined) },
       },
       {
         provide: OrganizationSagaService,
@@ -119,7 +118,6 @@ async function buildService(mockDb: object) {
 describe("applyModuleTransfer — stale-owner detection", () => {
   beforeEach(() => {
     jest.resetAllMocks();
-    jest.mocked(bustMembershipStatusCache).mockResolvedValue(undefined as never);
     jest.mocked(syncStructuralRoleAssignment).mockResolvedValue(undefined);
     jest.mocked(commitAccessChange).mockResolvedValue(undefined);
     jest.mocked(revokeModuleOwnerRole).mockResolvedValue(undefined);
@@ -204,7 +202,6 @@ describe("applyModuleTransfer — stale-owner detection", () => {
 describe("applyOrgTransfer — stale-owner detection", () => {
   beforeEach(() => {
     jest.resetAllMocks();
-    jest.mocked(bustMembershipStatusCache).mockResolvedValue(undefined as never);
     jest.mocked(syncStructuralRoleAssignment).mockResolvedValue(undefined);
     jest.mocked(commitAccessChange).mockResolvedValue(undefined);
     jest.mocked(revokeModuleOwnerRole).mockResolvedValue(undefined);

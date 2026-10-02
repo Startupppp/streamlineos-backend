@@ -40,6 +40,13 @@ const ACTOR_C5: AskOsActor = {
 
 function makeAllCtx(): AskOsToolRunContext {
   const read = ScopedRead.of(ACTOR_C5.orgId, ACTOR_C5.userId, "all");
+  const memberReadFor = (key: string) =>
+    ScopedRead.of(ACTOR_C5.orgId, ACTOR_C5.userId, key === "build:manage" ? "none" : key === "build:view" ? "own" : "all");
+  return { actor: ACTOR_C5, caller: CALLER_C5, read, readFor: memberReadFor, modules: {} };
+}
+
+function makeOrgAdminCtx(): AskOsToolRunContext {
+  const read = ScopedRead.of(ACTOR_C5.orgId, ACTOR_C5.userId, "all");
   return { actor: ACTOR_C5, caller: CALLER_C5, read, readFor: () => read, modules: {} };
 }
 
@@ -66,6 +73,20 @@ function assertReachabilityPredicate(whereArg: unknown, membershipId: number): v
 }
 
 describe("C5/C6: ticket queries apply project reachability predicate", () => {
+  it("readTicket gives a build:manage=all holder every project, matching the HTTP project-access decision, while still binding the tenant", async () => {
+    const { db, capturedWhereArgs } = buildCaptureDb();
+    const svc = new ProjectsCopilotTools(db as never, {} as never);
+    const tool = svc.tools().find((d) => d.key === "readTicket")!;
+
+    await tool.run({ ticketId: 99 }, makeOrgAdminCtx());
+
+    const whereArg = capturedWhereArgs[0];
+    if (!(whereArg instanceof SQL)) throw new Error("expected a drizzle SQL from .where()");
+    const { sql: sqlText, params } = new PgDialect().sqlToQuery(whereArg);
+    expect(sqlText).not.toContain("project_members");
+    expect(params).toContain(ACTOR_C5.orgId);
+  });
+
   it("readTicket all-scoped WHERE contains project_id IN subquery, blocking org-wide ticket title enumeration by numeric id", async () => {
     expect.hasAssertions();
     const { db, capturedWhereArgs } = buildCaptureDb();

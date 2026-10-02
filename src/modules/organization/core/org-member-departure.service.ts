@@ -16,12 +16,13 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { getOrgAdminUserIds } from "../../../common/tenant/org-admin-recipients";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import type { DispatchEventInput } from "../../notifications/notification.types";
+import type { DbOrTx } from "../../../common/rbac/access-mutation-commit";
 import { SessionsService } from "../../sessions/sessions.service";
 import { EmailService } from "../../email/email.service";
 import { AblyService } from "../../realtime/ably.service";
@@ -55,7 +56,6 @@ export function departureBlockMessage(err: unknown): string | null {
 export class OrgMemberDepartureService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
     private readonly ably: AblyService,
@@ -75,7 +75,7 @@ export class OrgMemberDepartureService {
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
     try {
-      await withMembershipMutations(this.cache, (mutations) =>
+      await withMembershipMutations((mutations) =>
         runInTenantTransaction(
           this.db,
           async (tx) => {
@@ -160,7 +160,31 @@ export class OrgMemberDepartureService {
                 ),
               );
 
-            await mutations.deleteMembership(tx, { orgId, userId: memberUserId });
+            const revocation = await this.accessRevocation.planOrgScopedRevocation(
+              tx,
+              orgId,
+              memberUserId,
+              "removed",
+            );
+            await mutations.deleteMembership(
+              tx,
+              { orgId, userId: memberUserId },
+              {
+                audit: {
+                  action: "org.member_removed",
+                  userId: actorUserId,
+                  targetId: memberUserId,
+                  targetType: "user",
+                },
+                revoke: { cache: this.cache, loses: revocation.loses },
+                afterCommit: () =>
+                  Promise.all([
+                    revocation.afterCommit(),
+                    this.accessRevocation.notifyAccessLoss(orgId, memberUserId, "removed"),
+                    this.invalidateMemberListCaches(orgId),
+                  ]).then(() => undefined),
+              },
+            );
           },
           { orgId },
         ),
@@ -180,7 +204,6 @@ export class OrgMemberDepartureService {
       throw err;
     }
 
-    await this.accessRevocation.revokeOrgScopedAccess(orgId, memberUserId, "removed");
     await this.db
       .delete(accountOrganizationIndex)
       .where(
@@ -189,26 +212,17 @@ export class OrgMemberDepartureService {
           eq(accountOrganizationIndex.orgId, orgId),
         ),
       );
-    await Promise.all([
+
+    return { success: true };
+  }
+
+  private invalidateMemberListCaches(orgId: string): Promise<void> {
+    return Promise.all([
       this.cache.invalidateNamespaceForOrg(orgId, "org:members:list"),
       this.cache.invalidateForOrg(orgId, "rbac:members"),
       this.cache.invalidateForOrg(orgId, "module-access:candidates"),
       this.cache.invalidateForOrg(orgId, "users:stats"),
-    ]);
-
-    this.audit.log({
-      action: "org.member_removed",
-      userId: actorUserId,
-      orgId,
-      targetId: memberUserId,
-      targetType: "user",
-    });
-
-    await this.accessRevocation
-      .notifyAccessLoss(orgId, memberUserId, "removed")
-      .catch(() => undefined);
-
-    return { success: true };
+    ]).then(() => undefined);
   }
 
   async leaveOrg(orgId: string, userId: string) {
@@ -231,7 +245,7 @@ export class OrgMemberDepartureService {
     }
 
     try {
-      const nextOrgId = await withMembershipMutations(this.cache, (mutations) =>
+      const nextOrgId = await withMembershipMutations((mutations) =>
         runInTenantTransaction(
           this.db,
           async (tx) => {
@@ -287,7 +301,33 @@ export class OrgMemberDepartureService {
                 ),
               );
 
-            await mutations.deleteMembership(tx, { orgId, userId });
+            const revocation = await this.accessRevocation.planOrgScopedRevocation(
+              tx,
+              orgId,
+              userId,
+              "left",
+            );
+            const departed = await this.memberLeftEvents(tx, orgId, userId);
+            await mutations.deleteMembership(
+              tx,
+              { orgId, userId },
+              {
+                audit: {
+                  action: "org.member_left",
+                  userId,
+                  targetId: userId,
+                  targetType: "user",
+                },
+                revoke: { cache: this.cache, loses: revocation.loses },
+                notify: { via: this.dispatch, events: departed },
+                afterCommit: () =>
+                  Promise.all([
+                    revocation.afterCommit(),
+                    this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
+                    this.invalidateMemberListCaches(orgId),
+                  ]).then(() => undefined),
+              },
+            );
 
             const [remaining] = await tx
               .select({ orgId: organizationMembers.orgId })
@@ -317,31 +357,14 @@ export class OrgMemberDepartureService {
         ),
       );
 
-      await Promise.all([
-        this.accessRevocation.revokeOrgScopedAccess(orgId, userId, "left"),
-        this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
-        this.cache.invalidateNamespaceForOrg(orgId, "org:members:list"),
-        this.cache.invalidateForOrg(orgId, "rbac:members"),
-        this.cache.invalidateForOrg(orgId, "module-access:candidates"),
-        this.cache.invalidateForOrg(orgId, "users:stats"),
-        this.db
-          .delete(accountOrganizationIndex)
-          .where(
-            and(
-              eq(accountOrganizationIndex.userId, userId),
-              eq(accountOrganizationIndex.orgId, orgId),
-            ),
+      await this.db
+        .delete(accountOrganizationIndex)
+        .where(
+          and(
+            eq(accountOrganizationIndex.userId, userId),
+            eq(accountOrganizationIndex.orgId, orgId),
           ),
-      ]);
-      this.audit.log({
-        action: "org.member_left",
-        userId,
-        orgId,
-        targetId: userId,
-        targetType: "user",
-      });
-
-      await this.notifyMemberLeft(orgId, userId).catch(() => undefined);
+        );
 
       return { success: true, nextOrgId };
     } catch (err) {
@@ -356,17 +379,22 @@ export class OrgMemberDepartureService {
     }
   }
 
-  private async notifyMemberLeft(orgId: string, userId: string): Promise<void> {
-    const [admins, member] = await Promise.all([
+  private async memberLeftEvents(
+    tx: DbOrTx,
+    orgId: string,
+    userId: string,
+  ): Promise<DispatchEventInput[]> {
+    const [adminIds, member] = await Promise.all([
       getOrgAdminUserIds(this.db, orgId),
-      this.db.query.users.findFirst({
+      tx.query.users.findFirst({
         where: eq(users.id, userId),
         columns: { email: true, name: true },
       }),
     ]);
-    if (admins.length === 0) return;
+    const admins = adminIds.filter((adminId) => adminId !== userId);
+    if (admins.length === 0) return [];
 
-    await this.dispatch.emit({
+    return [{
       eventKey: "organization.member.left",
       orgId,
       actorUserId: userId,
@@ -376,6 +404,6 @@ export class OrgMemberDepartureService {
       title: "A member left the organization",
       message: `${member?.name ?? member?.email ?? "A member"} left the organization. Their seat is now free.`,
       link: "/users",
-    });
+    }];
   }
 }

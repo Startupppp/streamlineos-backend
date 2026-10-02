@@ -1,4 +1,6 @@
-import { loadRouteSurface, isObjectAddressable, type HandlerRoute } from "./route-surface";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { BACKEND_ROOT, loadRouteSurface, isObjectAddressable, type HandlerRoute } from "./route-surface";
 import { buildSourceIndex, analyzeRoute, type BindingVerdict } from "./tenant-binding";
 import { allCatalogScopes, platformCapabilityScopes } from "src/modules/access/access-policy";
 import {
@@ -25,8 +27,16 @@ const TENANT_SELECTOR_IN_PATH: ReadonlyMap<string, string> = new Map([
     "vendor marketing blog — blog_posts is deliberately global (db/schema/blog/blog.ts), published posts are public content",
   ],
   [
-    "GET /blog/by-slug/:slug/adjacent",
-    "vendor marketing blog — same global surface as the sibling read",
+    "GET /blog/by-slug/:slug/related",
+    "vendor marketing blog — related published posts of a global post, same surface as the by-slug read",
+  ],
+  [
+    "GET /blog/categories/:categorySlug",
+    "vendor marketing blog — a global category page listing published posts only",
+  ],
+  [
+    "GET /blog/authors/:authorSlug",
+    "vendor marketing blog — a global author page listing published posts only, no author email in the public projection",
   ],
   [
     "GET /public/whiteboard-links/:token",
@@ -82,12 +92,15 @@ const TENANT_SELECTOR_IN_PATH: ReadonlyMap<string, string> = new Map([
  * tenant-bound and never can be; the executable assertions below are what prove
  * they are no longer reachable.
  */
-const PLATFORM_GLOBAL_RESOURCE: ReadonlySet<string> = new Set([
-  "GET /blog/admin/posts/:postId",
-  "PATCH /blog/admin/posts/:postId",
-  "DELETE /blog/admin/posts/:postId",
-  "PATCH /blog/admin/categories/:categoryId",
-  "DELETE /blog/admin/categories/:categoryId",
+const PLATFORM_GLOBAL_RESOURCE: ReadonlyMap<string, string> = new Map([
+  [
+    "PATCH /platform/promotions/:promotionId",
+    "platform-wide coupon (org_id IS NULL): the write is bound to isNull(coupons.orgId) so no tenant coupon matches, and refused without the INTERNAL_API_SECRET header",
+  ],
+  [
+    "DELETE /platform/promotions/:promotionId",
+    "platform-wide coupon (org_id IS NULL): the deactivation is bound to isNull(coupons.orgId) so no tenant coupon matches, and refused without the INTERNAL_API_SECRET header",
+  ],
 ]);
 
 const BOUND: ReadonlySet<BindingVerdict> = new Set<BindingVerdict>([
@@ -168,14 +181,31 @@ describe("BOLA — the vendor's global blog is unreachable from any tenant stand
     delete process.env.PLATFORM_ADMIN_USER_IDS;
   });
 
-  it("ANTI-VACUITY: the keys the blog admin routes gate on are the platform-only ones", () => {
-    const routes = loadRouteSurface().filter((r) => r.path.startsWith("/blog/admin"));
-    expect(routes.length).toBeGreaterThan(0);
-    const gated = new Set(routes.flatMap((r) => r.permissionKeys));
-    expect([...gated].every((k) => k.startsWith("blog:"))).toBe(true);
-    expect(gated.has("blog:posts:manage")).toBe(true);
+  it("ANTI-VACUITY: the /blog/admin write API is retired to the standalone blog admin, the only /blog write left is the signed invalidation receiver, and every route gating on a blog key gates on a platform-only one", () => {
+    const surface = loadRouteSurface();
+    const blog = surface.filter((r) => r.path.startsWith("/blog"));
+    expect(blog.filter((r) => r.verb === "GET").length).toBeGreaterThan(0);
+    expect(blog.filter((r) => r.path.startsWith("/blog/admin")).map(key)).toEqual([]);
+    expect(blog.filter((r) => r.verb !== "GET").map(key)).toEqual(["POST /blog/internal/invalidate"]);
+    expect(readFileSync(join(BACKEND_ROOT, "src/modules/blog/blog-internal.controller.ts"), "utf8")).toContain(
+      "@UseGuards(BlogInvalidationSignatureGuard)",
+    );
+    const blogGated = new Set(surface.flatMap((r) => r.permissionKeys).filter((k) => k.startsWith("blog:")));
+    expect(blogGated.has("blog:ai:use")).toBe(true);
+    expect([...blogGated].filter((k) => !PLATFORM_ONLY_PERMISSION_KEYS.has(k))).toEqual([]);
     expect(BLOG_KEYS).toContain("blog:posts:manage");
     expect(BLOG_KEYS).toContain("blog:categories:manage");
+  });
+
+  it("the platform promotion writes are confined to platform rows and to the internal secret", () => {
+    const promotions = loadRouteSurface().filter(
+      (r) => r.path === "/platform/promotions/:promotionId" && r.verb !== "GET",
+    );
+    expect(promotions.map(key).sort()).toEqual([...PLATFORM_GLOBAL_RESOURCE.keys()].sort());
+    for (const route of promotions) {
+      expect([key(route), route.body]).toEqual([key(route), expect.stringContaining("assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET)")]);
+      expect([key(route), route.body]).toEqual([key(route), expect.stringContaining("and(eq(coupons.id, promotionId), isNull(coupons.orgId))")]);
+    }
   });
 
   it("EXECUTABLE: the owner/org-admin short-circuit no longer confers any blog key", () => {

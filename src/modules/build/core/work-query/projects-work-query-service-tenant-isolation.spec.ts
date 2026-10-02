@@ -1,4 +1,8 @@
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import type { AccessService } from "../../../access/access.service";
+import { MEMBER_STANDING, principalAccess } from "../../__tests__/project-access-doubles";
+
+const memberAccess = () => principalAccess(MEMBER_STANDING) as unknown as AccessService;
 import type { Db } from "../../../../db/drizzle.module";
 import type { AllWorkQuery } from "../dto/projects.schemas";
 
@@ -69,7 +73,7 @@ describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
         .mockReturnValueOnce(countChain),
     } as unknown as Db;
 
-    const svc = new ProjectsWorkQueryService(db);
+    const svc = new ProjectsWorkQueryService(db, memberAccess());
     const result = await svc.getAllWork(makeUser(ATTACKER_ORG), BASE_QUERY);
 
     expect(result.data).toHaveLength(0);
@@ -130,7 +134,7 @@ describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
       .mockReturnValueOnce({ from: labelFrom });
 
     const db = { select } as unknown as Db;
-    const svc = new ProjectsWorkQueryService(db);
+    const svc = new ProjectsWorkQueryService(db, memberAccess());
     const result = await svc.getAllWork(makeUser(OWNER_ORG), BASE_QUERY);
 
     expect(result.data).toHaveLength(1);

@@ -4,6 +4,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { AccessService } from "../../../access/access.service";
 import type { CacheService } from "../../../../common/cache/cache.service";
 import type { Db } from "../../../../db/drizzle.types";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils";
 
 const actor: CurrentUserContext = {
@@ -61,8 +62,10 @@ function makeDb(captured: CapturedGap, executed: string[]) {
     then: (resolve: (value: typeof boardRows) => unknown) => Promise<unknown>;
   }
 
+  let selectCalls = 0;
   const db = {
     select: jest.fn(() => {
+      const call = selectCalls++;
       let lastWhere: unknown;
       let chain: SelectChain;
       chain = {
@@ -74,6 +77,7 @@ function makeDb(captured: CapturedGap, executed: string[]) {
         orderBy: jest.fn().mockReturnThis(),
         for: jest.fn().mockReturnThis(),
         limit: jest.fn(() => {
+          if (call === 0) return Promise.resolve([projectAccessRow()]);
           captured.where = lastWhere;
           return Promise.resolve([]);
         }),

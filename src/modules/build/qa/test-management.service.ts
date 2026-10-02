@@ -10,7 +10,7 @@ import {
   assertRestorable,
   clearingLifecycle,
 } from "../lifecycle/lifecycle-restore";
-import { assertProjectAccess, escapeLike } from "../core";
+import { assertProjectAccess, escapeLike, assertProjectWriteAccess } from "../core";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type {
   CreateTestCaseInput,
@@ -78,7 +78,7 @@ export class TestManagementService {
   }
 
   async createSuite(u: CurrentUserContext, projectId: number, input: CreateTestSuiteInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     if (input.parentId !== undefined) {
       const parent = await this.db.query.testSuites.findFirst({
         where: and(
@@ -111,7 +111,7 @@ export class TestManagementService {
     suiteId: number,
     input: UpdateTestSuiteInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.testSuites.findFirst({
       where: and(
@@ -137,7 +137,7 @@ export class TestManagementService {
   }
 
   async deleteSuite(u: CurrentUserContext, projectId: number, suiteId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.testSuites.findFirst({
       where: and(
@@ -165,7 +165,7 @@ export class TestManagementService {
   }
 
   async restoreSuite(u: CurrentUserContext, projectId: number, suiteId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.testSuites.findFirst({
       where: and(
@@ -239,7 +239,7 @@ export class TestManagementService {
   }
 
   async createCase(u: CurrentUserContext, projectId: number, input: CreateTestCaseInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [tc] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
@@ -275,7 +275,7 @@ export class TestManagementService {
     caseId: number,
     input: UpdateTestCaseInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.testCases.findFirst({
       where: and(
@@ -307,7 +307,7 @@ export class TestManagementService {
   }
 
   async deleteCase(u: CurrentUserContext, projectId: number, caseId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.testCases.findFirst({
       where: and(
@@ -335,7 +335,7 @@ export class TestManagementService {
   }
 
   async restoreCase(u: CurrentUserContext, projectId: number, caseId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const existing = await this.db.query.testCases.findFirst({
       where: and(

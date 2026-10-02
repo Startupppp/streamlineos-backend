@@ -20,6 +20,7 @@ it.each(["parentTicketId", "epicId"] as const)("rejects an inverse %s edge commi
   const db = {
     query: { tickets: { findFirst: async () => ({ projectId: 1, version: 1 }) } },
     execute: async () => [{ id: 8, next_id: null, project_id: 1, depth: 0 }],
+    select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ state: "ACTIVE" }] }) }) }),
     transaction: async <T>(operation: (transaction: typeof tx) => Promise<T>) => operation(tx),
   };
   const module = await Test.createTestingModule({ providers: [ProjectsTicketsUpdateService,

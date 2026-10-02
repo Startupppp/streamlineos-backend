@@ -27,6 +27,7 @@ function makeDb(activeCount: number) {
     }),
   });
   const db = {
+    execute: jest.fn().mockResolvedValue([{ one: 1 }]),
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockResolvedValue([{ count: activeCount }]),

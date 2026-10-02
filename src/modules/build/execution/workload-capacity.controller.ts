@@ -49,6 +49,6 @@ export class WorkloadCapacityController {
     const today = format(new Date(), "yyyy-MM-dd");
     const start = query.start ?? today;
     const end = query.end ?? format(addDays(new Date(), 13), "yyyy-MM-dd");
-    return this.capacityService.capacity(u.orgId, projectId, start, end, query.teamId);
+    return this.capacityService.capacity(u, projectId, start, end, query.teamId);
   }
 }

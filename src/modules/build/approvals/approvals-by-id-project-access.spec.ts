@@ -1,6 +1,6 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
-import { ForbiddenException } from "@nestjs/common";
+import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -9,10 +9,15 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
 import { ChatChannelsService } from "../../chat/chat-channels.service";
 import { ChatMessagesService } from "../../chat/chat-messages.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectWriteAccess } from "../core";
+import { projectAccessRow, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 import { ApprovalsService } from "./approvals.service";
 
-jest.mock("../core/project-crud/project-access", () => ({ assertProjectAccess: jest.fn() }));
+jest.mock("../core/project-crud/project-access", () => ({
+  assertProjectAccess: jest.fn(),
+  assertProjectWriteAccess: jest.fn(),
+  authorizeApprovalDecision: jest.requireActual("../core/project-crud/project-access").authorizeApprovalDecision,
+}));
 
 const ORG_ID = "org-1";
 const PROJECT_ID = 7;
@@ -57,11 +62,13 @@ describe("ApprovalsService project authorization", () => {
   const where = jest.fn().mockReturnValue({ returning });
   const set = jest.fn().mockReturnValue({ where });
   const update = jest.fn().mockReturnValue({ set });
-  const db = { query: { projectApprovals: { findFirst } }, update };
+  const projectRows = jest.fn<Promise<ProjectAccessRow[]>, []>();
+  const select = jest.fn(() => ({ from: () => ({ where: () => ({ limit: projectRows }) }) }));
+  const db = { query: { projectApprovals: { findFirst } }, update, select };
   const audit = { log: jest.fn() };
   const access = {
     holds: jest.fn(),
-    resolveUserPermissions: jest.fn(),
+    scopeFor: jest.fn(),
   };
   const chatChannels = { getOrCreateEntityChannel: jest.fn() };
   const chatMessages = { sendSystemMessage: jest.fn() };
@@ -69,7 +76,12 @@ describe("ApprovalsService project authorization", () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
-    jest.mocked(assertProjectAccess).mockResolvedValue(undefined);
+    jest.mocked(assertProjectWriteAccess).mockResolvedValue(undefined);
+    select.mockImplementation(() => ({ from: () => ({ where: () => ({ limit: projectRows }) }) }));
+    projectRows.mockResolvedValue([projectAccessRow()]);
+    access.scopeFor.mockImplementation(async (_actor: CurrentUserContext, key: string) =>
+      key === "build:view" ? "own" : "none",
+    );
     findFirst.mockResolvedValue(approvalRow());
     returning.mockResolvedValue([approvalRow()]);
     where.mockReturnValue({ returning });
@@ -91,26 +103,42 @@ describe("ApprovalsService project authorization", () => {
   });
 
   it("denies a manage-permission holder without project access before deciding", async () => {
-    jest.mocked(assertProjectAccess).mockRejectedValue(new ForbiddenException());
-
     await expect(
       service.decideApproval(user, PROJECT_ID, APPROVAL_ID, { decision: "approved" }),
     ).rejects.toThrow(ForbiddenException);
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("allows the designated approver without requiring a second project gate", async () => {
+  it("lets a manage-permission holder who is a project member decide, the positive pair of the denial above", async () => {
+    projectRows.mockResolvedValue([projectAccessRow({ memberRole: "MEMBER" })]);
+
+    await expect(
+      service.decideApproval(user, PROJECT_ID, APPROVAL_ID, { decision: "approved" }),
+    ).resolves.toBeDefined();
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows the designated approver without the manage permission or project membership", async () => {
     findFirst.mockResolvedValue(approvalRow(MEMBERSHIP_ID));
 
     await expect(
       service.decideApproval(user, PROJECT_ID, APPROVAL_ID, { decision: "approved" }),
     ).resolves.toBeDefined();
     expect(access.holds).not.toHaveBeenCalled();
-    expect(assertProjectAccess).not.toHaveBeenCalled();
   });
 
-  it("denies approval updates before loading or writing when project access fails", async () => {
-    jest.mocked(assertProjectAccess).mockRejectedValue(new ForbiddenException());
+  it("refuses even the designated approver with 409 once the project is archived, because a locked project takes no decisions", async () => {
+    findFirst.mockResolvedValue(approvalRow(MEMBERSHIP_ID));
+    projectRows.mockResolvedValue([projectAccessRow({ state: "ARCHIVED" })]);
+
+    await expect(
+      service.decideApproval(user, PROJECT_ID, APPROVAL_ID, { decision: "approved" }),
+    ).rejects.toThrow(ConflictException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("denies approval updates before loading or writing when project write access fails", async () => {
+    jest.mocked(assertProjectWriteAccess).mockRejectedValue(new ForbiddenException());
 
     await expect(
       service.updateApproval(user, PROJECT_ID, APPROVAL_ID, { status: "cancelled" }),
@@ -119,18 +147,18 @@ describe("ApprovalsService project authorization", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("updates an approval after project access succeeds", async () => {
+  it("updates an approval after project write access succeeds", async () => {
     returning.mockResolvedValue([approvalRow(999, "escalated")]);
 
     await expect(
       service.updateApproval(user, PROJECT_ID, APPROVAL_ID, { status: "escalated" }),
     ).resolves.toMatchObject({ id: APPROVAL_ID, status: "escalated" });
-    expect(assertProjectAccess).toHaveBeenCalledWith(db, access, user, PROJECT_ID);
+    expect(assertProjectWriteAccess).toHaveBeenCalledWith(db, access, user, PROJECT_ID);
     expect(update).toHaveBeenCalledTimes(1);
   });
 
-  it("denies approval deletion before loading or writing when project access fails", async () => {
-    jest.mocked(assertProjectAccess).mockRejectedValue(new ForbiddenException());
+  it("denies approval deletion before loading or writing when project write access fails", async () => {
+    jest.mocked(assertProjectWriteAccess).mockRejectedValue(new ForbiddenException());
 
     await expect(service.softDeleteApproval(user, PROJECT_ID, APPROVAL_ID)).rejects.toThrow(
       ForbiddenException,
@@ -139,11 +167,11 @@ describe("ApprovalsService project authorization", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("deletes an approval after project access succeeds and preserves audit logging", async () => {
+  it("deletes an approval after project write access succeeds and preserves audit logging", async () => {
     await expect(
       service.softDeleteApproval(user, PROJECT_ID, APPROVAL_ID),
     ).resolves.toBeUndefined();
-    expect(assertProjectAccess).toHaveBeenCalledWith(db, access, user, PROJECT_ID);
+    expect(assertProjectWriteAccess).toHaveBeenCalledWith(db, access, user, PROJECT_ID);
     expect(update).toHaveBeenCalledTimes(1);
     expect(audit.log).toHaveBeenCalledWith(
       expect.objectContaining({

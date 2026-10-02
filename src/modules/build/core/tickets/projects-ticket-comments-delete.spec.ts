@@ -1,9 +1,11 @@
 import { ForbiddenException } from "@nestjs/common";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { decideTicketRead } from "../project-crud/project-access";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 
 jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
+  assertProjectStateAllowsWrites: jest.fn(),
+  decideTicketRead: jest.fn(),
 }));
 
 function buildService(comment: { id: number; userId: string } | undefined) {
@@ -49,7 +51,7 @@ const actor = {
 };
 
 beforeEach(() => {
-  jest.mocked(assertTicketReadAccess).mockResolvedValue();
+  jest.mocked(decideTicketRead).mockResolvedValue({ kind: "allowed", projectId: 3, projectState: "ACTIVE" });
 });
 
 describe("ProjectsTicketCommentsService.deleteComment", () => {

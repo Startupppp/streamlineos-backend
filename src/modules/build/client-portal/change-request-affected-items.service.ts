@@ -9,6 +9,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ChangeRequestsService } from "./change-requests.service";
+import { AccessService } from "../../access/access.service";
+import { assertTicketReadAccess } from "../core";
 import type {
   LinkAffectedTicketInput,
   ListAffectedTicketsQuery,
@@ -57,6 +59,7 @@ export class ChangeRequestAffectedItemsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly changeRequests: ChangeRequestsService,
+    private readonly access: AccessService,
   ) {}
 
   async listAffectedTickets(
@@ -116,6 +119,7 @@ export class ChangeRequestAffectedItemsService {
   ) {
     const { orgId, userId } = u;
     await this.changeRequests.getChangeRequest(u, projectId, changeRequestId);
+    await assertTicketReadAccess(this.db, this.access, u, projectId, input.ticketId);
 
     const [ticket] = await this.db
       .select(ticketSummaryColumns)

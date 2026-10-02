@@ -57,7 +57,7 @@ export class PortfoliosController {
     @Query() query: ListPortfoliosQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listPortfolios(u.orgId, query);
+    return this.svc.listPortfolios(u, query);
   }
 
   @Get("portfolios/:portfolioId")
@@ -69,7 +69,7 @@ export class PortfoliosController {
     @Query() query: PortfolioDetailQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getPortfolio(u.orgId, portfolioId, query);
+    return this.svc.getPortfolio(u, portfolioId, query);
   }
 
   @Post("portfolios")
@@ -118,7 +118,7 @@ export class PortfoliosController {
     @Body() body: LinkProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.linkProject(u.orgId, u.userId, portfolioId, body);
+    return this.svc.linkProject(u, portfolioId, body);
   }
 
   @Delete("portfolios/:portfolioId/projects/:projectId")
@@ -131,6 +131,6 @@ export class PortfoliosController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.unlinkProject(u.orgId, u.userId, portfolioId, projectId);
+    return this.svc.unlinkProject(u, portfolioId, projectId);
   }
 }

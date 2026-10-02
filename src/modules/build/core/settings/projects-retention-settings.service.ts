@@ -1,8 +1,10 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
-import { projects, projectRetentionSettings } from "../../../../db/schema";
+import { projectRetentionSettings } from "../../../../db/schema";
+import { AccessService } from "../../../access/access.service";
+import { assertCanManageProject, assertProjectVisible } from "../project-crud/project-access";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type {
   UpdateRetentionPolicyInput,
@@ -63,19 +65,16 @@ function toResponse(projectId: number, row: SettingsRow): ProjectRetentionSettin
 
 @Injectable()
 export class ProjectsRetentionSettingsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
   async getSettings(
     u: CurrentUserContext,
     projectId: number,
   ): Promise<ProjectRetentionSettingsRow> {
-    const [project] = await this.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.orgId, u.orgId), eq(projects.id, projectId)))
-      .limit(1);
-
-    if (!project) throw new NotFoundException();
+    await assertProjectVisible(this.db, this.access, u, projectId);
 
     const [row] = await this.db
       .select(DEFAULT_PROJECTION)
@@ -111,13 +110,7 @@ export class ProjectsRetentionSettingsService {
     projectId: number,
     input: UpdateRetentionPolicyInput,
   ): Promise<ProjectRetentionSettingsRow> {
-    const [project] = await this.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.orgId, u.orgId), eq(projects.id, projectId), isNull(projects.deletedAt)))
-      .limit(1);
-
-    if (!project) throw new NotFoundException();
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     const [existing] = await this.db
       .select({ id: projectRetentionSettings.id, version: projectRetentionSettings.version })
@@ -180,13 +173,7 @@ export class ProjectsRetentionSettingsService {
     projectId: number,
     input: SetLegalHoldInput,
   ): Promise<void> {
-    const [project] = await this.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.orgId, u.orgId), eq(projects.id, projectId)))
-      .limit(1);
-
-    if (!project) throw new NotFoundException();
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     const [existing] = await this.db
       .select({ id: projectRetentionSettings.id, version: projectRetentionSettings.version })

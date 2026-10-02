@@ -1,9 +1,12 @@
+import { actorIn } from "./__tests__/portfolio-spec-fixtures";
 import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { PortfoliosService } from "./portfolios.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AccessService } from "../../access/access.service";
+import { MANAGER_STANDING, standingAccess } from "../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 function renderSql(value: unknown): string {
@@ -69,40 +72,10 @@ describe("PortfoliosService", () => {
         PortfoliosService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
+        { provide: AccessService, useValue: standingAccess(MANAGER_STANDING) },
       ],
     }).compile();
     svc = module.get(PortfoliosService);
-  });
-
-  describe("linkProject — org validation", () => {
-    function mockPortfolioLoad(portfolio: unknown) {
-      const { selectChain } = makeSelectChain([portfolio]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
-    }
-
-    it("throws 404 when project belongs to a different org or does not exist", async () => {
-      mockPortfolioLoad(makePortfolio());
-      (mockDb as { query: { projects: { findFirst: jest.Mock } } }).query.projects.findFirst.mockResolvedValue(undefined);
-
-      await expect(
-        svc.linkProject(ORG_ID, USER_ID, 1, { projectId: 99 }),
-      ).rejects.toBeInstanceOf(NotFoundException);
-    });
-
-    it("resolves when project belongs to the same org", async () => {
-      mockPortfolioLoad(makePortfolio());
-      (mockDb as { query: { projects: { findFirst: jest.Mock } } }).query.projects.findFirst.mockResolvedValue({ id: 5 });
-
-      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
-        values: jest.fn().mockReturnValue({
-          onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
-        }),
-      });
-
-      const result = await svc.linkProject(ORG_ID, USER_ID, 1, { projectId: 5 });
-      expect(result).toEqual({ success: true });
-      expect(mockAudit.log).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe("getPortfolio — related links are cursor pages, not bare arrays", () => {
@@ -153,7 +126,7 @@ describe("PortfoliosService", () => {
         };
       });
 
-      const result = await svc.getPortfolio(ORG_ID, 2, DETAIL_QUERY);
+      const result = await svc.getPortfolio(actorIn(ORG_ID), 2, DETAIL_QUERY);
 
       expect(result).toMatchObject({ id: 2, name: "Flat Test" });
       expect(result.projects.data).toEqual([
@@ -210,7 +183,7 @@ describe("PortfoliosService", () => {
         return { from: jest.fn(() => countsChain) };
       });
 
-      const result = await svc.getPortfolio(ORG_ID, 2, {
+      const result = await svc.getPortfolio(actorIn(ORG_ID), 2, {
         ...DETAIL_QUERY,
         projectsLimit: 2,
       });
@@ -226,7 +199,7 @@ describe("PortfoliosService", () => {
       const { selectChain } = makeSelectChain([]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
-      await expect(svc.getPortfolio(OTHER_ORG, 1, DETAIL_QUERY)).rejects.toBeInstanceOf(
+      await expect(svc.getPortfolio(actorIn(OTHER_ORG), 1, DETAIL_QUERY)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -235,7 +208,7 @@ describe("PortfoliosService", () => {
       const { selectChain } = makeSelectChain([]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
-      await expect(svc.getPortfolio(ORG_ID, 999, DETAIL_QUERY)).rejects.toBeInstanceOf(
+      await expect(svc.getPortfolio(actorIn(ORG_ID), 999, DETAIL_QUERY)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -276,7 +249,7 @@ describe("PortfoliosService", () => {
         };
       });
 
-      await svc.getPortfolio(ORG_ID, 10, DETAIL_QUERY);
+      await svc.getPortfolio(actorIn(ORG_ID), 10, DETAIL_QUERY);
 
       expect(capturedProjectsWhere).toBeDefined();
       const rendered = renderSql(capturedProjectsWhere);

@@ -6,6 +6,7 @@ import { ChatAssistantService } from "../modules/ai/core/services/chat-assistant
 import { ChatAssistantController } from "../modules/ai/core/controllers/chat-assistant.controller";
 import { ChatHistoryService } from "../modules/ai/core/services/chat-history.service";
 import { AccessService } from "../modules/access/access.service";
+import { AuthContextFactory } from "../common/auth/auth-context.factory";
 import {
   ASK_OS_TOOL_PROVIDERS,
   collectToolDefinitions,
@@ -248,6 +249,7 @@ async function main(): Promise<void> {
   const controller = app.get(ChatAssistantController, { strict: false });
   const history = app.get(ChatHistoryService, { strict: false });
   const db = app.get<Db>(DRIZZLE, { strict: false });
+  const authContexts = app.get(AuthContextFactory, { strict: false });
   const user = toCurrentUser(actor);
 
   const restricted = toRestrictedTokenUser(actor);
@@ -342,7 +344,7 @@ async function main(): Promise<void> {
     if (row.confirm === true && token !== undefined) {
       try {
         const confirmed = await runInNewTenantTransaction(db, actor.orgId, () =>
-          controller.confirmAction({ token }, user),
+          controller.confirmAction({ token }, user, authContexts.create(user)),
         );
         process.stdout.write(`CONFIRMED:  ${JSON.stringify(confirmed)}\n\n`);
       } catch (error) {

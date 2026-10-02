@@ -147,7 +147,7 @@ export async function rankTicket(
         projectId,
         [target],
         status,
-        policy.role,
+        policy,
       );
     const now = new Date();
     const [updated] = await tx

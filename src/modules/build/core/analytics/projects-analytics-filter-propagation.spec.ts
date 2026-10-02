@@ -1,5 +1,21 @@
-import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { CacheService } from "../../../../common/cache/cache.service";
+import { analyticsService } from "./__tests__/analytics-service-double";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectAggregateAccess: jest.fn().mockResolvedValue(undefined),
+}));
+
+const ANALYTICS_ACTOR = (orgId: string): CurrentUserContext => ({
+  userId: "user-1",
+  orgId,
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
+});
 
 const DUMMY_PROJECT = { id: 7, orgId: "org-1" };
 
@@ -60,24 +76,24 @@ function makeDb(opts: { memberRow?: { id: number } } = {}) {
 describe("ProjectsAnalyticsService — filter propagation (C5)", () => {
   it("does not query organizationMembers when no ownerId filter is supplied so unfiltered analytics are returned", async () => {
     const { rawDb, memberFindFirst } = makeDb();
-    const service = new ProjectsAnalyticsService(
+    const service = await analyticsService(
       rawDb as never,
       makeCachePassThrough(),
     );
 
-    await service.getProjectAnalytics("org-1", 7, {});
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, {});
 
     expect(memberFindFirst).not.toHaveBeenCalled();
   });
 
   it("looks up the organization member when ownerId is supplied so the assignee filter targets that user's membership", async () => {
     const { rawDb, memberFindFirst } = makeDb({ memberRow: { id: 42 } });
-    const service = new ProjectsAnalyticsService(
+    const service = await analyticsService(
       rawDb as never,
       makeCachePassThrough(),
     );
 
-    await service.getProjectAnalytics("org-1", 7, { ownerId: "user-abc" });
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { ownerId: "user-abc" });
 
     expect(memberFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({ columns: { id: true } }),
@@ -88,10 +104,10 @@ describe("ProjectsAnalyticsService — filter propagation (C5)", () => {
     const keys: string[] = [];
     const { rawDb: db1 } = makeDb({ memberRow: { id: 42 } });
     const cache = makeCacheCapturing(keys);
-    const service = new ProjectsAnalyticsService(db1 as never, cache);
+    const service = await analyticsService(db1, cache);
 
-    await service.getProjectAnalytics("org-1", 7, {});
-    await service.getProjectAnalytics("org-1", 7, { ownerId: "user-abc" });
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, {});
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { ownerId: "user-abc" });
 
     expect(keys.length).toBe(2);
     expect(keys[0]).not.toBe(keys[1]);
@@ -101,10 +117,10 @@ describe("ProjectsAnalyticsService — filter propagation (C5)", () => {
     const keys: string[] = [];
     const { rawDb } = makeDb();
     const cache = makeCacheCapturing(keys);
-    const service = new ProjectsAnalyticsService(rawDb as never, cache);
+    const service = await analyticsService(rawDb, cache);
 
-    await service.getProjectAnalytics("org-1", 7, {});
-    await service.getProjectAnalytics("org-1", 7, { teamId: 5 });
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, {});
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { teamId: 5 });
 
     expect(keys.length).toBe(2);
     expect(keys[0]).not.toBe(keys[1]);
@@ -114,11 +130,11 @@ describe("ProjectsAnalyticsService — filter propagation (C5)", () => {
     const keys: string[] = [];
     const { rawDb } = makeDb();
     const cache = makeCacheCapturing(keys);
-    const service = new ProjectsAnalyticsService(rawDb as never, cache);
+    const service = await analyticsService(rawDb, cache);
 
-    await service.getProjectAnalytics("org-1", 7, { range: "7d" });
-    await service.getProjectAnalytics("org-1", 7, { range: "30d" });
-    await service.getProjectAnalytics("org-1", 7, { range: "90d" });
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { range: "7d" });
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { range: "30d" });
+    await service.getProjectAnalytics(ANALYTICS_ACTOR("org-1"), 7, { range: "90d" });
 
     expect(keys.length).toBe(3);
     expect(keys[0]).not.toBe(keys[1]);

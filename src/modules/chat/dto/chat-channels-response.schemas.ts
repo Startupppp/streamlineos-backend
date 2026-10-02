@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
+import {
+  CHANNEL_MEMBER_ROLES,
+  NOTIFICATION_PREFERENCES,
+  CHANNEL_TYPES,
+} from "./chat.schemas";
 
 const chatUserPreviewSchema = z.object({
   id: z.string(),
@@ -11,10 +16,10 @@ export const channelMemberPreviewSchema = z.object({
   id: z.number().int(),
   channelId: z.number().int(),
   userId: z.string().nullable(),
-  role: z.string(),
+  role: z.enum(CHANNEL_MEMBER_ROLES),
   mutedUntil: nullableWireDate(),
   isFavorite: z.boolean(),
-  notificationPreference: z.string(),
+  notificationPreference: z.enum(NOTIFICATION_PREFERENCES),
   user: chatUserPreviewSchema.nullable(),
 });
 
@@ -27,7 +32,7 @@ const channelLastMessageSchema = z.object({
 export const channelListItemSchema = z.object({
   id: z.number().int(),
   name: z.string(),
-  type: z.string(),
+  type: z.enum(CHANNEL_TYPES),
   avatarUrl: z.string().nullable(),
   isArchived: z.boolean(),
   entityType: z.string().nullable(),
@@ -43,7 +48,7 @@ export const channelListItemSchema = z.object({
 export const channelPublicListItemSchema = z.object({
   id: z.number().int(),
   name: z.string(),
-  type: z.string(),
+  type: z.enum(CHANNEL_TYPES),
   description: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   createdAt: wireDate(),
@@ -63,13 +68,13 @@ export const channelDetailMemberSchema = z.object({
   id: z.number().int(),
   channelId: z.number().int(),
   userId: z.string().nullable(),
-  role: z.string(),
+  role: z.enum(CHANNEL_MEMBER_ROLES),
   lastReadAt: nullableWireDate(),
   joinedAt: wireDate(),
   mutedUntil: nullableWireDate(),
   archivedAt: nullableWireDate(),
   isFavorite: z.boolean(),
-  notificationPreference: z.string(),
+  notificationPreference: z.enum(NOTIFICATION_PREFERENCES),
   user: chatUserWithEmailSchema.nullable(),
 });
 
@@ -77,7 +82,7 @@ export const channelDetailSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   name: z.string(),
-  type: z.string(),
+  type: z.enum(CHANNEL_TYPES),
   description: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   isArchived: z.boolean(),
@@ -135,7 +140,7 @@ export const channelMuteResponseSchema = z.object({
 
 export const channelNotifPrefResponseSchema = z.object({
   ok: z.literal(true),
-  notificationPreference: z.string(),
+  notificationPreference: z.enum(NOTIFICATION_PREFERENCES),
 });
 
 export const channelSuccessSchema = z.object({ success: z.literal(true) });

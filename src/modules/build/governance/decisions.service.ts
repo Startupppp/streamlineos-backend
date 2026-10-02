@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import type { CreateDecisionInput, ListDecisionsQuery, UpdateDecisionInput } from "./dto/governance.schemas";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 
@@ -77,7 +77,7 @@ export class DecisionsService {
   }
 
   async createDecision(u: CurrentUserContext, projectId: number, input: CreateDecisionInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const [decision] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
@@ -122,7 +122,7 @@ export class DecisionsService {
     decisionId: number,
     input: UpdateDecisionInput,
   ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadDecision(u.orgId, projectId, decisionId);
     const patch: DecisionPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -154,7 +154,7 @@ export class DecisionsService {
   }
 
   async softDeleteDecision(u: CurrentUserContext, projectId: number, decisionId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.loadDecision(u.orgId, projectId, decisionId);
     await this.db
       .update(projectDecisions)

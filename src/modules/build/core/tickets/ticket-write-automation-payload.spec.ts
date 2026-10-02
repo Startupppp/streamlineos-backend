@@ -1,4 +1,5 @@
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import type { Db } from "../../../../db/drizzle.module";
 
 describe("ProjectsTicketsUpdateService — automation payload reflects current assignee", () => {
@@ -44,7 +45,12 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
       }),
     );
     return {
-      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) }, projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
+      query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([projectAccessRow()]) }),
+        }),
+      }),
       transaction: txFn,
     } as unknown as Db;
   }
@@ -55,7 +61,7 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
   const transfer = { notifyAssignedTickets: jest.fn().mockResolvedValue(undefined) } as never;
   const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;
-  const access = { holds: jest.fn().mockResolvedValue(true) } as never;
+  const access = { holds: jest.fn().mockResolvedValue(true), scopeFor: jest.fn().mockResolvedValue("all") } as never;
 
   it("ticket.updated payload carries the current assignee userId when the update does not change the assignee", async () => {
     const runForTicketEvent = jest.fn();

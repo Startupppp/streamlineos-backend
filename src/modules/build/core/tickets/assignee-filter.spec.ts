@@ -5,6 +5,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
 const dialect = new PgDialect();
@@ -90,7 +91,7 @@ function makeDb(onWhere?: (w: unknown) => void): Db {
     return chain;
   });
   chain["orderBy"] = jest.fn(() => chain);
-  chain["limit"] = jest.fn(() => Promise.resolve([]));
+  chain["limit"] = jest.fn().mockResolvedValueOnce([projectAccessRow()]).mockResolvedValue([]);
   chain["groupBy"] = jest.fn(() => Promise.resolve([]));
 
   return {

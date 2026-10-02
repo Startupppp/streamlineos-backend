@@ -69,7 +69,7 @@ function makeSelectDb(
 const audit = { log: jest.fn() } as never;
 
 const accessStub = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  scopeFor: jest.fn().mockResolvedValue("own"),
 } as unknown as AccessService;
 
 function makeCtx(orgId: string, userId: string): CurrentUserContext {

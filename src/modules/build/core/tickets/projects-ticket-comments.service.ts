@@ -14,7 +14,6 @@ import { withSavepoint } from "../../../data-quality/savepoint";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
 import { ProjectsActivityService } from "../activity/projects-activity.service";
-import { resolveTicketsScope } from "../lib/tickets-scope";
 import {
   ProjectsCommentNotFoundException,
   ProjectsForbiddenTicketException,
@@ -23,7 +22,7 @@ import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-d
 import { AuditService } from "../../../../common/audit/audit.service";
 import type { CommentInput } from "../dto/projects.schemas";
 import { resolvePersonDisplayName } from "../../../../common/organization/person-display-name";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { assertProjectStateAllowsWrites, assertTicketReadAccess, decideTicketRead } from "../project-crud/project-access";
 import { actingMembershipId } from "../../../../common/auth/principal";
 
 @Injectable()
@@ -40,44 +39,21 @@ export class ProjectsTicketCommentsService {
     u: CurrentUserContext,
     projectId: number | null,
     ticketId: number,
+    intent: "read" | "write",
   ) {
-    if (projectId !== null)
-      await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    const decision = await decideTicketRead(this.db, this.access, u, ticketId, { projectId });
+    if (decision.kind === "missing") throw new NotFoundException("Ticket not found");
+    if (decision.kind === "denied") throw new ProjectsForbiddenTicketException();
+    if (intent === "write" && decision.projectState !== null) assertProjectStateAllowsWrites(decision.projectState);
     const ticket = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, ticketId),
-        ...(projectId === null ? [] : [eq(tickets.projectId, projectId)]),
         eq(tickets.orgId, u.orgId),
         isNull(tickets.deletedAt),
       ),
-      with: {
-        assignee: { with: { user: { columns: { id: true } } } },
-        assignees: { with: { user: { columns: { userId: true } } } },
-      },
       columns: { id: true, assigneeMembershipId: true, reporterId: true, ticketNumber: true, title: true, projectId: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
-
-    if (projectId === null && ticket.projectId !== null) {
-      await assertTicketReadAccess(
-        this.db,
-        this.access,
-        u,
-        ticket.projectId,
-        ticketId,
-      );
-    } else if (ticket.projectId === null) {
-      const read = await resolveTicketsScope(this.access, u);
-      if (!read.unrestricted) {
-        const isAssignee =
-          ticket.assignee?.user?.id === u.userId ||
-          ticket.assignees.some((a) => a.user.userId === u.userId);
-        const isReporter = ticket.reporterId === u.userId;
-        if (!isAssignee && !isReporter)
-          throw new ProjectsForbiddenTicketException();
-      }
-    }
-
     return ticket;
   }
 
@@ -152,7 +128,7 @@ export class ProjectsTicketCommentsService {
     ticketId: number,
     body: CommentInput,
   ) {
-    const ticket = await this.resolveTicketForComment(u, projectId, ticketId);
+    const ticket = await this.resolveTicketForComment(u, projectId, ticketId, "write");
 
     if (body.parentCommentId !== undefined) {
       const parent = await this.db.query.ticketComments.findFirst({
@@ -222,14 +198,14 @@ export class ProjectsTicketCommentsService {
   }
 
   async getComment(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number) {
-    await this.resolveTicketForComment(u, projectId, ticketId);
+    await this.resolveTicketForComment(u, projectId, ticketId, "read");
     const comment = await this.loadCommentRow(u.orgId, ticketId, commentId);
     if (!comment) throw new ProjectsCommentNotFoundException();
     return comment;
   }
 
   async editComment(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, content: string) {
-    await this.resolveTicketForComment(u, projectId, ticketId);
+    await this.resolveTicketForComment(u, projectId, ticketId, "write");
 
     const comment = await this.db.query.ticketComments.findFirst({
       where: and(
@@ -258,7 +234,7 @@ export class ProjectsTicketCommentsService {
   }
 
   async deleteComment(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number) {
-    await this.resolveTicketForComment(u, projectId, ticketId);
+    await this.resolveTicketForComment(u, projectId, ticketId, "write");
 
     const comment = await this.db.query.ticketComments.findFirst({
       where: and(

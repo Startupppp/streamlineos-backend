@@ -300,6 +300,7 @@ describe("BuildEntityAdapter", () => {
         { type: "ticket", id: "1" },
         "assign",
         { assigneeId: "user_2" },
+        expect.objectContaining({ queryChunks: expect.any(Array) }),
       );
     });
 
@@ -523,10 +524,10 @@ describe("BuildEntityAdapter", () => {
       expect(result.status).toBe("unresolved");
     });
 
-    it("scope own: resolves a ticket the actor is assigned to", async () => {
+    it("scope own: resolves a ticket the actor is assigned to in a project they belong to, in one card query", async () => {
       const adapter = new BuildEntityAdapter(
-        dbStubSeq([{ ticketId: 1 }], [TICKET_ROW]),
-        accessStubScoped([["build:tickets:view", "own"]]),
+        dbStubSeq([TICKET_ROW]),
+        accessStubScoped([["build:tickets:view", "own"], ["build:view", "own"]]),
         ACTIONS_STUB,
       );
 

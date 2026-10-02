@@ -181,7 +181,7 @@ function buildStack(options: StackOptions = {}) {
     cache,
     entitlements,
     { resolve: mfaResolve } as unknown as MfaPolicyService,
-    new AccessVersionCache(db, cache),
+    new AccessVersionCache(db),
     membership,
   );
 

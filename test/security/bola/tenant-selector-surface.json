@@ -1,4 +1,5 @@
 [
+  "GET /auth/session-data/{userId} query orgId",
   "GET /platform/operator-access/grants query orgId",
   "GET /platform/operator-access/logs query orgId",
   "POST /auth/session-exchange body orgId",

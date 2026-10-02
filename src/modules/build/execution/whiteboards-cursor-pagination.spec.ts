@@ -2,12 +2,19 @@ import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { WhiteboardsService } from "./whiteboards.service";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
+
+function projectGate(found: boolean) {
+  return { from: () => ({ where: () => ({ limit: async () => (found ? [projectAccessRow()] : []) }) }) };
+}
 
 describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
   const ORG_ID = "org-wb-test";
   const PROJECT_ID = 5;
 
-  const access = { holds: jest.fn().mockResolvedValue(true) } as never;
+  const access = { ...principalAccess(MEMBER_STANDING), holds: jest.fn().mockResolvedValue(true) } as never;
 
   function makeRow(id: number) {
     return {
@@ -29,15 +36,19 @@ describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
     const leftJoin = jest.fn().mockReturnValue({ where: boardWhere });
     const from = jest.fn().mockReturnValue({ leftJoin });
     return {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(projectRow) },
-      },
-      select: jest.fn().mockReturnValue({ from }),
+      select: jest.fn().mockReturnValueOnce(projectGate(projectRow !== null)).mockReturnValue({ from }),
     } as unknown as Db;
   }
 
-  const makeU = (orgId: string) =>
-    ({ orgId, userId: "u1", isOrgOwner: true } as never);
+  const makeU = (orgId: string): CurrentUserContext => ({
+    orgId,
+    userId: "u1",
+    role: "OWNER",
+    isOrgOwner: true,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
+  });
 
   it("returns hasMore:true and nextCursor when the page is full and more rows exist", async () => {
     const overflow = Array.from({ length: 21 }, (_, i) => makeRow(21 - i));
@@ -96,8 +107,7 @@ describe("WhiteboardsService.listWhiteboards — cursor pagination", () => {
     const leftJoin = jest.fn().mockReturnValue({ where: boardWhere });
     const from = jest.fn().mockReturnValue({ leftJoin });
     const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }) } },
-      select: jest.fn().mockReturnValue({ from }),
+      select: jest.fn().mockReturnValueOnce(projectGate(true)).mockReturnValue({ from }),
     } as unknown as Db;
     const svc = new WhiteboardsService(db, access, lifecycleAuditDouble());
     await svc.listWhiteboards(makeU(ORG_ID), PROJECT_ID, { limit: 20 });

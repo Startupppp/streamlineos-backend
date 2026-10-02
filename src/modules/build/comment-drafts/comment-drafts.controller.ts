@@ -53,7 +53,7 @@ export class CommentDraftsController {
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(commentDraftWithTicketSchema))
   listMine(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.listMine(u.orgId, actingMembershipId(u.principal), u.userId);
+    return this.svc.listMine(u);
   }
 
   @Put("tickets/:ticketId")
@@ -65,7 +65,7 @@ export class CommentDraftsController {
     @Body() body: UpsertCommentDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.upsert(u.orgId, actingMembershipId(u.principal), u.userId, ticketId, body);
+    return this.svc.upsert(u, ticketId, body);
   }
 
   @Post("tickets/:ticketId/generate-draft")
@@ -79,12 +79,7 @@ export class CommentDraftsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.generator.generate(
-      u.orgId,
-      actingMembershipId(u.principal),
-      u.userId,
-      ticketId,
-    );
+    return this.generator.generate(u, ticketId);
   }
 
   @Post(":draftId/failures")

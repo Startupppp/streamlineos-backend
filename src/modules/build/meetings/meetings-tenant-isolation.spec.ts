@@ -4,6 +4,7 @@ import type { AccessService } from "../../access/access.service";
 import { MeetingsService } from "./meetings.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 describe("MeetingsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -25,12 +26,12 @@ describe("MeetingsService — cross-tenant isolation", () => {
   }
 
   function makeDb(meetingRow: unknown | null) {
-    const where = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
+    const limit = jest.fn().mockResolvedValueOnce([projectAccessRow()]).mockResolvedValue([]);
+    const where = jest.fn().mockReturnValue({ limit });
     const from = jest.fn().mockReturnValue({ where });
     const select = jest.fn().mockReturnValue({ from });
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(meetingRow), findMany: jest.fn().mockResolvedValue([]) },
       },
       select,
@@ -38,7 +39,7 @@ describe("MeetingsService — cross-tenant isolation", () => {
   }
 
   function makeNonMemberDb() {
-    const limit = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockResolvedValue([projectAccessRow()]);
     const where = jest.fn().mockReturnValue({ limit });
     const innerJoin2 = jest.fn().mockReturnValue({ where });
     const innerJoin1 = jest.fn().mockReturnValue({ innerJoin: innerJoin2, where });
@@ -46,7 +47,6 @@ describe("MeetingsService — cross-tenant isolation", () => {
     const select = jest.fn().mockReturnValue({ from });
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
         projectMeetings: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       select,
@@ -54,11 +54,11 @@ describe("MeetingsService — cross-tenant isolation", () => {
   }
 
   function makeAccess() {
-    return { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+    return standingAccess({ "build:manage": "all" }) as unknown as AccessService;
   }
 
   function makeNoAccessAccess() {
-    return { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as unknown as AccessService;
+    return standingAccess(MEMBER_STANDING) as unknown as AccessService;
   }
 
   it("throws NotFoundException when meeting belongs to a different org (cross-tenant isolation)", async () => {

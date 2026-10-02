@@ -1,5 +1,6 @@
 import type { Db } from "../../db/drizzle.module";
 import { LeadConversionService } from "./lead-conversion.service";
+import type { BuildTicketCreationService } from "../build/core/tickets";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -39,7 +40,7 @@ describe("LeadConversionService — cross-tenant isolation", () => {
     const access = { membersWithPermission: jest.fn().mockResolvedValue([{ userId: "u1" }]) };
     const dispatch = { emit: jest.fn() };
     const merges = { mergeLead: jest.fn() };
-    const svc = new LeadConversionService(db, access as never, dispatch as never, merges as never);
+    const svc = new LeadConversionService(db, access as never, dispatch as never, merges as never, {} as unknown as BuildTicketCreationService);
     return { svc, where, db };
   }
 

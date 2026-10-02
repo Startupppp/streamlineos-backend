@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const SURVEYS_PERMISSIONS: Permission[] = [
+export const SURVEYS_PERMISSIONS = definePermissions([
   {
     name: "surveys:view",
     resource: "surveys",
@@ -90,4 +90,4 @@ export const SURVEYS_PERMISSIONS: Permission[] = [
     action: "manage",
     description: "Manage survey automations and lead routing rules",
   },
-];
+]);

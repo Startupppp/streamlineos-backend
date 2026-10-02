@@ -1,0 +1,479 @@
+import { Column, SQL, StringChunk, Table, getTableColumns, getTableName, is } from "drizzle-orm";
+import { resolveRawNames, tokensOf, type Token } from "./world-db-tokens";
+import { UnsupportedQuery, aggregate, andOf, castTo, combine, compare, epochOf, likeMatch, orOf, toChar, type Truth } from "./world-db-values";
+
+export { UnsupportedQuery, type Truth };
+export type Row = Readonly<Record<string, unknown>>;
+
+export type Lookup = (column: Column) => unknown;
+export type Subselect = ((table: string, column: string, conditions: ReadonlyArray<readonly [string, unknown]>) => readonly unknown[]) & {
+  readonly rowsOf?: (table: Table) => readonly Row[];
+  readonly tableNamed?: (name: string) => Table | undefined;
+};
+
+const NO_SUBSELECT: Subselect = (table) => {
+  throw new UnsupportedQuery(`subselect over ${table}`);
+};
+
+const ADDITIVE = new Set(["||", "+", "-"]);
+const MULTIPLICATIVE = new Set(["*", "/"]);
+export const AGGREGATES = new Set(["count", "min", "max", "sum"]);
+const VALUE_FUNCTIONS = new Set(["now", "case", "to_char", "extract", "coalesce", ...AGGREGATES]);
+const COMPARATORS = new Set(["=", "<>", "!=", ">", ">=", "<", "<="]);
+const SUBQUERY_CLAUSES = new Set(["select", "from", "inner", "left", "join", "on", "where", "limit"]);
+
+const propertyCache = new Map<Column, string>();
+
+export function propertyOf(column: Column): string {
+  const cached = propertyCache.get(column);
+  if (cached !== undefined) return cached;
+  const columns: Record<string, Column> = getTableColumns(column.table);
+  const property = Object.keys(columns).find((key) => columns[key] === column);
+  if (property === undefined) throw new UnsupportedQuery(`column ${column.name} outside its table's column map`);
+  propertyCache.set(column, property);
+  return property;
+}
+
+class Parser {
+  private position = 0;
+
+  constructor(
+    private readonly tokens: readonly Token[],
+    private readonly lookup: Lookup,
+    private readonly subselect: Subselect,
+    private readonly group: readonly Lookup[] | null = null,
+  ) {}
+
+  done(): boolean {
+    return this.position >= this.tokens.length;
+  }
+
+  private peekWord(): string | undefined {
+    return this.peekWordAt(this.position);
+  }
+
+  private peekWordAt(position: number): string | undefined {
+    const token = this.tokens[position];
+    return token?.kind === "word" ? token.text : undefined;
+  }
+
+  startsWithValue(): boolean {
+    const name = this.identAt(0);
+    return this.subqueryAt(0) || (name !== undefined && VALUE_FUNCTIONS.has(name));
+  }
+
+  private take(word: string): boolean {
+    if (this.peekWord() !== word) return false;
+    this.position += 1;
+    return true;
+  }
+
+  private expect(word: string): void {
+    if (!this.take(word)) throw new UnsupportedQuery(`expected "${word}" in a predicate`);
+  }
+
+  expression(): Truth {
+    const parts = [this.conjunction()];
+    while (this.take("or")) parts.push(this.conjunction());
+    return parts.length === 1 ? parts[0] : orOf(parts);
+  }
+
+  private conjunction(): Truth {
+    const parts = [this.negation()];
+    while (this.take("and")) parts.push(this.negation());
+    return parts.length === 1 ? parts[0] : andOf(parts);
+  }
+
+  private negation(): Truth {
+    if (this.take("not")) {
+      const inner = this.negation();
+      return inner === null ? null : !inner;
+    }
+    return this.primary();
+  }
+
+  private primary(): Truth {
+    if (this.take("(")) {
+      const inner = this.expression();
+      this.expect(")");
+      return inner;
+    }
+    if (this.take("true")) return true;
+    if (this.take("false")) return false;
+    if (this.identAt(this.position) === "exists") {
+      this.position += 1;
+      return this.subquery().length > 0;
+    }
+    const left = this.operand();
+    if (this.take("is")) {
+      const negated = this.take("not");
+      this.expect("null");
+      const isNull = left === null || left === undefined;
+      return negated ? !isNull : isNull;
+    }
+    const negatedIn = this.take("not");
+    if (this.take("in")) {
+      if (this.peekWord() === "(" && this.identAt(this.position + 1) === "select") {
+        const values = this.subqueryAt(this.position) ? this.subquery() : this.subselectValues();
+        const found = orOf(values.map((value) => {
+          const order = compare(left, value);
+          return order === null ? null : order === 0;
+        }));
+        return negatedIn ? (found === null ? null : !found) : found;
+      }
+      const hits = this.inList().map((value) => {
+        const order = compare(left, value);
+        return order === null ? null : order === 0;
+      });
+      const found = orOf(hits);
+      return negatedIn ? (found === null ? null : !found) : found;
+    }
+    const like = this.peekWord();
+    if (like === "like" || like === "ilike") {
+      this.position += 1;
+      const matched = likeMatch(left, this.operand(), like === "ilike");
+      return negatedIn ? (matched === null ? null : !matched) : matched;
+    }
+    if (negatedIn) throw new UnsupportedQuery("dangling not in a predicate");
+    const operator = this.peekWord();
+    if (operator !== undefined && COMPARATORS.has(operator)) {
+      this.position += 1;
+      const order = compare(left, this.operand());
+      if (order === null) return null;
+      if (operator === "=") return order === 0;
+      if (operator === "<>" || operator === "!=") return order !== 0;
+      if (operator === ">") return order > 0;
+      if (operator === ">=") return order >= 0;
+      if (operator === "<") return order < 0;
+      return order <= 0;
+    }
+    if (typeof left === "boolean" || left === null) return left;
+    throw new UnsupportedQuery("non-boolean operand used as a predicate");
+  }
+
+  private identAt(position: number): string | undefined {
+    const token = this.tokens[position];
+    return token?.kind === "ident" ? token.text : undefined;
+  }
+
+  private ident(expected?: string): string {
+    const text = this.identAt(this.position);
+    if (text === undefined || (expected !== undefined && text !== expected))
+      throw new UnsupportedQuery(`subselect shape near "${expected ?? "identifier"}"`);
+    this.position += 1;
+    return text;
+  }
+
+  private subselectValues(): readonly unknown[] {
+    this.expect("(");
+    this.ident("select");
+    const column = this.ident();
+    this.ident("from");
+    const table = this.ident();
+    this.ident("where");
+    const conditions: Array<readonly [string, unknown]> = [];
+    do {
+      const name = this.ident();
+      this.expect("=");
+      conditions.push([name, this.operand()]);
+    } while (this.take("and"));
+    this.expect(")");
+    return this.subselect(table, column, conditions);
+  }
+
+  private closingParen(open: number): number {
+    let depth = 0;
+    for (let index = open; index < this.tokens.length; index += 1) {
+      const token = this.tokens[index];
+      if (token.kind !== "word") continue;
+      if (token.text === "(") depth += 1;
+      if (token.text === ")") depth -= 1;
+      if (depth === 0) return index;
+    }
+    throw new UnsupportedQuery("unbalanced parentheses around a subquery");
+  }
+
+  private topLevel(from: number, to: number): Array<readonly [number, string]> {
+    const marks: Array<readonly [number, string]> = [];
+    let depth = 0;
+    for (let index = from; index < to; index += 1) {
+      const token = this.tokens[index];
+      if (token.kind === "word" && token.text === "(") depth += 1;
+      else if (token.kind === "word" && token.text === ")") depth -= 1;
+      else if (depth === 0 && token.kind === "ident" && SUBQUERY_CLAUSES.has(token.text)) marks.push([index, token.text]);
+    }
+    return marks;
+  }
+
+  subqueryAt(open: number): boolean {
+    const token = this.tokens[open];
+    if (token?.kind !== "word" || token.text !== "(" || this.identAt(open + 1) !== "select") return false;
+    const close = this.closingParen(open);
+    const from = this.topLevel(open + 1, close).find(([, text]) => text === "from");
+    return from !== undefined && this.tokens[from[0] + 1]?.kind === "table";
+  }
+
+  private tableAt(index: number): Table {
+    const token = this.tokens[index];
+    if (token?.kind !== "table") throw new UnsupportedQuery("subquery source that is not a schema table");
+    return token.table;
+  }
+
+  private nested(start: number, end: number, lookup: Lookup): Parser {
+    return new Parser(this.tokens.slice(start, end), lookup, this.subselect);
+  }
+
+  subquery(): unknown[] {
+    const rowsOf = this.subselect.rowsOf;
+    if (rowsOf === undefined) throw new UnsupportedQuery("correlated subquery without a row source");
+    const open = this.position;
+    const close = this.closingParen(open);
+    const marks = this.topLevel(open + 1, close);
+    const boundary = (order: number): number => (order < marks.length ? marks[order][0] : close);
+    const fromMark = marks.findIndex(([, text]) => text === "from");
+    const source = this.tableAt(marks[fromMark][0] + 1);
+    const outer = this.lookup;
+    const scoped = (combo: ReadonlyMap<Table, Row | null>): Lookup => (column) => {
+      if (!combo.has(column.table)) return outer(column);
+      const row = combo.get(column.table);
+      if (row === null || row === undefined) return null;
+      const property = propertyOf(column);
+      if (!(property in row))
+        throw new UnsupportedQuery(`fixture row of ${getTableName(column.table)} has no ${property} column the subquery reads`);
+      return row[property];
+    };
+    let combos: Array<ReadonlyMap<Table, Row | null>> = rowsOf(source).map((row) => new Map([[source, row]]));
+    let where: readonly [number, number] | null = null;
+    let cap = Number.POSITIVE_INFINITY;
+    for (let order = fromMark + 1; order < marks.length; order += 1) {
+      const [index, text] = marks[order];
+      if (text === "join") {
+        const outerJoin = marks[order - 1]?.[1] === "left";
+        const joined = this.tableAt(index + 1);
+        const onOrder = order + 1;
+        if (marks[onOrder]?.[1] !== "on") throw new UnsupportedQuery("subquery join without on");
+        const onStart = marks[onOrder][0] + 1;
+        const onEnd = boundary(onOrder + 1);
+        const candidates = rowsOf(joined);
+        combos = combos.flatMap((combo) => {
+          const matched = candidates
+            .map((row): ReadonlyMap<Table, Row | null> => new Map([...combo, [joined, row]]))
+            .filter((next) => this.nested(onStart, onEnd, scoped(next)).expression() === true);
+          if (matched.length > 0 || !outerJoin) return matched;
+          return [new Map([...combo, [joined, null]])];
+        });
+      } else if (text === "where") where = [index + 1, boundary(order + 1)];
+      else if (text === "limit") {
+        const limit = this.tokens[index + 1];
+        if (limit?.kind !== "value" || typeof limit.value !== "number") throw new UnsupportedQuery("subquery limit");
+        cap = limit.value;
+      }
+    }
+    const span = where;
+    const kept = span === null
+      ? combos
+      : combos.filter((combo) => this.nested(span[0], span[1], scoped(combo)).expression() === true);
+    const selectEnd = marks[fromMark][0];
+    const aggregates = this.tokens.slice(open + 2, selectEnd).some((token, index, span) => {
+      const next = span[index + 1];
+      return token.kind === "ident" && AGGREGATES.has(token.text) && next?.kind === "word" && next.text === "(";
+    });
+    const values = aggregates
+      ? [this.complete(new Parser(this.tokens.slice(open + 2, selectEnd), scoped(new Map()), this.subselect, kept.slice(0, cap).map(scoped)), (parser) => parser.operand())]
+      : kept.slice(0, cap).map((combo) => this.nested(open + 2, selectEnd, scoped(combo)).operand());
+    this.position = close + 1;
+    return values;
+  }
+
+  operand(): unknown {
+    let value = this.casts(this.atom());
+    const classes = new Set<string>();
+    for (let operator = this.peekWord(); operator !== undefined && (ADDITIVE.has(operator) || MULTIPLICATIVE.has(operator)); operator = this.peekWord()) {
+      classes.add(ADDITIVE.has(operator) ? "additive" : "multiplicative");
+      if (classes.size > 1) throw new UnsupportedQuery("arithmetic mixing precedence levels");
+      this.position += 1;
+      value = combine(operator, value, this.casts(this.atom()));
+    }
+    return value;
+  }
+
+  private casts(value: unknown): unknown {
+    let cast = value;
+    while (this.take("::")) cast = castTo(cast, this.ident());
+    return cast;
+  }
+
+  private caseOf(): unknown {
+    this.ident("case");
+    const subject = this.operand();
+    let chosen: { readonly value: unknown } | undefined;
+    while (this.identAt(this.position) === "when") {
+      this.ident("when");
+      const candidate = this.operand();
+      this.ident("then");
+      const result = this.operand();
+      if (chosen === undefined && compare(subject, candidate) === 0) chosen = { value: result };
+    }
+    if (this.identAt(this.position) === "else") {
+      this.ident("else");
+      const fallback = this.operand();
+      chosen = chosen ?? { value: fallback };
+    }
+    this.ident("end");
+    return chosen === undefined ? null : chosen.value;
+  }
+
+  private toCharOf(): string | null {
+    this.ident("to_char");
+    this.expect("(");
+    const value = this.operand();
+    this.ident("at");
+    this.ident("time");
+    this.ident("zone");
+    const zone = this.operand();
+    this.expect(",");
+    const format = this.operand();
+    this.expect(")");
+    return toChar(value, zone, format);
+  }
+
+  private aggregateOf(name: string): unknown {
+    const group = this.group;
+    if (group === null) throw new UnsupportedQuery(`${name}() outside a grouped select`);
+    const open = this.position + 1;
+    const close = this.closingParen(open);
+    const distinct = this.identAt(open + 1) === "distinct";
+    const start = distinct ? open + 2 : open + 1;
+    const star = this.peekWordAt(start) === "*" && start + 1 === close;
+    this.position = close + 1;
+    let kept = group;
+    if (this.identAt(this.position) === "filter") {
+      const filterOpen = this.position + 1;
+      const filterClose = this.closingParen(filterOpen);
+      if (this.identAt(filterOpen + 1) !== "where") throw new UnsupportedQuery("aggregate filter without where");
+      kept = group.filter((lookup) => this.complete(this.nested(filterOpen + 2, filterClose, lookup), (parser) => parser.expression()) === true);
+      this.position = filterClose + 1;
+    }
+    if (star) {
+      if (name !== "count" || distinct) throw new UnsupportedQuery(`${name}(*)`);
+      return kept.length;
+    }
+    return aggregate(name, kept.map((lookup) => this.complete(this.nested(start, close, lookup), (parser) => parser.operand())), distinct);
+  }
+
+  private inList(): readonly unknown[] {
+    const list = this.tokens[this.position];
+    if (list?.kind === "list") {
+      this.position += 1;
+      return list.values;
+    }
+    if (!this.take("(")) throw new UnsupportedQuery("in without a literal list");
+    const values = [this.operand()];
+    while (this.take(",")) values.push(this.operand());
+    this.expect(")");
+    return values;
+  }
+
+  private complete<T>(parser: Parser, read: (parser: Parser) => T): T {
+    const value = read(parser);
+    if (!parser.done()) throw new UnsupportedQuery("trailing tokens inside a function argument");
+    return value;
+  }
+
+  private callArguments(name: string): unknown[] {
+    this.ident(name);
+    this.expect("(");
+    const values = [this.operand()];
+    while (this.take(",")) values.push(this.operand());
+    this.expect(")");
+    return values;
+  }
+
+  private extractOf(): number | null {
+    this.ident("extract");
+    this.expect("(");
+    this.ident("epoch");
+    this.ident("from");
+    const value = this.operand();
+    this.expect(")");
+    return epochOf(value);
+  }
+
+  private atom(): unknown {
+    if (this.subqueryAt(this.position)) return this.subquery()[0] ?? null;
+    const name = this.identAt(this.position);
+    if (name !== undefined && AGGREGATES.has(name) && this.peekWordAt(this.position + 1) === "(") return this.aggregateOf(name);
+    if (name === "extract") return this.extractOf();
+    if (name === "coalesce") return this.callArguments("coalesce").find((value) => value !== null && value !== undefined) ?? null;
+    if (name === "case") return this.caseOf();
+    if (name === "to_char") return this.toCharOf();
+    if (name === "now" && this.peekWordAt(this.position + 1) === "(" && this.peekWordAt(this.position + 2) === ")") {
+      this.position += 3;
+      return new Date();
+    }
+    if (this.take("(")) {
+      const inner = this.operand();
+      this.expect(")");
+      return inner;
+    }
+    const token = this.tokens[this.position];
+    if (token === undefined) throw new UnsupportedQuery("predicate ended early");
+    this.position += 1;
+    if (token.kind === "column") return this.lookup(token.column);
+    if (token.kind === "value") return token.value;
+    if (token.kind === "word" && token.text === "null") return null;
+    throw new UnsupportedQuery(`operand "${token.kind === "word" || token.kind === "ident" ? token.text : token.kind}"`);
+  }
+}
+
+export function evaluate(node: unknown, lookup: Lookup, subselect: Subselect = NO_SUBSELECT, group: readonly Lookup[] | null = null): Truth {
+  if (node === undefined) return true;
+  const parser = new Parser(resolveRawNames(tokensOf(node), subselect.tableNamed), lookup, subselect, group);
+  const truth = parser.expression();
+  if (!parser.done()) throw new UnsupportedQuery("trailing tokens after a predicate");
+  return truth;
+}
+
+export function scalar(node: unknown, lookup: Lookup, subselect: Subselect = NO_SUBSELECT, group: readonly Lookup[] | null = null): unknown {
+  if (is(node, Column)) return lookup(node);
+  const tokens = tokensOf(node);
+  if (tokens.length === 1 && tokens[0].kind === "column") return lookup(tokens[0].column);
+  if (tokens.length === 1 && tokens[0].kind === "value") return tokens[0].value;
+  const parser = new Parser(resolveRawNames(tokens, subselect.tableNamed), lookup, subselect, group);
+  if (parser.startsWithValue()) {
+    const value = parser.operand();
+    if (parser.done()) return value;
+  }
+  return evaluate(node, lookup, subselect, group);
+}
+
+export function groupOrderTerm(node: unknown, lookup: Lookup, subselect: Subselect, group: readonly Lookup[]): { readonly value: unknown; readonly descending: boolean } {
+  const tokens = tokensOf(node);
+  const last = tokens[tokens.length - 1];
+  const direction = last?.kind === "word" && (last.text === "asc" || last.text === "desc") ? last.text : null;
+  const parser = new Parser(direction === null ? tokens : tokens.slice(0, -1), lookup, subselect, group);
+  const value = parser.operand();
+  if (!parser.done()) throw new UnsupportedQuery("grouped orderBy expression");
+  return { value, descending: direction === "desc" };
+}
+
+export function orderKey(node: unknown): { readonly column: Column; readonly descending: boolean } {
+  if (is(node, Column)) return { column: node, descending: false };
+  const tokens = tokensOf(node);
+  const [first, second] = tokens;
+  if (first?.kind !== "column" || tokens.length > 2) throw new UnsupportedQuery("orderBy expression");
+  if (second === undefined) return { column: first.column, descending: false };
+  if (second.kind !== "word" || (second.text !== "asc" && second.text !== "desc"))
+    throw new UnsupportedQuery("orderBy direction");
+  return { column: first.column, descending: second.text === "desc" };
+}
+
+export function compareRows(left: unknown, right: unknown): number {
+  return compare(left, right) ?? (left === null || left === undefined ? 1 : -1);
+}
+
+export function sqlText(node: unknown): string {
+  if (is(node, SQL)) return node.queryChunks.map(sqlText).join("");
+  if (is(node, StringChunk)) return node.value.join("");
+  return "?";
+}

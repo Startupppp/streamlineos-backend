@@ -23,7 +23,7 @@ export default [
       {
         file: "src/modules/build/core/project-crud/project-access.ts",
         line: 359,
-        anchor: /const \{ hasAccess, role \} = await resolveProjectAccess\(db, access, u, projectId\);/,
+        anchor: /const projectAccess = await resolveProjectAccess\(db, access, u, projectId\);/,
         note: "the project lookup that makes a foreign :projectId a 404",
       },
       {
@@ -83,7 +83,7 @@ export default [
       {
         file: "src/modules/build/core/project-crud/project-access.ts",
         line: 270,
-        anchor: /const projectAccess = await resolveProjectAccess\(/,
+        anchor: /if \(!ticket\.reachable\) return \{ kind: "denied", reason: "NO_PROJECT_ACCESS", projectId: ticket\.projectId \};/,
         note: "the project-membership assertion that was entirely absent before",
       },
       {
@@ -119,7 +119,7 @@ export default [
       {
         file: "src/modules/build/core/project-crud/project-access.ts",
         line: 349,
-        anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/,
+        anchor: /if \(decision\.kind === "denied"\) throw new ForbiddenException\("Ticket is outside your access scope"\);/,
         note: "the refusal the outsider now hits",
       },
     ],
@@ -153,6 +153,7 @@ export default [
     key: "modules/build/execution/iterations.controller.ts#listSprints",
     verdict: "VERIFIED",
     finding: "route-is-frozen-410",
+    projectRelationshipExempt: "frozen tombstone: SprintsService throws 410 GONE before any read, the sprints table is dropped, so no project-owned row is reachable and a project lookup would only add an existence oracle",
     summary:
       "GET /build/:projectId/sprints. The lead is vacuous: there is no query to bind. The sprints table was dropped when Build cut over to the Cycle model, and SprintsService is a tombstone — every method, listSprints included, throws GoneException with the FROZEN message declared at sprints.service.ts:7 and never touches the database. The static pass follows the handler into a service method that accepts _orgId and _projectId and never uses them, which is exactly the shape of PASSED-UNBOUND; it cannot tell a 410 stub from an unbound query. The live route is /build/:projectId/cycles.",
     blastRadius:
@@ -177,6 +178,7 @@ export default [
     key: "modules/build/execution/iterations.controller.ts#createSprint",
     verdict: "VERIFIED",
     finding: "route-is-frozen-410",
+    projectRelationshipExempt: "frozen tombstone: SprintsService throws 410 GONE before any read, the sprints table is dropped, so no project-owned row is reachable and a project lookup would only add an existence oracle",
     summary:
       "POST /build/:projectId/sprints. Same tombstone as listSprints: createSprint's entire body is a GoneException throw at sprints.service.ts:21, so no INSERT exists and the orgId and projectId the controller forwards are discarded parameters (_orgId, _projectId). The static pass reads unused forwarded parameters as PASSED-UNBOUND. Cycle creation, the live replacement, is POST /build/:projectId/cycles on CyclesController.",
     blastRadius:
@@ -195,6 +197,7 @@ export default [
     key: "modules/build/execution/iterations.controller.ts#deleteSprint",
     verdict: "VERIFIED",
     finding: "route-is-frozen-410",
+    projectRelationshipExempt: "frozen tombstone: SprintsService throws 410 GONE before any read, the sprints table is dropped, so no project-owned row is reachable and a project lookup would only add an existence oracle",
     summary:
       "DELETE /build/:projectId/sprints/:sprintId. Flagged on BOTH org and parent scoping, and both leads are vacuous for the same reason: deleteSprint's body is a single GoneException throw at sprints.service.ts:39. No DELETE statement exists, so neither orgId nor projectId can appear in a predicate. The static pass sees three forwarded-and-unused parameters and reports each unbound dimension.",
     blastRadius:
@@ -220,9 +223,9 @@ export default [
     verdict: "VERIFIED",
     finding: "parent-bound-through-a-repacked-query-object",
     summary:
-      "GET /build/:projectId/tickets/:ticketId/time-entries. The parent is genuinely bound, three times over. listTicketTimeEntries is a one-line adapter at timesheets.service.ts:410 that repacks its positional projectId and ticketId into the query object of listTimeEntries; that is why the static pass loses the trail, since it follows the named method and never sees projectId reach an eq(). Inside listTimeEntries the project is resolved under the caller's org by assertProjectInOrg at :75, the ticket must belong to that project at :79, and the entry list itself carries eq(timesheets.projectId, query.projectId) at :109. Org is bound at :87, and the row set is further narrowed by the timesheets scope predicate, so a caller without 'all' scope sees only their own entries. Residual noted and deliberately not changed: there is no project-membership assert here, but the identical rows are already reachable through the org-level GET /build/time-entries?projectId=&ticketId= on the same service method, so gating only the project-addressed route would close nothing.",
+      "GET /build/:projectId/tickets/:ticketId/time-entries. The parent is genuinely bound, three times over. listTicketTimeEntries is a one-line adapter at timesheets.service.ts:410 that repacks its positional projectId and ticketId into the query object of listTimeEntries; that is why the static pass loses the trail, since it follows the named method and never sees projectId reach an eq(). Inside listTimeEntries the project is decided by assertProjectVisible (404 when the caller does not reach it), the ticket must belong to that project at :79, and the entry list itself carries eq(timesheets.projectId, query.projectId) at :109. Org is bound at :87, and the row set is further narrowed by the timesheets scope predicate, so a caller without 'all' scope sees only their own entries. The org-level GET /build/time-entries shares the method and the same project reach clause, so neither route reads entries on a project the caller does not reach beyond their own.",
     blastRadius:
-      "None beyond what the org-level list route already exposes. Not cross-tenant: timesheets.orgId is bound and a project outside the org 404s at assertProjectInOrg. Within the org a build:timesheets:manage holder at 'all' scope sees org-wide entries by design; everyone else is cut to their own membership by the scope predicate.",
+      "None beyond what the org-level list route already exposes. Not cross-tenant: timesheets.orgId is bound and a project outside the org 404s at assertProjectVisible. Within the org a build:timesheets:manage holder at 'all' scope sees org-wide entries by design; everyone else is cut to their own membership by the scope predicate.",
     evidence: [
       {
         file: "src/modules/build/execution/timesheets.service.ts",
@@ -245,8 +248,8 @@ export default [
       {
         file: "src/modules/build/execution/timesheets.service.ts",
         line: 74,
-        anchor: /if \(query\.projectId\) await assertProjectInOrg\(this\.db, user\.orgId, query\.projectId\);/,
-        note: "the url project is resolved under the caller's org first",
+        anchor: /if \(query\.projectId\) await assertProjectVisible\(this\.db, this\.access, user, query\.projectId\);/,
+        note: "the url project is decided by project-access first: 404 cross-tenant and for a same-org project the caller does not reach",
       },
     ],
   },
@@ -255,6 +258,7 @@ export default [
     key: "modules/build/execution/workspace.controller.ts#createWorkspaceView",
     verdict: "VERIFIED",
     finding: "insert-binds-org-in-values",
+    projectRelationshipExempt: "creates an org-level workspace view with projectId written as null; no existing project row is read or written, and the saved filters are stored as opaque JSON that the server never evaluates — tickets are read only through list routes that apply their own visibility rule",
     summary:
       "POST on the workspace views controller. An org-level route with no :projectId, and the row is deliberately project-less: the INSERT into project_views sets projectId: null and scope: 'workspace' explicitly (workspace.service.ts:316) and binds the tenant by writing orgId as a column at :317. PASSED-UNBOUND is the documented false reading for create endpoints — the binding is an INSERT column, not a predicate. The sibling readers and mutators of the same table (listWorkspaceViews, updateWorkspaceView, deleteWorkspaceView) all bind eq(projectViews.orgId, orgId) in their WHERE clauses and additionally refuse a private view the caller does not own.",
     blastRadius:

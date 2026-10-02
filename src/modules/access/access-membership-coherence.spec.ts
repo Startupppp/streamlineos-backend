@@ -80,7 +80,7 @@ function makeInstance(
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
-    new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+    new AccessVersionCache(db as unknown as Db),
     makeMembershipStateStub(() => stateFromRow({ ...membership, id: 1 })),
   );
 }
@@ -113,7 +113,7 @@ describe("membership authority coherence across instances", () => {
 
     membership.role = "MEMBER";
     durable.version = 8;
-    await accessVersionChannel.publish("org-1");
+    accessVersionChannel.publish("org-1");
 
     const clock = jest.spyOn(Date, "now").mockReturnValue(Date.now() + 5_000);
     const stillAdminOnB = await instanceB.canManageOrganizationMembership(
@@ -142,7 +142,7 @@ describe("membership authority coherence across instances", () => {
 
     membership.status = "SUSPENDED";
     durable.version = 8;
-    await accessVersionChannel.publish("org-1");
+    accessVersionChannel.publish("org-1");
 
     const clock = jest.spyOn(Date, "now").mockReturnValue(Date.now() + 5_000);
     const stillAdminOnB = await instanceB.canManageOrganizationMembership(

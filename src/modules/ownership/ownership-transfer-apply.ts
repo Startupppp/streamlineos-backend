@@ -17,7 +17,6 @@ import {
 } from "../../common/rbac/access-mutation-commit";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { withMembershipMutations } from "../../common/org/membership-mutations";
-import type { CacheService } from "../../common/cache/cache.service";
 import type { DispatchEventInput } from "../notifications/notification.types";
 import {
   assertModuleOwnerRoleAssigned,
@@ -31,14 +30,13 @@ export type TransferCommit = (moved: {
 
 export async function applyOrgTransfer(
   db: Db,
-  cache: CacheService,
   orgId: string,
   transferId: string,
   fromMembershipId: number,
   toMembershipId: number,
   commit: TransferCommit,
 ): Promise<string> {
-  return withMembershipMutations(cache, (membership) =>
+  return withMembershipMutations((membership) =>
     db.transaction(async (tx) => {
       const [org] = await tx
         .select({ ownerMembershipId: organizations.ownerMembershipId })

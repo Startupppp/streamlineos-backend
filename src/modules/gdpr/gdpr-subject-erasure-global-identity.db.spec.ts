@@ -61,7 +61,7 @@ jest.mock("../../common/rbac/access-mutation-commit", () => ({
 }));
 
 jest.mock("../../common/auth/membership-state.service", () => ({
-  bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
+  membershipStandingChannel: { publish: jest.fn() },
 }));
 
 import { randomUUID } from "node:crypto";
@@ -193,7 +193,7 @@ describe("GDPR erasure — a multi-org subject keeps their global identity", () 
     revokeAllForUser = jest.fn().mockResolvedValue({ revokedCount: 0 });
     service = new GdprSubjectErasureService(
       appDb,
-      // `bustMembershipStatusCache` is mocked above so the cache handle is never touched,
+      // `membershipStandingChannel` is mocked above so the cache handle is never touched,
       // and object storage is not what is under test here.
       {} as unknown as CacheService,
       { revokeAllForUser } as unknown as SessionsService,

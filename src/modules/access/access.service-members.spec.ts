@@ -80,7 +80,7 @@ describe("AccessService.membersWithPermission", () => {
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
-      new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+      new AccessVersionCache(db as unknown as Db),
       makeMembershipStateStub(),
     );
   }
@@ -286,7 +286,7 @@ describe("AccessService.membersWithPermission — pagination", () => {
         cache as unknown as CacheService,
         entitlements as unknown as EntitlementsService,
         makeMfaPolicyStub(),
-        new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+        new AccessVersionCache(db as unknown as Db),
         makeMembershipStateStub(),
       ),
       cachedMock,

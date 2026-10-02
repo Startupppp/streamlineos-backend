@@ -7,6 +7,27 @@ import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  type ProjectAccessRow,
+} from "../__tests__/project-access-doubles";
+
+function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
+  return jest.fn((fields?: Record<string, unknown>) =>
+    fields !== undefined && "manages" in fields
+      ? { from: () => ({ where: () => ({ limit: async () => rows }) }) }
+      : rest(fields),
+  );
+}
+
+
+const memberScopeAccess = {
+  scopeFor: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner ? "all" : (MEMBER_STANDING[key] ?? "none"),
+  holds: async (actor: CurrentUserContext, key: string) =>
+    actor.isOrgOwner || (MEMBER_STANDING[key] ?? "none") !== "none",
+} as unknown as AccessService;
 
 const dialect = new PgDialect();
 function renderSql(pred: unknown): string {
@@ -26,9 +47,7 @@ function makeU(orgId: string): CurrentUserContext {
   };
 }
 
-const mockAccess = {
-  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-} as unknown as AccessService;
+const mockAccess = memberScopeAccess;
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
@@ -50,7 +69,6 @@ const ALL_CAPS_GRANT = {
 
 beforeEach(() => {
   jest.resetAllMocks();
-  (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
 describe("ClientPortalService.getPortalPreview — grant is required; same projection seam as getProjectOverview", () => {
@@ -84,13 +102,12 @@ describe("ClientPortalService.getPortalPreview — grant is required; same proje
     });
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(MINIMAL_PROJECT) },
       },
-      select: jest.fn().mockImplementation(() => {
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockImplementation(() => {
         selectCount++;
         const ci = selectCount;
         return { from: jest.fn().mockReturnValue(chain(ci)) };
-      }),
+      })),
     } as unknown as Db;
   }
 
@@ -127,9 +144,8 @@ describe("ClientPortalService.getPortalPreview — grant is required; same proje
   it("throws NotFoundException when project does not exist in the caller's org", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(MINIMAL_PROJECT) },
       },
-      select: jest.fn().mockReturnValue({
+      select: projectGateSelect([projectAccessRow()], jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([]),
@@ -140,7 +156,7 @@ describe("ClientPortalService.getPortalPreview — grant is required; same proje
             }),
           }),
         }),
-      }),
+      })),
     } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.getPortalPreview(makeU("org-1"), 999)).rejects.toThrow(NotFoundException);

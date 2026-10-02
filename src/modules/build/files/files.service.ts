@@ -6,14 +6,14 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { projectAttachments } from "../../../db/schema/build/project-attachments";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { assertCanModifyAuthoredRecord, assertProjectAccess } from "../core";
+import { assertCanModifyAuthoredRecord, assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   buildCursorPage,
@@ -98,6 +98,7 @@ export class FilesService {
           eq(projectAttachments.orgId, u.orgId),
           eq(projectAttachments.projectId, projectId),
           isNull(projectAttachments.deletedAt),
+          query.q ? sql`to_tsvector('english', coalesce(${projectAttachments.fileName},'')) @@ plainto_tsquery('english', ${query.q})` : undefined,
           position
             ? keysetBeforeMicros(projectAttachments.createdAt, projectAttachments.id, position)
             : undefined,
@@ -113,7 +114,7 @@ export class FilesService {
   }
 
   async uploadFile(u: CurrentUserContext, projectId: number, input: UploadFileInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const membershipId = actingMembershipId(u.principal);
     if (membershipId === null)
       throw new ForbiddenException("No active membership found");
@@ -172,7 +173,7 @@ export class FilesService {
   }
 
   async softDeleteFile(u: CurrentUserContext, projectId: number, fileId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const file = await this.loadFile(u.orgId, projectId, fileId);
     await assertCanModifyAuthoredRecord(
       this.access,

@@ -17,6 +17,8 @@ import { BuildTicketCreationService } from "../core/tickets";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
 
 function makeIntakeTicketCreation() {
   return {
@@ -38,6 +40,7 @@ function makeIntakeTicketCreation() {
 jest.mock("../core/project-crud/project-access", () => ({
   ...jest.requireActual("../core/project-crud/project-access"),
   assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertProjectWriteAccess: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../core/lib/allocate-ticket-number", () => ({
   allocateTicketNumbers: jest.fn(async () => 1),
@@ -318,7 +321,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_B, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
+      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(ORG), PROJECT_A, MODULE_B, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_B)?.name).toBe("module-b");
   });
@@ -328,7 +331,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1, startDate: undefined, endDate: undefined }),
+      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(ORG), PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1, startDate: undefined, endDate: undefined }),
     ).resolves.toMatchObject({ id: MODULE_A, name: "module-a-v2" });
   });
 
@@ -337,7 +340,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(OTHER_ORG, PROJECT_A, MODULE_A, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
+      new ModulesService(db, stubService<AccessService>({})).updateModule(milestoneActor(OTHER_ORG), PROJECT_A, MODULE_A, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_A)?.name).toBe("module-a");
   });
@@ -346,7 +349,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const store = makeStore();
     const { db, transaction } = makeDb(store);
 
-    await expect(new ModulesService(db).deleteModule(ORG, PROJECT_A, MODULE_B)).rejects.toThrow(
+    await expect(new ModulesService(db, stubService<AccessService>({})).deleteModule(milestoneActor(ORG), PROJECT_A, MODULE_B)).rejects.toThrow(
       NotFoundException,
     );
     expect(store.modules.some((row) => row.id === MODULE_B)).toBe(true);
@@ -357,7 +360,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const store = makeStore();
     const { db } = makeDb(store);
 
-    await expect(new ModulesService(db).deleteModule(ORG, PROJECT_A, MODULE_B)).rejects.toThrow(
+    await expect(new ModulesService(db, stubService<AccessService>({})).deleteModule(milestoneActor(ORG), PROJECT_A, MODULE_B)).rejects.toThrow(
       NotFoundException,
     );
     expect(store.tickets.find((row) => row.id === TICKET_B)?.moduleId).toBe(MODULE_B);
@@ -367,7 +370,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const store = makeStore();
     const { db } = makeDb(store);
 
-    await expect(new ModulesService(db).deleteModule(ORG, PROJECT_A, MODULE_A)).resolves.toEqual({
+    await expect(new ModulesService(db, stubService<AccessService>({})).deleteModule(milestoneActor(ORG), PROJECT_A, MODULE_A)).resolves.toEqual({
       success: true,
     });
     expect(store.modules.some((row) => row.id === MODULE_A)).toBe(false);

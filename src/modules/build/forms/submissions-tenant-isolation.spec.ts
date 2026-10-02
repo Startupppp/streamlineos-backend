@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import { SubmissionsService } from "./submissions.service";
 import { BuildTicketCreationService } from "../core/tickets";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 function makeActor(orgId: string): CurrentUserContext {
   return {
@@ -54,20 +55,19 @@ async function makeService(db: object, access: object) {
 describe("SubmissionsService tenant and project isolation", () => {
   const ownerOrg = "org-owner";
   const attackerOrg = "org-attacker";
-  const manageAccess = {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
-  };
+  const manageAccess = standingAccess({ "build:manage": "all" });
 
   function makeDb(formRow: unknown | null, submissionRows: unknown[] = [], submissionRow: unknown | null = null) {
     const listChain = makeSelectChain(submissionRows);
     const transaction = jest.fn();
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(formRow ? { managerMembershipId: 1 } : undefined) },
         projectForms: { findFirst: jest.fn().mockResolvedValue(formRow) },
         formSubmissions: { findFirst: jest.fn().mockResolvedValue(submissionRow) },
       },
-      select: jest.fn().mockReturnValue(listChain),
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain(formRow ? [projectAccessRow()] : []))
+        .mockReturnValue(listChain),
       execute: jest.fn().mockResolvedValue(undefined),
       transaction,
     };
@@ -107,21 +107,18 @@ describe("SubmissionsService tenant and project isolation", () => {
   });
 
   it("blocks reads, submissions, and status changes before loading a form for a project non-member", async () => {
-    const accessRows = makeSelectChain([]);
+    const accessRows = makeSelectChain([projectAccessRow()]);
     const projectFormsFind = jest.fn();
     const update = jest.fn();
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 99 }) },
         projectForms: { findFirst: projectFormsFind },
         formSubmissions: { findFirst: jest.fn() },
       },
       select: jest.fn().mockReturnValue(accessRows),
       update,
     };
-    const { module, service } = await makeService(db, {
-      resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-    });
+    const { module, service } = await makeService(db, standingAccess(MEMBER_STANDING));
     const actor = makeActor(ownerOrg);
 
     await expect(service.listSubmissions(actor, 1, 1, {})).rejects.toThrow(ForbiddenException);

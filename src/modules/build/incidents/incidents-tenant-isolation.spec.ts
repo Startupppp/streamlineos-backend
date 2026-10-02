@@ -1,5 +1,6 @@
 jest.mock("../core", () => ({
   assertProjectAccess: jest.fn(),
+  assertProjectWriteAccess: jest.fn(),
 }));
 
 jest.mock("../../../common/outbox/outbox-writer", () => ({
@@ -12,7 +13,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { IncidentsService } from "./incidents.service";
-import { assertProjectAccess } from "../core";
+import { assertProjectAccess, assertProjectWriteAccess } from "../core";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 
 describe("IncidentsService — cross-tenant isolation", () => {
@@ -25,6 +26,7 @@ describe("IncidentsService — cross-tenant isolation", () => {
   beforeEach(() => {
     jest.resetAllMocks();
     jest.mocked(assertProjectAccess).mockResolvedValue(undefined);
+    jest.mocked(assertProjectWriteAccess).mockResolvedValue(undefined);
     (OutboxWriter.emit as jest.Mock).mockResolvedValue(undefined);
   });
 

@@ -4,6 +4,7 @@ import { ChatMessageFanoutService } from "../chat-message-fanout.service";
 import type { PersistedMessage } from "../chat-message.types";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: async (_db: unknown, fn: (tx: unknown) => Promise<unknown>, _opts?: unknown) => fn(_db),
   runInNewTenantTransaction: async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn({}),
 }));
 

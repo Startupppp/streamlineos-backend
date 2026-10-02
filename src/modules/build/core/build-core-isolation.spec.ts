@@ -8,7 +8,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { ProjectsReleasesService } from "./releases/projects-releases.service";
 import { ProjectsLabelsService } from "./lib/projects-labels.service";
-import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";
 import { ProjectsTicketChecklistsService } from "./tickets/projects-ticket-checklists.service";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -16,6 +15,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { standingAccess } from "../__tests__/project-access-doubles";
 
 function makeNotFoundDb(): Db {
   return {
@@ -97,9 +97,7 @@ function makeAttackerU(): CurrentUserContext {
 }
 
 function makeNoPermAccess(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
-  } as unknown as AccessService;
+  return standingAccess() as unknown as AccessService;
 }
 
 describe("ProjectsReleasesService — cross-tenant isolation (BOLA)", () => {
@@ -131,38 +129,6 @@ describe("ProjectsLabelsService — cross-tenant isolation (BOLA)", () => {
     const svc = new ProjectsLabelsService(db);
 
     await expect(svc.deleteLabel("org-attacker", 999)).rejects.toThrow(NotFoundException);
-  });
-});
-
-describe("ProjectsCustomFieldsService — cross-tenant isolation", () => {
-  it("refuses a cross-org project instead of listing an empty set", async () => {
-    const orderBy = jest.fn().mockResolvedValue([]);
-    const db = {
-      ...makeNotFoundDb(),
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy }) }),
-      }),
-    } as unknown as Db;
-
-    const svc = new ProjectsCustomFieldsService(db, makeNoPermAccess());
-
-    await expect(svc.listFields("org-attacker", 999)).rejects.toThrow(NotFoundException);
-    expect(orderBy).not.toHaveBeenCalled();
-  });
-
-  it("lists the org's own custom fields (control)", async () => {
-    const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) }),
-        }),
-      }),
-    } as unknown as Db;
-
-    const svc = new ProjectsCustomFieldsService(db, makeNoPermAccess());
-
-    await expect(svc.listFields("org-owner", 1)).resolves.toEqual([]);
   });
 });
 

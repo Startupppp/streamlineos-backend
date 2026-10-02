@@ -12,7 +12,6 @@ import { AutomationService } from "../automation/automation.service";
 import { HrAutomationEngineService } from "../hr/automations/hr-automation-engine.service";
 import { RetentionService } from "../hr/governance/retention/retention.service";
 import { logger } from "../../common/logger/logger.service";
-import { CacheService } from "../../common/cache/cache.service";
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { forEachOrg } from "../../common/tenant";
 import { CronHrDocumentsService } from "./cron-hr-documents.service";
@@ -25,7 +24,6 @@ export class CronHrService {
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly documents: CronHrDocumentsService,
     private readonly retention: RetentionService,
-    private readonly cache: CacheService,
   ) {}
 
   async processCertificationExpiry(): Promise<{ fired: number }> {
@@ -107,11 +105,11 @@ export class CronHrService {
     let fired = 0;
 
     // The sweep stamps `organization_members.onboarding_completed_at`, which
-    // `JwtAuthGuard` reads through its 15-second membership cache. The write and
-    // its invalidation are one operation, owned by `MembershipMutations`; the
+    // `JwtAuthGuard` reads through its 1-second local membership cache. The write and
+    // its local clear are one operation, owned by `MembershipMutations`; the
     // drain runs once the whole sweep resolves, outside any org transaction, so
-    // `scheduleMembershipBust` falls through to running it inline.
-    await withMembershipMutations(this.cache, (membership) =>
+    // `scheduleStandingChange` falls through to running it inline.
+    await withMembershipMutations((membership) =>
       forEachOrg(this.db, "onboarding-completion", async (tx, orgId) => {
         const taskStats = await tx
           .select({

@@ -77,7 +77,7 @@ function buildService(roleGrants: { permissionKey: string; scope: string }[]) {
     cache as never,
     entitlements as never,
     mfaPolicy as never,
-    new AccessVersionCache(db, cache as never),
+    new AccessVersionCache(db),
     makeMembershipStateStub(),
   );
 }

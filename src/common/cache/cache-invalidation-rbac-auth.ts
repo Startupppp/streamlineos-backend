@@ -39,7 +39,7 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "access:perms:<orgId>:<userId>:v<version>",
-    description: "Resolved permission set per user per access-version. In-process only (Map keyed by orgId:userId:version); CACHE_KEYS.accessPerms is the canonical key format. Cross-instance invalidation: bumpPermissionsVersion clears the shared access:version:<orgId> Redis key; other instances re-read the version from DB and compute a new permsKey that is a cache miss.",
+    description: "Resolved permission set per user per access-version. In-process only (Map keyed by orgId:userId:version); CACHE_KEYS.accessPerms is the canonical key format. Cross-instance invalidation: every instance re-reads access_versions.permissions_version from the DB after its 1s local version TTL, so a bump yields a new permsKey that is a cache miss; no shared cache sits in the revocation path.",
     invalidation: {
       kind: "write",
       events: ["bumpPermissionsVersion in any role/grant/delegation mutation"],
@@ -54,33 +54,29 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "membership:account:<userId>",
-    description: "Membership state cache (active/suspended) used by JwtAuthGuard",
+    description: "Account liveness (users.is_active, users.deleted_at) used by JwtAuthGuard. In-process only (MembershipStateService, 1s local TTL per instance); no shared cache sits in the revocation path, so every instance re-reads the users row within 1s of a deactivation.",
     invalidation: {
       kind: "write",
       events: [
-        "scheduleStandingRevocation and commitAccessChange revoke intents (common/rbac/access-mutation-commit.ts) on any membership status change",
-        "InvitationAcceptanceService.accept",
-        "OrgMemberDepartureService (leave/remove member)",
-        "OrgMembershipService.updateMember",
-      ],
-    },
-  },
-  {
-    namespace: "membership:status:<userId>",
-    description:
-      "Per-user generation counter over MembershipStateService.resolve(userId, orgId), which JwtAuthGuard consults on every request to decide whether the caller's membership is still active. Read as cachedVersioned('membership:status:<userId>', orgId) with a 15s TTL; one counter per user covers every organisation that user belongs to. This entry was missing while the namespace was bumped through a module-local helper, which is also why check:namespace-coverage could not see the bump.",
-    invalidation: {
-      kind: "write",
-      events: [
-        "scheduleStandingRevocation and commitAccessChange revoke intents (common/rbac/access-mutation-commit.ts) on any membership status change",
-        "OrgMembershipService.updateMember and OrgMemberDepartureService (leave/remove/deactivate)",
-        "InvitationAcceptanceService.accept",
-        "OrgLifecycleService, OrgPurgeService and CronOrgPurgeWorkerService (whole-org suspension/purge, batched)",
-        "GdprSubjectErasureService.erase",
+        "membershipStandingChannel local clear published after commit by commitAccessChange revoke intents, scheduleStandingRevocation and scheduleStandingChange (common/rbac/access-mutation-commit.ts)",
       ],
     },
     dimensions: ["userId"] as const,
-    staleToleranceSeconds: 0,
+    staleToleranceSeconds: 1,
+  },
+  {
+    namespace: "membership:status:<orgId>:<userId>",
+    description:
+      "MembershipStateService.resolve(userId, orgId), which JwtAuthGuard consults on every request to decide whether the caller's membership is still active. In-process only (1s local TTL per instance, keyed by user then organisation); the DB row is the authority and no shared cache sits in the revocation path, so a suspended or removed member is denied on every instance within 1s even when Redis is down.",
+    invalidation: {
+      kind: "write",
+      events: [
+        "membershipStandingChannel local clear published after commit by commitAccessChange revoke intents, scheduleStandingRevocation and scheduleStandingChange (common/rbac/access-mutation-commit.ts)",
+        "MembershipMutations drain (common/org/membership-mutations.ts) for every organization_members write",
+      ],
+    },
+    dimensions: ["orgId", "userId"] as const,
+    staleToleranceSeconds: 1,
   },
   {
     namespace: "mfa:org-policy:<orgId>",
@@ -101,19 +97,6 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     },
     dimensions: ["userId"] as const,
     staleToleranceSeconds: 0,
-  },
-  {
-    namespace: "access:version:<orgId>",
-    description: "Permission-resolution version counter. Incremented on every role/grant/delegation/ownership mutation; drives per-user permission cache invalidation. This is the cross-instance invalidation signal: clearing it forces all instances to re-read the durable version from DB.",
-    invalidation: {
-      kind: "write",
-      events: [
-        "bumpPermissionsVersion(tx, orgId) in any role/grant/delegation/ownership mutation",
-        "OrgProfileService.switchOrg (clears outgoing-org version)",
-      ],
-    },
-    dimensions: ["orgId"] as const,
-    staleToleranceSeconds: 1,
   },
   {
     namespace: "access:members-with-perm:<orgId>:<permKey>:v<version>",

@@ -5,10 +5,12 @@ import {
   managedProducts,
   projects,
 } from "../../../db/schema";
-import { reachableProjectsSql } from "../reachability/project-reachability";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { resolveProjectReach } from "../core";
 import { encodeTupleCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
 import type { ScopeDirectoryRef } from "./dto/scope-directory.schemas";
 
@@ -148,11 +150,11 @@ export class ScopeDirectoryService {
   }
 
   async resolveScopeDirectory(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
+    u: CurrentUserContext,
     keys: string[],
   ): Promise<ScopeDirectoryRef[]> {
+    const orgId = u.orgId;
+    const membershipId = actingMembershipId(u.principal);
     const parsed = keys
       .map(parseScopeKey)
       .filter((e): e is ParsedScopeKey => e !== undefined);
@@ -164,11 +166,9 @@ export class ScopeDirectoryService {
     const hasProductKeys = productEntries.length > 0;
     const hasProjectKeys = projectEntries.length > 0;
 
-    const perms =
-      hasProductKeys || hasProjectKeys
-        ? await this.access.resolveUserPermissions(orgId, userId)
-        : new Map<string, string>();
-    const buildManageIsAll = perms.get("build:manage") === "all";
+    if (!hasProductKeys && !hasProjectKeys) return [];
+    const reach = await resolveProjectReach(this.access, u);
+    const buildManageIsAll = reach.standing.unrestricted;
 
     let accessibleProductIds: number[] | null = null;
     if (!buildManageIsAll && hasProductKeys) {
@@ -198,20 +198,14 @@ export class ScopeDirectoryService {
         : productEntries.map((e) => Number(e.rawId));
 
     let projectWhere: SQL<unknown> | null = null;
-    if (hasProjectKeys) {
-      if (!buildManageIsAll && membershipId === null) {
-        projectWhere = null;
-      } else {
-        const base: SQL<unknown>[] = [
+    if (hasProjectKeys && !reach.empty) {
+      projectWhere =
+        and(
           eq(projects.orgId, orgId),
           inArray(projects.id, requestedProjectIds),
           isNull(projects.deletedAt),
-        ];
-        if (!buildManageIsAll && membershipId !== null) {
-          base.push(reachableProjectsSql(orgId, membershipId));
-        }
-        projectWhere = and(...base) ?? null;
-      }
+          reach.where,
+        ) ?? null;
     }
 
     const [productRows, projectRows] = await Promise.all([
@@ -256,15 +250,15 @@ export class ScopeDirectoryService {
   }
 
   async searchScopeDirectory(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
+    u: CurrentUserContext,
     q: string,
     limit: number,
     cursor: string | undefined,
   ): Promise<{ data: ScopeDirectoryRef[]; nextCursor: string | null }> {
-    const perms = await this.access.resolveUserPermissions(orgId, userId);
-    const buildManageIsAll = perms.get("build:manage") === "all";
+    const orgId = u.orgId;
+    const membershipId = actingMembershipId(u.principal);
+    const reach = await resolveProjectReach(this.access, u);
+    const buildManageIsAll = reach.standing.unrestricted;
 
     if (!buildManageIsAll && membershipId === null)
       return { data: [], nextCursor: null };
@@ -328,11 +322,7 @@ export class ScopeDirectoryService {
         : undefined;
 
     const projResults: ProjectRow[] = await (async () => {
-      if (!buildManageIsAll && membershipId === null) return [];
-      const authFilter =
-        !buildManageIsAll && membershipId !== null
-          ? reachableProjectsSql(orgId, membershipId)
-          : undefined;
+      if (reach.empty) return [];
       return this.db
         .select({
           id: projects.id,
@@ -348,7 +338,7 @@ export class ScopeDirectoryService {
             eq(projects.orgId, orgId),
             isNull(projects.deletedAt),
             or(eq(projects.name, q), ilike(projects.name, `${escapedQ}%`)),
-            authFilter,
+            reach.where,
             projCursorCond,
           ),
         )

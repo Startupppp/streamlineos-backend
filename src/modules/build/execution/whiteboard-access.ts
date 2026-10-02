@@ -11,10 +11,11 @@ type ResolveInput = {
     isOrgOwner: boolean;
   };
   hasManagePermission: boolean;
+  hasProjectAccess: boolean;
 };
 
 export function resolveWhiteboardAccess(input: ResolveInput): WhiteboardAccessLevel {
-  const { board, shareRole, user, hasManagePermission } = input;
+  const { board, shareRole, user, hasManagePermission, hasProjectAccess } = input;
 
   if (user.isOrgOwner || board.createdBy === user.userId) {
     return "manage";
@@ -23,7 +24,7 @@ export function resolveWhiteboardAccess(input: ResolveInput): WhiteboardAccessLe
   if (shareRole === "editor") return "edit";
   if (shareRole === "viewer") return "view";
 
-  if (board.visibility !== "private") {
+  if (board.visibility === "public" || (board.visibility === "project" && hasProjectAccess)) {
     return hasManagePermission ? "edit" : "view";
   }
 

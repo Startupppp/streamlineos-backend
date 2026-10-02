@@ -4,11 +4,12 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { AccessService } from "../../../access/access.service";
-import { assertTicketReadAccess } from "../project-crud/project-access";
+import { assertTicketReadAccess, assertTicketWriteAccess } from "../project-crud/project-access";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 
 jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
+  assertTicketWriteAccess: jest.fn(),
 }));
 
 const ORG_ID = "org-1";
@@ -42,6 +43,7 @@ describe("ProjectsCustomFieldsService ticket value authorization", () => {
   beforeEach(async () => {
     jest.resetAllMocks();
     jest.mocked(assertTicketReadAccess).mockResolvedValue();
+    jest.mocked(assertTicketWriteAccess).mockResolvedValue();
     onConflictDoUpdate.mockResolvedValue(undefined);
     values.mockReturnValue({ onConflictDoUpdate });
     insert.mockReturnValue({ values });
@@ -86,8 +88,8 @@ describe("ProjectsCustomFieldsService ticket value authorization", () => {
     );
   });
 
-  it("denies value writes before querying fields when ticket access fails", async () => {
-    jest.mocked(assertTicketReadAccess).mockRejectedValue(new ForbiddenException());
+  it("denies value writes before querying fields when the ticket write decision fails", async () => {
+    jest.mocked(assertTicketWriteAccess).mockRejectedValue(new ForbiddenException());
 
     const where = jest.fn().mockResolvedValue([{ id: FIELD_ID }]);
     const from = jest.fn().mockReturnValue({ where });
@@ -126,5 +128,6 @@ describe("ProjectsCustomFieldsService ticket value authorization", () => {
       }),
     ).resolves.toEqual({ success: true });
     expect(insert).toHaveBeenCalledTimes(1);
+    expect(assertTicketWriteAccess).toHaveBeenCalledWith(db, access, user, PROJECT_ID, TICKET_ID);
   });
 });

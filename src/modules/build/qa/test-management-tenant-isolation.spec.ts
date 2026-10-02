@@ -6,6 +6,16 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestManagementService } from "./test-management.service";
 import { createTestCaseSchema } from "./dto/qa.schemas";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
+
+function gatedSelect(row: object | null, after: () => unknown) {
+  let first = true;
+  return jest.fn(() => {
+    if (!first) return after();
+    first = false;
+    return { from: () => ({ where: () => ({ limit: async () => (row === null ? [] : [row]) }) }) };
+  });
+}
 
 const MEMBERSHIP_ID = 7;
 
@@ -22,11 +32,11 @@ function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
 }
 
 function makeAccessGranted() {
-  return { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
+  return standingAccess({ "build:manage": "all" }) as unknown as AccessService;
 }
 
 function makeAccessEmpty() {
-  return { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+  return standingAccess(MEMBER_STANDING) as unknown as AccessService;
 }
 
 describe("TestManagementService — cross-tenant isolation", () => {
@@ -53,11 +63,10 @@ describe("TestManagementService — cross-tenant isolation", () => {
     };
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(projectRow) },
         testSuites: { findFirst: jest.fn().mockResolvedValue(null) },
         testCases: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      select: jest.fn().mockImplementation(() => {
+      select: gatedSelect(projectRow === null ? null : projectAccessRow(), () => {
         selectCall++;
         return selectCall === 1 ? suiteChain : countChain;
       }),
@@ -88,22 +97,15 @@ describe("TestManagementService — project membership gate (assertProjectAccess
     const from = jest.fn().mockReturnValue({ innerJoin, where });
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         testSuites: { findFirst: jest.fn() },
         testCases: { findFirst: jest.fn() },
       },
-      select: jest.fn().mockReturnValue({ from }),
+      select: gatedSelect(projectAccessRow(), () => ({ from })),
     } as unknown as Db;
   }
 
   function makeMemberDb() {
     let callCount = 0;
-    const makeLimitChain = (rows: unknown[]) => {
-      const limit = jest.fn().mockResolvedValue(rows);
-      const where = jest.fn().mockReturnValue({ limit });
-      const innerJoin = jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }), where });
-      return { from: jest.fn().mockReturnValue({ innerJoin, where }) };
-    };
     const suitesChain = {
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
@@ -120,15 +122,12 @@ describe("TestManagementService — project membership gate (assertProjectAccess
     };
     return {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         testSuites: { findFirst: jest.fn() },
         testCases: { findFirst: jest.fn() },
       },
-      select: jest.fn().mockImplementation(() => {
+      select: gatedSelect(projectAccessRow({ memberRole: "MEMBER" }), () => {
         callCount++;
-        if (callCount === 1) return makeLimitChain([{ role: "MEMBER" }]);
-        if (callCount === 2) return makeLimitChain([]);
-        if (callCount === 3) return suitesChain;
+        if (callCount === 1) return suitesChain;
         return countChain;
       }),
     } as unknown as Db;
@@ -136,14 +135,14 @@ describe("TestManagementService — project membership gate (assertProjectAccess
 
   it("rejects a non-member with ForbiddenException", async () => {
     const db = makeNonMemberDb();
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new TestManagementService(db, access, lifecycleAuditDouble());
     await expect(svc.listSuites(makeU("org-1"), 1, {})).rejects.toThrow(ForbiddenException);
   });
 
   it("allows a direct project member through the gate", async () => {
     const db = makeMemberDb();
-    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new TestManagementService(db, access, lifecycleAuditDouble());
     await expect(svc.listSuites(makeU("org-1"), 1, {})).resolves.toEqual([]);
   });
@@ -173,11 +172,10 @@ describe("TestManagementService — listSuites grouped case counts", () => {
     };
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG, managerMembershipId: null }) },
         testSuites: { findFirst: jest.fn().mockResolvedValue(null) },
         testCases: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      select: jest.fn().mockImplementation(() => {
+      select: gatedSelect(projectAccessRow(), () => {
         selectCall++;
         return selectCall === 1 ? suiteChain : countChain;
       }),
@@ -188,7 +186,7 @@ describe("TestManagementService — listSuites grouped case counts", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: 1, caseCount: 3 });
-    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(db.select).toHaveBeenCalledTimes(3);
   });
 
   it("returns caseCount 0 for a suite with no cases", async () => {
@@ -212,11 +210,10 @@ describe("TestManagementService — listSuites grouped case counts", () => {
     };
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG, managerMembershipId: null }) },
         testSuites: { findFirst: jest.fn().mockResolvedValue(null) },
         testCases: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      select: jest.fn().mockImplementation(() => {
+      select: gatedSelect(projectAccessRow(), () => {
         selectCall++;
         return selectCall === 1 ? suiteChain : countChain;
       }),
@@ -241,18 +238,17 @@ describe("TestManagementService — listSuites grouped case counts", () => {
     };
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG, managerMembershipId: null }) },
         testSuites: { findFirst: jest.fn().mockResolvedValue(null) },
         testCases: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      select: jest.fn().mockReturnValue(suiteChain),
+      select: gatedSelect(projectAccessRow(), () => suiteChain),
     } as unknown as Db;
 
     const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
     const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
 
     expect(result).toHaveLength(0);
-    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -280,11 +276,10 @@ describe("TestManagementService — listSuites cursor pagination", () => {
     };
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG, managerMembershipId: null }) },
         testSuites: { findFirst: jest.fn().mockResolvedValue(null) },
         testCases: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      select: jest.fn().mockImplementation(() => {
+      select: gatedSelect(projectAccessRow(), () => {
         selectCall++;
         return selectCall === 1 ? suiteChain : countChain;
       }),
@@ -340,10 +335,10 @@ describe("TestManagementService — createSuite parent FK validation", () => {
   it("throws NotFoundException when parentId does not belong to the project", async () => {
     const db = {
       query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG, managerMembershipId: null }) },
         testSuites: { findFirst: jest.fn().mockResolvedValue(null) },
         testCases: { findFirst: jest.fn().mockResolvedValue(null) },
       },
+      select: gatedSelect(projectAccessRow(), () => undefined),
     } as unknown as Db;
 
     const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());

@@ -4,6 +4,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.module";
 import type { DataScope } from "../../../access/access.types";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { TICKETS_PERMISSION } from "../lib/tickets-scope";
 
 const ORG_ID = "org-board-proj";
@@ -24,7 +25,13 @@ describe("board list projection", () => {
     let capturedColumns: Record<string, boolean> | undefined;
 
     const db = {
-      select: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([projectAccessRow()]),
+          }),
+        }),
+      }).mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             orderBy: jest.fn().mockReturnValue({

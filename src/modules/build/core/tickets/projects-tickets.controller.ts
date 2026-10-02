@@ -110,7 +110,7 @@ export class ProjectsTicketsController {
     @Query() query: SearchTicketsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.search.searchOrgTickets(u.orgId, u.userId, query.q, query.limit);
+    return this.search.searchOrgTickets(u, query.q, query.limit);
   }
 
   @Get(":projectId/tickets/column-counts")

@@ -1,3 +1,4 @@
+import { ApiTokensService } from "../api-tokens/core/api-tokens.service";
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -54,6 +55,7 @@ async function buildService(
   const moduleRef = await Test.createTestingModule({
     providers: [
       SettingsService,
+      { provide: ApiTokensService, useValue: {} },
       { provide: DRIZZLE, useValue: db },
       { provide: OrgMembershipService, useValue: { updateMemberRole } },
       { provide: CacheService, useValue: { invalidate } },

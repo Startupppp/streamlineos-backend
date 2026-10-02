@@ -1,13 +1,29 @@
 import type { Db } from "../../../db/drizzle.module";
 import { WorkloadCapacityService } from "./workload-capacity.service";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 jest.mock("../core/project-crud/project-access", () => ({
-  assertProjectInOrg: jest.fn().mockResolvedValue(undefined),
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
 }));
 
 const OWNER_ORG = "org-owner";
 const ATTACKER_ORG = "org-attacker";
 const PROJECT_ID = 1;
+
+function actorIn(orgId: string): CurrentUserContext {
+  return {
+    userId: "u-1",
+    orgId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
+  };
+}
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -92,8 +108,8 @@ describe("WorkloadCapacityService — teamId filter", () => {
       [{ expectedDailyHours: "8.0" }],
       [],
     ]);
-    const svc = new WorkloadCapacityService(db);
-    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14", 42);
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    const result = await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, "2026-09-01", "2026-09-14", 42);
     expect(result.members).toHaveLength(0);
   });
 
@@ -107,8 +123,8 @@ describe("WorkloadCapacityService — teamId filter", () => {
       [],
       [],
     ]);
-    const svc = new WorkloadCapacityService(db);
-    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14", 42);
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    const result = await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, "2026-09-01", "2026-09-14", 42);
     expect(result.members).toHaveLength(1);
     expect(result.members[0].userId).toBe("u-team-1");
     const allVals = wheresByCall.flatMap((w) =>
@@ -128,8 +144,8 @@ describe("WorkloadCapacityService — teamId filter", () => {
       [],
       [],
     ]);
-    const svc = new WorkloadCapacityService(db);
-    await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14", 42);
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, "2026-09-01", "2026-09-14", 42);
     const teamWhereVals = wheresByCall[1]?.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])) ?? [];
     expect(teamWhereVals).toContain(OWNER_ORG);
     expect(teamWhereVals).toContain(42);
@@ -145,8 +161,8 @@ describe("WorkloadCapacityService — cross-tenant isolation", () => {
       [],
       [],
     ]);
-    const svc = new WorkloadCapacityService(db);
-    await svc.capacity(ATTACKER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14");
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    await svc.capacity(actorIn(ATTACKER_ORG), PROJECT_ID, "2026-09-01", "2026-09-14");
 
     const allVals = wheresByCall.flatMap((w) =>
       w.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])),
@@ -158,8 +174,8 @@ describe("WorkloadCapacityService — cross-tenant isolation", () => {
 
   it("result has no member data when attacker queries a project they do not belong to — no cross-boundary data returned", async () => {
     const { db } = makeSequentialDb([[], []]);
-    const svc = new WorkloadCapacityService(db);
-    const result = await svc.capacity(ATTACKER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14");
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    const result = await svc.capacity(actorIn(ATTACKER_ORG), PROJECT_ID, "2026-09-01", "2026-09-14");
     expect(result.members).toHaveLength(0);
   });
 
@@ -171,8 +187,8 @@ describe("WorkloadCapacityService — cross-tenant isolation", () => {
       [],
       [],
     ]);
-    const svc = new WorkloadCapacityService(db);
-    await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14");
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, "2026-09-01", "2026-09-14");
 
     const allVals = wheresByCall.flatMap((w) =>
       w.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])),
@@ -189,8 +205,8 @@ describe("WorkloadCapacityService — cross-tenant isolation", () => {
       [],
       [],
     ]);
-    const svc = new WorkloadCapacityService(db);
-    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, "2026-09-01", "2026-09-14");
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    const result = await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, "2026-09-01", "2026-09-14");
     expect(result.members).toHaveLength(1);
     expect(result.members[0].userId).toBe("u-owner-1");
   });
@@ -212,8 +228,8 @@ function makeEstimateDb(estimateRows: unknown[]) {
 
 async function capacityWithEstimates(estimateRows: unknown[]) {
   const { db, wheresByCall, select } = makeEstimateDb(estimateRows);
-  const svc = new WorkloadCapacityService(db);
-  const result = await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+  const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+  const result = await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
   return { result, wheresByCall, select };
 }
 
@@ -304,8 +320,8 @@ describe("WorkloadCapacityService — team membership on the capacity projection
       { membershipId: 1, teamId: 4, teamName: "Platform" },
       { membershipId: 1, teamId: 9, teamName: "Payments" },
     ]);
-    const svc = new WorkloadCapacityService(db);
-    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    const result = await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
     expect(result.members[0].teams).toEqual([
       { id: 4, name: "Platform" },
       { id: 9, name: "Payments" },
@@ -314,23 +330,23 @@ describe("WorkloadCapacityService — team membership on the capacity projection
 
   it("returns an empty team list for a member on no team, rather than omitting the field the contract declares", async () => {
     const { db } = makeTeamDb([]);
-    const svc = new WorkloadCapacityService(db);
-    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    const result = await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
     expect(result.members[0].teams).toEqual([]);
   });
 
   it("never credits one member with another member's team", async () => {
     const { db } = makeTeamDb([{ membershipId: 77, teamId: 4, teamName: "Platform" }]);
-    const svc = new WorkloadCapacityService(db);
-    const result = await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    const result = await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
     expect(result.members[0].membershipId).toBe(1);
     expect(result.members[0].teams).toEqual([]);
   });
 
   it("scopes the team read to the caller's org, so a shared team id cannot name another tenant's team", async () => {
     const { db, wheresByCall } = makeTeamDb([{ membershipId: 1, teamId: 4, teamName: "Platform" }]);
-    const svc = new WorkloadCapacityService(db);
-    await svc.capacity(ATTACKER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    await svc.capacity(actorIn(ATTACKER_ORG), PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
     const teamWhereVals =
       wheresByCall[5]?.mock.calls.flatMap((c: unknown[]) => sqlValues(c[0])) ?? [];
     expect(teamWhereVals).toContain(ATTACKER_ORG);
@@ -339,8 +355,8 @@ describe("WorkloadCapacityService — team membership on the capacity projection
 
   it("bounds the team read, so a member on hundreds of teams cannot make the response unbounded", async () => {
     const { db, select } = makeTeamDb([{ membershipId: 1, teamId: 4, teamName: "Platform" }]);
-    const svc = new WorkloadCapacityService(db);
-    await svc.capacity(OWNER_ORG, PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
+    const svc = new WorkloadCapacityService(db, stubService<AccessService>({}));
+    await svc.capacity(actorIn(OWNER_ORG), PROJECT_ID, MON_TO_FRI_START, MON_TO_FRI_END);
     const teamBuilder = select.mock.results[5]?.value as { limit: jest.Mock };
     expect(teamBuilder.limit).toHaveBeenCalledWith(500);
   });

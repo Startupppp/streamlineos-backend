@@ -6,11 +6,8 @@ import {
   ParseIntPipe,
   Post,
   Query,
-  Res,
   UseGuards,
 } from "@nestjs/common";
-import { ApiOkResponse } from "@nestjs/swagger";
-import type { Response } from "express";
 import {
   projectAnalyticsQuerySchema,
   velocityQuerySchema,
@@ -60,13 +57,12 @@ export class ProjectsReportsController {
   @RequirePermission("build:view")
   @ResponseSchema(analyticsSchema)
   @Validate({ params: projectIdParams, query: projectAnalyticsQuerySchema })
-  async getAnalytics(
+  getAnalytics(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Query() query: ProjectAnalyticsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.reports.authorizeProject(u, projectId);
-    return this.analytics.getProjectAnalytics(u.orgId, projectId, query);
+    return this.analytics.getProjectAnalytics(u, projectId, query);
   }
 
   @Get(":projectId/reports/burnup")
@@ -107,25 +103,13 @@ export class ProjectsReportsController {
   @Get(":projectId/reports/velocity")
   @RequirePermission("build:view")
   @ResponseSchema(velocitySchema)
-  @ApiOkResponse({ description: "Most recent cycle page, displayed chronologically; follow Link for older history", headers: {
-    "Link": { description: "Relative next-page link for older cycles", schema: { type: "string" } },
-    "X-Next-Cursor": { description: "Opaque next-page cursor, empty on the final page", schema: { type: "string" } },
-    "X-Has-More": { description: "Whether older cycles exist", schema: { type: "boolean" } },
-  } })
   @Validate({ params: projectIdParams, query: velocityQuerySchema })
-  async velocity(
+  velocity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
     @Query() query: VelocityQuery,
-    @Res({ passthrough: true }) response: Response,
   ) {
-    const page = await this.reports.velocity(u, projectId, query);
-    response.setHeader("Access-Control-Expose-Headers", "Link, X-Next-Cursor, X-Has-More");
-    response.setHeader("X-Has-More", String(page.pagination.hasMore));
-    response.setHeader("X-Next-Cursor", page.pagination.nextCursor ?? "");
-    if (page.pagination.nextCursor)
-      response.setHeader("Link", `</build/${projectId}/reports/velocity?limit=${query.limit}&cursor=${encodeURIComponent(page.pagination.nextCursor)}>; rel="next"`);
-    return page.data;
+    return this.reports.velocity(u, projectId, query);
   }
 
   @Get(":projectId/reports/cycle-time")

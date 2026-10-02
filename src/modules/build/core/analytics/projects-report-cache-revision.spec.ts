@@ -4,6 +4,8 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { ProjectsReportsService } from "./projects-reports.service";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { projects } from "../../../../db/schema";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 describe("Build report cache revision", () => {
   it("reuses an unchanged report but refetches after a committed project revision", async () => {
@@ -25,7 +27,12 @@ describe("Build report cache revision", () => {
         ProjectsReportsService,
         { provide: DRIZZLE, useValue: {
           query: { projects: { findFirst: async () => ({ id: 1, reportRevision }) } },
-          select: () => ({ from: () => query }),
+          select: () => ({
+            from: (table: unknown) =>
+              table === projects
+                ? { where: () => ({ limit: async () => [projectAccessRow()] }) }
+                : query,
+          }),
         } },
         { provide: CacheService, useValue: { cached } },
         { provide: AccessService, useValue: { scopeFor: async () => "all" } },

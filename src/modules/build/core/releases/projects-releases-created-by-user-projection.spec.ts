@@ -12,9 +12,13 @@ import {
 } from "../dto/build-core-response.schemas";
 import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
-jest.mock("../project-crud/project-access", () => ({
-  assertProjectAccess: jest.fn(async () => undefined),
-}));
+jest.mock("../project-crud/project-access", () => {
+  const { sql } = jest.requireActual<typeof import("drizzle-orm")>("drizzle-orm");
+  return {
+    assertProjectAccess: jest.fn(async () => undefined),
+    resolveProjectReach: jest.fn(async () => ({ where: sql`true`, empty: false })),
+  };
+});
 
 const ORG = "org-proj-1";
 const PROJECT_ID = 10;

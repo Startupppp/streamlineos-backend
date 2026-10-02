@@ -8,7 +8,6 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
@@ -56,7 +55,6 @@ export class RecruitmentOnboardingStartService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly admission: MembershipAdmissionService,
     private readonly onboarding: OnboardingInitiationService,
   ) {}
@@ -155,7 +153,7 @@ export class RecruitmentOnboardingStartService {
     const name = `${candidate.firstName} ${candidate.lastName}`.trim();
     const { firstName, lastName } = splitName(name);
 
-    return withMembershipMutations(this.cache, (membership) =>
+    return withMembershipMutations((membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {

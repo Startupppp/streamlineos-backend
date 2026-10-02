@@ -14,6 +14,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { MembershipStateService } from "../../common/auth/membership-state.service";
 import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
+import { logger } from "../../common/logger/logger.service";
 import type {
   AccessSnapshot,
   CachedPermissions,
@@ -133,7 +134,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    this.accessVersionCache.configureStore();
     this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
       this.accessVersionCache.clearForOrg(orgId);
       this.deleteOrgEntries(this.membershipAccessCache, orgId);
@@ -142,7 +142,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       void Promise.all([
         this.cache.invalidateForOrg(orgId, "rbac:members"),
         this.cache.invalidateForOrg(orgId, "module-access:candidates"),
-      ]);
+      ]).catch((error: unknown) => {
+        logger.error("access version bump could not invalidate member list caches", {
+          orgId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
     });
   }
 

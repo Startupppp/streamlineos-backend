@@ -1,3 +1,4 @@
+import { ApiTokensService } from "../api-tokens/core/api-tokens.service";
 import { Test } from "@nestjs/testing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
@@ -63,6 +64,7 @@ async function buildService(): Promise<{
   const moduleRef = await Test.createTestingModule({
     providers: [
       SettingsService,
+      { provide: ApiTokensService, useValue: {} },
       { provide: DRIZZLE, useValue: db },
       { provide: OrgMembershipService, useValue: { updateMemberRole: jest.fn() } },
       { provide: CacheService, useValue: { invalidate: jest.fn() } },

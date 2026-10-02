@@ -1,10 +1,29 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EpicsService } from "./epics.service";
-import { BuildTicketCreationService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { ProjectsWebhooksDispatchService } from "../core";
-import { BuildAutomationRunnerService } from "../core/automation/build-automation-runner.service";
+import { BuildAutomationRunnerService } from "../core";
 import { CacheService } from "../../../common/cache/cache.service";
+import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual<object>("../core/project-crud/project-access"),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+}));
+
+const ACTOR: CurrentUserContext = {
+  userId: "user-a",
+  orgId: "org-a",
+  role: "OWNER",
+  isOrgOwner: true,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
+};
 
 it("refuses an epic when its destination column has no remaining capacity", async () => {
   const tx = {
@@ -24,9 +43,13 @@ it("refuses an epic when its destination column has no remaining capacity", asyn
     { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+    { provide: AccessService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
+    { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
+    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .rejects.toThrow("WIP limit");
   } finally {
     await module.close();
@@ -51,9 +74,13 @@ it.each([false, true])("refuses a missing destination with configured workflow=%
     { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+    { provide: AccessService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
+    { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
+    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .rejects.toThrow("no longer exists");
   } finally {
     await module.close();
@@ -80,9 +107,13 @@ it("permits an existing unlimited destination", async () => {
     { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+    { provide: AccessService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
+    { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {
-    await expect(module.get(EpicsService).createEpic("org-a", "user-a", 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
+    await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
       .resolves.toMatchObject({ id: 10, title: "Epic" });
   } finally {
     await module.close();

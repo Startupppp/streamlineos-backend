@@ -6,7 +6,8 @@ import {
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { AuditService } from "../../common/audit/audit.service";
+import { CacheService } from "../../common/cache/cache.service";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import {
   organizationMembers,
   orgUnitMembers,
@@ -57,7 +58,7 @@ const EXPORT_HISTORY_LIMIT = 500;
 export class UserProfileService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly audit: AuditService,
+    private readonly cache: CacheService,
     private readonly sessions: SessionsService,
     private readonly employment: EmploymentFactsService,
     private readonly activity: UserActivityService,
@@ -79,7 +80,7 @@ export class UserProfileService {
   private get accountDeps(): UserAccountRecordDeps {
     return {
       db: this.db,
-      audit: this.audit,
+      cache: this.cache,
       sessions: this.sessions,
       assertMember: (orgId, userId) => this.assertMember(orgId, userId),
     };
@@ -190,18 +191,19 @@ export class UserProfileService {
         DEPARTMENT: data.departmentId,
         TEAM: data.teamId,
       });
-    });
 
-    this.audit.log({
-      action: "user.membership.updated",
-      userId: actorUserId,
-      orgId,
-      targetId: userId,
-      targetType: "user",
-      actorUserId,
-      resourceType: "user",
-      resourceId: userId,
-      metadata: { changes: data },
+      await commitAccessChange(tx, orgId, {
+        audit: {
+          action: "user.membership.updated",
+          userId: actorUserId,
+          targetId: userId,
+          targetType: "user",
+          resourceType: "user",
+          resourceId: userId,
+          metadata: { changes: data },
+        },
+        revoke: { cache: this.cache, loses: [{ kind: "permissions", userIds: [userId] }] },
+      });
     });
 
     return { success: true };

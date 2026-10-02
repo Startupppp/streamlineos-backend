@@ -14,7 +14,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { AccessService } from "../../../access/access.service";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { BUILD_BLOCKER_CREATED_EVENT } from "./build-blocker-created-consumer.service";
-import { assertTicketReadAccess, type TicketReadAccess } from "../project-crud/project-access";
+import { assertTicketReadAccess, type TicketReadAccess, assertTicketWriteAccess } from "../project-crud/project-access";
 import type { AddRelationInput } from "../dto/projects.schemas";
 
 @Injectable()
@@ -135,7 +135,7 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     body: AddRelationInput,
   ) {
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId);
 
     if (body.relatedTicketId === ticketId) {
       throw new BadRequestException("A ticket cannot relate to itself.");
@@ -252,7 +252,7 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     relatedId: number,
   ) {
-    await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
+    await assertTicketWriteAccess(this.db, this.access, u, projectId, ticketId);
 
     if (!relatedId)
       throw new BadRequestException("relatedId query param required.");

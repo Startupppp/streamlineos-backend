@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull, ne, or, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, type SQL } from "drizzle-orm";
 import { kbPages, kbSources } from "../../../db/schema";
 import { supportArticlePredicate } from "../help-centre/kb-article-page-scope";
 import { wikiPagePredicate } from "../help-centre/kb-article-page-scope";
@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { articleSpacePredicate } from "./kb-candidate.service";
+import { sourceSpaceFilter } from "./kb-requested-sources";
 import { KbSearchService } from "./kb-search.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
@@ -101,13 +102,7 @@ export class KbCitationVisibilityService {
     ids: number[],
   ): Promise<Set<number>> {
     const accessibleSpaceIds = (await this.auth.resolveStanding(user)).accessibleSpaceIds;
-    const spaceFilter =
-      accessibleSpaceIds.length > 0
-        ? or(
-            isNull(kbSources.spaceId),
-            inArray(kbSources.spaceId, accessibleSpaceIds),
-          )
-        : isNull(kbSources.spaceId);
+    const spaceFilter = sourceSpaceFilter(accessibleSpaceIds);
     const rows = await this.db
       .select({ id: kbSources.id })
       .from(kbSources)

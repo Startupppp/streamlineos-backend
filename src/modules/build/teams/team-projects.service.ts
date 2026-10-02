@@ -1,9 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { projectTeamAssignments } from "../../../db/schema/build/teams";
 import { projects } from "../../../db/schema/build/core";
@@ -12,6 +7,10 @@ import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { TeamsService } from "./teams.service";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertCanManageProject } from "../core";
+import { resolveProjectReach } from "../core";
 
 @Injectable()
 export class TeamProjectsService {
@@ -19,10 +18,14 @@ export class TeamProjectsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly teams: TeamsService,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
-  async listTeamProjects(orgId: string, teamId: number) {
+  async listTeamProjects(actor: CurrentUserContext, teamId: number) {
+    const { orgId } = actor;
     await this.teams.loadTeam(orgId, teamId);
+    const reach = await resolveProjectReach(this.access, actor);
+    if (reach.empty) return [];
     return this.db
       .select({
         id: projects.id,
@@ -37,26 +40,19 @@ export class TeamProjectsService {
         and(
           eq(projectTeamAssignments.teamId, teamId),
           eq(projectTeamAssignments.orgId, orgId),
+          eq(projects.orgId, orgId),
           isNull(projects.deletedAt),
+          reach.where,
         ),
       )
       .orderBy(desc(projectTeamAssignments.addedAt))
       .limit(200);
   }
 
-  async addProject(
-    orgId: string,
-    actorId: string,
-    teamId: number,
-    projectId: number,
-  ) {
+  async addProject(actor: CurrentUserContext, teamId: number, projectId: number) {
+    const { orgId, userId: actorId } = actor;
     await this.teams.loadTeam(orgId, teamId);
-    const [project] = await this.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
-      .limit(1);
-    if (!project) throw new NotFoundException("Project not found");
+    await assertCanManageProject(this.db, this.access, actor, projectId);
 
     try {
       const [row] = await this.db
@@ -82,13 +78,10 @@ export class TeamProjectsService {
     }
   }
 
-  async removeProject(
-    orgId: string,
-    actorId: string,
-    teamId: number,
-    projectId: number,
-  ) {
+  async removeProject(actor: CurrentUserContext, teamId: number, projectId: number) {
+    const { orgId, userId: actorId } = actor;
     await this.teams.loadTeam(orgId, teamId);
+    await assertCanManageProject(this.db, this.access, actor, projectId);
     await this.db
       .delete(projectTeamAssignments)
       .where(

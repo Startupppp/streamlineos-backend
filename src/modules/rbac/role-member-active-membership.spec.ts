@@ -149,7 +149,7 @@ describe("RoleMemberService — the version bump shares the writer's transaction
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: NotificationDispatchService,
-          useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+          useValue: { emit: jest.fn().mockResolvedValue(undefined), emitInTx: jest.fn().mockResolvedValue(undefined) },
         },
         {
           provide: AccessService,

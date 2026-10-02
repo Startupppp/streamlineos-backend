@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { candidates, candidateDocumentsVault } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -35,7 +35,7 @@ export class CareersService {
       .limit(1);
 
     if (!candidate) {
-      throw new BadRequestException("Candidate not found or access denied.");
+      throw new NotFoundException("Candidate not found");
     }
 
     const upload = await this.storage.uploadFile(orgId, file, "candidates/resumes", `${candidateId}/${fileName}`, mimeType);

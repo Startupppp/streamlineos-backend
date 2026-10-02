@@ -1,3 +1,4 @@
+import { orgWideRoadmapAccess } from "../../__tests__/roadmap-access-double";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -34,7 +35,7 @@ function probeBody(): string {
 function serviceWithProbe(idRows: Array<{ id: number }>) {
   const execute = jest.fn().mockResolvedValue(idRows);
   const db = { execute } as unknown as Db;
-  const svc = new ProjectsRoadmapService(db, lifecycleAuditDouble());
+  const svc = new ProjectsRoadmapService(db, lifecycleAuditDouble(), orgWideRoadmapAccess());
   return { svc, execute };
 }
 

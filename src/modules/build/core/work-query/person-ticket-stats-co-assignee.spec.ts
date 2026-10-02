@@ -1,5 +1,9 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import type { AccessService } from "../../../access/access.service";
+import { MEMBER_STANDING, principalAccess } from "../../__tests__/project-access-doubles";
+
+const memberAccess = () => principalAccess(MEMBER_STANDING) as unknown as AccessService;
 import type { Db } from "../../../../db/drizzle.module";
 
 const ORG_ID = "org-r7";
@@ -63,7 +67,7 @@ async function runPersonStats(
   mock: ReturnType<typeof makeDbMock>,
   opts: { assigneeId?: string; projectIds?: number[] },
 ) {
-  const service = new ProjectsWorkQueryService(mock.db);
+  const service = new ProjectsWorkQueryService(mock.db, memberAccess());
   return service.countTicketsByProjectAndStatus(makeCaller(), opts);
 }
 

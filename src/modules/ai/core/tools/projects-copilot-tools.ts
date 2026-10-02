@@ -7,7 +7,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
 import { ticketScope } from "../../../build/core/tickets";
-import { reachableTicketProjectsSql } from "../../../build/reachability/project-reachability";
+import { projectReachFor, ticketProjectReachableSql } from "../../../build/core";
 import {
   type AskOsToolDefinition,
   type AskOsToolProvider,
@@ -43,7 +43,7 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), ticketProjectReachableSql(orgId, projectReachFor(ctx.readFor, orgId, membershipId))],
             },
             ({ sql: where }) =>
               this.db
@@ -104,7 +104,7 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
               and: [
                 ilike(tickets.title, `%${query}%`),
                 isNull(tickets.deletedAt),
-                reachableTicketProjectsSql(orgId, membershipId),
+                ticketProjectReachableSql(orgId, projectReachFor(ctx.readFor, orgId, membershipId)),
                 projectId !== undefined
                   ? eq(tickets.projectId, projectId)
                   : undefined,
@@ -212,7 +212,7 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), ticketProjectReachableSql(orgId, projectReachFor(ctx.readFor, orgId, membershipId))],
             },
             ({ sql: where }) =>
               this.db
@@ -272,7 +272,7 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), ticketProjectReachableSql(orgId, projectReachFor(ctx.readFor, orgId, membershipId))],
             },
             ({ sql: where }) =>
               this.db

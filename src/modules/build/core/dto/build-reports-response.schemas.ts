@@ -103,7 +103,7 @@ export const criticalPathSchema = z.object({
   hasCycle: z.boolean(),
 });
 
-export const velocitySchema = z.array(z.object({
+const velocityItemSchema = z.object({
   cycleId: z.number().int(),
   name: z.string(),
   startDate: z.string(),
@@ -112,7 +112,9 @@ export const velocitySchema = z.array(z.object({
   completedPoints: z.number().int(),
   committedCount: z.number().int(),
   completedCount: z.number().int(),
-})).max(100);
+});
+
+export const velocitySchema = cursorPageSchema(velocityItemSchema);
 
 export const cycleTimeSchema = z.array(z.object({
   week: z.string(), avgDays: z.number(), count: z.number().int(),

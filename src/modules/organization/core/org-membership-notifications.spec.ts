@@ -27,6 +27,7 @@ describe("OrgMembershipService access notifications", () => {
   const userFindFirst = jest.fn();
   const selectWhere = jest.fn();
   const emit = jest.fn();
+  const emitInTx = jest.fn();
   const sendMembershipRemovedEmail = jest.fn();
   const sendMembershipSuspendedEmail = jest.fn();
 
@@ -90,6 +91,7 @@ describe("OrgMembershipService access notifications", () => {
       firstName: "Mo",
     });
     emit.mockResolvedValue(undefined);
+    emitInTx.mockResolvedValue(undefined);
     sendMembershipRemovedEmail.mockResolvedValue(undefined);
     sendMembershipSuspendedEmail.mockResolvedValue(undefined);
 
@@ -117,7 +119,7 @@ describe("OrgMembershipService access notifications", () => {
           provide: EmailService,
           useValue: { sendMembershipRemovedEmail, sendMembershipSuspendedEmail },
         },
-        { provide: NotificationDispatchService, useValue: { emit } },
+        { provide: NotificationDispatchService, useValue: { emit, emitInTx } },
       ],
     }).compile();
 
@@ -140,21 +142,23 @@ describe("OrgMembershipService access notifications", () => {
       "Alpha",
     );
     expect(emit).not.toHaveBeenCalled();
+    expect(emitInTx).not.toHaveBeenCalled();
   });
 
-  it("dispatches an in-app notification when a member is reactivated", async () => {
+  it("records the reactivation notification on the reactivating transaction", async () => {
     memberFindFirst.mockResolvedValue({ isOwner: false, status: "SUSPENDED", id: 5 });
 
     await svc.reactivateMember(ORG, ACTOR, MEMBER);
     await flushPendingNotifications();
 
-    expect(emit).toHaveBeenCalledWith(
+    expect(emitInTx).toHaveBeenCalledWith(tx, [
       expect.objectContaining({
         eventKey: "organization.member.reactivated",
         orgId: ORG,
         targetUserIds: [MEMBER],
       }),
-    );
+    ]);
+    expect(emit).not.toHaveBeenCalled();
     expect(sendMembershipSuspendedEmail).not.toHaveBeenCalled();
   });
 

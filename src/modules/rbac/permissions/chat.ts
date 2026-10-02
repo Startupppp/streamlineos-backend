@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const CHAT_PERMISSIONS: Permission[] = [
+export const CHAT_PERMISSIONS = definePermissions([
   {
     name: "chat:channels:read",
     resource: "chat:channels",
@@ -67,4 +67,4 @@ export const CHAT_PERMISSIONS: Permission[] = [
     action: "create",
     description: "Submit thumbs-up/down feedback on AI responses",
   },
-];
+]);

@@ -4,6 +4,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
@@ -68,15 +69,12 @@ function collectParamValues(node: unknown, acc: unknown[] = []): unknown[] {
 
 function makeMockDb() {
   return {
-    query: { projects: { findFirst: jest.fn() } },
-    select: jest.fn().mockReturnValue(makeChain([{ role: "MEMBER" }])),
+    select: jest.fn().mockReturnValue(makeChain([])),
   };
 }
 
 function makeAccessService(): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-  } as unknown as AccessService;
+  return standingAccess(MEMBER_STANDING) as unknown as AccessService;
 }
 
 describe("FormsService.listForms — server-side full-text search predicate", () => {
@@ -86,10 +84,8 @@ describe("FormsService.listForms — server-side full-text search predicate", ()
     mockDb: ReturnType<typeof makeMockDb>,
     formChain: ReturnType<typeof makeChain>,
   ) {
-    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     mockDb.select
-      .mockReturnValueOnce(makeChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(formChain);
   }
 

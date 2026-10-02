@@ -1,7 +1,5 @@
 import { Module } from "@nestjs/common";
-import { ProjectsModule } from "./core/projects.module";
-import { ProjectsByIdModule } from "./core/project-crud/projects-by-id.module";
-import { ProjectsRetentionSettingsModule } from "./core/settings/projects-retention-settings.module";
+import { ProjectsModule, ProjectsByIdModule, ProjectsRetentionSettingsModule } from "./core";
 import { BuildApprovalsModule } from "./approvals/build-approvals.module";
 import { BuildClientPortalModule } from "./client-portal/build-client-portal.module";
 import { BuildCommentDraftsModule } from "./comment-drafts/build-comment-drafts.module";

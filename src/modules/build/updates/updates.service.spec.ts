@@ -5,6 +5,12 @@ import type { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import {
+  MEMBER_STANDING,
+  projectAccessRow,
+  standingAccess,
+  type StandingScopes,
+} from "../__tests__/project-access-doubles";
 
 function makeSelectChain(rows: unknown[]) {
   const chain: {
@@ -53,9 +59,9 @@ function makeMockDb(): MockDb {
 }
 
 function makeAccess(perms: Set<string> = new Set()): AccessService {
-  return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(perms),
-  } as unknown as AccessService;
+  const scopes: StandingScopes = { ...MEMBER_STANDING };
+  for (const key of perms) scopes[key] = "all";
+  return standingAccess(scopes) as unknown as AccessService;
 }
 
 function makeUser(orgId: string, membershipId = 7, userId = "user-1"): CurrentUserContext {
@@ -77,10 +83,8 @@ beforeEach(() => jest.resetAllMocks());
 describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
   it("rejects a non-member with ForbiddenException before returning rows", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([]))
-      .mockReturnValueOnce(makeSelectChain([]));
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow()]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
 
     await expect(svc.listUpdates(makeUser("org-1"), 1, {})).rejects.toThrow(ForbiddenException);
@@ -88,10 +92,8 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
 
   it("allows a project member and returns a cursor page", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
 
@@ -101,7 +103,6 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
 
   it("returns 404 when the project does not belong to the attacker's org", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue(undefined);
     db.select.mockReturnValueOnce(makeSelectChain([]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
 
@@ -110,7 +111,6 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
 
   it("includes status and audience in the projected row so the frontend can filter by publication state without an extra round-trip", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     const row = {
       id: 1,
       orgId: "org-1",
@@ -124,8 +124,7 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
       deletedAt: null,
     };
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([row]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
 
@@ -135,10 +134,8 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
 
   it("accepts authorId, from, to, and status filter params so the strict query schema does not 400 a filtered request", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
 
@@ -155,8 +152,7 @@ describe("UpdatesService.listUpdates — cross-tenant isolation (BOLA)", () => {
 describe("UpdatesService.createUpdate — tenant isolation and membershipId binding", () => {
   it("stores the caller's membershipId as authorMembershipId", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
-    db.select.mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]));
+    db.select.mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]));
 
     let capturedValues: Record<string, unknown> | undefined;
     db.insert.mockImplementation(() => ({
@@ -187,7 +183,6 @@ describe("UpdatesService.createUpdate — tenant isolation and membershipId bind
 
   it("throws NotFoundException when project is not in the caller's org", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue(undefined);
     db.select.mockReturnValueOnce(makeSelectChain([]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
 
@@ -201,7 +196,6 @@ describe("UpdatesService.createUpdate — tenant isolation and membershipId bind
 describe("UpdatesService.editUpdate — body update with authz", () => {
   it("allows the author to edit their own update body", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     const updatedRow = {
       id: 5,
       orgId: "org-1",
@@ -213,8 +207,7 @@ describe("UpdatesService.editUpdate — body update with authz", () => {
       deletedAt: null,
     };
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([{ id: 5, authorMembershipId: 42 }]))
       .mockReturnValueOnce(makeSelectChain([updatedRow]));
     db.update.mockReturnValue({
@@ -231,7 +224,6 @@ describe("UpdatesService.editUpdate — body update with authz", () => {
 
   it("allows a non-author with build:updates:manage to edit any update", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     const updatedRow = {
       id: 5,
       orgId: "org-1",
@@ -243,8 +235,7 @@ describe("UpdatesService.editUpdate — body update with authz", () => {
       deletedAt: null,
     };
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([{ id: 5, authorMembershipId: 99 }]))
       .mockReturnValueOnce(makeSelectChain([updatedRow]));
     db.update.mockReturnValue({
@@ -265,9 +256,8 @@ describe("UpdatesService.editUpdate — body update with authz", () => {
 
   it("throws ForbiddenException when caller is not the author and lacks manage permission", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([{ id: 5, authorMembershipId: 99 }]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(new Set()), mockAudit);
     await expect(
@@ -278,10 +268,8 @@ describe("UpdatesService.editUpdate — body update with authz", () => {
 
   it("throws NotFoundException when update does not exist in this project", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
     await expect(
@@ -292,7 +280,6 @@ describe("UpdatesService.editUpdate — body update with authz", () => {
 
   it("throws NotFoundException when project is not in the caller's org", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue(undefined);
     db.select.mockReturnValueOnce(makeSelectChain([]));
     const svc = new UpdatesService(db as unknown as Db, makeAccess(), mockAudit);
     await expect(
@@ -313,7 +300,6 @@ describe("UpdatesService.softDeleteUpdate — soft-delete filtering and author o
 
   it("allows the author to delete their own update", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     const updateRow = {
       id: 5,
       orgId: "org-1",
@@ -325,8 +311,7 @@ describe("UpdatesService.softDeleteUpdate — soft-delete filtering and author o
       updatedAt: new Date(),
     };
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
-      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(makeSelectChain([updateRow]));
     const updateChain = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(undefined) };
     db.update.mockReturnValue(updateChain);
@@ -339,9 +324,8 @@ describe("UpdatesService.softDeleteUpdate — soft-delete filtering and author o
 
   it("rejects a non-author without build:updates:manage from deleting another member's update", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
     db.select
-      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow({ memberRole: "MEMBER" })]))
       .mockReturnValueOnce(
         makeSelectChain([
           {
@@ -363,8 +347,9 @@ describe("UpdatesService.softDeleteUpdate — soft-delete filtering and author o
 
   it("checks project access before reading the update, so a manage key in the org cannot delete inside a project the caller cannot reach", async () => {
     const db = makeMockDb();
-    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
-    db.select.mockReturnValue(makeSelectChain([]));
+    db.select
+      .mockReturnValueOnce(makeSelectChain([projectAccessRow()]))
+      .mockReturnValue(makeSelectChain([]));
     const svc = new UpdatesService(
       db as unknown as Db,
       makeAccess(new Set(["build:updates:manage"])),

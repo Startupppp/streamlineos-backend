@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { scheduleStandingRevocation } from "../../../common/rbac/access-mutation-commit";
 import {
   chooseRegionForNewOrg,
   regionPlacementCoordinates,
@@ -111,7 +111,7 @@ export class OrganizationCreationService {
       );
       if (!organization)
         throw new Error(`Completed organization ${orgId} is no longer active`);
-      await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
+      await scheduleStandingRevocation(this.cache, [input.userId]);
       return organization;
     }
     if (saga.state === "COMPENSATED")
@@ -205,7 +205,7 @@ export class OrganizationCreationService {
           saga.sagaId,
           "bootstrap-cell-organization",
           () =>
-            bootstrapCellOrganization(this.db, this.cache, {
+            bootstrapCellOrganization(this.db, {
               orgId,
               userId: input.userId,
               region: bootstrapRegion,
@@ -271,7 +271,7 @@ export class OrganizationCreationService {
       throw error;
     }
 
-    await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
+    await scheduleStandingRevocation(this.cache, [input.userId]);
     return createdOrganization;
   }
 

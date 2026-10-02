@@ -1,6 +1,27 @@
 import { NotFoundException } from "@nestjs/common";
 import { CommentDraftsService } from "./comment-drafts.service";
 import type { Db } from "../../../db/drizzle.module";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal, type Principal } from "../../../common/auth/principal";
+
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual<object>("../core/project-crud/project-access"),
+  assertTicketReadAccess: jest.fn(),
+}));
+
+function actorIn(orgId: string, principal: Principal = humanSessionPrincipal(42, false)): CurrentUserContext {
+  return {
+    userId: "user-1",
+    orgId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s",
+    tokenScopes: null,
+    principal,
+  };
+}
 import { commentDrafts } from "../../../db/schema/build/comment-drafts";
 import { COMMENT_DRAFT_MAX_RETRIES } from "./comment-drafts.constants";
 import {
@@ -31,10 +52,10 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
 
     await expect(
-      svc.upsert("org-attacker", null, "user-1", 999, { body: "draft" }),
+      svc.upsert(actorIn("org-attacker", ACCOUNT_ONLY_PRINCIPAL), 999, { body: "draft" }),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -46,7 +67,7 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
 
     await expect(svc.deleteOne("org-attacker", 42, "user-1", 999)).rejects.toThrow(NotFoundException);
   });
@@ -59,10 +80,10 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
 
     await expect(
-      svc.upsert("org-attacker", 42, "user-1", 999, { body: "draft" }),
+      svc.upsert(actorIn("org-attacker"), 999, { body: "draft" }),
     ).rejects.toThrow(NotFoundException);
     expect(db.insert).not.toHaveBeenCalled();
   });
@@ -89,8 +110,8 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
-    const result = await svc.listMine("org-other", 42, "user-1");
+    const svc = new CommentDraftsService(db, stubService<AccessService>({ scopeFor: jest.fn().mockResolvedValue("all") }));
+    const result = await svc.listMine(actorIn("org-other"));
     expect(result).toEqual([]);
   });
 });
@@ -123,8 +144,8 @@ describe("CommentDraftsService — BSN-03-044: unapproved proposal cannot perfor
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
-    await svc.upsert("org-1", 42, "user-1", 99, { body: "draft body" });
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
+    await svc.upsert(actorIn("org-1"), 99, { body: "draft body" });
 
     expect(insertFn).toHaveBeenCalledTimes(1);
     expect(insertFn).toHaveBeenCalledWith(commentDrafts);
@@ -164,8 +185,8 @@ describe("CommentDraftsService — BSN-03-046: empty and low-confidence states s
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
-    const result = await svc.listMine("org-1", 42, "user-1");
+    const svc = new CommentDraftsService(db, stubService<AccessService>({ scopeFor: jest.fn().mockResolvedValue("all") }));
+    const result = await svc.listMine(actorIn("org-1"));
     expect(result).toEqual([]);
     expect(result).toHaveLength(0);
   });
@@ -204,7 +225,7 @@ describe("CommentDraftsService — BSN-03-045: bounded retry path", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
     await svc.recordDraftFailure("org-1", 42, 7, "AI provider timeout");
 
     expect(updateFn).toHaveBeenCalledWith(commentDrafts);
@@ -225,7 +246,7 @@ describe("CommentDraftsService — BSN-03-045: bounded retry path", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
     await svc.recordDraftFailure("org-1", 42, 7, "error at cap");
 
     const setArg = updateSetFn.mock.calls[0][0] as Record<string, unknown>;
@@ -244,7 +265,7 @@ describe("CommentDraftsService — BSN-03-045: bounded retry path", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
     await svc.recordDraftFailure("org-1", 42, 7, "first failure");
 
     const setArg = updateSetFn.mock.calls[0][0] as Record<string, unknown>;
@@ -260,7 +281,7 @@ describe("CommentDraftsService — BSN-03-045: bounded retry path", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
     const result = await svc.recordDraftFailure("org-1", 42, 7, "AI provider timeout");
 
     expect(result).toEqual({
@@ -278,7 +299,7 @@ describe("CommentDraftsService — BSN-03-045: bounded retry path", () => {
       query: {},
     } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
     await expect(
       svc.recordDraftFailure("org-other", 99, 7, "should not run"),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -292,7 +313,7 @@ describe("CommentDraftsService — BSN-03-045: bounded retry path", () => {
 
     const db = { select: selectFn, update: updateFn, query: {} } as unknown as Db;
 
-    const svc = new CommentDraftsService(db);
+    const svc = new CommentDraftsService(db, stubService<AccessService>({}));
     await expect(svc.recordDraftFailure("org-1", null, 7, "no membership")).rejects.toThrow();
 
     expect(selectFn).not.toHaveBeenCalled();

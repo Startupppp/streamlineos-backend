@@ -96,8 +96,8 @@ function alternateTenantNs(template: string): string {
  * being in the registry, not by anyone remembering to add a case.
  */
 describe("CACHE_INVALIDATION_MATRIX — structure", () => {
-  it("has exactly 143 entries", () => {
-    expect(CACHE_INVALIDATION_MATRIX).toHaveLength(143);
+  it("has exactly 142 entries", () => {
+    expect(CACHE_INVALIDATION_MATRIX).toHaveLength(142);
   });
 
   it("has no duplicate namespace keys", () => {
@@ -127,7 +127,7 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
       const ttlCount = CACHE_INVALIDATION_MATRIX.filter(
         (e) => e.invalidation.kind === "ttl-only",
       ).length;
-      expect(writeCount).toBe(107);
+      expect(writeCount).toBe(106);
       expect(ttlCount).toBe(36);
       expect(writeCount + ttlCount).toBe(CACHE_INVALIDATION_MATRIX.length);
     },

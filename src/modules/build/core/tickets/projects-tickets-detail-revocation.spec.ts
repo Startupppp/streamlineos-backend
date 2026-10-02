@@ -6,6 +6,7 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsForbiddenTicketException } from "../../../../common/http/api-exceptions";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
+import { MEMBER_STANDING, standingAccess } from "../../__tests__/project-access-doubles";
 
 const user: CurrentUserContext = {
   orgId: "org-a", userId: "user-a", role: "MEMBER", isOrgOwner: false,
@@ -45,12 +46,14 @@ describe("ticket detail permission revocation", () => {
     });
     const accessRows = {
       from: jest.fn(),
-      innerJoin: jest.fn(),
+      leftJoin: jest.fn(),
       where: jest.fn(),
-      limit: jest.fn().mockResolvedValue([]),
+      limit: jest.fn().mockResolvedValue([
+        { projectId: 3, projectState: "ACTIVE", projectDeletedAt: null, reachable: false, inScope: true },
+      ]),
     };
     accessRows.from.mockReturnValue(accessRows);
-    accessRows.innerJoin.mockReturnValue(accessRows);
+    accessRows.leftJoin.mockReturnValue(accessRows);
     accessRows.where.mockReturnValue(accessRows);
     const module = await Test.createTestingModule({ providers: [
       ProjectsTicketsDetailService,
@@ -59,17 +62,13 @@ describe("ticket detail permission revocation", () => {
         useValue: {
           query: {
             tickets: { findFirst },
-            projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 99 }) },
           },
           select: jest.fn().mockReturnValue(accessRows),
         },
       },
       {
         provide: AccessService,
-        useValue: {
-          scopeFor: jest.fn().mockResolvedValue("all"),
-          resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
-        },
+        useValue: standingAccess(MEMBER_STANDING),
       },
       { provide: AuditService, useValue: { log: jest.fn() } },
     ] }).compile();

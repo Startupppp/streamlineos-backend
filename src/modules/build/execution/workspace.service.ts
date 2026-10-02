@@ -19,7 +19,7 @@ import {
   clearingLifecycle,
 } from "../lifecycle/lifecycle-restore";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { assertProjectAccess, escapeLike } from "../core";
+import { assertProjectAccess, escapeLike, assertProjectWriteAccess } from "../core";
 import { buildCursorPage, buildTupleCursorPage, decodeCursor, decodeIntegerCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId, keysetBeforeTuple, keysetBoolean, keysetTimestamp, keysetInteger } from "../../../common/pagination/keyset";
 import type {
@@ -75,7 +75,7 @@ export class MilestonesService {
         eq(projectMilestones.orgId, orgId),
         isNull(projectMilestones.deletedAt),
         status ? eq(projectMilestones.status, status) : undefined,
-        q ? sql`${projectMilestones.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
+        q ? sql`to_tsvector('english', coalesce(${projectMilestones.name},'')) @@ plainto_tsquery('english', ${q})` : undefined,
         from ? gte(projectMilestones.targetDate, from) : undefined,
         to ? lte(projectMilestones.targetDate, to) : undefined,
         ownerId ? eq(projectMilestones.ownerMembershipId, ownerId) : undefined,
@@ -151,7 +151,7 @@ export class MilestonesService {
 
   async createMilestone(u: CurrentUserContext, projectId: number, input: CreateMilestoneInput) {
     const { orgId, userId } = u;
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     await this.assertOwnerInOrg(orgId, input.ownerMembershipId);
     const [milestone] = await this.db
       .insert(projectMilestones)
@@ -176,7 +176,7 @@ export class MilestonesService {
   }
 
   async updateMilestone(u: CurrentUserContext, projectId: number, milestoneId: number, input: UpdateMilestoneInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const { orgId } = u;
     const before = await this.db.query.projectMilestones.findFirst({
       where: and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
@@ -207,7 +207,7 @@ export class MilestonesService {
   }
 
   async deleteMilestone(u: CurrentUserContext, projectId: number, milestoneId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const { orgId, userId } = u;
     const [stamped] = await this.db
       .update(projectMilestones)
@@ -227,7 +227,7 @@ export class MilestonesService {
   }
 
   async restoreMilestone(u: CurrentUserContext, projectId: number, milestoneId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const { orgId, userId } = u;
     const existing = await this.db.query.projectMilestones.findFirst({
       where: and(
@@ -315,7 +315,7 @@ export class IntakeService {
   }
 
   async createIntake(u: CurrentUserContext, projectId: number, input: CreateIntakeInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const { orgId } = u;
     const [item] = await this.db
       .insert(intakeItems)
@@ -335,7 +335,7 @@ export class IntakeService {
   }
 
   async updateIntake(u: CurrentUserContext, projectId: number, requestId: number, input: UpdateIntakeInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const { orgId, userId } = u;
     const [item] = await this.db
       .select()
@@ -456,7 +456,7 @@ export class ViewsService {
   }
 
   async createView(u: CurrentUserContext, projectId: number, input: CreateViewInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const { orgId, userId } = u;
     const [view] = await this.db
       .insert(projectViews)
@@ -479,7 +479,7 @@ export class ViewsService {
   }
 
   async updateView(u: CurrentUserContext, projectId: number, viewId: number, input: UpdateViewInput) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const { orgId, userId } = u;
     const existing = await this.db.query.projectViews.findFirst({
       where: and(eq(projectViews.id, viewId), eq(projectViews.projectId, projectId), eq(projectViews.orgId, orgId)),
@@ -498,7 +498,7 @@ export class ViewsService {
   }
 
   async deleteView(u: CurrentUserContext, projectId: number, viewId: number) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
+    await assertProjectWriteAccess(this.db, this.access, u, projectId);
     const { orgId, userId } = u;
     const existing = await this.db.query.projectViews.findFirst({
       where: and(eq(projectViews.id, viewId), eq(projectViews.projectId, projectId), eq(projectViews.orgId, orgId)),

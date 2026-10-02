@@ -1,6 +1,29 @@
-import { ConflictException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { projectTemplates, projects, ticketComments, tickets } from "../../../../db/schema";
 import { ProjectsRestoreService } from "./projects-restore.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { stubService } from "../../../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../../../access/access.service";
+import { principalAccess } from "../../__tests__/project-access-doubles";
+
+const member: CurrentUserContext = {
+  userId: "user-2",
+  orgId: "org-1",
+  role: "MEMBER",
+  isOrgOwner: false,
+  sessionId: "s",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(2, false),
+};
+
+const DELETED_PROJECT = {
+  id: 5,
+  name: "Apollo",
+  key: "APO",
+  intakeToken: "tok",
+  deletedAt: new Date("2026-03-01T10:00:00.000Z"),
+};
 
 function chain(rows: unknown[]) {
   const node: Record<string, unknown> = {};
@@ -32,6 +55,7 @@ function buildService(options: {
   restoredTickets?: unknown[];
   restoredComments?: unknown[];
   template?: Record<string, unknown> | undefined;
+  permissions?: string[];
 }) {
   const audit = { log: jest.fn(), logCritical: jest.fn() };
   const updates: { table: unknown }[] = [];
@@ -59,10 +83,14 @@ function buildService(options: {
     transaction,
   };
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
+  const access = stubService<AccessService>(
+    principalAccess(Object.fromEntries((options.permissions ?? []).map((key) => [key, "all" as const]))),
+  );
   const service = new ProjectsRestoreService(
     db as never,
     audit as never,
     cache as never,
+    access,
   );
   return { service, audit, transaction, updates, db, cache };
 }
@@ -164,5 +192,30 @@ describe("ProjectsRestoreService.restoreTemplate", () => {
       service.restoreTemplate(actor as never, 7),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(audit.logCritical).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /build/:projectId/restore requires the same standing as deleting the project", () => {
+  it("answers 403 to a member without build:delete before looking the project up", async () => {
+    const { service, transaction, db } = buildService({ project: DELETED_PROJECT, occupants: [] });
+    await expect(service.restoreProject(member, 5)).rejects.toThrow(ForbiddenException);
+    expect(db.query.projects.findFirst).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 to a build:delete holder for a project outside the caller's tenant", async () => {
+    const { service, transaction } = buildService({ project: undefined, permissions: ["build:delete"] });
+    await expect(service.restoreProject(member, 5)).rejects.toThrow(NotFoundException);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("restores the project for a build:delete holder", async () => {
+    const { service, transaction } = buildService({
+      project: DELETED_PROJECT,
+      occupants: [],
+      permissions: ["build:delete"],
+    });
+    await expect(service.restoreProject(member, 5)).resolves.toMatchObject({ restored: true });
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });

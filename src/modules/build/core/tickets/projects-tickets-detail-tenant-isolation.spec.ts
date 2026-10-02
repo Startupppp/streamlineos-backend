@@ -2,16 +2,25 @@ import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTicketNotFoundException } from "../../../../common/http/api-exceptions";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 
+const allowedTicketDecision = () => ({
+  from: () => ({
+    leftJoin: () => ({
+      where: () => ({
+        limit: async () => [{ projectId: 42, projectState: "ACTIVE", projectDeletedAt: null, reachable: true, inScope: true }],
+      }),
+    }),
+  }),
+});
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
+
 function makeQueryDb(row: unknown | null) {
   return {
     query: {
       tickets: {
         findFirst: jest.fn().mockResolvedValue(row),
       },
-      projects: {
-        findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }),
-      },
     },
+    select: allowedTicketDecision,
   } as unknown as Db;
 }
 
@@ -33,7 +42,7 @@ describe("ProjectsTicketsDetailService — cross-tenant isolation", () => {
   it("returns ticket for the owning org (same-tenant control)", async () => {
     const db = makeQueryDb(ROW);
     const svc = new ProjectsTicketsDetailService(db, access as never, audit as never);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: humanSessionPrincipal(1, true) } as never;
     const result = await svc.getTicketByKey(u, 1, 42);
     expect(result).toMatchObject({ id: 1 });
   });

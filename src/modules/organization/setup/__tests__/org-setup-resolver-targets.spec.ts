@@ -25,7 +25,7 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 // withMembershipMutations wraps the cleanup callback. Invoke it.
 jest.mock("../../../../common/org/membership-mutations", () => ({
   withMembershipMutations: jest.fn().mockImplementation(
-    (_cache: unknown, fn: (membership: unknown) => Promise<unknown>) =>
+    (fn: (membership: unknown) => Promise<unknown>) =>
       fn({ deleteMembershipsById: jest.fn().mockResolvedValue(undefined) }),
   ),
 }));
@@ -224,14 +224,14 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
   describe("resolveExistingSetupTarget", () => {
     it("returns null when membership list is empty", () => {
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
       expect(resolver.resolveExistingSetupTarget(actor(), [])).toBeNull();
     });
 
     it("prefers the context orgId when the user holds ACTIVE membership in it", () => {
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
       const memberships: SetupMembership[] = [
         membership({ orgId: "org-other", existingOrgId: "org-other", isOwner: false }),
@@ -245,7 +245,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
 
     it("falls back to the first ACTIVE org when the context orgId has no ACTIVE membership", () => {
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
       const memberships: SetupMembership[] = [
         membership({ orgId: "org-other", existingOrgId: "org-other", isOwner: false }),
@@ -258,7 +258,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
 
     it("orphan index (null existingOrgId) is never selected as a target", () => {
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
       const memberships: SetupMembership[] = [
         membership({ existingOrgId: null, orgStatus: null, orgDeletedAt: null }),
@@ -271,7 +271,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
 
     it("SUSPENDED membership throws ORG_MEMBERSHIP_SUSPENDED via the fallback path", () => {
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
       const memberships: SetupMembership[] = [
         membership({ status: "SUSPENDED", isOwner: false }),
@@ -284,7 +284,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
 
     it("SUSPENDED membership error carries ORG_MEMBERSHIP_SUSPENDED code", () => {
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
       const memberships: SetupMembership[] = [
         membership({ status: "SUSPENDED", isOwner: false }),
@@ -304,7 +304,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
 
     it("deleted org (orgDeletedAt set) is never selected even with ACTIVE membership", () => {
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
       const memberships: SetupMembership[] = [
         membership({ orgDeletedAt: new Date("2020-01-01"), status: "ACTIVE" }),
@@ -317,7 +317,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
 
     it("non-ACTIVE org status is never selected", () => {
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
       const memberships: SetupMembership[] = [
         membership({ orgStatus: "SUSPENDED", status: "ACTIVE" }),
@@ -527,7 +527,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
       const activeTarget = membership({ id: 101, orgId: "org-active", existingOrgId: "org-active", status: "ACTIVE" });
 
       const resolver = new OrgSetupResolverService(
-        {} as never, {} as never, {} as never, {} as never,
+        {} as never, {} as never, {} as never,
       );
 
       const resultWithout = resolver.resolveExistingSetupTarget(

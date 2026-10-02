@@ -13,15 +13,10 @@ import { accessVersionChannel } from "../../common/rbac/access-version-channel";
  * so `poolTelemetry.borrows` is the portable cost of an authorization check. The
  * HTTP gate cannot measure this path at all — it finishes inside the version
  * window, so the version read never appears in its numbers.
- *
- * The version is now read from the durable row once per bump across the whole
- * fleet rather than once per instance per backstop expiry, which is the gap
- * between the first two constants and the point of the change.
  */
 const FIRST_RESOLUTION_BORROWS = 2;
-const STEADY_STATE_COLD_BORROWS = 1;
 const WARM_RESOLUTION_BORROWS = 0;
-const BORROWS_WITHOUT_SHARED_CACHE = 2;
+const BORROWS_AFTER_LOCAL_VERSION_EXPIRY = 2;
 
 function makeSelectChain(rows: unknown[]): Record<string, jest.Mock> {
   const chain: Record<string, jest.Mock> = {
@@ -95,7 +90,7 @@ function buildFixture(): CostFixture {
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
-      new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
+      new AccessVersionCache(db as unknown as Db),
       makeMembershipStateStub(),
     ),
   };
@@ -126,7 +121,7 @@ describe("AccessService.resolveUserPermissions — transaction cost", () => {
     service.onModuleDestroy();
   });
 
-  it(`costs ${BORROWS_WITHOUT_SHARED_CACHE} pooled connections every time when the shared cache is unavailable`, async () => {
+  it(`costs ${BORROWS_AFTER_LOCAL_VERSION_EXPIRY} pooled connections once the local version expires, because the durable row is the only version authority`, async () => {
     const { service } = buildFixture();
 
     await service.resolveUserPermissions("org-cost", "user-cost");
@@ -138,7 +133,7 @@ describe("AccessService.resolveUserPermissions — transaction cost", () => {
       clock.mockRestore();
     }
 
-    expect(poolTelemetry.snapshot().borrows).toBe(BORROWS_WITHOUT_SHARED_CACHE);
+    expect(poolTelemetry.snapshot().borrows).toBe(BORROWS_AFTER_LOCAL_VERSION_EXPIRY);
   });
 
   it(`costs ${WARM_RESOLUTION_BORROWS} pooled connections warm`, async () => {
@@ -160,29 +155,12 @@ describe("AccessService.resolveUserPermissions — transaction cost", () => {
     expect(Array.from(warm.keys()).sort()).toEqual(Array.from(cold.keys()).sort());
   });
 
-  it(`costs ${STEADY_STATE_COLD_BORROWS} pooled connection once the local backstop expires and the shared value is warm`, async () => {
-    const { service } = buildFixture();
-    service.onModuleInit();
-    await service.resolveUserPermissions("org-cost", "user-cost");
-
-    const clock = jest.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
-    poolTelemetry.reset();
-    try {
-      await service.resolveUserPermissions("org-cost", "user-cost");
-    } finally {
-      clock.mockRestore();
-      service.onModuleDestroy();
-    }
-
-    expect(poolTelemetry.snapshot().borrows).toBe(STEADY_STATE_COLD_BORROWS);
-  });
-
   it("re-reads the version after a bump rather than serving the cached one", async () => {
     const { service } = buildFixture();
     service.onModuleInit();
     const before = await service.resolveUserPermissions("org-cost", "user-cost");
 
-    await accessVersionChannel.publish("org-cost");
+    accessVersionChannel.publish("org-cost");
     const after = await service.resolveUserPermissions("org-cost", "user-cost");
 
     expect(Array.from(after.keys()).sort()).toEqual(Array.from(before.keys()).sort());

@@ -2,6 +2,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsNotFoundException } from "../../../../common/http/api-exceptions";
 import { ProjectsQueryService } from "./projects-query.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 describe("ProjectsQueryService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -9,10 +10,13 @@ describe("ProjectsQueryService — cross-tenant isolation", () => {
 
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])), scopeFor: jest.fn().mockResolvedValue("all") } as never;
   const audit = { log: jest.fn() } as never;
+  const accessSelect = (rows: unknown[]) =>
+    jest.fn(() => ({ from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue(rows) })) })) }));
 
   it("returns null for getProject on a different org (cross-tenant isolation)", async () => {
     const db = {
       query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
+      select: accessSelect([]),
     } as unknown as Db;
     const svc = new ProjectsQueryService(db, audit, access);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false, principal: humanSessionPrincipal(1, false) } as never;
@@ -23,6 +27,7 @@ describe("ProjectsQueryService — cross-tenant isolation", () => {
     const project = { id: 1, orgId: OWNER_ORG, name: "Proj", statuses: [], members: [] };
     const db = {
       query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } },
+      select: accessSelect([projectAccessRow()]),
     } as unknown as Db;
     const svc = new ProjectsQueryService(db, audit, access);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: humanSessionPrincipal(1, true) } as never;

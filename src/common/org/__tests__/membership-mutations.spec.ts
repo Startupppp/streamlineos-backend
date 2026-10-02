@@ -1,6 +1,5 @@
 jest.mock("../../auth/membership-state.service", () => ({
-  bustMembershipStatusCache: jest.fn(),
-  bustMembershipStatusCacheMany: jest.fn(),
+  membershipStandingChannel: { publish: jest.fn() },
 }));
 jest.mock("../../rbac/access-mutation-commit", () => ({
   ...jest.requireActual<typeof import("../../rbac/access-mutation-commit")>(
@@ -18,10 +17,7 @@ import {
   MembershipMutations,
   withMembershipMutations,
 } from "../membership-mutations";
-import {
-  bustMembershipStatusCache,
-  bustMembershipStatusCacheMany,
-} from "../../auth/membership-state.service";
+import { membershipStandingChannel } from "../../auth/membership-state.service";
 import {
   commitAccessChange,
   scheduleStandingRevocation,
@@ -60,25 +56,26 @@ function makeCache(): CacheService {
   } as unknown as CacheService;
 }
 
+function published(): string[] {
+  return jest.mocked(membershipStandingChannel.publish).mock.calls.map(([userId]) => userId);
+}
+
 function statementsOn(captured: Statement[], fragment: string): Statement[] {
   return captured.filter((statement) => statement.sql.includes(fragment));
 }
 
 beforeEach(() => {
   jest.resetAllMocks();
-  jest.mocked(bustMembershipStatusCache).mockResolvedValue(undefined);
-  jest.mocked(bustMembershipStatusCacheMany).mockResolvedValue(undefined);
   jest.mocked(commitAccessChange).mockResolvedValue(undefined);
   jest.mocked(syncStructuralRoleAssignment).mockResolvedValue(undefined);
   jest.mocked(syncStructuralRoleAssignments).mockResolvedValue(undefined);
 });
 
 describe("createMembership", () => {
-  it("writes the row, syncs the structural role and drains one bust from a single call", async () => {
+  it("writes the row, syncs the structural role and clears the member's local standing once from a single call", async () => {
     const { tx, captured } = makeTx();
-    const cache = makeCache();
 
-    const membershipId = await withMembershipMutations(cache, (membership) =>
+    const membershipId = await withMembershipMutations((membership) =>
       membership.createMembership(tx, { orgId: ORG, userId: USER, role: "MEMBER" }),
     );
 
@@ -87,15 +84,14 @@ describe("createMembership", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.params).toEqual(expect.arrayContaining([ORG, USER, "MEMBER"]));
     expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "MEMBER");
-    expect(bustMembershipStatusCache).toHaveBeenCalledTimes(1);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+    expect(published()).toEqual([USER]);
+    expect(published()).toEqual([USER]);
   });
 
   it("skips the conflict, returns null and does not sync a role that was never granted", async () => {
     const { tx, captured } = makeTx([]);
-    const cache = makeCache();
 
-    const membershipId = await withMembershipMutations(cache, (membership) =>
+    const membershipId = await withMembershipMutations((membership) =>
       membership.createMembership(tx, {
         orgId: ORG,
         userId: USER,
@@ -107,16 +103,15 @@ describe("createMembership", () => {
     expect(membershipId).toBeNull();
     expect(statementsOn(captured, "on conflict do nothing")).toHaveLength(1);
     expect(syncStructuralRoleAssignment).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCache).toHaveBeenCalledTimes(1);
+    expect(published()).toEqual([USER]);
   });
 });
 
 describe("createOwnerMembership", () => {
-  it("writes an owner row at a preallocated id and drains its bust", async () => {
+  it("writes an owner row at a preallocated id and clears its local standing", async () => {
     const { tx, captured } = makeTx();
-    const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.createOwnerMembership(tx, {
         orgId: ORG,
         userId: USER,
@@ -128,7 +123,7 @@ describe("createOwnerMembership", () => {
     const inserts = statementsOn(captured, 'insert into "organization_members"');
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.params).toEqual(expect.arrayContaining([7, ORG, USER, "OWNER", true]));
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+    expect(published()).toEqual([USER]);
   });
 
   it("refuses an allocation that did not return an integer id", async () => {
@@ -149,29 +144,54 @@ describe("createOwnerMembership", () => {
 });
 
 describe("changeRole", () => {
-  it("updates the role, syncs the assignment and drains one bust", async () => {
+  it("updates the role, syncs the assignment and clears the local standing once", async () => {
     const { tx, captured } = makeTx();
-    const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.changeRole(tx, { orgId: ORG, userId: USER, role: "ORG_ADMIN" }),
     );
 
     const updates = statementsOn(captured, 'update "organization_members"');
     expect(updates).toHaveLength(1);
     expect(updates[0]?.params).toEqual(expect.arrayContaining(["ORG_ADMIN", ORG, USER]));
-    expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "ORG_ADMIN");
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+    expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "ORG_ADMIN", undefined);
+    expect(published()).toEqual([USER]);
+  });
+
+  it("hands the caller's audit, revoke and notify intents to the structural sync's single commit", async () => {
+    const { tx } = makeTx();
+    const cache = makeCache();
+    const access = {
+      audit: { action: "org.member_role_changed", userId: "actor" },
+      revoke: { cache, loses: [{ kind: "standing" as const, userIds: [USER] }] },
+    };
+
+    await withMembershipMutations((membership) =>
+      membership.changeRole(tx, { orgId: ORG, userId: USER, role: "ORG_ADMIN" }, access),
+    );
+
+    expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 42, "ORG_ADMIN", access);
+    expect(commitAccessChange).not.toHaveBeenCalled();
+  });
+
+  it("hands a bulk role change's intents to the batched sync", async () => {
+    const { tx } = makeTx([[1], [2]]);
+    const access = { audit: { action: "user.bulk_updated", userId: "actor" } };
+
+    await withMembershipMutations((membership) =>
+      membership.changeRoles(tx, { orgId: ORG, userIds: ["a", "b"], role: "MEMBER" }, access),
+    );
+
+    expect(syncStructuralRoleAssignments).toHaveBeenCalledWith(tx, ORG, [1, 2], "MEMBER", access);
   });
 });
 
 describe("setLifecycleStatus", () => {
-  it("suspends the row, stamps suspended_at, bumps the version and busts", async () => {
+  it("suspends the row, stamps suspended_at, bumps the version and clears the local standing", async () => {
     const { tx, captured } = makeTx();
-    const cache = makeCache();
     const occurredAt = new Date("2026-09-10T00:00:00.000Z");
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.setLifecycleStatus(tx, {
         orgId: ORG,
         userId: USER,
@@ -191,16 +211,31 @@ describe("setLifecycleStatus", () => {
       USER,
       ORG,
     ]);
-    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, undefined);
+    expect(published()).toEqual([USER]);
+  });
+
+  it("commits the status change once, carrying the caller's intents", async () => {
+    const { tx } = makeTx();
+    const access = { audit: { action: "org.member_suspended", userId: "actor" } };
+
+    await withMembershipMutations((membership) =>
+      membership.setLifecycleStatus(
+        tx,
+        { orgId: ORG, userId: USER, status: "SUSPENDED", occurredAt: new Date() },
+        access,
+      ),
+    );
+
+    expect(commitAccessChange).toHaveBeenCalledTimes(1);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, access);
   });
 
   it("reactivation stamps activated_at and clears both tombstones", async () => {
     const { tx, captured } = makeTx();
-    const cache = makeCache();
     const occurredAt = new Date("2026-09-10T00:00:00.000Z");
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.setLifecycleStatus(tx, {
         orgId: ORG,
         userId: USER,
@@ -225,24 +260,38 @@ describe("setLifecycleStatus", () => {
 });
 
 describe("deleteMembership", () => {
-  it("deletes the row, bumps the version and busts", async () => {
+  it("deletes the row, bumps the version and clears the local standing", async () => {
     const { tx, captured } = makeTx();
-    const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.deleteMembership(tx, { orgId: ORG, userId: USER }),
     );
 
     expect(statementsOn(captured, 'delete from "organization_members"')).toHaveLength(1);
-    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, undefined);
+    expect(published()).toEqual([USER]);
+  });
+
+  it("commits the removal once, after the delete, carrying the caller's intents", async () => {
+    const { tx, captured } = makeTx();
+    const access = { audit: { action: "org.member_removed", userId: "actor" } };
+    (commitAccessChange as jest.Mock).mockImplementationOnce(() => {
+      expect(statementsOn(captured, 'delete from "organization_members"')).toHaveLength(1);
+      return Promise.resolve();
+    });
+
+    await withMembershipMutations((membership) =>
+      membership.deleteMembership(tx, { orgId: ORG, userId: USER }, access),
+    );
+
+    expect(commitAccessChange).toHaveBeenCalledTimes(1);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, access);
   });
 
   it("deleteMembershipsById scopes to the organisation and does not bump the version", async () => {
     const { tx, captured } = makeTx();
-    const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.deleteMembershipsById(tx, {
         orgId: ORG,
         userId: USER,
@@ -254,16 +303,15 @@ describe("deleteMembership", () => {
     expect(deletes).toHaveLength(1);
     expect(deletes[0]?.params).toEqual(expect.arrayContaining([ORG, 3, 4]));
     expect(commitAccessChange).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+    expect(published()).toEqual([USER]);
   });
 });
 
 describe("transferOrgOwnership", () => {
-  it("demotes, promotes and busts both members in one batched command", async () => {
+  it("demotes, promotes and clears both members' local standing", async () => {
     const { tx, captured } = makeTx();
-    const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.transferOrgOwnership(tx, {
         orgId: ORG,
         from: { membershipId: 1, userId: "user-from" },
@@ -283,12 +331,7 @@ describe("transferOrgOwnership", () => {
     // still listed them under it.
     expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(tx, ORG, 2, "OWNER");
     expect(syncStructuralRoleAssignment).toHaveBeenCalledTimes(2);
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCacheMany).toHaveBeenCalledTimes(1);
-    expect(bustMembershipStatusCacheMany).toHaveBeenCalledWith(cache, [
-      "user-from",
-      "user-to",
-    ]);
+    expect(published()).toEqual(["user-from", "user-to"]);
   });
 });
 
@@ -302,18 +345,15 @@ describe("bulk operations are bounded", () => {
     const { tx, captured } = makeTx(
       members.map((member, index) => [index + 1, member.userId]),
     );
-    const cache = makeCache();
 
-    const byUserId = await withMembershipMutations(cache, (membership) =>
+    const byUserId = await withMembershipMutations((membership) =>
       membership.createMemberships(tx, { orgId: ORG, members }),
     );
 
     expect(byUserId.size).toBe(size);
     expect(statementsOn(captured, 'insert into "organization_members"')).toHaveLength(1);
     expect(syncStructuralRoleAssignments).toHaveBeenCalledTimes(1);
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCacheMany).toHaveBeenCalledTimes(1);
-    expect(jest.mocked(bustMembershipStatusCacheMany).mock.calls[0]?.[1]).toHaveLength(size);
+    expect(published()).toHaveLength(size);
   });
 
   it("groups the structural role sync by role rather than per member", async () => {
@@ -324,7 +364,7 @@ describe("bulk operations are bounded", () => {
     ];
     const { tx } = makeTx(members.map((member, index) => [index + 1, member.userId]));
 
-    await withMembershipMutations(makeCache(), (membership) =>
+    await withMembershipMutations((membership) =>
       membership.createMemberships(tx, { orgId: ORG, members }),
     );
 
@@ -336,102 +376,97 @@ describe("bulk operations are bounded", () => {
   it("issues one batched command for a bulk role change", async () => {
     const userIds = Array.from({ length: 120 }, (_, index) => `role-user-${index}`);
     const { tx, captured } = makeTx(userIds.map((_, index) => [index + 1]));
-    const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.changeRoles(tx, { orgId: ORG, userIds, role: "MEMBER" }),
     );
 
     expect(statementsOn(captured, 'update "organization_members"')).toHaveLength(1);
-    expect(bustMembershipStatusCacheMany).toHaveBeenCalledTimes(1);
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(published()).toHaveLength(userIds.length);
   });
 
-  it("a whole-org teardown bust is one command for any roster size", async () => {
+  it("a whole-org teardown issues one shared-cache command for any roster size", async () => {
     const cache = makeCache();
     const userIds = Array.from({ length: 5000 }, (_, index) => `member-${index}`);
 
     await scheduleStandingRevocation(cache, userIds);
 
-    expect(bustMembershipStatusCacheMany).toHaveBeenCalledTimes(1);
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(cache.invalidateMany).toHaveBeenCalledTimes(1);
+    expect(cache.invalidate).not.toHaveBeenCalled();
+    expect(published()).toHaveLength(userIds.length);
   });
 });
 
 describe("transaction coupling", () => {
   it("drains nothing when the transaction call rejects", async () => {
     const { tx } = makeTx();
-    const cache = makeCache();
 
     await expect(
-      withMembershipMutations(cache, async (membership) => {
+      withMembershipMutations(async (membership) => {
         await membership.createMembership(tx, { orgId: ORG, userId: USER, role: "MEMBER" });
         throw new Error("rolled back");
       }),
     ).rejects.toThrow("rolled back");
 
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCacheMany).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
   });
 
   it("defers the drain to after-commit when an ambient request transaction exists", async () => {
     const { tx } = makeTx();
-    const cache = makeCache();
     const hooks: AfterCommitHook[] = [];
 
     await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: {} as never, afterCommit: hooks },
       () =>
-        withMembershipMutations(cache, (membership) =>
+        withMembershipMutations((membership) =>
           membership.createMembership(tx, { orgId: ORG, userId: USER, role: "MEMBER" }),
         ),
     );
 
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
     expect(hooks).toHaveLength(1);
 
     for (const hook of hooks) await hook();
 
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+    expect(published()).toEqual([USER]);
   });
 
-  it("falls back to an inline bust outside an ambient transaction", async () => {
+  it("falls back to an inline standing clear outside an ambient transaction", async () => {
     const { tx } = makeTx();
-    const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.createMembership(tx, { orgId: ORG, userId: USER, role: "MEMBER" }),
     );
 
-    expect(bustMembershipStatusCache).toHaveBeenCalledTimes(1);
+    expect(published()).toEqual([USER]);
   });
 });
 
 describe("invalidation-only entry points", () => {
-  it("membership revocation busts status and session only after commit so no pre-commit read can refill a stale entry", async () => {
+  it("membership revocation clears standing and busts the session only after commit so no pre-commit read can refill a stale entry", async () => {
     const cache = makeCache();
     const hooks: AfterCommitHook[] = [];
 
     await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: {} as never, afterCommit: hooks },
-      () => scheduleStandingRevocation(cache, [USER], { withSessions: true }),
+      () => scheduleStandingRevocation(cache, [USER]),
     );
 
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
     expect(cache.invalidate).not.toHaveBeenCalled();
     expect(hooks).toHaveLength(1);
 
     for (const hook of hooks) await hook();
 
-    expect(bustMembershipStatusCache).toHaveBeenCalledTimes(1);
+    expect(published()).toEqual([USER]);
     expect(cache.invalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession(USER));
   });
 
-  it("identity erasure busts every organisation the subject belongs to", async () => {
+  it("identity erasure clears every organisation the subject belongs to", async () => {
     const cache = makeCache();
 
     await scheduleStandingRevocation(cache, [USER]);
 
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, USER);
+    expect(published()).toEqual([USER]);
   });
 });

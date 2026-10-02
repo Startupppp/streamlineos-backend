@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import {
   projectIncidents,
   organizationMembers,
@@ -6,14 +6,14 @@ import {
   projectReleases,
   projects,
   cycles,
-  ticketAssignees,
   tickets,
   users,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
-import { reachableProjectsSql } from "../reachability/project-reachability";
 import type { ScopedRead } from "../../access/scoped-read";
 import { resolveEntityCardScope } from "./build-entity-scope";
+import { entityProjectReach } from "./build-entity-action-helpers";
+import { ticketVisibleSql } from "../core";
 import { type Permissions } from "../../entity-reference/entity-scope";
 import {
   unresolved,
@@ -61,6 +61,7 @@ export class BuildEntityReadsService {
     permissions: Permissions,
   ): Promise<EntityResolution[]> {
     const results = references.map(unresolved);
+    const reach = entityProjectReach(actor, permissions);
     const wanted = new Map<
       string,
       { scope: ScopedRead; entries: { id: number; index: number }[] }
@@ -85,6 +86,7 @@ export class BuildEntityReadsService {
           type,
           batch.entries.map((entry) => entry.id),
           batch.scope,
+          reach,
         );
         for (const entry of batch.entries) {
           const card = cards.get(entry.id);
@@ -101,51 +103,21 @@ export class BuildEntityReadsService {
     type: string,
     ids: number[],
     scope: ScopedRead,
+    reach: SQL,
   ): Promise<Map<number, EntityCard>> {
-    if (isTicketType(type)) return this.readTickets(actor, type, ids, scope);
+    if (isTicketType(type)) return this.readTickets(type, ids, scope, reach);
     switch (type) {
       case "project":
-        return this.readProjects(actor, ids, scope);
+        return this.readProjects(actor, ids, reach);
       case "cycle":
-        return this.readCycles(actor, ids, scope);
+        return this.readCycles(actor, ids, reach);
       case "release":
-        return this.readReleases(actor, ids, scope);
+        return this.readReleases(actor, ids, reach);
       case "incident":
-        return this.readIncidents(actor, ids, scope);
+        return this.readIncidents(actor, ids, reach);
       default:
         return new Map();
     }
-  }
-
-  async memberProjectIds(
-    orgId: string,
-    userId: string,
-    projectIds: number[],
-  ): Promise<Set<number>> {
-    if (projectIds.length === 0) return new Set();
-    const [memberRow] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .limit(1);
-    if (!memberRow) return new Set();
-    const rows = await this.db
-      .select({ projectId: projects.id })
-      .from(projects)
-      .where(
-        and(
-          eq(projects.orgId, orgId),
-          inArray(projects.id, projectIds),
-          reachableProjectsSql(orgId, memberRow.id),
-        ),
-      );
-    return new Set(rows.map((row) => row.projectId));
   }
 
   async optionsForProject(
@@ -242,127 +214,98 @@ export class BuildEntityReadsService {
 
   private async keepReachable<T extends { projectId: number }>(
     actor: EntityActor,
-    scope: ScopedRead,
+    reach: SQL,
     rows: T[],
   ): Promise<T[]> {
-    if (scope.unrestricted) return rows;
-    const reachable = await this.memberProjectIds(actor.orgId, actor.userId, [
-      ...new Set(rows.map((row) => row.projectId)),
-    ]);
-    return rows.filter((row) => reachable.has(row.projectId));
+    if (rows.length === 0) return rows;
+    const projectIds = [...new Set(rows.map((row) => row.projectId))];
+    const reachable = await this.db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.orgId, actor.orgId),
+          inArray(projects.id, projectIds),
+          isNull(projects.deletedAt),
+          reach,
+        ),
+      )
+      .limit(projectIds.length);
+    const ids = new Set(reachable.map((row) => row.id));
+    return rows.filter((row) => ids.has(row.projectId));
   }
 
   private async readTickets(
-    actor: EntityActor,
     type: string,
     ids: number[],
     scope: ScopedRead,
+    reach: SQL,
   ): Promise<Map<number, EntityCard>> {
-    const { orgId, userId } = actor;
-    // The own arm is discarded at `all`, so the participation lookup that feeds it is not worth a round trip there.
-    const assigned = scope.unrestricted
-      ? []
-      : await this.db
-          .select({ ticketId: ticketAssignees.ticketId })
-          .from(ticketAssignees)
-          .where(
-            and(
-              eq(ticketAssignees.orgId, orgId),
-              eq(ticketAssignees.membershipId, actor.membershipId ?? -1),
-              inArray(ticketAssignees.ticketId, ids),
-            ),
-          );
-    const assignedIds = assigned.map((row) => row.ticketId);
-    const own = sql`${or(
-      sql`${tickets.assigneeMembershipId} = ${actor.membershipId ?? -1}`,
-      eq(tickets.reporterId, userId),
-      ...(assignedIds.length > 0 ? [inArray(tickets.id, assignedIds)] : []),
-    )}`;
+    if (scope.denied) return new Map();
+    const rows = await this.db
+      .select({
+        id: tickets.id,
+        title: tickets.title,
+        status: tickets.status,
+        ticketNumber: tickets.ticketNumber,
+        projectId: tickets.projectId,
+        projectKey: projects.key,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(and(ticketVisibleSql(scope, reach), inArray(tickets.id, ids), isNull(tickets.deletedAt)))
+      .limit(ids.length);
 
-    return scope.read(
-      {
-        tenant: tickets.orgId,
-        scope: { own },
-        and: [inArray(tickets.id, ids), isNull(tickets.deletedAt)],
-      },
-      async ({ sql: where }) => {
-        const rows = await this.db
-          .select({
-            id: tickets.id,
-            title: tickets.title,
-            status: tickets.status,
-            ticketNumber: tickets.ticketNumber,
-            projectId: tickets.projectId,
-            projectKey: projects.key,
-          })
-          .from(tickets)
-          .innerJoin(projects, eq(tickets.projectId, projects.id))
-          .where(where)
-          .limit(ids.length);
-
-        return this.index(rows, (row) => ({
-          type,
-          id: String(row.id),
-          title: row.title,
-          subtitle: `${row.projectKey}-${row.ticketNumber}`,
-          status: row.status,
-          href: buildTicketHref(
-            row.projectId,
-            buildTicketKey(row.projectKey, row.ticketNumber),
-          ),
-        }));
-      },
-      () => new Map<number, EntityCard>(),
-    );
+    return this.index(rows, (row) => ({
+      type,
+      id: String(row.id),
+      title: row.title,
+      subtitle: `${row.projectKey}-${row.ticketNumber}`,
+      status: row.status,
+      href: buildTicketHref(
+        row.projectId,
+        buildTicketKey(row.projectKey, row.ticketNumber),
+      ),
+    }));
   }
 
   private async readProjects(
     actor: EntityActor,
     ids: number[],
-    scope: ScopedRead,
+    reach: SQL,
   ): Promise<Map<number, EntityCard>> {
-    const { orgId, userId } = actor;
-    // As in readTickets: the membership lookup only feeds the own arm, which `all` discards.
-    const reachable = scope.unrestricted
-      ? new Set<number>()
-      : await this.memberProjectIds(orgId, userId, ids);
-    const own = sql`${inArray(projects.id, [...reachable, -1])}`;
+    const rows = await this.db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        key: projects.key,
+        status: projects.status,
+      })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.orgId, actor.orgId),
+          inArray(projects.id, ids),
+          isNull(projects.deletedAt),
+          reach,
+        ),
+      )
+      .limit(ids.length);
 
-    return scope.read(
-      {
-        tenant: projects.orgId,
-        scope: { own },
-        and: [inArray(projects.id, ids), isNull(projects.deletedAt)],
-      },
-      async ({ sql: where }) => {
-        const rows = await this.db
-          .select({
-            id: projects.id,
-            name: projects.name,
-            key: projects.key,
-            status: projects.status,
-          })
-          .from(projects)
-          .where(where)
-          .limit(ids.length);
-
-        return this.index(rows, (row) => ({
-          type: "project",
-          id: String(row.id),
-          title: row.name,
-          subtitle: row.key,
-          status: row.status,
-          href: buildProjectHref(row.id),
-        }));
-      },
-      () => new Map<number, EntityCard>(),
-    );
+    return this.index(rows, (row) => ({
+      type: "project",
+      id: String(row.id),
+      title: row.name,
+      subtitle: row.key,
+      status: row.status,
+      href: buildProjectHref(row.id),
+    }));
   }
 
   private async readCycles(
     actor: EntityActor,
     ids: number[],
-    scope: ScopedRead,
+    reach: SQL,
   ): Promise<Map<number, EntityCard>> {
     const found = await this.db
       .select({
@@ -374,7 +317,7 @@ export class BuildEntityReadsService {
       .from(cycles)
       .where(and(eq(cycles.orgId, actor.orgId), inArray(cycles.id, ids)))
       .limit(ids.length);
-    const rows = await this.keepReachable(actor, scope, found);
+    const rows = await this.keepReachable(actor, reach, found);
 
     return this.index(rows, (row) => ({
       type: "cycle",
@@ -389,7 +332,7 @@ export class BuildEntityReadsService {
   private async readReleases(
     actor: EntityActor,
     ids: number[],
-    scope: ScopedRead,
+    reach: SQL,
   ): Promise<Map<number, EntityCard>> {
     const found = await this.db
       .select({
@@ -408,7 +351,7 @@ export class BuildEntityReadsService {
         ),
       )
       .limit(ids.length);
-    const rows = await this.keepReachable(actor, scope, found);
+    const rows = await this.keepReachable(actor, reach, found);
 
     return this.index(rows, (row) => ({
       type: "release",
@@ -423,7 +366,7 @@ export class BuildEntityReadsService {
   private async readIncidents(
     actor: EntityActor,
     ids: number[],
-    scope: ScopedRead,
+    reach: SQL,
   ): Promise<Map<number, EntityCard>> {
     const found = await this.db
       .select({
@@ -443,7 +386,7 @@ export class BuildEntityReadsService {
         ),
       )
       .limit(ids.length);
-    const rows = await this.keepReachable(actor, scope, found);
+    const rows = await this.keepReachable(actor, reach, found);
 
     return this.index(rows, (row) => ({
       type: "incident",

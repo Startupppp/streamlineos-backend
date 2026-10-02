@@ -25,7 +25,7 @@ import type {
   UpdateProjectInput,
 } from "../dto/projects.schemas";
 import { ProjectsQueryService } from "./projects-query.service";
-import { assertProjectAccess, assertCanDeleteProject, assertCanManageProject } from "./project-access";
+import { assertProjectAccess, assertCanDeleteProject, assertCanManageProjectLink, authorizeProjectUpdate } from "./project-access";
 
 @Injectable()
 export class ProjectsWriteService {
@@ -43,7 +43,7 @@ export class ProjectsWriteService {
   ) {
     const orgId = u.orgId;
 
-    await assertCanManageProject(this.db, this.access, u, projectId);
+    await authorizeProjectUpdate(this.db, this.access, u, projectId, body.status !== undefined);
 
     const managerMembershipId = body.managerId === undefined
       ? undefined
@@ -290,12 +290,7 @@ export class ProjectsWriteService {
     input: LinkManagedProductInput,
   ) {
     const orgId = u.orgId;
-
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!project) throw new ProjectsNotFoundException();
+    await assertCanManageProjectLink(this.db, this.access, u, projectId);
 
     if (input.managedProductId !== null) {
       const [product] = await this.db

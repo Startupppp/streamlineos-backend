@@ -64,13 +64,13 @@ describe("ProjectsQueryService.getProject — routes the access check through re
   beforeEach(() => jest.resetAllMocks());
 
   it("throws ProjectsForbiddenProjectException (403) when resolveProjectAccess denies access, preserving the in-tenant denial code", async () => {
-    mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null });
+    mockResolveProjectAccess.mockResolvedValue({ hasAccess: false, role: null, state: "ACTIVE", bypassesWorkflow: false });
     const svc = new ProjectsQueryService(makeDb(null).db, makeAudit(), makeAccess());
     await expect(svc.getProject(makeUser(), 1)).rejects.toThrow(ProjectsForbiddenProjectException);
   });
 
   it("returns the project when resolveProjectAccess grants access (positive control: authorised member sees project)", async () => {
-    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER" });
+    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER", state: "ACTIVE", bypassesWorkflow: false });
     const project = { id: 1, name: "P", statuses: [], members: [], crmClientId: null };
     const svc = new ProjectsQueryService(makeDb(project).db, makeAudit(), makeAccess());
     await expect(svc.getProject(makeUser(), 1)).resolves.toEqual({ ...project, crmClient: null });
@@ -83,7 +83,7 @@ describe("ProjectsQueryService.getProject — routes the access check through re
   });
 
   it("calls resolveProjectAccess exactly once per getProject call so the access decision has a single authoritative source", async () => {
-    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "OWNER" });
+    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "OWNER", state: "ACTIVE", bypassesWorkflow: false });
     const project = { id: 5, name: "X", statuses: [], members: [], crmClientId: null };
     const svc = new ProjectsQueryService(makeDb(project).db, makeAudit(), makeAccess());
     await svc.getProject(makeUser(), 5);
@@ -91,7 +91,7 @@ describe("ProjectsQueryService.getProject — routes the access check through re
   });
 
   it("matches business_parties on party_id, the column that exists, so the project detail read cannot raise 42703 column bp.id does not exist", async () => {
-    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER" });
+    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER", state: "ACTIVE", bypassesWorkflow: false });
     const db = makeDb({ id: 6, name: "P", statuses: [], members: [], crmClientId: 42 }, []);
     const svc = new ProjectsQueryService(db.db, makeAudit(), makeAccess());
 
@@ -103,7 +103,7 @@ describe("ProjectsQueryService.getProject — routes the access check through re
   });
 
   it("carries organization_id across the party join so a client in another tenant cannot be reached", async () => {
-    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER" });
+    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER", state: "ACTIVE", bypassesWorkflow: false });
     const db = makeDb({ id: 6, name: "P", statuses: [], members: [], crmClientId: 42 }, []);
     const svc = new ProjectsQueryService(db.db, makeAudit(), makeAccess());
 
@@ -114,7 +114,7 @@ describe("ProjectsQueryService.getProject — routes the access check through re
   });
 
   it("returns the linked crm client when the project carries a crm_client_id", async () => {
-    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER" });
+    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER", state: "ACTIVE", bypassesWorkflow: false });
     const project = { id: 6, name: "P", statuses: [], members: [], crmClientId: 42 };
     const db = makeDb(project, [{ id: 42, name: "Acme" }]);
     const svc = new ProjectsQueryService(db.db, makeAudit(), makeAccess());
@@ -126,7 +126,7 @@ describe("ProjectsQueryService.getProject — routes the access check through re
   });
 
   it("issues no client lookup at all when the project has no crm_client_id", async () => {
-    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER" });
+    mockResolveProjectAccess.mockResolvedValue({ hasAccess: true, role: "MEMBER", state: "ACTIVE", bypassesWorkflow: false });
     const db = makeDb({ id: 6, name: "P", statuses: [], members: [], crmClientId: null });
     const svc = new ProjectsQueryService(db.db, makeAudit(), makeAccess());
 

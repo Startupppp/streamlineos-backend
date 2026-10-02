@@ -1,5 +1,5 @@
 const PA = /await assertProjectAccess\(this\.db, this\.access, u, projectId\);/;
-const TICKET = /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId, \{/;
+const TICKET = /await assertTicketWriteAccess\(this\.db, this\.access, u, projectId, ticketId, \{/;
 
 export default [
   {
@@ -64,7 +64,7 @@ export default [
     blastRadius: "None: a foreign board matches no row and a non-manager is refused.",
     evidence: [
       { file: "src/modules/build/execution/workspace.controller.ts", line: 393, anchor: /return this\.whiteboards\.restoreWhiteboard\(u, projectId, whiteboardId\);/, note: "actor and both route ids reach the service" },
-      { file: "src/modules/build/execution/whiteboards.service.ts", line: 338, anchor: /await assertProjectInOrg\(this\.db, u\.orgId, projectId\);/, note: "the URL project is resolved under the caller's org" },
+      { file: "src/modules/build/execution/whiteboards.service.ts", line: 357, anchor: /const hasProjectAccess = await this\.hasProjectAccess\(u, projectId\);/, note: "the URL project is resolved through the project-access decision, which 404s a project outside the caller's org" },
       { file: "src/modules/build/execution/whiteboards.service.ts", line: 342, anchor: /eq\(projectWhiteboards\.projectId, projectId\),/, note: "the board lookup binds the URL project" },
       { file: "src/modules/build/execution/whiteboards.service.ts", line: 355, anchor: /throw new ForbiddenException\("Only board managers can restore whiteboards"\);/, note: "board manage access is required" },
     ],

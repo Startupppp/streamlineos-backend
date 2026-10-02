@@ -55,7 +55,7 @@ describe("ProjectsTicketChecklistsService — tenant-correlated writes", () => {
 
   it("binds org_id when updating a checklist item", async () => {
     const captured = { wheres: [] as unknown[] };
-    const service = new ProjectsTicketChecklistsService(makeDb(captured), { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() });
+    const service = new ProjectsTicketChecklistsService(makeDb(captured), { scopeFor: jest.fn() });
 
     await service.updateChecklistItem(u, PROJECT, TICKET, CHECKLIST, ITEM, { text: "x" });
 
@@ -65,7 +65,7 @@ describe("ProjectsTicketChecklistsService — tenant-correlated writes", () => {
 
   it("binds org_id when deleting a checklist item", async () => {
     const captured = { wheres: [] as unknown[] };
-    const service = new ProjectsTicketChecklistsService(makeDb(captured), { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() });
+    const service = new ProjectsTicketChecklistsService(makeDb(captured), { scopeFor: jest.fn() });
 
     await service.deleteChecklistItem(u, PROJECT, TICKET, CHECKLIST, ITEM);
 

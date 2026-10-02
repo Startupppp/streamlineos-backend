@@ -2,6 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../../db/drizzle.module";
 import { decodeTupleCursor } from "../../../../common/pagination/cursor";
+import { orgWideRoadmapAccess } from "../../__tests__/roadmap-access-double";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 
@@ -18,7 +19,7 @@ interface RoadmapRow {
 
 function makeService(findMany: jest.Mock) {
   const db = { query: { roadmapItems: { findMany } } } as unknown as Db;
-  return new ProjectsRoadmapService(db, lifecycleAuditDouble());
+  return new ProjectsRoadmapService(db, lifecycleAuditDouble(), orgWideRoadmapAccess());
 }
 
 function queryParams(findMany: jest.Mock, callIndex: number): unknown[] {

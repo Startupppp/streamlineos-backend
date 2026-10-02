@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { KbContentGapService } from "./kb-content-gap.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
@@ -5,6 +6,9 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+const OWN_SPACE_ID = 5;
+const FOREIGN_SPACE_ID = 905;
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: async (
@@ -74,7 +78,13 @@ describe("KbContentGapService — gap actions", () => {
         { provide: DRIZZLE, useValue: mockDb },
         {
           provide: KnowledgeAuthorizationService,
-          useValue: { visiblePagePredicate: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            visiblePagePredicate: jest.fn().mockResolvedValue(undefined),
+            assertSpaceAccess: jest.fn(async (_user: unknown, spaceId: number) => {
+              if (spaceId !== OWN_SPACE_ID) throw new NotFoundException("Space not found");
+              return { spaceId, via: "space" };
+            }),
+          },
         },
       ],
     }).compile();
@@ -151,6 +161,27 @@ describe("KbContentGapService — gap actions", () => {
   });
 
   describe("createFix", () => {
+    it("refuses with 404 and creates nothing when the requested space is another organisation's or one the caller cannot edit", async () => {
+      await expect(
+        service.createFix(makeUser(), { query: "how to reset password", spaceId: FOREIGN_SPACE_ID }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mockDb.insert).not.toHaveBeenCalled();
+    });
+
+    it("creates the draft in a requested space the caller can edit", async () => {
+      const pageInsertChain = {
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockResolvedValue([{ id: 99 }]),
+      };
+      mockDb.insert.mockReturnValueOnce(pageInsertChain).mockReturnValueOnce(insertChain);
+
+      await service.createFix(makeUser(), { query: "how to reset password", spaceId: OWN_SPACE_ID });
+
+      expect(pageInsertChain.values).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId: "org-1", spaceId: OWN_SPACE_ID, status: "draft" }),
+      );
+    });
+
     it("inserts a draft kb_page seeded with the gap query as title, removing this test removes the page-creation contract", async () => {
       const pageInsertChain = {
         values: jest.fn().mockReturnThis(),

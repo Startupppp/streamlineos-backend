@@ -8,14 +8,14 @@ import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import type { CacheService } from "../../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { systemJobCovers } from "../../../../common/auth/principal";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import type { ProjectsActivityService } from "../activity/projects-activity.service";
 import type { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import type { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import type { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
 import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
-import { resolveProjectAccess, resolveProjectAssignableMemberships } from "../project-crud/project-access";
+import { decideTicketChange } from "../project-crud/project-access";
+import { resolveProjectAssignableMemberships } from "../project-crud/project-assignable-members";
 import type { UpdateTicketInput } from "../dto/projects.schemas";
 import { normalizeTicketType, resolveAssigneeId } from "./tickets-helpers";
 import { computeNextRunAt } from "../lib/projects-recurrence.util";
@@ -278,10 +278,7 @@ export async function applyTicketChange(
   const nextDueDate = input.dueDate === undefined ? before.dueDate : input.dueDate;
   if (nextStartDate && nextDueDate && nextDueDate < nextStartDate)
     throw new BadRequestException("Due date must be on or after start date");
-  const accessResult = systemJobCovers(u.principal, "build:tickets:update")
-    ? { hasAccess: true as const, role: "OWNER" as const }
-    : await resolveProjectAccess(deps.db, deps.access, u, ticketProjectId);
-  if (!accessResult.hasAccess) throw new ForbiddenException("Not authorized to update this ticket");
+  const accessResult = await decideTicketChange(deps.db, deps.access, u, ticketProjectId);
   const newAssignee = resolveAssigneeId(input.assigneeId);
   const effectRow: TicketChangeEffectRow = {
     id: ticketId,
@@ -309,7 +306,7 @@ export async function applyTicketChange(
   };
   let updatedVersion: number = before.version;
   await deps.db.transaction(async (tx) => {
-    if (systemJobCovers(u.principal, "build:tickets:update"))
+    if (!accessResult.rowScoped)
       await lockProjectTicketMutation(tx, orgId, ticketProjectId);
     else {
       await deps.query.authorizeMutation(tx, u, ticketProjectId, [ticketId]);
@@ -326,7 +323,7 @@ export async function applyTicketChange(
       if (input.status !== before.status) {
         await reserveTicketCapacity(tx, orgId, ticketProjectId, [{ status: input.status, count: 1 }], [ticketId]);
         await assertTransitionAllowed(tx, orgId, ticketProjectId, before.status, input.status, {
-          userId: actingUserId, userProjectRole: accessResult.role, isOrgOwner: u.isOrgOwner, ticketId,
+          userId: actingUserId, userProjectRole: accessResult.role, bypassesWorkflow: accessResult.bypassesWorkflow, ticketId,
         });
       }
     }

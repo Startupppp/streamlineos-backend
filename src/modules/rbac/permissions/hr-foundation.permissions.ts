@@ -1,6 +1,6 @@
-import type { Permission } from "./types";
+import { definePermissions } from "./types";
 
-export const HR_FOUNDATION_PERMISSIONS: Permission[] = [
+export const HR_FOUNDATION_PERMISSIONS = definePermissions([
   {
     name: "hr:employees:view",
     resource: "hr:employees",
@@ -218,4 +218,4 @@ export const HR_FOUNDATION_PERMISSIONS: Permission[] = [
     action: "view",
     description: "View HR audit logs",
   },
-];
+]);

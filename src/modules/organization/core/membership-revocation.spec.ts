@@ -27,6 +27,7 @@ import {
   resourceGrants,
   userDelegations,
   userIntegrationConnections,
+  userSessions,
 } from "../../../db/schema";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction");
@@ -42,7 +43,7 @@ import {
 } from "../../../common/tenant/tenant-context";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { membershipStandingChannel } from "../../../common/auth/membership-state.service";
 
 const mockRunInTenantTransaction = runInTenantTransaction as jest.MockedFunction<
   typeof runInTenantTransaction
@@ -53,8 +54,7 @@ const mockWithIdentity = withIdentity as jest.MockedFunction<typeof withIdentity
 const mockRegisterAfterCommit = registerAfterCommit as jest.MockedFunction<
   typeof registerAfterCommit
 >;
-const mockBustMembershipStatusCache =
-  bustMembershipStatusCache as jest.MockedFunction<typeof bustMembershipStatusCache>;
+const mockStandingPublish = jest.mocked(membershipStandingChannel.publish);
 const mockOutboxWriterEmitMany = OutboxWriter.emitMany as jest.MockedFunction<
   typeof OutboxWriter.emitMany
 >;
@@ -103,7 +103,11 @@ function buildTx(opts: {
   const deleteWhereFn = jest.fn().mockResolvedValue(undefined);
   const deleteFn = jest.fn().mockReturnValue({ where: deleteWhereFn });
 
-  const insertValuesFn = jest.fn().mockResolvedValue(undefined);
+  const insertValuesFn = jest.fn().mockImplementation(() =>
+    Object.assign(Promise.resolve(undefined), {
+      onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+    }),
+  );
   const insertFn = jest.fn().mockReturnValue({ values: insertValuesFn });
 
   return {
@@ -174,7 +178,6 @@ async function buildService(opts: {
     return fn({ select: selectFn } as unknown as Parameters<typeof fn>[0]);
   });
 
-  mockBustMembershipStatusCache.mockResolvedValue(undefined);
   mockRegisterAfterCommit.mockImplementation((_fn) => true);
 
   return { service, sessions, ably, mockDb };
@@ -406,44 +409,69 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
   });
 
   describe("session revocation: conditional on last active membership", () => {
-    it("revokes sessions when this is the last active membership across all orgs", async () => {
-      const { tx } = buildTx();
+    it("revokes sessions on the revoking transaction when this is the last active membership across all orgs", async () => {
+      const { tx, updateFn } = buildTx();
       mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
       const { service, sessions } = await buildService({ otherActiveMemberships: 0 });
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(sessions.revokeAllForUser).toHaveBeenCalledWith(USER_ID);
+      expect(updateFn).toHaveBeenCalledWith(userSessions);
+      expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     });
 
     it("does NOT revoke sessions when another active membership in a different org exists", async () => {
-      const { tx } = buildTx();
+      const { tx, updateFn } = buildTx();
       mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
       const { service, sessions } = await buildService({ otherActiveMemberships: 1 });
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
+      expect(updateFn).toHaveBeenCalledWith(agentTokens);
+      expect(updateFn).not.toHaveBeenCalledWith(userSessions);
       expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     });
 
     it("also revokes sessions on suspension when it was the last active membership", async () => {
-      const { tx } = buildTx();
+      const { tx, updateFn } = buildTx();
       mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
-      const { service, sessions } = await buildService({ otherActiveMemberships: 0 });
+      const { service } = await buildService({ otherActiveMemberships: 0 });
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "suspended");
 
-      expect(sessions.revokeAllForUser).toHaveBeenCalledWith(USER_ID);
+      expect(updateFn).toHaveBeenCalledWith(userSessions);
     });
 
     it("does NOT revoke sessions on suspension when another org membership is active", async () => {
-      const { tx } = buildTx();
+      const { tx, updateFn } = buildTx();
       mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
-      const { service, sessions } = await buildService({ otherActiveMemberships: 1 });
+      const { service } = await buildService({ otherActiveMemberships: 1 });
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "suspended");
 
-      expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+      expect(updateFn).toHaveBeenCalledWith(agentTokens);
+      expect(updateFn).not.toHaveBeenCalledWith(userSessions);
+    });
+
+    it("tombstones the revoked sessions only after commit, so Redis is never called inside the transaction", async () => {
+      const { tx, updateFn } = buildTx();
+      updateFn.mockImplementation((table: unknown) => ({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue(table === userSessions ? [{ id: "s-1" }] : []),
+          }),
+        }),
+      }));
+      mockRunInTenantTransaction.mockImplementation((_db, fn) => fn(tx as unknown as Parameters<typeof fn>[0]));
+      const { service, sessions } = await buildService({ otherActiveMemberships: 0 });
+      const publishRevocations = jest.fn().mockResolvedValue(undefined);
+      Object.assign(sessions, { publishRevocations });
+
+      await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
+
+      expect(publishRevocations).not.toHaveBeenCalled();
+      for (const [hook] of mockRegisterAfterCommit.mock.calls) await hook();
+      expect(publishRevocations).toHaveBeenCalledWith(["s-1"]);
     });
   });
 
@@ -540,9 +568,9 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(mockBustMembershipStatusCache).not.toHaveBeenCalled();
+      expect(mockStandingPublish).not.toHaveBeenCalled();
       for (const [hook] of mockRegisterAfterCommit.mock.calls) await hook();
-      expect(mockBustMembershipStatusCache).toHaveBeenCalledWith(expect.anything(), USER_ID);
+      expect(mockStandingPublish).toHaveBeenCalledWith(USER_ID);
     });
 
     it("busts inline when there is no transaction to defer to so the revocation is never dropped", async () => {
@@ -553,7 +581,7 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(mockBustMembershipStatusCache).toHaveBeenCalledWith(expect.anything(), USER_ID);
+      expect(mockStandingPublish).toHaveBeenCalledWith(USER_ID);
     });
   });
 

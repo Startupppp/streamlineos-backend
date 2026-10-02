@@ -5,7 +5,8 @@ import { CacheService } from "../../../../common/cache/cache.service";
 import { AccessService } from "../../../access/access.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { organizationMembers, projectMembers, projectStatuses, tickets, workflowTransitions } from "../../../../db/schema";
+import { organizationMembers, projectMembers, projectStatuses, projects, tickets, workflowTransitions } from "../../../../db/schema";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
@@ -33,7 +34,7 @@ async function harness(size = 1, allowed = true, missingProject = false) {
       then: (resolve: (value: unknown) => unknown) => Promise<unknown>;
     } = {
       from: jest.fn((table: unknown) => {
-        data = table === tickets ? ("count" in selection ? [occupancy] : rows) : table === projectStatuses ? statuses : table === workflowTransitions ? transitions : table === organizationMembers || table === projectMembers ? [{ userId: "member", membershipId: 9, id: 9 }] : [];
+        data = table === projects ? (missingProject ? [] : [projectAccessRow()]) : table === tickets ? ("count" in selection ? [occupancy] : rows) : table === projectStatuses ? statuses : table === workflowTransitions ? transitions : table === organizationMembers || table === projectMembers ? [{ userId: "member", membershipId: 9, id: 9 }] : [];
         return chain;
       }),
       where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
@@ -66,11 +67,11 @@ async function harness(size = 1, allowed = true, missingProject = false) {
 }
 
 describe("Build bulk mutations: fail-whole authorization and fixed query budgets", () => {
-  it("returns404 for a foreign project before checking membership", async () => {
+  it("returns404 for a foreign project from the single project-access row, before any ticket is read", async () => {
     const h = await harness(1, true, true);
     try {
       await expect(h.service.bulkUpdate({ ...actor, isOrgOwner: false }, 99, { ticketIds: [1], priority: "HIGH" })).rejects.toThrow(NotFoundException);
-      expect(h.db.select).not.toHaveBeenCalled();
+      expect(h.db.select).toHaveBeenCalledTimes(1);
       expect(h.set).not.toHaveBeenCalled();
     } finally { await h.module.close(); }
   });
@@ -91,12 +92,12 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     } finally { await h.module.close(); }
   });
 
-  it.each([1, 100])("updates %i assignments with one lookup, one effect-metadata read, one update, and two link writes — the read count does not grow with the batch", async (size) => {
+  it.each([1, 100])("updates %i assignments with one project-access row, one lookup, one effect-metadata read, one update, and two link writes — the read count does not grow with the batch", async (size) => {
     const h = await harness(size);
     try {
       const result = await h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), assigneeId: "member" });
       expect(result.updated).toBe(size);
-      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.db.select).toHaveBeenCalledTimes(4);
       expect(h.db.query.organizationMembers.findFirst).not.toHaveBeenCalled();
       expect(h.set).toHaveBeenCalledTimes(1);
       expect(h.set).toHaveBeenCalledWith(expect.objectContaining({ assigneeMembershipId: 9 }));
@@ -112,7 +113,7 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     h.transitions.push({ fromStatusId: 1, toStatusId: 2, requiredFields: ["dueDate"], requiresApproval: false, allowedRoles: [] });
     try {
       await expect(h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" })).rejects.toThrow(BadRequestException);
-      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.db.select).toHaveBeenCalledTimes(4);
       expect(h.set).not.toHaveBeenCalled();
     } finally { await h.module.close(); }
   });
@@ -121,7 +122,7 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     const h = await harness(size);
     try {
       await h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" });
-      expect(h.db.select).toHaveBeenCalledTimes(4);
+      expect(h.db.select).toHaveBeenCalledTimes(5);
       expect(h.values).toHaveBeenCalledTimes(1);
       expect(h.values.mock.calls[0]?.[0]).toHaveLength(size);
     } finally { await h.module.close(); }
@@ -135,10 +136,10 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     h.occupancy.count = 2;
     try {
       await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [1, 2], status: "DONE" })).rejects.toThrow(ConflictException);
-      expect(h.db.select).toHaveBeenCalledTimes(3);
+      expect(h.db.select).toHaveBeenCalledTimes(4);
       expect(h.set).not.toHaveBeenCalled();
       expect(h.db.execute).toHaveBeenCalledTimes(3);
-      expect(h.db.execute.mock.invocationCallOrder[0]).toBeLessThan(h.db.select.mock.invocationCallOrder[0] ?? Infinity);
+      expect(h.db.execute.mock.invocationCallOrder[0]).toBeLessThan(h.db.select.mock.invocationCallOrder[1] ?? Infinity);
     } finally { await h.module.close(); }
   });
 
@@ -150,7 +151,7 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     h.occupancy.count = 1;
     try {
       await expect(h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), status: "DONE" })).resolves.toMatchObject({ updated: 100 });
-      expect(h.db.select).toHaveBeenCalledTimes(4);
+      expect(h.db.select).toHaveBeenCalledTimes(5);
       expect(h.db.execute).toHaveBeenCalledTimes(3);
     } finally { await h.module.close(); }
   });
