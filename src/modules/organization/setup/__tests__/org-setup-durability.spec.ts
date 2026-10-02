@@ -207,6 +207,31 @@ describe("org setup post-provisioning is durable, not fire-and-forget", () => {
   });
 
   describe("completeSetup", () => {
+    it("emits Build MEMBER for an omitted grant on new Member invites and preserves explicit opt-out", async () => {
+      const { db, inserted } = buildDb();
+      const svc = await buildService(db);
+
+      await svc.completeSetup(ownerActor(), {
+        fullName: "Asha Rao",
+        industry: "IT Services",
+        companySize: "1-10",
+        enabledModules: ["build", "hr"],
+        invitees: [
+          { email: "builder@acme.test", role: "MEMBER" },
+          { email: "later@acme.test", role: "MEMBER", moduleAccess: [] },
+          { email: "admin@acme.test", role: "ORG_ADMIN" },
+        ],
+      });
+
+      expect(outboxRows(inserted)[0]?.payload).toMatchObject({
+        invitees: [
+          { email: "builder@acme.test", role: "MEMBER", moduleAccess: [{ moduleKey: "build", standing: "MEMBER" }] },
+          { email: "later@acme.test", role: "MEMBER", moduleAccess: [] },
+          { email: "admin@acme.test", role: "ORG_ADMIN" },
+        ],
+      });
+    });
+
     it("emits organization.setup.completed into the outbox inside the setup transaction", async () => {
       const { db, inserted } = buildDb();
       const svc = await buildService(db);

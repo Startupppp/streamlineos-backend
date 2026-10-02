@@ -28,15 +28,102 @@ export const ORG_MODULE_KEYS = [
  * adds invitees one at a time — bulk import is `POST /users/bulk-invite`, which is not deadline-bound.
  */
 export const MAX_SETUP_INVITEES = 50;
+export const MAX_SETUP_INVITATION_BATCHES = 8;
+
+const setupModuleAccessItemSchema = z
+  .object({
+    moduleKey: z.enum(ORG_MODULE_KEYS),
+    standing: z.enum(["MEMBER", "ADMIN"]),
+  })
+  .strict();
+
+export const setupModuleAccessSchema = z
+  .array(setupModuleAccessItemSchema)
+  .max(10)
+  .refine(
+    (items) => new Set(items.map((item) => item.moduleKey)).size === items.length,
+    "moduleAccess must not contain duplicate moduleKey entries",
+  );
+
+export type SetupModuleAccess = z.infer<typeof setupModuleAccessSchema>;
 
 export const setupInviteeSchema = z
   .object({
     email: canonicalEmailSchema,
     role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
+    moduleAccess: setupModuleAccessSchema.optional(),
   })
   .strict();
 
 export type SetupInvitee = z.infer<typeof setupInviteeSchema>;
+
+export const setupInviteeInputSchema = z
+  .object({
+    email: canonicalEmailSchema,
+    role: z.enum([ORG_MEMBER_ROLES.MEMBER, ORG_MEMBER_ROLES.ORG_ADMIN]).default(ORG_MEMBER_ROLES.MEMBER),
+    moduleAccess: setupModuleAccessSchema.optional(),
+  })
+  .strict();
+
+export function canonicalSetupModuleAccess(
+  moduleAccess: readonly SetupModuleAccess[number][],
+): SetupModuleAccess {
+  return [...moduleAccess].sort((left, right) =>
+    left.moduleKey.localeCompare(right.moduleKey),
+  );
+}
+
+export function newSetupInviteeModuleAccess(
+  invitee: SetupInvitee,
+  selectedModules: readonly string[],
+): SetupModuleAccess | undefined {
+  if (invitee.moduleAccess !== undefined) return invitee.moduleAccess;
+  if (invitee.role === ORG_MEMBER_ROLES.MEMBER && selectedModules.includes("build"))
+    return [{ moduleKey: "build", standing: "MEMBER" }];
+  return undefined;
+}
+
+export function setupInvitationBatchKey(
+  role: string,
+  moduleAccess: readonly SetupModuleAccess[number][],
+): string {
+  return JSON.stringify([
+    role,
+    canonicalSetupModuleAccess(moduleAccess).map((item) => [item.moduleKey, item.standing]),
+  ]);
+}
+
+export function validateSetupInviteeAccess(
+  invitees: readonly SetupInvitee[],
+  selectedModules: readonly string[],
+  ctx: z.RefinementCtx,
+  applyNewInviteDefaults: boolean,
+): void {
+  const selected = new Set(selectedModules);
+  const batches = new Set<string>();
+
+  invitees.forEach((invitee, inviteeIndex) => {
+    const moduleAccess = applyNewInviteDefaults
+      ? (newSetupInviteeModuleAccess(invitee, selectedModules) ?? [])
+      : (invitee.moduleAccess ?? []);
+    moduleAccess.forEach((grant, grantIndex) => {
+      if (!selected.has(grant.moduleKey))
+        ctx.addIssue({
+          code: "custom",
+          path: ["invitees", inviteeIndex, "moduleAccess", grantIndex, "moduleKey"],
+          message: `Module ${grant.moduleKey} is not selected for this workspace`,
+        });
+    });
+    batches.add(setupInvitationBatchKey(invitee.role, moduleAccess));
+  });
+
+  if (batches.size > MAX_SETUP_INVITATION_BATCHES)
+    ctx.addIssue({
+      code: "custom",
+      path: ["invitees"],
+      message: `Onboarding supports at most ${MAX_SETUP_INVITATION_BATCHES} distinct invitation access sets; align access for some invitees or invite them after launch`,
+    });
+}
 
 export const setupSchema = z.object({
   companyName: z.string().max(200).optional(),
@@ -67,8 +154,14 @@ export const setupSchema = z.object({
   enabledModules: z
     .array(z.enum(ORG_MODULE_KEYS))
     .min(1, "At least one module is required")
-    .max(50),
-  invitees: z.array(setupInviteeSchema).max(MAX_SETUP_INVITEES).optional(),
-}).strict();
+    .max(50)
+    .refine(
+      (moduleKeys) => new Set(moduleKeys).size === moduleKeys.length,
+      "enabledModules must not contain duplicate module keys",
+    ),
+  invitees: z.array(setupInviteeInputSchema).max(MAX_SETUP_INVITEES).optional(),
+}).strict().superRefine((input, ctx) =>
+  validateSetupInviteeAccess(input.invitees ?? [], input.enabledModules, ctx, true),
+);
 
 export type SetupInput = z.infer<typeof setupSchema>;

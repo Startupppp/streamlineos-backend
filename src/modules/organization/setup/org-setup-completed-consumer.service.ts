@@ -23,7 +23,12 @@ import {
 import { InvitationCreateService } from "../core/invitation-create.service";
 import { canonicalAdmissionEmail } from "../core/membership-admission.service";
 import { orgSetupCompletedPayloadSchema } from "./dto/org-setup-completed-payload.schema";
-import type { SetupInvitee } from "./dto/org.schemas";
+import {
+  canonicalSetupModuleAccess,
+  setupInvitationBatchKey,
+  type SetupInvitee,
+  type SetupModuleAccess,
+} from "./dto/org.schemas";
 
 export const ORG_SETUP_COMPLETED_CONSUMER = "organization:setup-completed";
 
@@ -137,29 +142,46 @@ export class OrgSetupCompletedConsumerService
           `acting member's own address`,
       );
 
-    const emailsByRole = new Map<string, string[]>();
-    for (const invitee of uniqueInvitees.values())
-      emailsByRole.set(invitee.role, [
-        ...(emailsByRole.get(invitee.role) ?? []),
-        invitee.email,
-      ]);
+    const batches = new Map<
+      string,
+      { role: string; moduleAccess: SetupModuleAccess; emails: string[] }
+    >();
+    for (const invitee of uniqueInvitees.values()) {
+      const moduleAccess = canonicalSetupModuleAccess(invitee.moduleAccess ?? []);
+      const key = setupInvitationBatchKey(invitee.role, moduleAccess);
+      const batch = batches.get(key);
+      if (batch) batch.emails.push(invitee.email);
+      else batches.set(key, { role: invitee.role, moduleAccess, emails: [invitee.email] });
+    }
 
     const failures: string[] = [];
-    for (const [role, emails] of emailsByRole) {
+    for (const { role, emails, moduleAccess } of batches.values()) {
+      const groupLabel = moduleAccess.length > 0
+        ? `${role} (${moduleAccess.map((item) => `${item.moduleKey}:${item.standing}`).join(", ")})`
+        : role;
       try {
         const { results } = await runInConsumerSavepoint(() =>
-          this.invitations.bulkInvite(
-            orgId,
-            { userId: actorUserId, isOrgOwner: actor.isOwner },
-            emails,
-            role,
-            "enqueue",
-          ),
+          moduleAccess.length > 0
+            ? this.invitations.bulkInvite(
+                orgId,
+                { userId: actorUserId, isOrgOwner: actor.isOwner },
+                emails,
+                role,
+                "enqueue",
+                moduleAccess,
+              )
+            : this.invitations.bulkInvite(
+                orgId,
+                { userId: actorUserId, isOrgOwner: actor.isOwner },
+                emails,
+                role,
+                "enqueue",
+              ),
         );
         const failed = results.filter((result) => !result.success);
         if (failed.length > 0)
           failures.push(
-            `${role}: ${failed.length} of ${emails.length} invitation(s) failed ` +
+            `${groupLabel}: ${failed.length} of ${emails.length} invitation(s) failed ` +
               `(${failed
                 .map((result) =>
                   result.error ? `${result.email} — ${result.error}` : result.email,
@@ -169,7 +191,7 @@ export class OrgSetupCompletedConsumerService
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         failures.push(
-          `${role}: all ${emails.length} invitation(s) failed — ${message}`,
+          `${groupLabel}: all ${emails.length} invitation(s) failed — ${message}`,
         );
       }
     }

@@ -9,7 +9,7 @@ import {
 import { addMinutes } from "date-fns";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { type SetupInput } from "./dto/org.schemas";
+import { newSetupInviteeModuleAccess, type SetupInput } from "./dto/org.schemas";
 import { ownerProfileUpdate } from "./owner-profile-update";
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
@@ -143,7 +143,15 @@ export class OrgSetupService {
           sessionAction: "complete",
           sendWelcome: true,
           industry: input.industry,
-          invitees: input.invitees ?? [],
+          invitees: (input.invitees ?? []).map((invitee) => {
+            const moduleAccess = newSetupInviteeModuleAccess(
+              invitee,
+              input.enabledModules,
+            );
+            return moduleAccess === undefined
+              ? invitee
+              : { ...invitee, moduleAccess };
+          }),
         });
         return true;
       },

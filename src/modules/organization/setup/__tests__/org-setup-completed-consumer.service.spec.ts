@@ -222,6 +222,89 @@ describe("OrgSetupCompletedConsumerService", () => {
     );
   });
 
+  it("groups Member invitations by canonical grant set and passes Build standing through", async () => {
+    const { svc, bulkInvite } = await build();
+
+    await svc.handle(event({
+      ...COMPLETE_PAYLOAD,
+      moduleKeys: ["build", "crm"],
+      invitees: [
+        {
+          email: "first@acme.test",
+          role: "MEMBER",
+          moduleAccess: [
+            { moduleKey: "crm", standing: "MEMBER" },
+            { moduleKey: "build", standing: "MEMBER" },
+          ],
+        },
+        {
+          email: "second@acme.test",
+          role: "MEMBER",
+          moduleAccess: [
+            { moduleKey: "build", standing: "MEMBER" },
+            { moduleKey: "crm", standing: "MEMBER" },
+          ],
+        },
+        {
+          email: "build-only@acme.test",
+          role: "MEMBER",
+          moduleAccess: [{ moduleKey: "build", standing: "MEMBER" }],
+        },
+        { email: "later@acme.test", role: "MEMBER", moduleAccess: [] },
+      ],
+    }));
+
+    expect(bulkInvite).toHaveBeenCalledTimes(3);
+    expect(bulkInvite).toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      ["first@acme.test", "second@acme.test"],
+      "MEMBER",
+      "enqueue",
+      [
+        { moduleKey: "build", standing: "MEMBER" },
+        { moduleKey: "crm", standing: "MEMBER" },
+      ],
+    );
+    expect(bulkInvite).toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      ["build-only@acme.test"],
+      "MEMBER",
+      "enqueue",
+      [{ moduleKey: "build", standing: "MEMBER" }],
+    );
+    expect(bulkInvite).toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      ["later@acme.test"],
+      "MEMBER",
+      "enqueue",
+    );
+  });
+
+  it("rejects an outbox grant for a module outside the activated module set", async () => {
+    const { svc, bulkInvite } = await build();
+
+    await svc.handle(event({
+      ...COMPLETE_PAYLOAD,
+      moduleKeys: ["build"],
+      invitees: [{
+        email: "bad@acme.test",
+        role: "MEMBER",
+        moduleAccess: [{ moduleKey: "hr", standing: "MEMBER" }],
+      }],
+    }));
+
+    expect(bulkInvite).not.toHaveBeenCalled();
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "FAILED",
+      expect.any(String),
+    );
+  });
+
   it("deduplicates setup invitees before enqueuing delivery", async () => {
     const { svc, bulkInvite } = await build();
 
