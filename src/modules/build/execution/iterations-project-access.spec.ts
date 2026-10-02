@@ -5,7 +5,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { CyclesService } from "./cycles.service";
 import { EpicsService } from "./epics.service";
 import { ModulesService } from "./modules.service";
@@ -71,6 +71,7 @@ async function build(standing: ProjectStanding) {
   const db = makeDb(standing);
   const ticketCreation = { create: jest.fn().mockResolvedValue({ tickets: [{ id: 5 }], command: {} }) };
   const ticketChange = { updateTicket: jest.fn().mockResolvedValue(undefined) };
+  const ticketDelete = { deleteTicket: jest.fn().mockResolvedValue(undefined) };
   const access = {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
     scopeFor: jest.fn(async (_user: CurrentUserContext, key: string) =>
@@ -86,12 +87,14 @@ async function build(standing: ProjectStanding) {
       { provide: AccessService, useValue: access },
       { provide: BuildTicketCreationService, useValue: ticketCreation },
       { provide: ProjectsTicketsUpdateService, useValue: ticketChange },
+      { provide: ProjectsTicketsDeleteService, useValue: ticketDelete },
     ],
   }).compile();
   return {
     db,
     ticketCreation,
     ticketChange,
+    ticketDelete,
     cycles: moduleRef.get(CyclesService),
     epics: moduleRef.get(EpicsService),
     modules: moduleRef.get(ModulesService),
@@ -139,7 +142,8 @@ function wrote(built: Built): boolean {
     built.db.insert.mock.calls.length > 0 ||
     built.db.update.mock.calls.length > 0 ||
     built.db.transaction.mock.calls.length > 0 ||
-    built.ticketCreation.create.mock.calls.length > 0
+    built.ticketCreation.create.mock.calls.length > 0 ||
+    built.ticketDelete.deleteTicket.mock.calls.length > 0
   );
 }
 

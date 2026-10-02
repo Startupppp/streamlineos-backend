@@ -9,6 +9,11 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual<object>("../core/project-crud/project-access"),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+}));
+
 const ACTOR: CurrentUserContext = {
   userId: "user-a",
   orgId: "org-a",

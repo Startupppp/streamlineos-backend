@@ -6,7 +6,7 @@ import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../../modules/access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import type { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import type { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 
 jest.mock("../core/project-crud/project-access", () => ({
   ...jest.requireActual<typeof import("../core/project-crud/project-access")>("../core/project-crud/project-access"),
@@ -81,6 +81,7 @@ function epicsService(db: Db): EpicsService {
     db,
     stubService<BuildTicketCreationService>({}),
     stubService<ProjectsTicketsUpdateService>({}),
+    stubService<ProjectsTicketsDeleteService>({}),
     stubService<AccessService>({}),
   );
 }
