@@ -218,7 +218,6 @@ describe("OrganizationCreationService", () => {
     });
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
       expect.anything(),
-      expect.anything(),
       {
         orgId: "org-fixed",
         userId: "user-1",
@@ -257,7 +256,6 @@ describe("OrganizationCreationService", () => {
     expect(placeOrganization).not.toHaveBeenCalled();
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
       expect.anything(),
-      expect.anything(),
       expect.objectContaining({ region: "eu" }),
     );
   });
@@ -282,7 +280,6 @@ describe("OrganizationCreationService", () => {
       cellId: "ap-1",
     });
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
-      expect.anything(),
       expect.anything(),
       expect.objectContaining({ region: "ap" }),
     );
@@ -414,7 +411,6 @@ describe("OrganizationCreationService", () => {
       null,
     );
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
-      expect.anything(),
       expect.anything(),
       expect.objectContaining({
         slug: "acme",
