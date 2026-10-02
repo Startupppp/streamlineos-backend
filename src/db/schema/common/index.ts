@@ -33,6 +33,7 @@ export * from "./permission-scopes";
 export * from "./modules";
 export * from "./ownership";
 export * from "./invitations-events";
+export * from "./organization-setup-invitation-receipts";
 export * from "./resource-grants";
 export * from "./legal-entities";
 export * from "./record-layouts";

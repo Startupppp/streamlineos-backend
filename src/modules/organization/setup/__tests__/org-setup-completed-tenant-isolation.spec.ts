@@ -115,7 +115,19 @@ async function build() {
     departments: 4,
     teams: 4,
   });
-  const bulkInvite = jest.fn().mockResolvedValue({ results: [] });
+  const bulkInvite = jest.fn().mockImplementation(async (_org, _actor, emails: string[]) => ({
+    results: emails.map((email, index) => ({
+      email,
+      success: true,
+      invitationId: `inv-${index}-${email}`,
+      deliveryQueued: true,
+    })),
+  }));
+  const insert = jest.fn().mockReturnValue({
+    values: jest.fn().mockReturnValue({
+      onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+    }),
+  });
   const findFirst = jest
     .fn()
     .mockResolvedValue({ email: "owner@alpha.test", name: "Alpha Owner", firstName: null });
@@ -125,7 +137,7 @@ async function build() {
       OrgSetupCompletedConsumerService,
       {
         provide: DRIZZLE,
-        useValue: { query: { users: { findFirst } }, select: membershipSelect() },
+        useValue: { query: { users: { findFirst } }, select: membershipSelect(), insert },
       },
       { provide: OnboardingSessionService, useValue: { completeSession, skipSession } },
       { provide: ModuleChecklistService, useValue: { ensureChecklistsForModules } },

@@ -60,6 +60,7 @@ export const outboxEvents = pgTable(
   },
   (t) => [
     uniqueIndex("uniq_outbox_events_event_id").on(t.eventId),
+    uniqueIndex("uniq_outbox_events_org_event_id").on(t.organizationId, t.eventId),
     uniqueIndex("uniq_outbox_events_org_agg_version").on(
       t.organizationId,
       t.aggregateType,

@@ -12,6 +12,8 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-checklist.service";
 import { OutboxWakeSignal } from "../../../../common/outbox/outbox-wake.signal";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 jest.mock("../../../../common/rbac/access-mutation-commit", () => ({
   commitAccessChange: jest.fn().mockResolvedValue(undefined),
@@ -59,7 +61,7 @@ type StatusDbOptions = {
   outboxCorrelationId?: string | null;
 };
 
-function buildSelectChain(resolvedValue: unknown[]) {
+function buildSelectChain(resolvedValue: unknown[], onWhere?: (predicate: SQL) => void) {
   const limit = jest.fn().mockResolvedValue(resolvedValue);
   const orderBy = jest.fn().mockReturnValue({ limit });
 
@@ -77,14 +79,15 @@ function buildSelectChain(resolvedValue: unknown[]) {
     return p;
   }
 
-  const where = jest.fn().mockImplementation(makeWhere);
+  const where = jest.fn().mockImplementation((predicate: SQL) => {
+    onWhere?.(predicate);
+    return makeWhere();
+  });
   const innerJoin = jest.fn().mockImplementation(makeInnerJoin);
   const from = jest.fn().mockReturnValue({ where, limit, orderBy, innerJoin });
   return { from };
 }
 
-// Index order mirrors the Promise.all in getSetupStatus: org stamp, ACTIVE owner,
-// latest entitlement, enabled catalog module, inbox record, outbox event.
 function buildStatusTx(opts: StatusDbOptions) {
   let selectIndex = 0;
 
@@ -111,11 +114,13 @@ function buildStatusTx(opts: StatusDbOptions) {
       }
       if (idx === 4) {
         return buildSelectChain(
-          opts.inboxStatus !== null
+          opts.outboxDeliveryState !== null
             ? [
                 {
-                  status: opts.inboxStatus,
-                  hasOptionalFailure: opts.inboxHasOptionalFailure ?? false,
+                  eventId: "setup-event-1",
+                  deliveryState: opts.outboxDeliveryState,
+                  correlationId: opts.outboxCorrelationId ?? null,
+                  payload: null,
                 },
               ]
             : [],
@@ -123,8 +128,8 @@ function buildStatusTx(opts: StatusDbOptions) {
       }
       if (idx === 5) {
         return buildSelectChain(
-          opts.outboxDeliveryState !== null
-            ? [{ deliveryState: opts.outboxDeliveryState, correlationId: opts.outboxCorrelationId ?? null, payload: null }]
+          opts.inboxStatus !== null
+            ? [{ status: opts.inboxStatus, hasOptionalFailure: opts.inboxHasOptionalFailure ?? false }]
             : [],
         );
       }
@@ -154,11 +159,14 @@ function buildStatusDb(opts: StatusDbOptions) {
 
 async function buildStatusService(
   db: unknown,
-  resolverTarget: { orgId: string } | null,
+  resolverTarget: { orgId: string; isOwner?: boolean } | null,
 ) {
+  const target = resolverTarget
+    ? { ...resolverTarget, isOwner: resolverTarget.isOwner ?? true }
+    : null;
   const resolverMock = {
-    resolveCurrentSetupTarget: jest.fn().mockResolvedValue(resolverTarget),
-    resolveExistingSetupTarget: jest.fn().mockReturnValue(resolverTarget),
+    resolveCurrentSetupTarget: jest.fn().mockResolvedValue(target),
+    resolveExistingSetupTarget: jest.fn().mockReturnValue(target),
     listSetupMemberships: jest.fn().mockResolvedValue([]),
     resolveOrCreateOrg: jest.fn(),
   };
@@ -666,7 +674,7 @@ describe("OrgSetupService.getSetupStatus — readiness invariant (OS-R3)", () =>
       inboxStatus: "COMPLETED",
       outboxDeliveryState: "DELIVERED",
     });
-    const svc = await buildStatusService(db, { orgId: "org-1" });
+    const svc = await buildStatusService(db, { orgId: "org-1", isOwner: false });
     const status = await svc.getSetupStatus(memberActor());
 
     expect(status.ready).toBe(true);
@@ -819,7 +827,7 @@ describe("OrgSetupService.getSetupStatus — response shape", () => {
       inboxHasOptionalFailure: true,
       outboxDeliveryState: "DELIVERED",
     });
-    const svc = await buildStatusService(db, { orgId: "org-1" });
+    const svc = await buildStatusService(db, { orgId: "org-1", isOwner: false });
     const status = await svc.getSetupStatus(memberActor());
 
     expect(status.errorCode).toBe("SETUP_BACKGROUND_PARTIAL");
@@ -843,9 +851,13 @@ describe("OrgSetupService.getSetupStatus — response shape", () => {
 
 type OutcomesDbOptions = StatusDbOptions & {
   outboxPayload: Record<string, unknown> | null;
-  actorEmail: string | null;
-  invitationRows: Array<{ email: string; status: string; deliveryFailed?: boolean }>;
-  activeMemberEmails: string[];
+  captureWhere?: (selection: number, predicate: SQL) => void;
+  receiptRows: Array<{
+    email: string;
+    invitationId: string | null;
+    outcome: "SKIPPED_SELF" | "REFUSED" | "QUEUED" | "DELIVERY_FAILED";
+  }>;
+  invitationRows: Array<{ id: string; status: string }>;
 };
 
 function buildOutcomesTx(opts: OutcomesDbOptions) {
@@ -872,15 +884,9 @@ function buildOutcomesTx(opts: OutcomesDbOptions) {
       }
       if (idx === 4) {
         return buildSelectChain(
-          opts.inboxStatus !== null
-            ? [{ status: opts.inboxStatus, hasOptionalFailure: opts.inboxHasOptionalFailure ?? false }]
-            : [],
-        );
-      }
-      if (idx === 5) {
-        return buildSelectChain(
           opts.outboxDeliveryState !== null
             ? [{
+                eventId: "setup-event-1",
                 deliveryState: opts.outboxDeliveryState,
                 correlationId: opts.outboxCorrelationId ?? null,
                 payload: opts.outboxPayload,
@@ -888,18 +894,19 @@ function buildOutcomesTx(opts: OutcomesDbOptions) {
             : [],
         );
       }
-      if (idx === 6) {
+      if (idx === 5) {
         return buildSelectChain(
-          opts.actorEmail !== null ? [{ email: opts.actorEmail }] : [],
+          opts.inboxStatus !== null
+            ? [{ status: opts.inboxStatus, hasOptionalFailure: opts.inboxHasOptionalFailure ?? false }]
+            : [],
+          (predicate) => opts.captureWhere?.(idx, predicate),
         );
+      }
+      if (idx === 6) {
+        return buildSelectChain(opts.receiptRows, (predicate) => opts.captureWhere?.(idx, predicate));
       }
       if (idx === 7) {
         return buildSelectChain(opts.invitationRows);
-      }
-      if (idx === 8) {
-        return buildSelectChain(
-          opts.activeMemberEmails.map((email) => ({ email })),
-        );
       }
       return buildSelectChain([]);
     }),
@@ -952,12 +959,16 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
       outboxDeliveryState: "DELIVERED",
       outboxCorrelationId: "corr-p12",
       outboxPayload: PARTIAL_PAYLOAD,
-      actorEmail: "actor@example.com",
-      invitationRows: [
-        { email: "alice@example.com", status: "PENDING" },
-        { email: "bob@example.com", status: "DECLINED" },
+      receiptRows: [
+        { email: "alice@example.com", invitationId: "inv-alice", outcome: "QUEUED" },
+        { email: "bob@example.com", invitationId: "inv-bob", outcome: "QUEUED" },
+        { email: "carol@example.com", invitationId: null, outcome: "REFUSED" },
+        { email: "actor@example.com", invitationId: null, outcome: "SKIPPED_SELF" },
       ],
-      activeMemberEmails: [],
+      invitationRows: [
+        { id: "inv-alice", status: "PENDING" },
+        { id: "inv-bob", status: "DECLINED" },
+      ],
     });
     const svc = await buildStatusService(db, { orgId: "org-1" });
     const status = await svc.getSetupStatus(ownerActor());
@@ -993,9 +1004,8 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
         ...PARTIAL_PAYLOAD,
         invitees: [{ email: "withheld@example.com", role: "MEMBER" }],
       },
-      actorEmail: "actor@example.com",
-      invitationRows: [{ email: "withheld@example.com", status: "PENDING", deliveryFailed: true }],
-      activeMemberEmails: [],
+      receiptRows: [{ email: "withheld@example.com", invitationId: "inv-withheld", outcome: "DELIVERY_FAILED" }],
+      invitationRows: [{ id: "inv-withheld", status: "PENDING" }],
     });
     const svc = await buildStatusService(db, { orgId: "org-1" });
     const status = await svc.getSetupStatus(ownerActor());
@@ -1005,7 +1015,7 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
     ]);
   });
 
-  it("a failed invitee who is now an active member gets already_member reason", async () => {
+  it("does not infer a recipient failure reason from later membership", async () => {
     const db = buildOutcomesDb({
       onboardingCompletedAt: STAMP,
       hasSubscription: true,
@@ -1017,9 +1027,8 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
         ...PARTIAL_PAYLOAD,
         invitees: [{ email: "existing@example.com", role: "MEMBER" }],
       },
-      actorEmail: "actor@example.com",
+      receiptRows: [{ email: "existing@example.com", invitationId: null, outcome: "REFUSED" }],
       invitationRows: [],
-      activeMemberEmails: ["existing@example.com"],
     });
     const svc = await buildStatusService(db, { orgId: "org-1" });
     const status = await svc.getSetupStatus(ownerActor());
@@ -1027,7 +1036,7 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
     const outcomes = status.recipientOutcomes ?? [];
     const existing = outcomes.find((o) => o.email === "existing@example.com");
     expect(existing?.outcome).toBe("failed");
-    expect(existing?.reason).toBe("already_member");
+    expect(existing?.reason).toBe("unknown");
   });
 
   it("owner-skip and later-role continuation: duplicate owner emails deduplicated into one skipped entry", async () => {
@@ -1046,9 +1055,11 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
           { email: "teammate@example.com", role: "MEMBER" },
         ],
       },
-      actorEmail: "actor@example.com",
-      invitationRows: [{ email: "teammate@example.com", status: "PENDING" }],
-      activeMemberEmails: [],
+      receiptRows: [
+        { email: "actor@example.com", invitationId: null, outcome: "SKIPPED_SELF" },
+        { email: "teammate@example.com", invitationId: "inv-teammate", outcome: "QUEUED" },
+      ],
+      invitationRows: [{ id: "inv-teammate", status: "PENDING" }],
     });
     const svc = await buildStatusService(db, { orgId: "org-1" });
     const status = await svc.getSetupStatus(ownerActor());
@@ -1074,9 +1085,8 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
         ...PARTIAL_PAYLOAD,
         invitees: [{ email: "target@example.com", role: "MEMBER" }],
       },
-      actorEmail: "actor@example.com",
+      receiptRows: [{ email: "target@example.com", invitationId: null, outcome: "REFUSED" }],
       invitationRows: [],
-      activeMemberEmails: [],
     });
     const svc = await buildStatusService(db, { orgId: "org-1" });
     const status = await svc.getSetupStatus(ownerActor());
@@ -1099,9 +1109,8 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
         ...PARTIAL_PAYLOAD,
         invitees: [{ email: "accepted@example.com", role: "MEMBER" }],
       },
-      actorEmail: "actor@example.com",
-      invitationRows: [{ email: "accepted@example.com", status: "ACCEPTED", deliveryFailed: true }],
-      activeMemberEmails: [],
+      receiptRows: [{ email: "accepted@example.com", invitationId: "inv-accepted", outcome: "QUEUED" }],
+      invitationRows: [{ id: "inv-accepted", status: "ACCEPTED" }],
     });
     const svc = await buildStatusService(db, { orgId: "org-1" });
     const status = await svc.getSetupStatus(ownerActor());
@@ -1127,9 +1136,8 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
           { email: "queued@example.com", role: "ORG_ADMIN" },
         ],
       },
-      actorEmail: "actor@example.com",
-      invitationRows: [{ email: "queued@example.com", status: "PENDING" }],
-      activeMemberEmails: [],
+      receiptRows: [{ email: "queued@example.com", invitationId: "inv-queued", outcome: "QUEUED" }],
+      invitationRows: [{ id: "inv-queued", status: "PENDING" }],
     });
     const svc = await buildStatusService(db, { orgId: "org-1" });
     const status = await svc.getSetupStatus(ownerActor());
@@ -1138,6 +1146,106 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
     const queued = outcomes.filter((o) => o.email === "queued@example.com");
     expect(queued).toHaveLength(1);
     expect(queued[0]?.outcome).toBe("queued");
+  });
+
+  it("does not substitute an older pending invitation for a failed current setup attempt", async () => {
+    const db = buildOutcomesDb({
+      onboardingCompletedAt: STAMP,
+      hasSubscription: true,
+      hasEnabledModule: true,
+      inboxStatus: "COMPLETED",
+      inboxHasOptionalFailure: true,
+      outboxDeliveryState: "DELIVERED",
+      outboxPayload: {
+        ...PARTIAL_PAYLOAD,
+        invitees: [{ email: "returning@example.com", role: "MEMBER" }],
+      },
+      receiptRows: [{ email: "returning@example.com", invitationId: null, outcome: "REFUSED" }],
+      invitationRows: [{ id: "old-pending-invitation", status: "PENDING" }],
+    });
+    const svc = await buildStatusService(db, { orgId: "org-1" });
+
+    const status = await svc.getSetupStatus(ownerActor());
+
+    expect(status.recipientOutcomes).toEqual([
+      { email: "returning@example.com", outcome: "failed", reason: "unknown" },
+    ]);
+  });
+
+  it("returns unknown recipient provenance for a legacy setup event with no receipts", async () => {
+    const db = buildOutcomesDb({
+      onboardingCompletedAt: STAMP,
+      hasSubscription: true,
+      hasEnabledModule: true,
+      inboxStatus: "COMPLETED",
+      inboxHasOptionalFailure: true,
+      outboxDeliveryState: "DELIVERED",
+      outboxPayload: {
+        ...PARTIAL_PAYLOAD,
+        invitees: [{ email: "legacy@example.com", role: "MEMBER" }],
+      },
+      receiptRows: [],
+      invitationRows: [{ id: "old-pending-invitation", status: "PENDING" }],
+    });
+    const svc = await buildStatusService(db, { orgId: "org-1" });
+
+    const status = await svc.getSetupStatus(ownerActor());
+
+    expect(status.errorCode).toBe("SETUP_BACKGROUND_PARTIAL");
+    expect(status.recipientOutcomes).toBeNull();
+  });
+
+  it("withholds recipient addresses when the current membership is no longer an owner", async () => {
+    const db = buildOutcomesDb({
+      onboardingCompletedAt: STAMP,
+      hasSubscription: true,
+      hasEnabledModule: true,
+      inboxStatus: "COMPLETED",
+      inboxHasOptionalFailure: true,
+      outboxDeliveryState: "DELIVERED",
+      outboxPayload: {
+        ...PARTIAL_PAYLOAD,
+        invitees: [{ email: "private@example.com", role: "MEMBER" }],
+      },
+      receiptRows: [{ email: "private@example.com", invitationId: null, outcome: "REFUSED" }],
+      invitationRows: [],
+    });
+    const svc = await buildStatusService(db, { orgId: "org-1", isOwner: false });
+
+    const status = await svc.getSetupStatus(ownerActor());
+
+    expect(status.recipientOutcomes).toBeNull();
+  });
+
+  it("reads inbox and recipient receipts for the exact latest setup event", async () => {
+    const predicates = new Map<number, SQL>();
+    const db = buildOutcomesDb({
+      onboardingCompletedAt: STAMP,
+      hasSubscription: true,
+      hasEnabledModule: true,
+      inboxStatus: "COMPLETED",
+      inboxHasOptionalFailure: true,
+      outboxDeliveryState: "DELIVERED",
+      outboxPayload: {
+        ...PARTIAL_PAYLOAD,
+        invitees: [{ email: "current@example.com", role: "MEMBER" }],
+      },
+      receiptRows: [{ email: "current@example.com", invitationId: null, outcome: "REFUSED" }],
+      invitationRows: [],
+      captureWhere: (selection, predicate) => predicates.set(selection, predicate),
+    });
+    const svc = await buildStatusService(db, { orgId: "org-1" });
+
+    await svc.getSetupStatus(ownerActor());
+
+    const dialect = new PgDialect();
+    for (const selection of [5, 6]) {
+      const predicate = predicates.get(selection);
+      expect(predicate).toBeDefined();
+      const query = dialect.sqlToQuery(predicate!);
+      expect(query.params).toContain("org-1");
+      expect(query.params).toContain("setup-event-1");
+    }
   });
 });
 

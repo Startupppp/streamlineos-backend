@@ -7337,6 +7337,13 @@
       "when": 1803093663725,
       "tag": "1431_kb_health_items_repair_action",
       "breakpoints": true
+    },
+    {
+      "idx": 1176,
+      "version": "7",
+      "when": 1803093664725,
+      "tag": "1728_organization_setup_invitation_receipts",
+      "breakpoints": true
     }
   ]
 }

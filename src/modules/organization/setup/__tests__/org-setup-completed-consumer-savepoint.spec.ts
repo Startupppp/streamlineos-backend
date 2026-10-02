@@ -128,7 +128,12 @@ async function build(
     overrides.bulkInvite ??
     jest.fn().mockImplementation(async (_org, _actor, emails: string[]) => {
       activeTx.statement(`invite:${emails.join(",")}`);
-      return { results: emails.map((email) => ({ email, success: true })) };
+      return { results: emails.map((email, index) => ({
+        email,
+        success: true,
+        invitationId: `inv-${index}-${email}`,
+        deliveryQueued: true,
+      })) };
     });
   const generateWorkspace = jest.fn().mockImplementation(async () => {
     activeTx.statement("workspace");
@@ -155,6 +160,11 @@ async function build(
     .mockImplementation(
       selectRows([{ isOwner: true, email: "owner@acme.test" }]),
     );
+  const onConflictDoNothing = jest.fn().mockImplementation(async () => {
+    activeTx.statement("receipts");
+  });
+  const values = jest.fn().mockReturnValue({ onConflictDoNothing });
+  const insert = jest.fn().mockReturnValue({ values });
 
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -164,6 +174,7 @@ async function build(
         useValue: {
           query: { users: { findFirst } },
           select,
+          insert,
         },
       },
       {
@@ -276,7 +287,12 @@ describe("OrgSetupCompletedConsumerService — optional phases run behind a save
       .mockImplementation(async (_org, _actor, emails: string[], role: string) => {
         if (role === "ORG_ADMIN") activeTx.failingStatement(`invite:${role}`, "23505");
         activeTx.statement(`invite:${role}`);
-        return { results: emails.map((email) => ({ email, success: true })) };
+        return { results: emails.map((email, index) => ({
+          email,
+          success: true,
+          invitationId: `inv-${index}-${email}`,
+          deliveryQueued: true,
+        })) };
       });
     const { svc } = await build({ bulkInvite });
 
@@ -301,7 +317,7 @@ describe("OrgSetupCompletedConsumerService — optional phases run behind a save
   it("per-email failures reported by bulkInvite name the emails and never throw", async () => {
     const bulkInvite = jest.fn().mockImplementation(async () => ({
       results: [
-        { email: "a@acme.test", success: true },
+        { email: "a@acme.test", success: true, invitationId: "inv-a", deliveryQueued: true },
         { email: "b@acme.test", success: false, error: "seat limit" },
       ],
     }));

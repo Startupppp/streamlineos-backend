@@ -194,6 +194,7 @@ export const invitations = pgTable("invitations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_invitations_org_email").on(table.orgId, table.email),
+  uniqueIndex("uniq_invitations_org_id_setup_receipts").on(table.orgId, table.id),
   index("idx_invitations_org_inviter_membership").on(table.orgId, table.inviterMembershipId),
   index("idx_invitations_org_accepted_membership").on(table.orgId, table.acceptedMembershipId),
   index("idx_invitations_org_revoked_by_membership").on(table.orgId, table.revokedByMembershipId),

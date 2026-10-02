@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { withSpan } from "../../../common/observability";
 import { and, eq } from "drizzle-orm";
-import { organizationMembers, roles, users } from "../../../db/schema";
+import { organizationMembers, organizationSetupInvitationReceipts, roles, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
@@ -99,6 +99,7 @@ export class OrgSetupCompletedConsumerService
     orgId: string,
     actorUserId: string,
     invitees: readonly SetupInvitee[],
+    producerEventId: string,
   ): Promise<string[]> {
     if (invitees.length === 0) return [];
 
@@ -125,11 +126,22 @@ export class OrgSetupCompletedConsumerService
 
     const actorEmail = canonicalAdmissionEmail(actor.email);
     const skipped: string[] = [];
+    const receipts: Array<typeof organizationSetupInvitationReceipts.$inferInsert> = [];
     const uniqueInvitees = new Map<string, SetupInvitee>();
     for (const invitee of invitees) {
       const email = canonicalAdmissionEmail(invitee.email);
       if (email === actorEmail) {
-        if (!skipped.includes(email)) skipped.push(email);
+        if (!skipped.includes(email)) {
+          skipped.push(email);
+          receipts.push({
+            orgId,
+            producerEventId,
+            canonicalEmail: email,
+            invitationId: null,
+            outcome: "SKIPPED_SELF",
+            reasonCode: null,
+          });
+        }
         continue;
       }
       if (!uniqueInvitees.has(email))
@@ -160,9 +172,9 @@ export class OrgSetupCompletedConsumerService
         ? `${role} (${moduleAccess.map((item) => `${item.moduleKey}:${item.standing}`).join(", ")})`
         : role;
       try {
-        const { results } = await runInConsumerSavepoint(() =>
-          moduleAccess.length > 0
-            ? this.invitations.bulkInvite(
+        const { results } = await runInConsumerSavepoint(async () => {
+          const response = moduleAccess.length > 0
+            ? await this.invitations.bulkInvite(
                 orgId,
                 { userId: actorUserId, isOrgOwner: actor.isOwner },
                 emails,
@@ -170,14 +182,43 @@ export class OrgSetupCompletedConsumerService
                 "enqueue",
                 moduleAccess,
               )
-            : this.invitations.bulkInvite(
+            : await this.invitations.bulkInvite(
                 orgId,
                 { userId: actorUserId, isOrgOwner: actor.isOwner },
                 emails,
                 role,
                 "enqueue",
-              ),
-        );
+              );
+          if (
+            response.results.length !== emails.length ||
+            response.results.some(
+              (result, index) =>
+                canonicalAdmissionEmail(result.email) !== emails[index] ||
+                (result.success &&
+                  (!result.invitationId || typeof result.deliveryQueued !== "boolean")),
+            )
+          )
+            throw new Error("Invitation batch returned incomplete recipient results");
+          return response;
+        });
+        for (const result of results) {
+          receipts.push({
+            orgId,
+            producerEventId,
+            canonicalEmail: canonicalAdmissionEmail(result.email),
+            invitationId: result.success ? result.invitationId : null,
+            outcome: !result.success
+              ? "REFUSED"
+              : result.deliveryQueued
+                ? "QUEUED"
+                : "DELIVERY_FAILED",
+            reasonCode: !result.success
+              ? "UNKNOWN"
+              : result.deliveryQueued
+                ? null
+                : "EMAIL_NOT_SENT",
+          });
+        }
         const failed = results.filter(
           (result) => !result.success || result.deliveryQueued === false,
         );
@@ -196,11 +237,25 @@ export class OrgSetupCompletedConsumerService
           );
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
+        for (const email of emails) {
+          receipts.push({
+            orgId,
+            producerEventId,
+            canonicalEmail: email,
+            invitationId: null,
+            outcome: "REFUSED",
+            reasonCode: "UNKNOWN",
+          });
+        }
         failures.push(
           `${groupLabel}: all ${emails.length} invitation(s) failed — ${message}`,
         );
       }
     }
+    await this.db
+      .insert(organizationSetupInvitationReceipts)
+      .values(receipts)
+      .onConflictDoNothing();
     return failures;
   }
 
@@ -333,7 +388,7 @@ export class OrgSetupCompletedConsumerService
       this.generateStructure(orgId, industry, moduleKeys),
     );
     await runOptional("sendInvitations", () =>
-      this.sendInvitations(orgId, userId, invitees),
+      this.sendInvitations(orgId, userId, invitees, event.eventId),
     );
     if (sendWelcome) {
       await runOptional("sendWelcome", () =>

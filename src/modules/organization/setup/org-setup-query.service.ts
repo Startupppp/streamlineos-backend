@@ -3,14 +3,13 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   inboxRecords,
   invitations,
-  invitationEvents,
+  organizationSetupInvitationReceipts,
   outboxEvents,
   modulesCatalog,
   orgModules,
   organizationMembers,
   subscriptions,
   organizations,
-  users,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -30,14 +29,6 @@ import type { SetupInvitee } from "./dto/org.schemas";
 import { recipientOutcomeSchema } from "./dto/org-setup-response.schemas";
 import type { z } from "zod";
 import { canonicalAdmissionEmail } from "../core/membership-admission.service";
-
-function inviteeStatusPriority(status: string): number {
-  if (status === "ACCEPTED") return 4;
-  if (status === "PENDING") return 3;
-  if (status === "DECLINED") return 2;
-  if (status === "REVOKED") return 1;
-  return 0;
-}
 
 @Injectable()
 export class OrgSetupQueryService {
@@ -92,130 +83,64 @@ export class OrgSetupQueryService {
   private async resolveInviteeOutcomes(
     tx: TenantTx,
     orgId: string,
-    actorUserId: string,
+    producerEventId: string,
     inviteesFromPayload: readonly SetupInvitee[],
-  ): Promise<z.infer<typeof recipientOutcomeSchema>[]> {
-    const [actorUserRow] = await tx
-      .select({ email: users.email })
-      .from(users)
-      .where(eq(users.id, actorUserId))
-      .limit(1);
+  ): Promise<z.infer<typeof recipientOutcomeSchema>[] | null> {
+    const emails = [...new Set(inviteesFromPayload.map((invitee) =>
+      canonicalAdmissionEmail(invitee.email),
+    ))];
+    if (emails.length === 0) return null;
 
-    const actorEmail = actorUserRow
-      ? canonicalAdmissionEmail(actorUserRow.email)
-      : null;
+    const receiptRows = await tx
+      .select({
+        email: organizationSetupInvitationReceipts.canonicalEmail,
+        invitationId: organizationSetupInvitationReceipts.invitationId,
+        outcome: organizationSetupInvitationReceipts.outcome,
+      })
+      .from(organizationSetupInvitationReceipts)
+      .where(and(
+        eq(organizationSetupInvitationReceipts.orgId, orgId),
+        eq(organizationSetupInvitationReceipts.producerEventId, producerEventId),
+      ));
 
-    const nonSkippedEmails: string[] = [];
-    const seenForDedup = new Set<string>();
+    const receiptsByEmail = new Map(receiptRows.map((row) => [row.email, row]));
+    if (receiptsByEmail.size !== emails.length ||
+      emails.some((email) => !receiptsByEmail.has(email))) return null;
 
-    for (const invitee of inviteesFromPayload) {
-      const email = canonicalAdmissionEmail(invitee.email);
-      if (seenForDedup.has(email)) continue;
-      seenForDedup.add(email);
-      if (email !== actorEmail) nonSkippedEmails.push(email);
-    }
-
-    const invitationStatusByEmail = new Map<
-      string,
-      { status: string; deliveryFailed: boolean }
-    >();
-    if (nonSkippedEmails.length > 0) {
-      const invitationRows = await tx
-        .select({
-          email: invitations.email,
-          status: invitations.status,
-          deliveryFailed: sql<boolean>`EXISTS (
-            SELECT 1 FROM ${invitationEvents} f
-            WHERE f.invitation_id = ${invitations.id}
-              AND f.org_id = ${orgId}
-              AND f.event = 'DELIVERY_FAILED'
-              AND f.created_at >= COALESCE(
-                (
-                  SELECT MAX(r.created_at) FROM ${invitationEvents} r
-                  WHERE r.invitation_id = ${invitations.id}
-                    AND r.org_id = ${orgId}
-                    AND r.event = 'RESENT'
-                ),
-                ${invitations.createdAt}
-              )
-          )`,
-        })
-        .from(invitations)
-        .where(
-          and(
+    const invitationIds = receiptRows.flatMap((row) =>
+      row.invitationId ? [row.invitationId] : [],
+    );
+    const invitationRows = invitationIds.length > 0
+      ? await tx
+          .select({ id: invitations.id, status: invitations.status })
+          .from(invitations)
+          .where(and(
             eq(invitations.orgId, orgId),
-            inArray(invitations.email, nonSkippedEmails),
-          ),
-        );
+            inArray(invitations.id, invitationIds),
+          ))
+      : [];
+    const invitationStatus = new Map(invitationRows.map((row) => [row.id, row.status]));
 
-      for (const row of invitationRows) {
-        const existing = invitationStatusByEmail.get(row.email);
-        if (
-          !existing ||
-          inviteeStatusPriority(row.status) > inviteeStatusPriority(existing.status)
-        ) {
-          invitationStatusByEmail.set(row.email, {
-            status: row.status,
-            deliveryFailed: row.deliveryFailed,
-          });
-        }
-      }
-    }
+    return emails.map((email) => {
+      const receipt = receiptsByEmail.get(email)!;
+      if (receipt.outcome === "SKIPPED_SELF")
+        return { email, outcome: "skipped" as const, reason: null };
+      if (receipt.outcome === "REFUSED")
+        return { email, outcome: "failed" as const, reason: "unknown" as const };
 
-    const failedEmails = nonSkippedEmails.filter((email) => {
-      const invitation = invitationStatusByEmail.get(email);
-      return invitation?.status !== "PENDING" && invitation?.status !== "ACCEPTED";
+      const status = receipt.invitationId
+        ? invitationStatus.get(receipt.invitationId)
+        : null;
+      if (status === "ACCEPTED")
+        return { email, outcome: "successful" as const, reason: null };
+      if (status === "DECLINED" || status === "REVOKED")
+        return { email, outcome: "failed" as const, reason: "invitation_revoked" as const };
+      if (status !== "PENDING")
+        return { email, outcome: "failed" as const, reason: "unknown" as const };
+      if (receipt.outcome === "DELIVERY_FAILED")
+        return { email, outcome: "failed" as const, reason: "email_not_sent" as const };
+      return { email, outcome: "queued" as const, reason: null };
     });
-
-    const activeMemberEmailSet = new Set<string>();
-    if (failedEmails.length > 0) {
-      const memberRows = await tx
-        .select({ email: users.email })
-        .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.status, "ACTIVE"),
-            inArray(users.email, failedEmails),
-          ),
-        );
-      for (const row of memberRows) {
-        activeMemberEmailSet.add(canonicalAdmissionEmail(row.email));
-      }
-    }
-
-    const outcomes: z.infer<typeof recipientOutcomeSchema>[] = [];
-    const processedEmails = new Set<string>();
-
-    for (const invitee of inviteesFromPayload) {
-      const email = canonicalAdmissionEmail(invitee.email);
-      if (processedEmails.has(email)) continue;
-      processedEmails.add(email);
-
-      if (email === actorEmail) {
-        outcomes.push({ email, outcome: "skipped", reason: null });
-        continue;
-      }
-
-      const invitation = invitationStatusByEmail.get(email);
-      const status = invitation?.status;
-      if (status === "PENDING" && invitation?.deliveryFailed === true) {
-        outcomes.push({ email, outcome: "failed", reason: "email_not_sent" });
-      } else if (status === "PENDING") {
-        outcomes.push({ email, outcome: "queued", reason: null });
-      } else if (status === "ACCEPTED") {
-        outcomes.push({ email, outcome: "successful", reason: null });
-      } else if (status === "DECLINED" || status === "REVOKED") {
-        outcomes.push({ email, outcome: "failed", reason: "invitation_revoked" });
-      } else if (activeMemberEmailSet.has(email)) {
-        outcomes.push({ email, outcome: "failed", reason: "already_member" });
-      } else {
-        outcomes.push({ email, outcome: "failed", reason: "unknown" });
-      }
-    }
-
-    return outcomes;
   }
 
   async getSetupStatus(u: CurrentUserContext): Promise<OrgSetupStatus> {
@@ -304,41 +229,41 @@ export class OrgSetupQueryService {
             recipientOutcomes: null,
           };
 
-        const [inboxRows, outboxRows] = await Promise.all([
-          tx
-            .select({
-              status: inboxRecords.status,
-              hasOptionalFailure: sql<boolean>`${inboxRecords.lastError} is not null`,
-            })
-            .from(inboxRecords)
-            .where(
-              and(
-                eq(inboxRecords.organizationId, orgId),
-                eq(inboxRecords.consumerName, ORG_SETUP_COMPLETED_CONSUMER),
-                eq(inboxRecords.aggregateType, "organization"),
-                eq(inboxRecords.aggregateId, orgId),
-              ),
-            )
-            .orderBy(desc(inboxRecords.aggregateVersion))
-            .limit(1),
-          tx
-            .select({
-              deliveryState: outboxEvents.deliveryState,
-              correlationId: outboxEvents.correlationId,
-              payload: outboxEvents.payload,
-            })
-            .from(outboxEvents)
-            .where(
-              and(
-                eq(outboxEvents.organizationId, orgId),
-                eq(outboxEvents.aggregateType, "organization"),
-                eq(outboxEvents.aggregateId, orgId),
-                eq(outboxEvents.eventType, "organization.setup.completed"),
-              ),
-            )
-            .orderBy(desc(outboxEvents.aggregateVersion))
-            .limit(1),
-        ]);
+        const outboxRows = await tx
+          .select({
+            eventId: outboxEvents.eventId,
+            deliveryState: outboxEvents.deliveryState,
+            correlationId: outboxEvents.correlationId,
+            payload: outboxEvents.payload,
+          })
+          .from(outboxEvents)
+          .where(
+            and(
+              eq(outboxEvents.organizationId, orgId),
+              eq(outboxEvents.aggregateType, "organization"),
+              eq(outboxEvents.aggregateId, orgId),
+              eq(outboxEvents.eventType, "organization.setup.completed"),
+            ),
+          )
+          .orderBy(desc(outboxEvents.aggregateVersion))
+          .limit(1);
+        const outboxEventId = outboxRows[0]?.eventId;
+        const inboxRows = outboxEventId
+          ? await tx
+              .select({
+                status: inboxRecords.status,
+                hasOptionalFailure: sql<boolean>`${inboxRecords.lastError} is not null`,
+              })
+              .from(inboxRecords)
+              .where(
+                and(
+                  eq(inboxRecords.organizationId, orgId),
+                  eq(inboxRecords.consumerName, ORG_SETUP_COMPLETED_CONSUMER),
+                  eq(inboxRecords.producerEventId, outboxEventId),
+                ),
+              )
+              .limit(1)
+          : [];
 
         const { provisioning, errorCode } = resolveProvisioningAndError(
           inboxRows[0]?.status ?? null,
@@ -355,13 +280,14 @@ export class OrgSetupQueryService {
 
         const recipientOutcomes =
           errorCode === "SETUP_BACKGROUND_PARTIAL" &&
-          u.isOrgOwner &&
+          target.isOwner &&
+          outboxEventId !== undefined &&
           payloadParseResult.success &&
           payloadParseResult.data.invitees.length > 0
             ? await this.resolveInviteeOutcomes(
                 tx,
                 orgId,
-                payloadParseResult.data.userId,
+                outboxEventId,
                 payloadParseResult.data.invitees,
               )
             : null;

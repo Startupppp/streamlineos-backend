@@ -79,7 +79,17 @@ async function build(overrides: {
     departments: 4,
     teams: 4,
   });
-  const bulkInvite = jest.fn().mockResolvedValue({ results: [] });
+  const bulkInvite = jest.fn().mockImplementation(async (_org, _actor, emails: string[]) => ({
+    results: emails.map((email, index) => ({
+      email,
+      success: true,
+      invitationId: `inv-${index}-${email}`,
+      deliveryQueued: true,
+    })),
+  }));
+  const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
+  const values = jest.fn().mockReturnValue({ onConflictDoNothing });
+  const insert = jest.fn().mockReturnValue({ values });
   const findFirst = jest
     .fn()
     .mockResolvedValue({ email: "owner@acme.test", name: "Acme Owner", firstName: null });
@@ -108,6 +118,7 @@ async function build(overrides: {
         useValue: {
           query: { users: { findFirst } },
           select,
+          insert,
         },
       },
       {
@@ -131,6 +142,8 @@ async function build(overrides: {
     register,
     generateWorkspace,
     bulkInvite,
+    insert,
+    values,
   };
 }
 
@@ -153,7 +166,7 @@ describe("OrgSetupCompletedConsumerService", () => {
   });
 
   it("performs every post-setup step for a completed setup", async () => {
-    const { svc, completeSession, ensureChecklistsForModules, emit } = await build();
+    const { svc, completeSession, ensureChecklistsForModules, emit, values } = await build();
 
     await svc.handle(event(COMPLETE_PAYLOAD));
 
@@ -173,6 +186,14 @@ describe("OrgSetupCompletedConsumerService", () => {
       "COMPLETED",
       null,
     );
+    expect(values).toHaveBeenCalledWith([
+      expect.objectContaining({
+        orgId: "org-1",
+        producerEventId: "11111111-1111-4111-8111-111111111111",
+        canonicalEmail: "new@acme.test",
+        outcome: "QUEUED",
+      }),
+    ]);
   });
 
   // Decision D17 — these two used to be sequenced by the browser after the response returned.
@@ -648,7 +669,7 @@ describe("OrgSetupCompletedConsumerService", () => {
     const { svc, bulkInvite } = await build();
     bulkInvite.mockResolvedValueOnce({
       results: [
-        { email: "good@acme.test", success: true, invitationId: "inv-1" },
+        { email: "good@acme.test", success: true, invitationId: "inv-1", deliveryQueued: true },
         {
           email: "dup@acme.test",
           success: false,
