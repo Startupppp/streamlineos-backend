@@ -1,6 +1,11 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsAutomationsService } from "./projects-automations.service";
 
+jest.mock("../project-crud/project-access", () => ({
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+  assertCanManageProject: jest.fn().mockResolvedValue(undefined),
+}));
+
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
   if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
@@ -30,8 +35,8 @@ describe("ProjectsAutomationsService — cross-tenant isolation", () => {
 
   it("scopes automations to the attacker's org — returns empty for other org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
-    const members = { assertProjectAccess: jest.fn().mockResolvedValue(undefined) } as never;
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const access = {} as never;
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
     const u = { orgId: ATTACKER_ORG, userId: "u1" } as never;
     const result = await svc.listAutomations(u, 1, { limit: 50 });
     expect(result.data).toHaveLength(0);
@@ -41,8 +46,8 @@ describe("ProjectsAutomationsService — cross-tenant isolation", () => {
   it("returns automations for the owning org (same-tenant control)", async () => {
     const auto = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "Auto1", createdAt: new Date(), updatedAt: new Date(), createdByUser: null };
     const { db } = makeDb([auto]);
-    const members = { assertProjectAccess: jest.fn().mockResolvedValue(undefined) } as never;
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const access = {} as never;
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
     const u = { orgId: OWNER_ORG, userId: "u1" } as never;
     const result = await svc.listAutomations(u, 1, { limit: 50 });
     expect(result.data).toHaveLength(1);
@@ -53,7 +58,7 @@ describe("ProjectsAutomationsService — cross-project isolation (project-scoped
   const ORG = "org-1";
 
   const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never;
-  const members = { assertCanManageProject: jest.fn().mockResolvedValue(undefined) } as never;
+  const access = {} as never;
 
   function makeMutationDb(returningRows: unknown[]) {
     const where = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(returningRows) });
@@ -66,7 +71,7 @@ describe("ProjectsAutomationsService — cross-project isolation (project-scoped
 
   it("updateAutomation cannot reach an automation belonging to a different project in the same org", async () => {
     const { db, where } = makeMutationDb([]);
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
     const u = { orgId: ORG, userId: "u1" } as never;
 
     await expect(svc.updateAutomation(u, 1, 99, { name: "renamed" } as never)).rejects.toThrow(
@@ -79,7 +84,7 @@ describe("ProjectsAutomationsService — cross-project isolation (project-scoped
 
   it("deleteAutomation cannot reach an automation belonging to a different project in the same org", async () => {
     const { db, deleteWhere } = makeMutationDb([]);
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
     const u = { orgId: ORG, userId: "u1" } as never;
 
     await expect(svc.deleteAutomation(u, 1, 99)).rejects.toThrow("Automation not found");
@@ -91,7 +96,7 @@ describe("ProjectsAutomationsService — cross-project isolation (project-scoped
   it("updateAutomation still succeeds when the automation genuinely belongs to the named project", async () => {
     const auto = { id: 99, orgId: ORG, projectId: 1, name: "renamed" };
     const { db } = makeMutationDb([auto]);
-    const svc = new ProjectsAutomationsService(db, planLimits, members);
+    const svc = new ProjectsAutomationsService(db, planLimits, access);
     const u = { orgId: ORG, userId: "u1" } as never;
 
     const result = await svc.updateAutomation(u, 1, 99, { name: "renamed" } as never);

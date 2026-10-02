@@ -1,158 +1,117 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import { and, eq, isNull } from "drizzle-orm";
-import {
-  projectAutomations,
-  projectStatuses,
-  ticketComments,
-  ticketLabelMappings,
-  ticketLabels,
-  tickets,
-  organizationMembers,
-} from "../../../../db/schema";
+import { projectAutomations, ticketLabels, tickets } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
-import { logger } from "../../../../common/logger/logger.service";
-import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { systemActor } from "../../../../common/auth/system-actor";
+import type { UpdateTicketInput } from "../dto/ticket.schemas";
+import { ProjectsTicketLabelsService } from "../tickets/projects-ticket-labels.service";
+import { ProjectsTicketCommentsService } from "../tickets/projects-ticket-comments.service";
 
 export type StoredAction = NonNullable<typeof projectAutomations.$inferSelect>["actions"][number];
+
+export const AUTOMATION_TICKET_CHANGE = Symbol("AUTOMATION_TICKET_CHANGE");
+
+export interface AutomationTicketChange {
+  updateTicket(
+    u: CurrentUserContext,
+    projectId: number | null,
+    ticketId: number,
+    input: UpdateTicketInput,
+  ): Promise<unknown>;
+}
 
 function isTicketPriority(value: string): value is "LOW" | "MEDIUM" | "HIGH" | "URGENT" {
   return value === "LOW" || value === "MEDIUM" || value === "HIGH" || value === "URGENT";
 }
 
-function isValidLabelId(value: string): boolean {
+function labelIdRef(value: string): number | null {
   const n = Number(value);
-  return Number.isInteger(n) && n > 0;
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-/**
- * Executes one automation action against one ticket. Split out of
- * `BuildAutomationRunnerService` (BE-09): the runner decides *whether* an
- * action set should run (conditions, loop guard, rate limit, history); this
- * decides *how* one action mutates a ticket. Every write here goes straight
- * to `tickets`/`ticketLabelMappings`/`ticketComments` via Drizzle rather than
- * through `ProjectsTicketsUpdateService` — see the loop-prevention note on
- * `BuildAutomationRunnerService` for why that matters.
- */
 @Injectable()
 export class BuildAutomationActionExecutor {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly moduleRef: ModuleRef,
+    private readonly labels: ProjectsTicketLabelsService,
+    private readonly comments: ProjectsTicketCommentsService,
+  ) {}
 
-  private async applyLabel(orgId: string, ticketId: number, labelRef: string): Promise<void> {
-    if (isValidLabelId(labelRef)) {
-      const numericId = Number(labelRef);
-      const found = await this.db.query.ticketLabels.findFirst({
-        where: and(eq(ticketLabels.id, numericId), eq(ticketLabels.orgId, orgId)),
-        columns: { id: true },
-      });
-      if (!found) {
-        logger.warn("BuildAutomationActionExecutor: label not found by id", { numericId, orgId });
-        return;
-      }
-      await this.db
-        .insert(ticketLabelMappings)
-        .values({ orgId, ticketId, labelId: found.id })
-        .onConflictDoNothing();
-      return;
-    }
+  private ticketChange(): AutomationTicketChange {
+    return this.moduleRef.get<AutomationTicketChange>(AUTOMATION_TICKET_CHANGE, { strict: false });
+  }
 
-    const byName = await this.db.query.ticketLabels.findFirst({
-      where: and(eq(ticketLabels.name, labelRef), eq(ticketLabels.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!byName) {
-      logger.warn("BuildAutomationActionExecutor: label not found by name", { labelRef, orgId });
-      return;
-    }
-    await this.db
-      .insert(ticketLabelMappings)
-      .values({ orgId, ticketId, labelId: byName.id })
-      .onConflictDoNothing();
+  private async changeTicket(
+    actor: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    change: Omit<UpdateTicketInput, "version">,
+  ): Promise<void> {
+    const [current] = await this.db
+      .select({ version: tickets.version })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.orgId, actor.orgId),
+          eq(tickets.projectId, projectId),
+          eq(tickets.id, ticketId),
+          isNull(tickets.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!current) throw new NotFoundException("Ticket not found");
+    await this.ticketChange().updateTicket(actor, projectId, ticketId, { ...change, version: current.version });
+  }
+
+  private async resolveLabelId(orgId: string, labelRef: string): Promise<number> {
+    const byId = labelIdRef(labelRef);
+    const [label] = await this.db
+      .select({ id: ticketLabels.id })
+      .from(ticketLabels)
+      .where(
+        and(
+          eq(ticketLabels.orgId, orgId),
+          byId === null ? eq(ticketLabels.name, labelRef) : eq(ticketLabels.id, byId),
+        ),
+      )
+      .limit(1);
+    if (!label) throw new NotFoundException(`Label "${labelRef}" not found`);
+    return label.id;
   }
 
   async execute(
     orgId: string,
     projectId: number,
     ticketId: number,
-    ruleId: number,
     action: StoredAction,
     authorId: string | null,
   ): Promise<void> {
-    const ticketWhere = and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt));
+    const actor = systemActor("build.automation.apply-action", orgId, authorId ?? undefined);
     switch (action.type) {
-      case "set_status": {
-        const statusExists = await this.db.query.projectStatuses.findFirst({
-          where: and(
-            eq(projectStatuses.orgId, orgId),
-            eq(projectStatuses.projectId, projectId),
-            eq(projectStatuses.name, action.value),
-          ),
-          columns: { id: true },
-        });
-        if (!statusExists) {
-          logger.warn("BuildAutomationActionExecutor: set_status skipped — status does not exist in project", {
-            ruleId,
-            projectId,
-            orgId,
-            status: action.value,
-          });
-          return;
-        }
-        await this.db.transaction(async tx => {
-          await reserveTicketCapacity(tx, orgId, projectId, [{ status: action.value, count: 1 }], [ticketId]);
-          await tx.update(tickets)
-            .set({ status: action.value, updatedAt: new Date() })
-            .where(ticketWhere);
+      case "set_status":
+        await this.changeTicket(actor, projectId, ticketId, { status: action.value });
+        return;
+      case "set_priority":
+        if (!isTicketPriority(action.value))
+          throw new BadRequestException(`Invalid priority "${action.value}"`);
+        await this.changeTicket(actor, projectId, ticketId, { priority: action.value });
+        return;
+      case "set_assignee":
+        await this.changeTicket(actor, projectId, ticketId, { assigneeId: action.value });
+        return;
+      case "add_label":
+        await this.labels.addTicketLabel(actor, projectId, ticketId, {
+          labelId: await this.resolveLabelId(orgId, action.value),
         });
         return;
-      }
-      case "set_assignee": {
-        await this.db
-          .update(tickets)
-          .set({
-            assigneeMembershipId: (await this.db.query.organizationMembers.findFirst({
-              where: and(
-                eq(organizationMembers.orgId, orgId),
-                eq(organizationMembers.userId, action.value),
-                eq(organizationMembers.status, "ACTIVE"),
-              ),
-              columns: { id: true },
-            }))?.id ?? null,
-            updatedAt: new Date(),
-          })
-          .where(ticketWhere);
+      case "add_comment":
+        if (!authorId) throw new BadRequestException("Automation rule has no author to post the comment as");
+        await this.comments.addComment(actor, projectId, ticketId, { content: action.value });
         return;
-      }
-      case "set_priority": {
-        if (!isTicketPriority(action.value)) {
-          logger.warn("BuildAutomationActionExecutor: invalid priority value, skipping", {
-            value: action.value,
-            ticketId,
-          });
-          return;
-        }
-        await this.db
-          .update(tickets)
-          .set({ priority: action.value, updatedAt: new Date() })
-          .where(ticketWhere);
-        return;
-      }
-      case "add_label": {
-        await this.applyLabel(orgId, ticketId, action.value);
-        return;
-      }
-      case "add_comment": {
-        if (!authorId) {
-          logger.warn("BuildAutomationActionExecutor: add_comment skipped, automation has no authorId", {
-            ticketId,
-          });
-          return;
-        }
-        await this.db
-          .insert(ticketComments)
-          .values({ orgId, ticketId, userId: authorId, content: action.value });
-        return;
-      }
     }
   }
 }

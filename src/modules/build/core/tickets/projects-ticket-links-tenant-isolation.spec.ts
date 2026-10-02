@@ -3,6 +3,12 @@ import { NotFoundException } from "@nestjs/common";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { assertTicketReadAccess } from "../project-crud/project-access";
+
+jest.mock("../project-crud/project-access", () => ({
+  ...jest.requireActual("../project-crud/project-access"),
+  assertTicketReadAccess: jest.fn(),
+}));
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -26,26 +32,21 @@ function makeCtx(orgId: string): CurrentUserContext {
 describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
   const access = { scopeFor: jest.fn().mockResolvedValue("all"), resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
 
+  beforeEach(() => {
+    jest.mocked(assertTicketReadAccess).mockResolvedValue(undefined as never);
+  });
+
   it("getGitLinks throws NotFoundException when project not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
-    const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
-        tickets: { findFirst: jest.fn().mockResolvedValue(undefined) },
-      },
-    } as unknown as Db;
+    jest.mocked(assertTicketReadAccess).mockRejectedValueOnce(new NotFoundException("Ticket not found"));
+    const db = {} as unknown as Db;
     const svc = new ProjectsTicketLinksService(db, access);
 
-    await expect(svc.getGitLinks(ATTACKER_ORG, 1, 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.getGitLinks(makeCtx(ATTACKER_ORG), 1, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("getGitLinks returns links for the owning org (control — same-tenant access works)", async () => {
     const fakeLink = { id: 1, provider: "github", refType: "pr", externalId: "123", title: "Fix", url: "https://github.com/x", author: null, status: null, createdAt: new Date() };
-    let qCall = 0;
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
-        tickets: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
-      },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeLink]) }) }),
@@ -54,7 +55,7 @@ describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new ProjectsTicketLinksService(db, access);
 
-    const result = await svc.getGitLinks(OWNER_ORG, 1, 1);
+    const result = await svc.getGitLinks(makeCtx(OWNER_ORG), 1, 1);
     expect(result).toHaveLength(1);
   });
 });
@@ -62,14 +63,17 @@ describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
 describe("ProjectsTicketRelationsService — cross-tenant isolation", () => {
   const access = { scopeFor: jest.fn().mockResolvedValue("all"), resolveUserPermissions: jest.fn() };
 
+  beforeEach(() => {
+    jest.mocked(assertTicketReadAccess).mockResolvedValue(undefined as never);
+  });
+
   it("assertTicketReadAccess throws NotFoundException when ticket not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
-    const ticketSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) });
+    jest.mocked(assertTicketReadAccess).mockRejectedValueOnce(new NotFoundException("Ticket not found"));
     const db = {
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
         workItemRelations: { findMany: jest.fn().mockResolvedValue([]) },
       },
-      select: ticketSelect,
     } as unknown as Db;
     const svc = new ProjectsTicketRelationsService(db, access);
 
@@ -78,13 +82,11 @@ describe("ProjectsTicketRelationsService — cross-tenant isolation", () => {
   });
 
   it("listRelations works within the owning org (control — same-tenant access works)", async () => {
-    const ticketSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 1, allowed: true }]) }) }) });
     const db = {
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
         workItemRelations: { findMany: jest.fn().mockResolvedValue([]) },
       },
-      select: ticketSelect,
     } as unknown as Db;
     const svc = new ProjectsTicketRelationsService(db, access);
 

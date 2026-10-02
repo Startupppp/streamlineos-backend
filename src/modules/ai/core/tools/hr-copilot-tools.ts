@@ -168,6 +168,8 @@ export class HrCopilotTools implements AskOsToolProvider {
         permission: "hr:analytics:read",
         module: "hr",
         run: async ({ departmentId }, ctx) => {
+          if (!ctx.read.unrestricted) return denied("hr:analytics:read");
+
           const { orgId } = ctx.actor;
 
           const rows = await this.db.execute(sql`

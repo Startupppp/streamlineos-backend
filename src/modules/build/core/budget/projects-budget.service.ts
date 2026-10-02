@@ -1,11 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { organizationMembers, projectMembers, projects, tickets, timesheets } from "../../../../db/schema";
+import { organizationMembers, projects, tickets, timesheets } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { UpdateBudgetInput } from "../dto/projects.schemas";
+import { assertProjectAccess } from "../project-crud/project-access";
 
 const MINOR_UNITS_PER_MAJOR = 100;
 
@@ -54,51 +55,6 @@ export class ProjectsBudgetService {
     private readonly access: AccessService,
   ) {}
 
-  private async assertProjectAccess(
-    u: CurrentUserContext,
-    projectId: number,
-  ): Promise<{
-    id: number;
-    budgetMinor: number | null;
-    budgetCurrency: string | null;
-  }> {
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isOwnerOrAdmin = perms.has("build:manage");
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
-      columns: {
-        id: true,
-        budgetMinor: true,
-        budgetCurrency: true,
-        managerMembershipId: true,
-      },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-
-    const callerMembershipId = u.principal.kind === "human-session" || u.principal.kind === "personal-token"
-      ? u.principal.membershipId
-      : null;
-    if (!isOwnerOrAdmin && project.managerMembershipId !== callerMembershipId) {
-      const memberOf = await this.db
-        .select({ projectId: projectMembers.projectId })
-        .from(projectMembers)
-        .where(
-          and(
-            eq(projectMembers.orgId, u.orgId),
-            eq(projectMembers.membershipId, callerMembershipId ?? -1),
-            eq(projectMembers.projectId, projectId),
-          ),
-        );
-      if (memberOf.length === 0) throw new NotFoundException("Not found");
-    }
-
-    return {
-      id: project.id,
-      budgetMinor: project.budgetMinor,
-      budgetCurrency: project.budgetCurrency,
-    };
-  }
-
   /**
    * Spent-to-date on a project.
    *
@@ -119,7 +75,12 @@ export class ProjectsBudgetService {
    * now agrees with them.
    */
   async getBudget(u: CurrentUserContext, projectId: number) {
-    const project = await this.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const project = await this.db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
+      columns: { budgetMinor: true, budgetCurrency: true },
+    });
+    if (!project) throw new NotFoundException("Project not found");
     const orgId = u.orgId;
 
     // Voided entries are excluded here as they are on every other money surface
@@ -246,7 +207,7 @@ export class ProjectsBudgetService {
   }
 
   async updateBudget(u: CurrentUserContext, projectId: number, input: UpdateBudgetInput) {
-    await this.assertProjectAccess(u, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     const [updated] = await this.db
       .update(projects)

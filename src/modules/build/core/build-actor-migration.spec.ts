@@ -34,6 +34,8 @@ jest.mock("../../../common/organization/organization-actor", () => ({
 jest.mock("./project-crud/project-access", () => ({
   resolveProjectAssignableMemberships: jest.fn(),
   resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: null }),
+  assertProjectVisible: jest.fn().mockResolvedValue(undefined),
+  lockProjectTicketMutation: jest.fn().mockResolvedValue(undefined),
 }));
 
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({

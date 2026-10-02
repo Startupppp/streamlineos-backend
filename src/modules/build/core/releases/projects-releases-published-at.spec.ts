@@ -231,6 +231,7 @@ describe("ProjectsReleasesService — publishedAt writer", () => {
     const result = await svc.updateRelease(makeU(), PROJECT_ID, RELEASE_DRAFT, {
       status: "released",
       rowVersion: 1,
+      releaseDate: null,
     });
 
     expect(result.publishedAt).toBeInstanceOf(Date);
@@ -246,6 +247,7 @@ describe("ProjectsReleasesService — publishedAt writer", () => {
       name: "already-released-renamed",
       status: "released",
       rowVersion: 2,
+      releaseDate: null,
     });
 
     expect(result.publishedAt).toEqual(KNOWN_PUBLISHED_AT);
@@ -259,6 +261,7 @@ describe("ProjectsReleasesService — publishedAt writer", () => {
     const result = await svc.updateRelease(makeU(), PROJECT_ID, RELEASE_RELEASED, {
       status: "draft",
       rowVersion: 2,
+      releaseDate: null,
     });
 
     expect(result.publishedAt).toEqual(KNOWN_PUBLISHED_AT);
@@ -272,6 +275,7 @@ describe("ProjectsReleasesService — publishedAt writer", () => {
     const result = await svc.updateRelease(makeU(), PROJECT_ID, RELEASE_DRAFT, {
       name: "draft-release-renamed",
       rowVersion: 1,
+      releaseDate: null,
     });
 
     expect(result.publishedAt).toBeNull();

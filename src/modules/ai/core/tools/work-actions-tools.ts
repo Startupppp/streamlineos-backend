@@ -10,6 +10,7 @@ import { resolvePeopleByName } from "../../../directory/person-seam";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadIdIs } from "../../../leads/lead-party-reader";
 import { ticketScope } from "../../../build/core/tickets";
+import { reachableTicketProjectsSql } from "../../../build/reachability/project-reachability";
 import {
   defineTool,
   ambiguous,
@@ -136,13 +137,13 @@ export class WorkActionsTools implements AskOsToolProvider {
         confirms: "ticket.assign",
         module: "build",
         run: async ({ ticketId, assigneeName }, ctx) => {
-          const { orgId, userId } = ctx.actor;
+          const { orgId, userId, membershipId } = ctx.actor;
 
           const ticketRows = await ctx.read.read(
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
             },
             ({ sql: where }) =>
               this.db
@@ -195,13 +196,13 @@ export class WorkActionsTools implements AskOsToolProvider {
         confirms: "ticket.moveToCycle",
         module: "build",
         run: async ({ ticketId, cycleName }, ctx) => {
-          const { orgId, userId } = ctx.actor;
+          const { orgId, userId, membershipId } = ctx.actor;
 
           const ticketRows = await ctx.read.read(
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
             },
             ({ sql: where }) =>
               this.db

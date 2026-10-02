@@ -2,6 +2,7 @@ import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
+import { WebhookEndpointService } from "../../../integrations/core/webhook-endpoint.service";
 import { TicketVersionConflictException } from "../tickets/ticket-version-conflict.exception";
 import { createWebhookSchema, updateWebhookSchema } from "../dto/webhook.schemas";
 import { projectWebhookSchema } from "../dto/build-core-response.schemas";
@@ -46,14 +47,25 @@ async function webhooksService(
   const returning = jest.fn().mockResolvedValue([returnedRow({ version: 1 })]);
   const values = jest.fn().mockReturnValue({ returning });
   const insert = jest.fn().mockReturnValue({ values });
-  const db = {
+  const db: Record<string, unknown> = {
     select,
     update,
     insert,
     query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID }) } },
   };
+  db.transaction = jest.fn().mockImplementation((cb: (tx: unknown) => unknown) => cb(db));
+  const webhookEndpoint = {
+    createCredential: jest.fn().mockResolvedValue({ id: 55, secretSetAt: new Date("2026-09-28T00:00:00.000Z") }),
+    deleteCredential: jest.fn().mockResolvedValue(undefined),
+    deliveryStats: jest.fn().mockResolvedValue(new Map()),
+    listDeliveries: jest.fn().mockResolvedValue([]),
+  } as unknown as WebhookEndpointService;
   const module = await Test.createTestingModule({
-    providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }],
+    providers: [
+      ProjectsWebhooksService,
+      { provide: DRIZZLE, useValue: db as unknown as Record<string, unknown> },
+      { provide: WebhookEndpointService, useValue: webhookEndpoint },
+    ],
   }).compile();
   return { service: module.get(ProjectsWebhooksService), module, select, update, set, values, returning, updateReturning };
 }
@@ -207,9 +219,8 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       url: "https://example.com/hook",
       events: ["ticket.created"],
     });
-    const written = values.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(written.secretSetAt).toBeInstanceOf(Date);
-    expect(written.secret).toEqual(expect.any(String));
+    const webhookInsert = values.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(webhookInsert.secretSetAt).toBeInstanceOf(Date);
     await module.close();
   });
 
@@ -243,7 +254,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
     await module.close();
   });
 
-  it("derives hasSecret from a secret IS NOT NULL predicate rather than a stored flag", async () => {
+  it("derives hasSecret from an integrations_endpoint_id IS NOT NULL predicate rather than a stored flag", async () => {
     const { service, module, returning } = await webhooksService(1);
     await service.createWebhook(ORG, PROJECT_ID, "user-1", {
       url: "https://example.com/hook",
@@ -260,7 +271,7 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       })
       .join("");
     expect(rendered).toContain("IS NOT NULL");
-    expect(rendered).toContain("secret");
+    expect(rendered).toContain("integrations_endpoint_id");
     await module.close();
   });
 
@@ -311,7 +322,14 @@ describe("webhook secret age is expressible without exposing the secret", () => 
       }),
     };
     const module = await Test.createTestingModule({
-      providers: [ProjectsWebhooksService, { provide: DRIZZLE, useValue: db }],
+      providers: [
+        ProjectsWebhooksService,
+        { provide: DRIZZLE, useValue: db },
+        {
+          provide: WebhookEndpointService,
+          useValue: { deliveryStats: jest.fn().mockResolvedValue(new Map()) },
+        },
+      ],
     }).compile();
     await module.get(ProjectsWebhooksService).listWebhooks(ORG, PROJECT_ID);
 

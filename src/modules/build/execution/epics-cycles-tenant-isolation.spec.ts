@@ -3,6 +3,7 @@ import { NotFoundException } from "@nestjs/common";
 import { EpicsService } from "./epics.service";
 import { CyclesService } from "./cycles.service";
 import { epicRowSchema } from "./dto/execution-response.schemas";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 
 type TxHandle = { insert: jest.Mock; execute: jest.Mock };
 
@@ -26,7 +27,7 @@ describe("EpicsService — cross-tenant isolation", () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const projectFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = { query: { projects: { findFirst: projectFindFirst }, tickets: { findMany } } } as unknown as Db;
-    const svc = new EpicsService(db);
+    const svc = new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
     await expect(svc.listEpics(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
 
@@ -47,7 +48,7 @@ describe("EpicsService — cross-tenant isolation", () => {
       },
       select: jest.fn().mockReturnValue({ from: relFrom }),
     } as unknown as Db;
-    const svc = new EpicsService(db);
+    const svc = new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
     const page = await svc.listEpics(OWNER_ORG, 1);
     expect(page.data).toHaveLength(1);
@@ -64,9 +65,9 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
       query: { projects: { findFirst: projectFindFirst } },
       transaction,
     } as unknown as Db;
-    const svc = new EpicsService(db);
+    const svc = new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
-    await expect(svc.createEpic(ATTACKER_ORG, "u1", 1, { title: "Epic" })).rejects.toThrow(NotFoundException);
+    await expect(svc.createEpic(ATTACKER_ORG, "u1", 1, { title: "Epic", startDate: undefined, dueDate: undefined })).rejects.toThrow(NotFoundException);
 
     expect(transaction).not.toHaveBeenCalled();
     const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
@@ -81,31 +82,30 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
       query: { projects: { findFirst: projectFindFirst } },
       transaction,
     } as unknown as Db;
-    const svc = new EpicsService(db);
+    const svc = new EpicsService(db, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
-    await expect(svc.createEpic(OWNER_ORG, "u1", 999, { title: "Epic" })).rejects.toThrow(NotFoundException);
+    await expect(svc.createEpic(OWNER_ORG, "u1", 999, { title: "Epic", startDate: undefined, dueDate: undefined })).rejects.toThrow(NotFoundException);
 
     expect(transaction).not.toHaveBeenCalled();
   });
 
   it("creates the epic when the project belongs to the caller's org (own project)", async () => {
     const fakeEpic = { id: 1, orgId: OWNER_ORG, title: "Epic", type: "EPIC" };
-    const returning = jest.fn().mockResolvedValue([fakeEpic]);
-    const values = jest.fn().mockReturnValue({ returning });
-    const insert = jest.fn().mockReturnValue({ values });
-    const execute = jest.fn().mockResolvedValue([{ start: 1 }]);
-    const tx: TxHandle = { insert, execute };
+    const ticketCreation = {
+      create: jest.fn().mockResolvedValue({ tickets: [fakeEpic], command: {} }),
+      createInTransaction: jest.fn(),
+      publish: jest.fn(),
+    } as unknown as BuildTicketCreationService;
     const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
     const db = {
       query: { projects: { findFirst: projectFindFirst } },
-      transaction: jest.fn().mockImplementation((cb: (handle: TxHandle) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
-    const svc = new EpicsService(db);
+    const svc = new EpicsService(db, ticketCreation, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
 
-    const result = await svc.createEpic(OWNER_ORG, "u1", 1, { title: "Epic" });
+    const result = await svc.createEpic(OWNER_ORG, "u1", 1, { title: "Epic", startDate: undefined, dueDate: undefined });
 
     expect(result).toEqual(fakeEpic);
-    expect(insert).toHaveBeenCalled();
+    expect(ticketCreation.create).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -241,7 +241,7 @@ describe("CyclesService — cross-project scope within one org — updateCycle",
     } as unknown as Db;
     const svc = new CyclesService(db);
 
-    await svc.updateCycle(OWNER_ORG, 7, 99, { version: 1, name: "Renamed" });
+    await svc.updateCycle(OWNER_ORG, 7, 99, { version: 1, name: "Renamed", startDate: undefined, endDate: undefined });
 
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(7);
   });
@@ -254,7 +254,7 @@ describe("CyclesService — cross-project scope within one org — updateCycle",
     } as unknown as Db;
     const svc = new CyclesService(db);
 
-    await expect(svc.updateCycle(ATTACKER_ORG, 7, 99, { name: "Renamed", version: 1 })).rejects.toThrow(NotFoundException);
+    await expect(svc.updateCycle(ATTACKER_ORG, 7, 99, { name: "Renamed", version: 1, startDate: undefined, endDate: undefined })).rejects.toThrow(NotFoundException);
     expect(db.update).not.toHaveBeenCalled();
   });
 });

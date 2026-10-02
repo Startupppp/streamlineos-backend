@@ -30,8 +30,8 @@ jest.mock("../../../common/org/provision-org-modules", () => ({
 jest.mock("../../../common/org/provision-employee-self-service", () => ({
   provisionEmployeeSelfService: jest.fn().mockResolvedValue(undefined),
 }));
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../../common/auth/membership-state.service", () => ({
   bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),

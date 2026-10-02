@@ -6,8 +6,8 @@ import { PERMISSIONS } from "../permissions";
 jest.mock("../seed-system-roles", () => ({
   seedSystemRolesForOrg: jest.fn().mockResolvedValue(undefined),
 }));
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: jest.fn(

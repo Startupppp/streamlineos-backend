@@ -5,6 +5,7 @@ import {
 } from "../../../../common/http/api-exceptions";
 import { ProjectsQueryService } from "./projects-query.service";
 import { resolveProjectAccess } from "./project-access";
+import { projectDetailSchema } from "../dto/build-project-detail-response.schemas";
 import type { Db } from "../../../../db/drizzle.module";
 import type { AccessService } from "../../../access/access.service";
 import type { AuditService } from "../../../../common/audit/audit.service";
@@ -132,5 +133,49 @@ describe("ProjectsQueryService.getProject — routes the access check through re
     await svc.getProject(makeUser(), 6);
 
     expect(db.select).not.toHaveBeenCalled();
+  });
+});
+
+const NOW = new Date("2026-09-15T10:00:00.000Z");
+
+describe("projectDetailSchema accepts the shape getProject returns", () => {
+  const baseProject = {
+    id: 1,
+    orgId: "org-1",
+    name: "P",
+    description: null,
+    key: "PRJ-001",
+    clientMembershipId: null,
+    managerMembershipId: null,
+    startDate: null,
+    endDate: null,
+    status: "ACTIVE" as const,
+    priority: null,
+    dealId: null,
+    managedProductId: null,
+    budget: null,
+    budgetMinor: null,
+    budgetCurrency: null,
+    settings: null,
+    deletedAt: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    statuses: [],
+    members: [],
+  };
+
+  it("accepts getProject output when crmClient is null so every project detail page parses correctly", () => {
+    expect(() => projectDetailSchema.parse({ ...baseProject, crmClient: null })).not.toThrow();
+  });
+
+  it("accepts getProject output when crmClient carries id and name so linked-client projects parse correctly", () => {
+    expect(() =>
+      projectDetailSchema.parse({ ...baseProject, crmClient: { id: 42, name: "Acme Ltd" } })
+    ).not.toThrow();
+  });
+
+  it("preserves crmClient in the parsed value so the FE can render the linked client without a second request", () => {
+    const parsed = projectDetailSchema.parse({ ...baseProject, crmClient: { id: 7, name: "Corp" } });
+    expect(parsed.crmClient).toEqual({ id: 7, name: "Corp" });
   });
 });

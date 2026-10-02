@@ -16,24 +16,47 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 describe("BuildEntityReadsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
+  const MEMBERSHIP_ID = 55;
 
-  function makeDb(memberRows: unknown[]) {
-    const where = jest.fn().mockResolvedValue(memberRows);
-    const from = jest.fn().mockReturnValue({ where });
-    const select = jest.fn().mockReturnValue({ from });
-    return { db: { select } as unknown as Db, where };
+  function makeDb(membershipResult: { id: number }[], projectRows: unknown[]) {
+    let callCount = 0;
+    let membershipWhere: unknown;
+
+    const select = jest.fn().mockImplementation(() => {
+      callCount++;
+      const idx = callCount;
+
+      if (idx === 1) {
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockImplementation((arg: unknown) => {
+              membershipWhere = arg;
+              return { limit: jest.fn().mockResolvedValue(membershipResult) };
+            }),
+          }),
+        };
+      }
+
+      return {
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(projectRows),
+        }),
+      };
+    });
+
+    return { db: { select } as unknown as Db, getMembershipWhere: () => membershipWhere };
   }
 
-  it("scopes memberProjectIds to the attacker's org — returns empty set (cross-tenant isolation)", async () => {
-    const { db, where } = makeDb([]);
+  it("scopes memberProjectIds membership lookup to the attacker's org — cross-tenant user cannot match a membership in another org", async () => {
+    const { db, getMembershipWhere } = makeDb([], []);
     const svc = new BuildEntityReadsService(db);
     const result = await svc.memberProjectIds(ATTACKER_ORG, "u1", [1, 2, 3]);
     expect(result.size).toBe(0);
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+    expect(sqlValues(getMembershipWhere())).toContain(ATTACKER_ORG);
   });
 
-  it("returns member project IDs for the owning org (same-tenant control)", async () => {
-    const { db } = makeDb([{ projectId: 1 }, { projectId: 2 }]);
+  it("returns member project IDs for the owning org (same-tenant positive control)", async () => {
+    const { db } = makeDb([{ id: MEMBERSHIP_ID }], [{ projectId: 1 }, { projectId: 2 }]);
     const svc = new BuildEntityReadsService(db);
     const result = await svc.memberProjectIds(OWNER_ORG, "u1", [1, 2]);
     expect(result.size).toBe(2);

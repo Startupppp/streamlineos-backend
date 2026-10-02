@@ -397,6 +397,76 @@ describe("MeetingsService.listMeetings — server-side full-text search predicat
   });
 });
 
+describe("MeetingsService.getMeeting — attendees carry userId from the membership join", () => {
+  const MEETING = {
+    id: 3, orgId: "org-1", projectId: 1, meetingNumber: 1,
+    title: "Sprint Planning", type: "meeting" as const, status: "scheduled" as const,
+    agenda: null, notes: null, scheduledAt: null, endAt: null,
+    durationMinutes: null, timezone: null, recurrenceRule: null,
+    cycleId: null, createdBy: "user-1",
+    createdAt: new Date("2026-09-01T10:00:00Z"),
+    updatedAt: new Date("2026-09-01T10:00:00Z"),
+    deletedAt: null,
+  };
+  const ATTENDEE_BASE = { id: 1, orgId: "org-1", meetingId: 3, membershipId: 5, attended: false, createdAt: new Date("2026-09-01T10:00:00Z") };
+
+  function makeGetMeetingDb() {
+    let selectCall = 0;
+    function makeSimpleChain(rows: unknown[]) {
+      return {
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+            innerJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+            }),
+          }),
+        }),
+      };
+    }
+    return {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+        projectMeetings: { findFirst: jest.fn().mockResolvedValue(MEETING) },
+      },
+      select: jest.fn().mockImplementation(() => {
+        selectCall++;
+        if (selectCall === 1) return makeSimpleChain([{ role: "MEMBER" }]);
+        if (selectCall === 2) return makeSimpleChain([]);
+        if (selectCall === 3) {
+          return {
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([ATTENDEE_BASE]) }),
+              innerJoin: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ ...ATTENDEE_BASE, userId: "user-42" }]) }),
+              }),
+            }),
+          };
+        }
+        return makeSimpleChain([]);
+      }),
+    };
+  }
+
+  it("includes userId on each attendee so the display layer can match names without a second fetch", async () => {
+    const db = makeGetMeetingDb();
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const svc = new MeetingsService(db as unknown as Db, access, mockAudit);
+    const result = await svc.getMeeting(makeU("org-1"), 1, 3);
+    expect(result.attendees[0]).toHaveProperty("userId", "user-42");
+  });
+
+  it("returns exactly the attendees in the meeting, no extras from the join", async () => {
+    const db = makeGetMeetingDb();
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const svc = new MeetingsService(db as unknown as Db, access, mockAudit);
+    const result = await svc.getMeeting(makeU("org-1"), 1, 3);
+    expect(result.attendees).toHaveLength(1);
+    expect(result.attendees[0]).toHaveProperty("userId", "user-42");
+  });
+});
+
 describe("MeetingsService — project membership gate (assertProjectAccess)", () => {
   function makeNonMemberDb() {
     const limit = jest.fn().mockResolvedValue([]);

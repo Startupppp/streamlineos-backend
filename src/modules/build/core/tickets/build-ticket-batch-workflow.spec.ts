@@ -1,7 +1,7 @@
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.types";
-import type { readMutationTickets } from "../lib/build-ticket-mutation-policy";
+import type { readMutationTickets } from "../project-crud/project-access";
 import { validateBatchTransition, emitBatchStatusChanges } from "./build-ticket-batch-workflow";
 
 jest.mock("../lib/build-ticket-capacity", () => ({

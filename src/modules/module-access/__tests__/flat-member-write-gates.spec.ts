@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
+import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessFlatMembersService } from "../module-access-flat-members.service";
 import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
@@ -98,9 +99,9 @@ describe("flat-member writes — every method runs the write gate", () => {
     expect(db.select).not.toHaveBeenCalled();
   });
 
-  it.each(calls)("%s refuses a module the org has not enabled", async (_name, call) => {
+  it.each(calls)("%s refuses a module the org has not enabled with 402, not 403", async (_name, call) => {
     const { svc } = await buildService(false);
-    await expect(call(svc, "hr")).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(call(svc, "hr")).rejects.toBeInstanceOf(ModuleDisabledException);
   });
 });
 

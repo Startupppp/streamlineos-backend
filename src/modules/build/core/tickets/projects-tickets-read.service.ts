@@ -24,10 +24,10 @@ import {
 import { keysetAfterValue } from "../../../../common/pagination/keyset";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { resolveTicketsScope, ticketScope } from "../lib/tickets-scope";
+import { ticketScope } from "../lib/tickets-scope";
 import type { TicketsListQuery } from "../dto/projects.schemas";
 import { queryTickets } from "./projects-tickets-read.query";
-import { resolveProjectAccess } from "../project-crud/project-access";
+import { authorizeProjectTicketRead } from "../project-crud/project-access";
 import { ProjectAccessCache, getOrCreateRequestCache } from "../../reachability/project-access-cache";
 
 const TRIGRAM_MIN_TERM_LENGTH = 3;
@@ -138,12 +138,7 @@ export class ProjectsTicketsReadService {
     query: TicketsListQuery,
     cache: ProjectAccessCache = getOrCreateRequestCache(),
   ) {
-    const { hasAccess } = await cache.get(u.orgId, u.userId, projectId, () =>
-      resolveProjectAccess(this.db, this.access, u, projectId),
-    );
-    if (!hasAccess) throw new NotFoundException("Not found");
-
-    const read = await resolveTicketsScope(this.access, u);
+    const read = await authorizeProjectTicketRead(this.db, this.access, u, projectId, cache);
 
     const {
       limit,
@@ -383,12 +378,7 @@ export class ProjectsTicketsReadService {
     query: TicketsListQuery = { limit: 50, orderBy: "rank" },
     cache: ProjectAccessCache = getOrCreateRequestCache(),
   ): Promise<Record<string, number>> {
-    const { hasAccess } = await cache.get(u.orgId, u.userId, projectId, () =>
-      resolveProjectAccess(this.db, this.access, u, projectId),
-    );
-    if (!hasAccess) throw new NotFoundException("Not found");
-
-    const read = await resolveTicketsScope(this.access, u);
+    const read = await authorizeProjectTicketRead(this.db, this.access, u, projectId, cache);
     if (read.denied) return {};
 
     const filterConditions: SQL<unknown>[] = [];

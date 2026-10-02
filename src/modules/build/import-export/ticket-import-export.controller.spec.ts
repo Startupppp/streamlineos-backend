@@ -18,6 +18,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import type { Db } from "../../../db/drizzle.types";
+import type { BuildTicketCreationService } from "../core/tickets";
 import { TICKETS_PERMISSION } from "../core/tickets";
 import { IMPORT_PERMISSION } from "./import-export.constants";
 import { TicketImportService } from "./ticket-import.service";
@@ -125,12 +126,26 @@ function makeFences() {
   } as unknown as CommandFenceStore;
 }
 
+function makeTicketCreation(options: DbOptions = {}) {
+  return {
+    createInTransaction: jest.fn().mockImplementation(
+      async (_tx: unknown, command: { drafts: readonly { orgId: string; projectId: number; title: string }[] }) => {
+        if (options.failEveryInsert)
+          throw new Error("duplicate key value violates unique constraint");
+        return { command, tickets: command.drafts.map((_d, i) => ({ id: 1000 + i })) };
+      },
+    ),
+    publish: jest.fn(),
+  } as unknown as BuildTicketCreationService;
+}
+
 function makeController(options: DbOptions = {}, scope: DataScope = "all") {
   const { db, state } = makeDb(options);
   const access = makeAccess(scope);
   const fences = makeFences();
+  const ticketCreation = makeTicketCreation(options);
   const controller = new TicketImportExportController(
-    new TicketImportService(db, access, fences),
+    new TicketImportService(db, access, fences, ticketCreation),
     new TicketExportService(db, access),
   );
   return { controller, state, fences, access };

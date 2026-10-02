@@ -8,10 +8,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../ownership/module-owner-role.helper", () => ({
@@ -126,14 +126,17 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
     const result = await svc.grantAdminStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
 
     expect(result).toEqual({ success: true });
-    expect(bumpPermissionsVersion).toHaveBeenCalled();
-    expect(auditLog).toHaveBeenCalledWith(
+    expect(commitAccessChange).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
       expect.objectContaining({
-        action: "module_access.standing_granted",
-        metadata: expect.objectContaining({
-          moduleKey: MODULE,
-          rank: ROLE_RANK.MODULE_ADMIN,
-          targetUserId: TARGET_USER,
+        audit: expect.objectContaining({
+          action: "module_access.standing_granted",
+          metadata: expect.objectContaining({
+            moduleKey: MODULE,
+            rank: ROLE_RANK.MODULE_ADMIN,
+            targetUserId: TARGET_USER,
+          }),
         }),
       }),
     );
@@ -164,7 +167,7 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
     await svc.grantAdminStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
 
     expect(txMock.insert).toHaveBeenCalledTimes(1);
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(txMock, ORG, expect.any(Object));
   });
 
   it("refuses if actor's rank does not permit granting MODULE_ADMIN", async () => {
@@ -255,11 +258,14 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
 
     expect(result).toEqual({ success: true });
     expect(txMock.delete).toHaveBeenCalled();
-    expect(bumpPermissionsVersion).toHaveBeenCalled();
-    expect(auditLog).toHaveBeenCalledWith(
+    expect(commitAccessChange).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
       expect.objectContaining({
-        action: "module_access.standing_revoked",
-        metadata: expect.objectContaining({ moduleKey: MODULE }),
+        audit: expect.objectContaining({
+          action: "module_access.standing_revoked",
+          metadata: expect.objectContaining({ moduleKey: MODULE }),
+        }),
       }),
     );
   });
@@ -287,7 +293,7 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
     await svc.revokeStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
 
     expect(txMock.delete).toHaveBeenCalledTimes(1);
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(txMock, ORG, expect.any(Object));
   });
 
   it("refuses to revoke the module owner's standing", async () => {
@@ -326,7 +332,7 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
 describe("ModuleStandingMutationsService.directTransferOwnership", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (bumpPermissionsVersion as jest.Mock).mockResolvedValue(undefined);
+    (commitAccessChange as jest.Mock).mockResolvedValue(undefined);
     revokeModuleOwnerRole.mockResolvedValue(undefined);
     assertModuleOwnerRoleAssigned.mockResolvedValue(undefined);
   });
@@ -396,7 +402,7 @@ describe("ModuleStandingMutationsService.directTransferOwnership", () => {
       MODULE,
       TARGET_MEMBERSHIP_ID,
     );
-    expect(bumpPermissionsVersion).toHaveBeenCalled();
+    expect(commitAccessChange).toHaveBeenCalled();
   });
 
   it("the outgoing owner's revoke, the incoming owner's grant and the version bump all run on one transaction handle", async () => {
@@ -414,7 +420,7 @@ describe("ModuleStandingMutationsService.directTransferOwnership", () => {
       MODULE,
       TARGET_MEMBERSHIP_ID,
     );
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
+    expect(commitAccessChange).toHaveBeenCalledWith(txMock, ORG, expect.any(Object));
   });
 
   it("the transaction mock must invoke its callback — all assertions inside run", async () => {

@@ -46,14 +46,28 @@ export const projectRowSchema = z.object({
   managerMembershipId: z.number().int().nullable(),
   startDate: nullableWireDate(),
   endDate: nullableWireDate(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.project_status),
   priority: z.string().nullable(),
   dealId: z.number().int().nullable(),
   managedProductId: z.number().int().nullable(),
   budget: z.string().nullable(),
   budgetMinor: z.number().int().nullable(),
   budgetCurrency: z.string().nullable(),
-  settings: z.unknown(),
+  settings: z.object({
+    modules: z.object({
+      sprints: z.boolean().optional(),
+      epics: z.boolean(),
+      timeTracking: z.boolean(),
+      wiki: z.boolean(),
+    }),
+    projectType: z.string().optional(),
+    workflow: z.string().optional(),
+    features: z.record(z.string(), z.boolean()).optional(),
+    iterations: z.object({
+      defaultDurationWeeks: z.number(),
+      namingPrefix: z.string(),
+    }).optional(),
+  }).nullable(),
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
@@ -62,5 +76,6 @@ export const projectRowSchema = z.object({
 export const projectDetailSchema = projectRowSchema.extend({
   statuses: z.array(projectStatusSchema),
   members: z.array(projectMemberDetailSchema),
+  crmClient: z.object({ id: z.number().int(), name: z.string() }).nullable(),
 });
 

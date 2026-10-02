@@ -1,4 +1,5 @@
 import { EpicsService } from "./epics.service";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 import { decodeTimestampCursor, encodeCursor } from "../../../common/pagination/cursor";
 import type { Db } from "../../../db/drizzle.module";
 

@@ -16,8 +16,8 @@ jest.mock("./seed-system-roles", () => ({
   seedSystemRolesForOrg: jest.fn().mockResolvedValue({ created: 0 }),
 }));
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";

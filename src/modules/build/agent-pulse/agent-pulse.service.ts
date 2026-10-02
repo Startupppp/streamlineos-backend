@@ -9,13 +9,15 @@ import {
   projectMilestones,
   projectRisks,
   projects,
-  ticketComments,
   tickets,
   workItemRelations,
 } from "../../../db/schema";
 import type { AgentPulseSignal } from "./dto/agent-pulse.schema";
 import { COMMENT_DRAFT_MAX_RETRIES } from "../comment-drafts/comment-drafts.constants";
 import { parseRecordIds } from "../comment-draft-record-ids";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { ProjectsTicketCommentsService } from "../core/tickets";
 
 const DEPENDENCY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 const COMMENT_DRAFT_MIN_CONFIDENCE = 50;
@@ -27,7 +29,10 @@ interface AgentPulseScope {
 
 @Injectable()
 export class AgentPulseService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly comments: ProjectsTicketCommentsService,
+  ) {}
 
   async getTopSignal(
     orgId: string,
@@ -207,11 +212,10 @@ export class AgentPulseService {
   }
 
   async applyDraft(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
+    u: CurrentUserContext,
     draftId: number,
   ): Promise<{ commentId: number; ticketId: number }> {
+    const membershipId = actingMembershipId(u.principal);
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
 
     const [draft] = await this.db
@@ -219,38 +223,24 @@ export class AgentPulseService {
       .from(commentDrafts)
       .where(and(
         eq(commentDrafts.id, draftId),
-        eq(commentDrafts.orgId, orgId),
+        eq(commentDrafts.orgId, u.orgId),
         eq(commentDrafts.membershipId, membershipId),
       ))
       .limit(1);
 
     if (!draft) throw new NotFoundException("Draft not found");
 
-    const [ticket] = await this.db
-      .select({ id: tickets.id })
-      .from(tickets)
-      .where(and(eq(tickets.id, draft.ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
-      .limit(1);
+    const saved = await this.comments.addComment(u, null, draft.ticketId, { content: draft.body });
 
-    if (!ticket) throw new NotFoundException("Ticket not found");
+    await this.db
+      .delete(commentDrafts)
+      .where(and(
+        eq(commentDrafts.id, draftId),
+        eq(commentDrafts.orgId, u.orgId),
+        eq(commentDrafts.membershipId, membershipId),
+      ));
 
-    const commentId = await this.db.transaction(async (tx) => {
-      const [comment] = await tx
-        .insert(ticketComments)
-        .values({ orgId, ticketId: draft.ticketId, userId, content: draft.body })
-        .returning({ id: ticketComments.id });
-      if (!comment) throw new Error("Comment insert returned no rows");
-      await tx
-        .delete(commentDrafts)
-        .where(and(
-          eq(commentDrafts.id, draftId),
-          eq(commentDrafts.orgId, orgId),
-          eq(commentDrafts.membershipId, membershipId),
-        ));
-      return comment.id;
-    });
-
-    return { commentId, ticketId: draft.ticketId };
+    return { commentId: saved.id, ticketId: draft.ticketId };
   }
 
   async countPendingSignals(orgId: string, membershipId: number | null): Promise<number> {

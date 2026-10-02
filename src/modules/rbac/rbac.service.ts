@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import {
   organizationMembers,
@@ -18,7 +18,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { markRoleAdministered } from "./mark-role-administered";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
@@ -165,7 +165,20 @@ export class RbacService {
           set: { scope: input.scope },
         });
       await markRoleAdministered(tx, actor.orgId, input.roleId);
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "role.permission.granted",
+          userId: actor.userId,
+          targetId: String(input.roleId),
+          targetType: "role",
+          metadata: { permissionKey: input.permissionKey },
+        },
+        revoke: {
+          cache: this.cache,
+          loses: [{ kind: "role-holders", roleId: input.roleId }],
+          listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+        },
+      });
     }, { orgId: actor.orgId });
 
     return { success: true };
@@ -197,7 +210,20 @@ export class RbacService {
           ),
         );
       await markRoleAdministered(tx, actor.orgId, input.roleId);
-      await bumpPermissionsVersion(tx, actor.orgId);
+      await commitAccessChange(tx, actor.orgId, {
+        audit: {
+          action: "role.permission.revoked",
+          userId: actor.userId,
+          targetId: String(input.roleId),
+          targetType: "role",
+          metadata: { permissionKey: input.permissionKey },
+        },
+        revoke: {
+          cache: this.cache,
+          loses: [{ kind: "role-holders", roleId: input.roleId }],
+          listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+        },
+      });
     }, { orgId: actor.orgId });
 
     return { success: true };

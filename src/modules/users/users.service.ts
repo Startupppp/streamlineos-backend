@@ -27,9 +27,7 @@ import type {
 import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { assertTargetNotOwner } from "../../common/rbac/assert-target-not-owner";
-import {
-  bustMembershipAfterIdentityErasure,
-} from "../../common/org/membership-bust";
+import { scheduleStandingRevocation } from "../../common/rbac/access-mutation-commit";
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -344,7 +342,7 @@ export class UsersService {
       .set({ isActive: false, userStatus: "deleted", deletedAt: new Date() })
       .where(eq(users.id, userId));
 
-    await bustMembershipAfterIdentityErasure(this.cache, userId);
+    await scheduleStandingRevocation(this.cache, [userId]);
     await this.invalidateMembershipCaches(orgId);
 
     this.audit.log({

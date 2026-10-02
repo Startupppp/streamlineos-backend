@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   HttpException,
   Inject,
   Injectable,
@@ -9,24 +8,23 @@ import {
 } from "@nestjs/common";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import {
-  projectMembers,
   projects,
   projectStatuses,
   tickets,
 } from "../../../../db/schema";
 import { bulkUpdateFromValues } from "../../../../common/db/bulk-update";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { lockProjectTicketMutation } from "../lib/build-ticket-mutation-policy";
+import { lockProjectTicketMutation } from "../project-crud/project-access";
 import { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 import { type Db } from "../../../../db/drizzle.module";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../../common/auth/principal";
 import type {
   BulkReorderStatesInput,
   CreateStateInput,
   UpdateCustomStateInput,
 } from "../dto/projects.schemas";
+import { assertCanManageProject } from "../project-crud/project-access";
 
 function statusTypeOf(type: string | null | undefined): string {
   return type ?? "unstarted";
@@ -38,37 +36,6 @@ export class ProjectsCustomStatesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
   ) {}
-
-  private async assertCanManageProject(
-    u: CurrentUserContext,
-    projectId: number,
-  ): Promise<void> {
-    if (u.isOrgOwner) return;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (perms.has("build:manage")) return;
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
-      columns: { managerMembershipId: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-    const callerMid = actingMembershipId(u.principal);
-    if (callerMid !== null && project.managerMembershipId === callerMid) return;
-    const membership = await this.db
-      .select({ role: projectMembers.role })
-      .from(projectMembers)
-      .where(
-        and(
-          eq(projectMembers.orgId, u.orgId),
-          eq(projectMembers.projectId, projectId),
-          eq(projectMembers.membershipId, callerMid ?? -1),
-        ),
-      )
-      .limit(1);
-    if (membership[0]?.role === "ADMIN") return;
-    throw new ForbiddenException(
-      "You do not have permission to manage this project",
-    );
-  }
 
   async listCustomStates(orgId: string, projectId: number) {
     return this.db
@@ -174,7 +141,7 @@ export class ProjectsCustomStatesService {
       )
       .limit(1);
     if (!existing) throw new NotFoundException("Status not found");
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     if (data.name !== undefined && data.name !== existing.name) {
       const [duplicate] = await this.db
@@ -240,7 +207,7 @@ export class ProjectsCustomStatesService {
     projectId: number,
     body: BulkReorderStatesInput,
   ) {
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     const current = await this.db
       .select({ id: projectStatuses.id, order: projectStatuses.order })
@@ -310,7 +277,7 @@ export class ProjectsCustomStatesService {
       )
       .limit(1);
     if (!existing) throw new NotFoundException("Status not found");
-    await this.assertCanManageProject(u, projectId);
+    await assertCanManageProject(this.db, this.access, u, projectId);
 
     const siblings = await this.db
       .select()

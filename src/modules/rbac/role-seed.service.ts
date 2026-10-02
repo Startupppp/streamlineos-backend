@@ -9,7 +9,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { rolePermissionGrants, roles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { ROLE_RANK } from "../../common/rbac/grantability";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
@@ -108,7 +108,7 @@ export class RoleSeedService {
         if (permValues.length > 0)
           await tx.insert(rolePermissionGrants).values(permValues);
 
-        await bumpPermissionsVersion(tx, orgId);
+        await commitAccessChange(tx, orgId);
       },
       { orgId },
     );
@@ -171,7 +171,7 @@ export class RoleSeedService {
           );
         }
 
-        await bumpPermissionsVersion(tx, orgId);
+        await commitAccessChange(tx, orgId);
       },
       { orgId },
     );

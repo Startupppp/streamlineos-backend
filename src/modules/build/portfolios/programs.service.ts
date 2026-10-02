@@ -29,6 +29,7 @@ import {
   keysetBeforeValue,
   microsecondCursorValue,
 } from "../../../common/pagination/keyset";
+import { assertProjectInOrg } from "../core";
 import type {
   CreateProgramInput,
   LinkedProjectsQuery,
@@ -125,21 +126,6 @@ export class ProgramsService {
       )
       .limit(1);
     if (!row) throw new NotFoundException("Portfolio not found");
-  }
-
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const [row] = await this.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(
-          eq(projects.id, projectId),
-          eq(projects.orgId, orgId),
-          isNull(projects.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!row) throw new BadRequestException("Project not found in org");
   }
 
   private async searchProgramIds(term: string): Promise<number[] | null> {
@@ -408,7 +394,7 @@ export class ProgramsService {
     input: LinkProjectInput,
   ) {
     await this.loadProgram(orgId, programId);
-    await this.assertProject(orgId, input.projectId);
+    await assertProjectInOrg(this.db, orgId, input.projectId);
     await this.db
       .insert(programProjects)
       .values({ orgId, programId, projectId: input.projectId })

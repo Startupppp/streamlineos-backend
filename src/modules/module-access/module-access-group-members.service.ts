@@ -12,10 +12,9 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AddModuleGroupMemberInput } from "./dto/module-access.schemas";
@@ -33,7 +32,6 @@ export class ModuleAccessGroupMembersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
-    private readonly audit: AuditService,
     private readonly groupPolicy: ModuleAccessGroupPolicyService,
   ) {}
 
@@ -119,21 +117,23 @@ export class ModuleAccessGroupMembersService {
             assignedByMembershipId: null,
           })
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "module_access.group_member_added",
+            userId: actor.userId,
+            targetId: String(groupId),
+            targetType: "role",
+            metadata: { moduleKey, targetUserId: input.userId },
+          },
+          revoke: {
+            cache: this.cache,
+            loses: [{ kind: "permissions", userIds: [input.userId] }],
+            listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+          },
+        });
       },
       { orgId: actor.orgId },
     );
-
-    await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-    await this.cache.invalidate(CACHE_KEYS.userSession(input.userId));
-    this.audit.log({
-      action: "module_access.group_member_added",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(groupId),
-      targetType: "role",
-      metadata: { moduleKey, targetUserId: input.userId },
-    });
     return { success: true };
   }
 
@@ -179,20 +179,23 @@ export class ModuleAccessGroupMembersService {
                 eq(roleAssignments.organizationMembershipId, member.id),
               ),
             );
-          await bumpPermissionsVersion(tx, actor.orgId);
+          await commitAccessChange(tx, actor.orgId, {
+            audit: {
+              action: "module_access.group_member_removed",
+              userId: actor.userId,
+              targetId: String(groupId),
+              targetType: "role",
+              metadata: { moduleKey, targetUserId: userId },
+            },
+            revoke: {
+              cache: this.cache,
+              loses: [{ kind: "permissions", userIds: [userId] }],
+              listKeys: [CACHE_KEYS.rolesList(actor.orgId)],
+            },
+          });
         },
         { orgId: actor.orgId },
       );
-      await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
-      await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-      this.audit.log({
-        action: "module_access.group_member_removed",
-        userId: actor.userId,
-        orgId: actor.orgId,
-        targetId: String(groupId),
-        targetType: "role",
-        metadata: { moduleKey, targetUserId: userId },
-      });
     }
 
     return { success: true };

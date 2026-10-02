@@ -21,7 +21,7 @@ import {
 } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { resolveProjectCounts } from "./portfolio-project-counts";
-import { escapeLike } from "../core";
+import { assertProjectInOrg, escapeLike } from "../core";
 import type {
   CreatePortfolioInput,
   LinkedProjectsQuery,
@@ -58,21 +58,6 @@ export class PortfoliosService {
       .limit(1);
     if (!row) throw new NotFoundException("Portfolio not found");
     return row;
-  }
-
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const [row] = await this.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(
-          eq(projects.id, projectId),
-          eq(projects.orgId, orgId),
-          isNull(projects.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!row) throw new BadRequestException("Project not found in org");
   }
 
   async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
@@ -348,7 +333,7 @@ export class PortfoliosService {
     input: LinkProjectInput,
   ) {
     await this.loadPortfolio(orgId, portfolioId);
-    await this.assertProject(orgId, input.projectId);
+    await assertProjectInOrg(this.db, orgId, input.projectId);
     await this.db
       .insert(portfolioProjects)
       .values({ orgId, portfolioId, projectId: input.projectId })

@@ -18,6 +18,11 @@ export const SYSTEM_JOBS = {
       "Posts the bank-disbursement journal when a payroll run is marked paid.",
     ceiling: ["accounting:journal:create", "accounting:journal:post"],
   },
+  "build.automation.apply-action": {
+    reason:
+      "Applies a project automation rule's actions through the canonical ticket, label and comment owners. Holds no project membership.",
+    ceiling: ["build:tickets:view", "build:tickets:update", "build:tickets:assign"],
+  },
   "integrations.git.webhook": {
     reason:
       "Moves a ticket when a signature-verified commit or pull request references it. Holds no project membership.",

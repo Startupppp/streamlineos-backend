@@ -214,6 +214,7 @@ describe("ProjectsReleasesService.updateRelease — outbox aggregateVersion scal
     await svc.updateRelease(makeU(), PROJECT_ID, RELEASE_DRAFT, {
       status: "released",
       rowVersion: RELEASE_ROW_VERSION,
+      releaseDate: null,
     });
 
     expect(outbox).toHaveLength(1);

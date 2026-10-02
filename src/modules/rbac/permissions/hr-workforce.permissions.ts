@@ -174,12 +174,14 @@ export const HR_WORKFORCE_PERMISSIONS: Permission[] = [
     resource: "hr:succession",
     action: "view",
     description: "View succession plans (sensitive)",
+    sensitive: true,
   },
   {
     name: "hr:succession:manage",
     resource: "hr:succession",
     action: "manage",
     description: "Manage succession plans (sensitive)",
+    sensitive: true,
   },
   {
     name: "hr:engagement:view",

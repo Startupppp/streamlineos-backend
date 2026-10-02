@@ -16,8 +16,8 @@ import { ACCESS_MANAGED_MODULES } from "../../../rbac/permissions";
 import { ForbiddenException } from "@nestjs/common";
 import { OutboxWakeSignal } from "../../../../common/outbox/outbox-wake.signal";
 
-jest.mock("../../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../../rbac/seed-system-roles", () => ({

@@ -500,6 +500,8 @@
     "check:request-txn-outbound:self-test": "node src/scripts/check-request-txn-outbound.mjs --self-test",
     "check:sweep-budget": "node src/scripts/check-sweep-budget.mjs",
     "check:sweep-budget:self-test": "node src/scripts/check-sweep-budget.mjs --self-test",
+    "check:rbac-matrix-ledger": "node src/scripts/check-rbac-matrix-ledger.mjs",
+    "check:rbac-matrix-ledger:self-test": "node src/scripts/check-rbac-matrix-ledger.mjs --self-test",
     "perf:benchmark-manifest:self-test": "node test/perf/measure-benchmark-manifest.mjs --self-test",
     "perf:heavy-query-plans:self-test": "node test/perf/measure-heavy-query-plans.mjs --self-test",
     "perf:index-redundancy:self-test": "node test/perf/measure-index-redundancy.mjs --self-test",

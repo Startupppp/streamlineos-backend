@@ -1,6 +1,7 @@
 import { SQL, is } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ClientPortalService } from "./client-portal.service";
+import { buildPortalProjection } from "./portal-projection";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -246,5 +247,115 @@ describe("ClientPortalService.getProjectOverview — source ACL gate: clientVisi
     const projectEntry = capturedPredicates.find((e) => e.idx === 1);
     expect(projectEntry).toBeDefined();
     expect(renderSql(projectEntry!.pred)).toContain("deleted_at");
+  });
+});
+
+describe("buildPortalProjection — single projection seam shared by getProjectOverview and getPortalPreview", () => {
+  function makeProjectionDb(
+    capturedPredicates: Array<{ idx: number; pred: unknown }>,
+    capturedJoins: Array<{ idx: number; pred: unknown }> = [],
+  ) {
+    let selectCount = 0;
+    const chain = (idx: number) => ({
+      where: jest.fn().mockImplementation((pred: unknown) => {
+        capturedPredicates.push({ idx, pred });
+        return { limit: jest.fn().mockResolvedValue([]) };
+      }),
+      innerJoin: jest.fn().mockImplementation((_table: unknown, on: unknown) => {
+        capturedJoins.push({ idx, pred: on });
+        return {
+          where: jest.fn().mockImplementation((pred: unknown) => {
+            capturedPredicates.push({ idx, pred });
+            return { limit: jest.fn().mockResolvedValue([]) };
+          }),
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockImplementation((pred: unknown) => {
+              capturedPredicates.push({ idx, pred });
+              return { limit: jest.fn().mockResolvedValue([]) };
+            }),
+          }),
+        };
+      }),
+    });
+    return {
+      select: jest.fn().mockImplementation(() => {
+        selectCount++;
+        const ci = selectCount;
+        return { from: jest.fn().mockReturnValue(chain(ci)) };
+      }),
+    } as unknown as Db;
+  }
+
+  it("milestones WHERE predicate contains client_visible when canViewMilestones is true", async () => {
+    const predicates: Array<{ idx: number; pred: unknown }> = [];
+    const db = makeProjectionDb(predicates);
+    await buildPortalProjection(db, "org-1", 10, {
+      canViewMilestones: true,
+      canViewTasks: false,
+      canViewAttachments: false,
+      canViewComments: false,
+    });
+    const milestoneEntry = predicates.find((e) => e.idx === 1);
+    expect(milestoneEntry).toBeDefined();
+    expect(renderSql(milestoneEntry!.pred)).toContain("client_visible");
+  });
+
+  it("milestones WHERE predicate contains deleted_at when canViewMilestones is true", async () => {
+    const predicates: Array<{ idx: number; pred: unknown }> = [];
+    const db = makeProjectionDb(predicates);
+    await buildPortalProjection(db, "org-1", 10, {
+      canViewMilestones: true,
+      canViewTasks: false,
+      canViewAttachments: false,
+      canViewComments: false,
+    });
+    const milestoneEntry = predicates.find((e) => e.idx === 1);
+    expect(milestoneEntry).toBeDefined();
+    expect(renderSql(milestoneEntry!.pred)).toContain("deleted_at");
+  });
+
+  it("attachments JOIN ON predicate contains client_visible so parent-ticket visibility is enforced in the projection seam", async () => {
+    const predicates: Array<{ idx: number; pred: unknown }> = [];
+    const joins: Array<{ idx: number; pred: unknown }> = [];
+    const db = makeProjectionDb(predicates, joins);
+    await buildPortalProjection(db, "org-1", 10, {
+      canViewMilestones: false,
+      canViewTasks: false,
+      canViewAttachments: true,
+      canViewComments: false,
+    });
+    const attachmentJoin = joins.find((e) => e.idx === 1);
+    expect(attachmentJoin).toBeDefined();
+    expect(renderSql(attachmentJoin!.pred)).toContain("client_visible");
+  });
+
+  it("comments JOIN ON predicate contains client_visible so parent-ticket visibility is enforced in the projection seam", async () => {
+    const predicates: Array<{ idx: number; pred: unknown }> = [];
+    const joins: Array<{ idx: number; pred: unknown }> = [];
+    const db = makeProjectionDb(predicates, joins);
+    await buildPortalProjection(db, "org-1", 10, {
+      canViewMilestones: false,
+      canViewTasks: false,
+      canViewAttachments: false,
+      canViewComments: true,
+    });
+    const commentJoin = joins.find((e) => e.idx === 1);
+    expect(commentJoin).toBeDefined();
+    expect(renderSql(commentJoin!.pred)).toContain("client_visible");
+  });
+
+  it("returns empty arrays for all four collections when all capabilities are false (deny-by-default)", async () => {
+    const db = makeProjectionDb([]);
+    const result = await buildPortalProjection(db, "org-1", 10, {
+      canViewMilestones: false,
+      canViewTasks: false,
+      canViewAttachments: false,
+      canViewComments: false,
+    });
+    expect(result.milestones).toEqual([]);
+    expect(result.tasks).toEqual([]);
+    expect(result.attachments).toEqual([]);
+    expect(result.comments).toEqual([]);
+    expect((db.select as jest.Mock).mock.calls).toHaveLength(0);
   });
 });

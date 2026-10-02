@@ -15,7 +15,7 @@ import { InvitationCreateService } from "../invitation-create.service";
 import { bulkInviteSchema, inviteUserSchema } from "../../../users/dto/users.schemas";
 import { assertMayAssignRole } from "../../../rbac/assert-role-assignment";
 import { resolveModuleStandingRole } from "../../../rbac/resolve-module-standing-role";
-import { bumpPermissionsVersion } from "../../../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import {
   invitationModuleAccess,
@@ -33,8 +33,8 @@ jest.mock("../../../rbac/assert-role-assignment", () => ({
   assertMayAssignRole: jest.fn(),
 }));
 
-jest.mock("../../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../../../common/rbac/assert-may-grant-role", () => ({
@@ -392,7 +392,7 @@ describe("applyPendingRoleGrants — Finding 2: acceptance does not replay stale
     ).resolves.toBeUndefined();
 
     expect(txInsert).not.toHaveBeenCalled();
-    expect(bumpPermissionsVersion).not.toHaveBeenCalled();
+    expect(commitAccessChange).not.toHaveBeenCalled();
     expect(auditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({ reason: "inviter_not_active" }),
@@ -421,7 +421,7 @@ describe("applyPendingRoleGrants — Finding 2: acceptance does not replay stale
     ).resolves.toBeUndefined();
 
     expect(txInsert).not.toHaveBeenCalled();
-    expect(bumpPermissionsVersion).not.toHaveBeenCalled();
+    expect(commitAccessChange).not.toHaveBeenCalled();
     expect(auditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({ reason: "inviter_lost_authority" }),
@@ -456,7 +456,7 @@ describe("applyPendingRoleGrants — Finding 2: acceptance does not replay stale
     );
   });
 
-  it("inserts into roleAssignments with the resolved roleId and calls bumpPermissionsVersion on the same tx when authority is valid (positive pair)", async () => {
+  it("inserts into roleAssignments with the resolved roleId and calls commitAccessChange on the same tx when authority is valid (positive pair)", async () => {
     txFindMembership.mockResolvedValue({
       id: INVITER_MEMBERSHIP_ID,
       userId: "inviter-user",
@@ -475,7 +475,7 @@ describe("applyPendingRoleGrants — Finding 2: acceptance does not replay stale
     );
 
     expect(txInsert).toHaveBeenCalledWith(roleAssignments);
-    expect(bumpPermissionsVersion).toHaveBeenCalledWith(tx, ORG_ID);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG_ID);
   });
 });
 

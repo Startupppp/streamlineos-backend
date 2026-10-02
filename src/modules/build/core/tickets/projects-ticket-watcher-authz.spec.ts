@@ -3,10 +3,10 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { ProjectsTicketWatchersService } from "./projects-ticket-watchers.service";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 
@@ -61,13 +61,8 @@ function makeDb(opts: { ticket: object | null; member: { id: number } | null }):
 }
 
 function makeSvc(db: Db) {
-  return new ProjectsTicketSubresourcesService(
+  return new ProjectsTicketWatchersService(
     db,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
     { scopeFor: jest.fn(), resolveUserPermissions: jest.fn() },
   );
 }
@@ -83,7 +78,7 @@ beforeEach(() => {
   });
 });
 
-describe("ProjectsTicketSubresourcesService — addWatcher", () => {
+describe("ProjectsTicketWatchersService — addWatcher", () => {
   it("watches the caller when the body omits userId, so self-watch needs no id from the client", async () => {
     const { db, lookups } = makeDb({ ticket: { id: 1 }, member: { id: 42 } });
 
@@ -129,7 +124,7 @@ describe("ProjectsTicketSubresourcesService — addWatcher", () => {
   });
 });
 
-describe("ProjectsTicketSubresourcesService — addWatcher bite proof", () => {
+describe("ProjectsTicketWatchersService — addWatcher bite proof", () => {
   it("the ticket lookup is load-bearing: it alone separates a foreign ticket from a watchable one", async () => {
     const withTicket = makeDb({ ticket: { id: 99 }, member: { id: 42 } });
     await expect(
@@ -143,7 +138,7 @@ describe("ProjectsTicketSubresourcesService — addWatcher bite proof", () => {
   });
 });
 
-describe("ProjectsTicketSubresourcesService — removeWatcher", () => {
+describe("ProjectsTicketWatchersService — removeWatcher", () => {
   function makeRemoveDb(opts: { ticket: object | null; member: { id: number } | null }) {
     const selectChain = {
       from: jest.fn(),

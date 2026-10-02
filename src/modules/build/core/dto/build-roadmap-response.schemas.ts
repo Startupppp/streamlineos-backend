@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
-import { roadmapStatusEnum, feedbackStatusEnum } from "../../../../db/schema";
+import { roadmapStatusEnum, feedbackStatusEnum, changelogTypeEnum } from "../../../../db/schema";
 import {
   RICE_INPUT_NAMES,
   RICE_METHOD,
@@ -144,12 +144,25 @@ export const changelogEntrySchema = z.object({
   title: z.string(),
   content: z.string(),
   version: z.string().nullable(),
+  type: z.enum(changelogTypeEnum.enumValues),
   isPublished: z.boolean(),
   linkedRoadmapItemId: z.number().int().nullable(),
   publishedAt: nullableWireDate(),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+});
+
+const projectTemplateTicketSchema = z.object({
+  id: z.number().int(),
+  templateId: z.number().int(),
+  title: z.string(),
+  description: z.string().nullable(),
+  type: z.string(),
+  priority: z.string(),
+  estimatedHours: z.string().nullable(),
+  order: z.number().int(),
+  phase: z.string().nullable(),
 });
 
 const projectTemplateSchema = z.object({
@@ -161,14 +174,16 @@ const projectTemplateSchema = z.object({
   createdBy: z.string().nullable(),
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
+  tickets: z.array(projectTemplateTicketSchema),
 });
 
 export const templateListSchema = cursorPageSchema(projectTemplateSchema);
 export const templateRowSchema = projectTemplateSchema;
 
 export const applyTemplateResultSchema = z.object({
-  project: z.object({ id: z.number().int(), name: z.string(), key: z.string() }),
-  tickets: z.array(z.object({ id: z.number().int(), title: z.string() })),
+  projectId: z.number().int(),
+  key: z.string(),
+  ticketsCreated: z.number().int(),
 });
 
 

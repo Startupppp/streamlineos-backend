@@ -3,8 +3,8 @@ import { gdprExportJobs, hrLegalHolds, organizationMembers } from "../../db/sche
 import { EXPORT_ARTIFACT_PAGE } from "./gdpr-subject-erasure-export-artifacts";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../common/auth/membership-state.service", () => ({

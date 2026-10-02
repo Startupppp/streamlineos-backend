@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
 import { ticketScope } from "../../../build/core/tickets";
+import { reachableTicketProjectsSql } from "../../../build/reachability/project-reachability";
 import {
   type AskOsToolDefinition,
   type AskOsToolProvider,
@@ -37,12 +38,12 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
         permission: "build:tickets:view",
         module: "build",
         run: async ({ ticketId }, ctx) => {
-          const { orgId, userId } = ctx.actor;
+          const { orgId, userId, membershipId } = ctx.actor;
           const rows = await ctx.read.read(
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
             },
             ({ sql: where }) =>
               this.db
@@ -95,7 +96,7 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
         permission: "build:tickets:view",
         module: "build",
         run: async ({ query, projectId, status, limit }, ctx) => {
-          const { orgId, userId } = ctx.actor;
+          const { orgId, userId, membershipId } = ctx.actor;
           const results = await ctx.read.read(
             {
               tenant: tickets.orgId,
@@ -103,6 +104,7 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
               and: [
                 ilike(tickets.title, `%${query}%`),
                 isNull(tickets.deletedAt),
+                reachableTicketProjectsSql(orgId, membershipId),
                 projectId !== undefined
                   ? eq(tickets.projectId, projectId)
                   : undefined,
@@ -205,12 +207,12 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
         confirms: "ticket.updateStatus",
         module: "build",
         run: async ({ ticketId, status, reason }, ctx) => {
-          const { orgId, userId } = ctx.actor;
+          const { orgId, userId, membershipId } = ctx.actor;
           const existing = await ctx.read.read(
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
             },
             ({ sql: where }) =>
               this.db
@@ -265,12 +267,12 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
         confirms: "ticket.addComment",
         module: "build",
         run: async ({ ticketId, comment }, ctx) => {
-          const { orgId, userId } = ctx.actor;
+          const { orgId, userId, membershipId } = ctx.actor;
           const existing = await ctx.read.read(
             {
               tenant: tickets.orgId,
               scope: ticketScope(orgId, userId),
-              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt)],
+              and: [eq(tickets.id, ticketId), isNull(tickets.deletedAt), reachableTicketProjectsSql(orgId, membershipId)],
             },
             ({ sql: where }) =>
               this.db

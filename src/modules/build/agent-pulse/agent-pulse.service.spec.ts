@@ -2,10 +2,26 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AgentPulseService } from "./agent-pulse.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { ProjectsTicketCommentsService } from "../core/tickets";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ORG = "org-1";
 const USER = "user-1";
 const MID = 42;
+
+function makeUserCtx(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
+  return {
+    userId: USER,
+    orgId: ORG,
+    role: "member",
+    isOrgOwner: false,
+    sessionId: "test-session",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(MID, false),
+    ...overrides,
+  };
+}
 
 function makeSelectChain(rows: unknown[]) {
   const limitFn = jest.fn().mockResolvedValue(rows);
@@ -29,16 +45,21 @@ function makeCountChain(rows: unknown[]) {
 describe("AgentPulseService", () => {
   let svc: AgentPulseService;
   let selectMock: jest.Mock;
-  let transactionMock: jest.Mock;
+  let deleteMock: jest.Mock;
+  let deleteWhereMock: jest.Mock;
+  let addCommentMock: jest.Mock;
 
   beforeEach(async () => {
     jest.resetAllMocks();
     selectMock = jest.fn();
-    transactionMock = jest.fn();
+    deleteWhereMock = jest.fn().mockResolvedValue(undefined);
+    deleteMock = jest.fn().mockReturnValue({ where: deleteWhereMock });
+    addCommentMock = jest.fn();
     const module = await Test.createTestingModule({
       providers: [
         AgentPulseService,
-        { provide: DRIZZLE, useValue: { select: selectMock, transaction: transactionMock } },
+        { provide: DRIZZLE, useValue: { select: selectMock, delete: deleteMock } },
+        { provide: ProjectsTicketCommentsService, useValue: { addComment: addCommentMock } },
       ],
     }).compile();
     svc = module.get(AgentPulseService);
@@ -399,87 +420,75 @@ describe("AgentPulseService", () => {
   });
 
   describe("applyDraft — re-authorization and ownership", () => {
+  it("throws ForbiddenException when the principal has no membershipId — account-only and system principals cannot approve proposals", async () => {
+    const noMemberCtx = makeUserCtx({ principal: { kind: "account-only" } });
+
+    await expect(svc.applyDraft(noMemberCtx, 99)).rejects.toThrow(ForbiddenException);
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(addCommentMock).not.toHaveBeenCalled();
+  });
+
   it("re-authorization defect proof: throws NotFoundException when the draft does not exist for the calling actor — stored creation access is not replayed at approve time", async () => {
     selectMock.mockImplementationOnce(() => makeSelectChain([]));
 
-    await expect(svc.applyDraft(ORG, USER, MID, 99)).rejects.toThrow(NotFoundException);
-    expect(transactionMock).not.toHaveBeenCalled();
-  });
-
-  it("throws ForbiddenException when membershipId is null — account-only and system principals cannot approve proposals", async () => {
-    await expect(svc.applyDraft(ORG, USER, null, 99)).rejects.toThrow(ForbiddenException);
-    expect(selectMock).not.toHaveBeenCalled();
-    expect(transactionMock).not.toHaveBeenCalled();
+    await expect(svc.applyDraft(makeUserCtx(), 99)).rejects.toThrow(NotFoundException);
+    expect(addCommentMock).not.toHaveBeenCalled();
   });
 
   it("cross-tenant isolation: draft that exists in a different org returns NotFoundException when called with the attacker org — orgId is always re-asserted against the stored row", async () => {
     selectMock.mockImplementationOnce(() => makeSelectChain([]));
 
-    await expect(svc.applyDraft("org-attacker", USER, MID, 1)).rejects.toThrow(NotFoundException);
-    expect(transactionMock).not.toHaveBeenCalled();
+    await expect(svc.applyDraft(makeUserCtx({ orgId: "org-attacker" }), 1)).rejects.toThrow(NotFoundException);
+    expect(addCommentMock).not.toHaveBeenCalled();
   });
 
   it("actor isolation: draft owned by membershipId=100 returns NotFoundException when called with membershipId=999 — another actor cannot approve a draft they do not own", async () => {
     selectMock.mockImplementationOnce(() => makeSelectChain([]));
 
-    await expect(svc.applyDraft(ORG, USER, 999, 1)).rejects.toThrow(NotFoundException);
-    expect(transactionMock).not.toHaveBeenCalled();
+    const otherCtx = makeUserCtx({ principal: humanSessionPrincipal(999, false) });
+    await expect(svc.applyDraft(otherCtx, 1)).rejects.toThrow(NotFoundException);
+    expect(addCommentMock).not.toHaveBeenCalled();
   });
 
-  it("throws NotFoundException when the ticket no longer exists after the draft was created — re-authorization checks current resource state, not proposal-creation state", async () => {
+  it("happy path: routes comment creation through addComment and deletes the draft afterwards — returns commentId and ticketId", async () => {
     const draftRow = { id: 7, ticketId: 55, body: "Apply this fix" };
-    selectMock
-      .mockImplementationOnce(() => makeSelectChain([draftRow]))
-      .mockImplementationOnce(() => makeSelectChain([]));
+    const savedComment = { id: 101, ticketId: 55, body: "Apply this fix", author: { id: USER } };
+    selectMock.mockImplementationOnce(() => makeSelectChain([draftRow]));
+    addCommentMock.mockResolvedValue(savedComment);
 
-    await expect(svc.applyDraft(ORG, USER, MID, 7)).rejects.toThrow(NotFoundException);
-    expect(transactionMock).not.toHaveBeenCalled();
-  });
-
-  it("happy path: posts the draft body as a comment and deletes the draft atomically — returns commentId and ticketId", async () => {
-    const draftRow = { id: 7, ticketId: 55, body: "Apply this fix" };
-    const ticketRow = { id: 55 };
-    const returningFn = jest.fn().mockResolvedValue([{ id: 101 }]);
-    const valuesFn = jest.fn().mockReturnValue({ returning: returningFn });
-    const insertFn = jest.fn().mockReturnValue({ values: valuesFn });
-    const deleteWhereFn = jest.fn().mockResolvedValue(undefined);
-    const deleteFn = jest.fn().mockReturnValue({ where: deleteWhereFn });
-    const txMock = { insert: insertFn, delete: deleteFn };
-    transactionMock.mockImplementation(
-      (callback: (tx: typeof txMock) => Promise<number>) => callback(txMock),
-    );
-    selectMock
-      .mockImplementationOnce(() => makeSelectChain([draftRow]))
-      .mockImplementationOnce(() => makeSelectChain([ticketRow]));
-
-    const result = await svc.applyDraft(ORG, USER, MID, 7);
+    const result = await svc.applyDraft(makeUserCtx(), 7);
 
     expect(result).toEqual({ commentId: 101, ticketId: 55 });
-    expect(transactionMock).toHaveBeenCalledTimes(1);
-    expect(insertFn).toHaveBeenCalledTimes(1);
-    expect(deleteFn).toHaveBeenCalledTimes(1);
+    expect(addCommentMock).toHaveBeenCalledTimes(1);
+    expect(addCommentMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: ORG, userId: USER }),
+      null,
+      55,
+      expect.objectContaining({ content: "Apply this fix" }),
+    );
+    expect(deleteMock).toHaveBeenCalledTimes(1);
   });
 
-  it("transaction is invoked — the callback is called so the comment insert and draft delete actually run", async () => {
+  it("addComment is called before draft deletion — correctly ordered to prevent data loss on addComment failure", async () => {
     const draftRow = { id: 3, ticketId: 20, body: "Proposed fix" };
-    const ticketRow = { id: 20 };
-    const returningFn = jest.fn().mockResolvedValue([{ id: 77 }]);
-    const valuesFn = jest.fn().mockReturnValue({ returning: returningFn });
-    const insertFn = jest.fn().mockReturnValue({ values: valuesFn });
-    const innerDeleteWhereFn = jest.fn().mockResolvedValue(undefined);
-    const deleteFn = jest.fn().mockReturnValue({ where: innerDeleteWhereFn });
-    const txMock = { insert: insertFn, delete: deleteFn };
-    transactionMock.mockImplementation(
-      (callback: (tx: typeof txMock) => Promise<number>) => callback(txMock),
-    );
-    selectMock
-      .mockImplementationOnce(() => makeSelectChain([draftRow]))
-      .mockImplementationOnce(() => makeSelectChain([ticketRow]));
+    const savedComment = { id: 77, ticketId: 20, body: "Proposed fix", author: { id: USER } };
+    const callOrder: string[] = [];
+    selectMock.mockImplementationOnce(() => makeSelectChain([draftRow]));
+    addCommentMock.mockImplementation(async () => { callOrder.push("addComment"); return savedComment; });
+    deleteWhereMock.mockImplementation(async () => { callOrder.push("delete"); });
 
-    await svc.applyDraft(ORG, USER, MID, 3);
+    await svc.applyDraft(makeUserCtx(), 3);
 
-    expect(returningFn).toHaveBeenCalledTimes(1);
-    expect(innerDeleteWhereFn).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(["addComment", "delete"]);
+  });
+
+  it("propagates NotFoundException from addComment when the ticket no longer exists — re-authorization checks current resource state", async () => {
+    const draftRow = { id: 7, ticketId: 55, body: "Apply this fix" };
+    selectMock.mockImplementationOnce(() => makeSelectChain([draftRow]));
+    addCommentMock.mockRejectedValue(new NotFoundException("Ticket not found"));
+
+    await expect(svc.applyDraft(makeUserCtx(), 7)).rejects.toThrow(NotFoundException);
+    expect(deleteMock).not.toHaveBeenCalled();
   });
   });
 

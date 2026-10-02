@@ -37,12 +37,15 @@ describe("GitConnectionsService — cross-tenant isolation", () => {
         returning: jest.fn().mockResolvedValue([]),
       };
     });
+    const fromChain = { leftJoin: jest.fn(), where };
+    (fromChain.leftJoin as jest.Mock).mockReturnValue(fromChain);
     return {
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue(fromChain) }),
       update: jest
         .fn()
         .mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }),
       delete: jest.fn().mockReturnValue({ where }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
     } as unknown as Db;
   }
 

@@ -18,11 +18,12 @@ import {
   ProjectsTicketsReadService,
   ProjectsTicketsDetailService,
   ProjectsTicketsTransferService,
-  ProjectsTicketSubresourcesService,
   ProjectsTicketCommentsService,
   ProjectsTicketChecklistsService,
   ProjectsTicketLinksService,
   ProjectsTicketRelationsService,
+  ProjectsTicketWatchersService,
+  ProjectsTicketLabelsService,
   BuildTicketStatusChangedConsumerService,
   ProjectsTicketsRestoreService,
 } from "./tickets";
@@ -64,9 +65,10 @@ import { ProjectsWebhooksDispatchService } from "./webhooks/projects-webhooks-di
 import { ProjectsAutomationsService } from "./automation/projects-automations.service";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
 import { BuildAutomationRunnerService } from "./automation/build-automation-runner.service";
-import { BuildAutomationActionExecutor } from "./automation/build-automation-actions.service";
+import { AUTOMATION_TICKET_CHANGE, BuildAutomationActionExecutor } from "./automation/build-automation-actions.service";
 import { BuildAutomationRunHistoryService } from "./automation/build-automation-run-history.service";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { BuildReleasePublishedConsumerService } from "./releases/build-release-published-consumer.service";
 import { BuildBlockerCreatedConsumerService } from "./tickets/build-blocker-created-consumer.service";
 import { ProjectsSettingsIterationsController } from "./settings/projects-settings-iterations.controller";
@@ -75,7 +77,7 @@ import { ProjectsActivityFeedController } from "./activity/projects-activity-fee
 import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.service";
 
 @Module({
-  imports: [BillingModule, NotificationsModule, UsersModule, OutboxModule],
+  imports: [BillingModule, NotificationsModule, UsersModule, OutboxModule, IntegrationsModule],
   controllers: [
     ProjectsRoadmapController,
     ProjectsTemplatesController,
@@ -120,7 +122,6 @@ import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.s
     ProjectsTicketsReadService,
     ProjectsTicketsDetailService,
     ProjectsTicketsTransferService,
-    ProjectsTicketSubresourcesService,
     ProjectsTicketCommentsService,
     ProjectsActivityService,
     ProjectsAnalyticsService,
@@ -142,6 +143,9 @@ import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.s
     ProjectsTicketChecklistsService,
     ProjectsTicketLinksService,
     ProjectsTicketRelationsService,
+    ProjectsTicketWatchersService,
+    ProjectsTicketLabelsService,
+    { provide: AUTOMATION_TICKET_CHANGE, useExisting: ProjectsTicketsUpdateService },
     BuildAutomationRunnerService,
     BuildAutomationActionExecutor,
     BuildAutomationRunHistoryService,
@@ -162,8 +166,9 @@ import { ProjectsActivityFeedService } from "./activity/projects-activity-feed.s
     ProjectsRestoreService,
     ProjectsTicketsRestoreService,
     ProjectsWorkQueryService,
-    ProjectsTicketSubresourcesService,
     ProjectsReportsService,
+    ProjectsTicketCommentsService,
+    ProjectsTicketsDeleteService,
   ],
 })
 export class ProjectsModule {}

@@ -1,6 +1,6 @@
 import { permissions, rolePermissionGrants, roles } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 import { ROLE_RANK } from "../../common/rbac/grantability";
 import { ACCESS_MANAGED_MODULES, MODULE_ACCESS_PERMISSIONS, moduleScopedPermissions, ROLE_DEFAULT_PERMISSIONS } from "./permissions";
@@ -291,7 +291,7 @@ export async function seedSystemRolesForOrg(
 
     // Once, not once per role: the version is a cache epoch, and bumping it
     // forty-one times invalidated the same caches forty-one times.
-    await bumpPermissionsVersion(tx, orgId);
+    await commitAccessChange(tx, orgId);
 
     return { created: inserted.length };
   });

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { asc, and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { gitConnections, gitTicketLinks, gitWebhookSeenDeliveries, projectStatuses, projects, tickets } from "../../../db/schema";
+import { gitConnections, gitTicketLinks, gitWebhookSeenDeliveries, integrationGitConnectionCredentials, projectStatuses, projects, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -46,8 +46,20 @@ export class IntegrationsGitService {
         });
         if (!connection || !connection.isActive) return;
 
+        const credRows = await tx
+          .select({ signingSecret: integrationGitConnectionCredentials.signingSecret })
+          .from(integrationGitConnectionCredentials)
+          .where(
+            and(
+              eq(integrationGitConnectionCredentials.orgId, connection.orgId),
+              eq(integrationGitConnectionCredentials.gitConnectionId, connection.id),
+            ),
+          )
+          .limit(1);
+        const signingSecret = credRows[0]?.signingSecret;
+
         const provider = connection.provider;
-        if (!this.verifySignature(provider, connection.webhookSecret, req)) {
+        if (!signingSecret || !this.verifySignature(provider, signingSecret, req)) {
           logger.warn("[git-webhook] signature verification failed", { connectionId });
           return;
         }

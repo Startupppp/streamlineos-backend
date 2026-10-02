@@ -5,10 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import {
-  ModuleAccessService,
-  invalidateRoleAssigneePages,
-} from "./module-access.service";
+import { ModuleAccessService } from "./module-access.service";
 import { AccessService } from "../access/access.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
@@ -16,8 +13,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
-jest.mock("../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
@@ -45,29 +42,6 @@ function makeSelectChain(rows: unknown[]) {
   (chain.where as jest.Mock).mockReturnValue(chain);
   return chain;
 }
-
-describe("invalidateRoleAssigneePages", () => {
-  it("continues invalidating after the first 500 assignees", async () => {
-    const pages = Array.from({ length: 5 }, (_, pageIndex) =>
-      Array.from({ length: 100 }, (_, rowIndex) => {
-        const membershipId = pageIndex * 100 + rowIndex + 1;
-        return { membershipId, userId: `user-${membershipId}` };
-      }),
-    );
-    pages.push([
-      { membershipId: 501, userId: "user-501" },
-      { membershipId: 502, userId: "user-502" },
-    ]);
-    const fetchPage = jest.fn().mockImplementation(async () => pages.shift() ?? []);
-    const invalidateSession = jest.fn().mockResolvedValue(undefined);
-
-    await invalidateRoleAssigneePages(fetchPage, invalidateSession);
-
-    expect(fetchPage).toHaveBeenCalledTimes(6);
-    expect(invalidateSession).toHaveBeenCalledTimes(502);
-    expect(invalidateSession).toHaveBeenCalledWith("user-502");
-  });
-});
 
 describe("ModuleAccessService", () => {
   let svc: ModuleAccessService;

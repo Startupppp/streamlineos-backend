@@ -11,14 +11,23 @@ import {
   ownershipTransfers,
 } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import {
+  commitAccessChange,
+  type CommitAccessOpts,
+} from "../../common/rbac/access-mutation-commit";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import type { CacheService } from "../../common/cache/cache.service";
+import type { DispatchEventInput } from "../notifications/notification.types";
 import {
   assertModuleOwnerRoleAssigned,
   revokeModuleOwnerRole,
 } from "./module-owner-role.helper";
+
+export type TransferCommit = (moved: {
+  fromUserId: string;
+  toUserId: string;
+}) => CommitAccessOpts<DispatchEventInput>;
 
 export async function applyOrgTransfer(
   db: Db,
@@ -27,6 +36,7 @@ export async function applyOrgTransfer(
   transferId: string,
   fromMembershipId: number,
   toMembershipId: number,
+  commit: TransferCommit,
 ): Promise<string> {
   return withMembershipMutations(cache, (membership) =>
     db.transaction(async (tx) => {
@@ -104,7 +114,11 @@ export async function applyOrgTransfer(
           "Transfer is no longer pending; a concurrent response committed first",
         );
 
-      await bumpPermissionsVersion(tx, orgId);
+      await commitAccessChange(
+        tx,
+        orgId,
+        commit({ fromUserId: fromMember.userId, toUserId: toMember.userId }),
+      );
       return fromMember.userId;
     }),
   );
@@ -117,6 +131,7 @@ export async function applyModuleTransfer(
   moduleKey: string | null,
   fromMembershipId: number,
   toMembershipId: number,
+  commit: TransferCommit,
 ): Promise<string> {
   if (!moduleKey)
     throw new BadRequestException("Invalid transfer: missing module key");
@@ -202,7 +217,11 @@ export async function applyModuleTransfer(
         "Transfer is no longer pending; a concurrent response committed first",
       );
 
-    await bumpPermissionsVersion(tx, orgId);
+    await commitAccessChange(
+      tx,
+      orgId,
+      commit({ fromUserId: fromMember.userId, toUserId: toMember.userId }),
+    );
     return fromMember.userId;
   });
 }

@@ -16,7 +16,11 @@ import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
+import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
+import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
+import { ProjectsTicketWatchersService } from "./projects-ticket-watchers.service";
+import { ProjectsTicketLabelsService } from "./projects-ticket-labels.service";
+import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import {
   addLabelSchema,
   addRelatedLinkSchema,
@@ -58,7 +62,13 @@ const projectIdticketIdlinkIdParams = z.object({ projectId: z.coerce.number().in
 @Controller("build")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsTicketAssociationsController {
-  constructor(private readonly subresources: ProjectsTicketSubresourcesService) {}
+  constructor(
+    private readonly relations: ProjectsTicketRelationsService,
+    private readonly links: ProjectsTicketLinksService,
+    private readonly watchers: ProjectsTicketWatchersService,
+    private readonly labels: ProjectsTicketLabelsService,
+    private readonly query: ProjectsTicketsQueryService,
+  ) {}
 
   @Get(":projectId/tickets/:ticketId/subtasks")
   @RequirePermission("build:tickets:view")
@@ -69,7 +79,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getSubtasks(u, projectId, ticketId);
+    return this.query.getSubtasks(u, projectId, ticketId);
   }
 
   @Get(":projectId/tickets/:ticketId/relations")
@@ -81,7 +91,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.listRelations(u, projectId, ticketId);
+    return this.relations.listRelations(u, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/relations")
@@ -95,7 +105,7 @@ export class ProjectsTicketAssociationsController {
     @Body() body: AddRelationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addRelation(u, projectId, ticketId, body);
+    return this.relations.addRelation(u, projectId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/relations")
@@ -109,7 +119,7 @@ export class ProjectsTicketAssociationsController {
     @Query() query: RemoveRelationQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeRelation(u, projectId, ticketId, query.relatedId);
+    return this.relations.removeRelation(u, projectId, ticketId, query.relatedId);
   }
 
   @Get(":projectId/tickets/:ticketId/watchers")
@@ -121,7 +131,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getWatchers(u, projectId, ticketId);
+    return this.watchers.getWatchers(u, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/watchers")
@@ -135,7 +145,7 @@ export class ProjectsTicketAssociationsController {
     @Body() body: AddWatcherInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addWatcher(u, projectId, ticketId, body);
+    return this.watchers.addWatcher(u, projectId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/watchers")
@@ -148,7 +158,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeWatcher(u, projectId, ticketId);
+    return this.watchers.removeWatcher(u, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/labels")
@@ -162,7 +172,7 @@ export class ProjectsTicketAssociationsController {
     @Body() body: AddLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addLabel(u, projectId, ticketId, body);
+    return this.labels.addTicketLabel(u, projectId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/labels/:labelId")
@@ -176,7 +186,7 @@ export class ProjectsTicketAssociationsController {
     @Param("labelId", ParseIntPipe) labelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeLabel(u, projectId, ticketId, labelId);
+    return this.labels.removeTicketLabel(u, projectId, ticketId, labelId);
   }
 
   @Post(":projectId/tickets/:ticketId/attachments")
@@ -190,7 +200,7 @@ export class ProjectsTicketAssociationsController {
     @Body() body: AttachmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addAttachment(u, projectId, ticketId, body);
+    return this.links.addAttachment(u, projectId, ticketId, body);
   }
 
   @Get(":projectId/tickets/:ticketId/git-links")
@@ -202,7 +212,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getGitLinks(u, projectId, ticketId);
+    return this.links.getGitLinks(u, projectId, ticketId);
   }
 
   @Get(":projectId/tickets/:ticketId/related-links")
@@ -214,7 +224,7 @@ export class ProjectsTicketAssociationsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.listRelatedLinks(u, projectId, ticketId);
+    return this.links.listRelatedLinks(u, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/related-links")
@@ -228,7 +238,7 @@ export class ProjectsTicketAssociationsController {
     @Body() body: AddRelatedLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addRelatedLink(u, projectId, ticketId, body);
+    return this.links.addRelatedLink(u, projectId, ticketId, body);
   }
 
   @Patch(":projectId/tickets/:ticketId/related-links/:linkId")
@@ -242,7 +252,7 @@ export class ProjectsTicketAssociationsController {
     @Body() body: UpdateRelatedLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.updateRelatedLink(u, projectId, ticketId, linkId, body);
+    return this.links.updateRelatedLink(u, projectId, ticketId, linkId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/related-links/:linkId")
@@ -256,6 +266,6 @@ export class ProjectsTicketAssociationsController {
     @Param("linkId", ParseIntPipe) linkId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.deleteRelatedLink(u, projectId, ticketId, linkId);
+    return this.links.deleteRelatedLink(u, projectId, ticketId, linkId);
   }
 }

@@ -9,7 +9,7 @@ import type { ProjectsTicketsTransferService } from "./projects-tickets-transfer
 import type { ProjectsActivityService } from "../activity/projects-activity.service";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 
-jest.mock("../lib/build-ticket-mutation-policy", () => ({
+jest.mock("../project-crud/project-access", () => ({
   authorizeTicketMutation: jest.fn().mockResolvedValue({ role: "MEMBER", predicate: {} }),
   lockProjectTicketMutation: jest.fn().mockResolvedValue(undefined),
   readMutationTickets: jest.fn().mockImplementation(
@@ -30,9 +30,6 @@ jest.mock("../lib/build-ticket-mutation-policy", () => ({
         })),
       ),
   ),
-}));
-
-jest.mock("../project-crud/project-access", () => ({
   resolveProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "OWNER" }),
   resolveProjectAssignableMemberships: jest
     .fn()

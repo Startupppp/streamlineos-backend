@@ -4,20 +4,26 @@ export default [
     verdict: "VERIFIED",
     finding: "insert-binds-org-in-values",
     summary:
-      "POST /build/:projectId/labels. Org is bound twice. The handler first calls assertCanManageProject, whose project lookup is predicated on the caller's own org at projects-members.service.ts:71, so a foreign :projectId answers 404 before any write. The write itself is an INSERT into ticket_labels and scopes the row by writing orgId into .values({ orgId, ... }) at projects-labels.service.ts:23. The static pass reports PASSED-UNBOUND because its binding detection is syntactic — it looks for eq()/inArray()/a sql interpolation in a predicate — and an INSERT has no predicate; the ES6 shorthand property `orgId,` in a .values() object is invisible to it. The delegation controller -> ProjectsMembersService.createLabel (a one-line re-export at projects-members.service.ts:434) -> ProjectsLabelsService.createLabel also adds a hop. ticket_labels carries no project_id column, so there is no parent dimension to bind; the :projectId segment is verified for addressing only.",
+      "POST /build/:projectId/labels. Org is bound twice. The handler forwards the actor and :projectId to ProjectsMembersService.createProjectLabel, which calls the canonical assertCanManageProject in project-access.ts before the insert; its project lookup is predicated on the caller's own org, so a foreign :projectId answers 404 before any write. The write itself is an INSERT into ticket_labels and scopes the row by writing orgId into .values({ orgId, ... }) at projects-labels.service.ts:23. The static pass reports PASSED-UNBOUND because its binding detection is syntactic — it looks for eq()/inArray()/a sql interpolation in a predicate — and an INSERT has no predicate; the ES6 shorthand property `orgId,` in a .values() object is invisible to it. The delegation is controller -> ProjectsMembersService.createProjectLabel -> ProjectsLabelsService.createLabel. ticket_labels carries no project_id column, so there is no parent dimension to bind; the :projectId segment is verified for addressing only.",
     blastRadius:
       "None. Neither cross-tenant nor intra-tenant: the row is created in the caller's own org, and a :projectId belonging to another organisation is rejected 404 by assertCanManageProject before the insert runs.",
     evidence: [
       {
         file: "src/modules/build/core/project-crud/project-resources.controller.ts",
-        line: 228,
-        anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/,
-        note: "the url project is resolved under the caller's org before the write",
+        line: 227,
+        anchor: /return this\.members\.createProjectLabel\(u, projectId, body\);/,
+        note: "the handler forwards the actor and the url project together",
       },
       {
         file: "src/modules/build/core/members/projects-members.service.ts",
-        line: 81,
-        anchor: /where: and\(eq\(projects\.id, projectId\), eq\(projects\.orgId, u\.orgId\), isNull\(projects\.deletedAt\)\),/,
+        line: 444,
+        anchor: /await assertCanManageProject\(this\.db, this\.access, u, projectId\);/,
+        note: "the url project is resolved under the caller's org before the write",
+      },
+      {
+        file: "src/modules/build/core/project-crud/project-access.ts",
+        line: 359,
+        anchor: /const \{ hasAccess, role \} = await resolveProjectAccess\(db, access, u, projectId\);/,
         note: "the project lookup that makes a foreign :projectId a 404",
       },
       {
@@ -40,13 +46,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/core/project-crud/projects-templates.service.ts",
-        line: 114,
+        line: 157,
         anchor: /\.insert\(projectTemplates\)/,
         note: "the write is an INSERT — no WHERE clause exists for the static pass to inspect",
       },
       {
         file: "src/modules/build/core/project-crud/projects-templates.service.ts",
-        line: 116,
+        line: 159,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -64,25 +70,25 @@ export default [
     evidence: [
       {
         file: "src/modules/build/core/tickets/projects-ticket-links.service.ts",
-        line: 38,
+        line: 37,
         anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/,
         note: "the fix — the private helper now delegates to the shared gate the sibling already used",
       },
       {
-        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
-        line: 37,
+        file: "src/modules/build/core/project-crud/project-access.ts",
+        line: 306,
         anchor: /eq\(tickets\.projectId, projectId\),/,
         note: "the parent is now bound in SQL, not only compared in JavaScript",
       },
       {
-        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
-        line: 44,
+        file: "src/modules/build/core/project-crud/project-access.ts",
+        line: 270,
         anchor: /const projectAccess = await resolveProjectAccess\(/,
         note: "the project-membership assertion that was entirely absent before",
       },
       {
         file: "src/modules/build/core/tickets/projects-ticket-relations.service.ts",
-        line: 61,
+        line: 64,
         anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/,
         note: "the sibling in the same controller whose shape the fix copies",
       },
@@ -100,19 +106,19 @@ export default [
     evidence: [
       {
         file: "src/modules/build/core/tickets/projects-ticket-links.service.ts",
-        line: 38,
+        line: 37,
         anchor: /await assertTicketReadAccess\(this\.db, this\.access, u, projectId, ticketId\);/,
         note: "the shared helper both related-link handlers call — now gated",
       },
       {
         file: "src/modules/build/core/tickets/projects-ticket-links.service.ts",
-        line: 151,
+        line: 157,
         anchor: /orgId: u\.orgId,/,
         note: "org was already bound on the INSERT — the org dimension was never the hole",
       },
       {
-        file: "src/modules/build/core/tickets/build-ticket-read-access.ts",
-        line: 50,
+        file: "src/modules/build/core/project-crud/project-access.ts",
+        line: 349,
         anchor: /if \(!projectAccess\.hasAccess \|\| !ticket\.allowed\)/,
         note: "the refusal the outsider now hits",
       },
@@ -220,25 +226,25 @@ export default [
     evidence: [
       {
         file: "src/modules/build/execution/timesheets.service.ts",
-        line: 410,
+        line: 409,
         anchor: /return this\.listTimeEntries\(user, \{ \.\.\.query, projectId, ticketId \}\);/,
         note: "the repack that hides the parent from a static reader following the named method",
       },
       {
         file: "src/modules/build/execution/timesheets.service.ts",
-        line: 79,
+        line: 78,
         anchor: /query\.projectId \? eq\(tickets\.projectId, query\.projectId\) : undefined,/,
         note: "the ticket must belong to the url project — a foreign pairing 404s",
       },
       {
         file: "src/modules/build/execution/timesheets.service.ts",
-        line: 109,
+        line: 108,
         anchor: /conditions\.push\(eq\(timesheets\.projectId, query\.projectId\)\);/,
         note: "the parent is bound in the list predicate itself",
       },
       {
         file: "src/modules/build/execution/timesheets.service.ts",
-        line: 75,
+        line: 74,
         anchor: /if \(query\.projectId\) await assertProjectInOrg\(this\.db, user\.orgId, query\.projectId\);/,
         note: "the url project is resolved under the caller's org first",
       },
@@ -256,13 +262,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/execution/workspace.service.ts",
-        line: 464,
+        line: 534,
         anchor: /projectId: null,/,
         note: "the row is intentionally project-less, so there is no parent dimension",
       },
       {
         file: "src/modules/build/execution/workspace.service.ts",
-        line: 399,
+        line: 362,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },
@@ -304,13 +310,13 @@ export default [
     evidence: [
       {
         file: "src/modules/build/portfolios/portfolios.service.ts",
-        line: 248,
+        line: 246,
         anchor: /\.insert\(projectPortfolios\)/,
         note: "an INSERT — no WHERE clause exists to carry a predicate",
       },
       {
         file: "src/modules/build/portfolios/portfolios.service.ts",
-        line: 250,
+        line: 248,
         anchor: /^\s*orgId,$/,
         note: "org bound as an ES6 shorthand column in .values()",
       },

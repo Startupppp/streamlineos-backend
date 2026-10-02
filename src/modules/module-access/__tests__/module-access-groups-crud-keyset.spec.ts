@@ -57,7 +57,6 @@ const GROUP_POLICY = {
   resolveOwnerUserId: jest.fn().mockResolvedValue(null),
 };
 
-const AUDIT = { log: jest.fn() };
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
@@ -66,7 +65,6 @@ async function capture(cursor: string | undefined): Promise<Captured> {
     db,
     ACCESS as never,
     CACHE as never,
-    AUDIT as never,
     GROUP_POLICY as never,
   );
   await svc.listGroups("org-a", "hr", 1, cursor, 20);

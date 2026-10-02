@@ -44,6 +44,7 @@ const meetingAttendeeSchema = z.object({
   orgId: z.string(),
   meetingId: z.number().int(),
   membershipId: z.number().int(),
+  userId: z.string(),
   attended: z.boolean(),
   createdAt: wireDate(),
 });

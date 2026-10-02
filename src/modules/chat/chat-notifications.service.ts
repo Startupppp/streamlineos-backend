@@ -320,4 +320,21 @@ export class ChatNotificationsService {
       replayKey: idempotencyKey ? `${idempotencyKey}:inbox` : undefined,
     });
   }
+
+  async publishChannelInviteNotification(
+    orgId: string,
+    channelId: number,
+    targetUserId: string,
+    actorUserId: string,
+  ) {
+    await this.dispatch.emitNow({
+      eventKey: "chat.channel.invited",
+      orgId,
+      actorUserId,
+      targetUserIds: [targetUserId],
+      entityType: "chat_channel",
+      entityId: String(channelId),
+      link: `/chat?channel=${channelId}`,
+    });
+  }
 }

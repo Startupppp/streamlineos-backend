@@ -1,25 +1,24 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   gitTicketLinks,
   organizationMembers,
-  projects,
+  ticketAttachments,
   ticketRelatedLinks,
-  tickets,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
-import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
+import { assertCanModifyAuthoredRecord, assertTicketReadAccess, type TicketReadAccess } from "../project-crud/project-access";
 import type {
   AddRelatedLinkInput,
+  AttachmentInput,
   UpdateRelatedLinkInput,
 } from "../dto/projects.schemas";
 
@@ -38,23 +37,8 @@ export class ProjectsTicketLinksService {
     await assertTicketReadAccess(this.db, this.access, u, projectId, ticketId);
   }
 
-  async getGitLinks(orgId: string, projectId: number, ticketId: number) {
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-
-    const ticket = await this.db.query.tickets.findFirst({
-      where: and(
-        eq(tickets.id, ticketId),
-        eq(tickets.projectId, projectId),
-        eq(tickets.orgId, orgId),
-        isNull(tickets.deletedAt),
-      ),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+  async getGitLinks(u: CurrentUserContext, projectId: number, ticketId: number) {
+    await this.assertTicketAccess(u, projectId, ticketId);
 
     return this.db
       .select({
@@ -72,11 +56,33 @@ export class ProjectsTicketLinksService {
       .where(
         and(
           eq(gitTicketLinks.ticketId, ticketId),
-          eq(gitTicketLinks.orgId, orgId),
+          eq(gitTicketLinks.orgId, u.orgId),
         ),
       )
       .orderBy(desc(gitTicketLinks.createdAt))
       .limit(100);
+  }
+
+  async addAttachment(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+    body: AttachmentInput,
+  ) {
+    await this.assertTicketAccess(u, projectId, ticketId);
+    const [attachment] = await this.db
+      .insert(ticketAttachments)
+      .values({
+        orgId: u.orgId,
+        ticketId,
+        fileUrl: body.fileUrl,
+        fileName: body.fileName,
+        fileSize: body.fileSize,
+        mimeType: body.mimeType,
+        uploadedBy: u.userId,
+      })
+      .returning();
+    return { id: attachment.id };
   }
 
   private toRelatedLinkRow(
@@ -182,8 +188,7 @@ export class ProjectsTicketLinksService {
         ),
       );
     if (!link) throw new NotFoundException("Related link not found");
-    if (link.createdBy !== u.userId && !u.isOrgOwner)
-      throw new ForbiddenException("Cannot edit another user's link");
+    await assertCanModifyAuthoredRecord(this.access, u, { userId: link.createdBy }, null, "Cannot edit another user's link");
     const update: { url?: string; label?: string | null } = {};
     if (body.url !== undefined) update.url = body.url;
     if (body.label !== undefined) update.label = body.label;
@@ -223,8 +228,7 @@ export class ProjectsTicketLinksService {
         ),
       );
     if (!link) throw new NotFoundException("Related link not found");
-    if (link.createdBy !== u.userId && !u.isOrgOwner)
-      throw new ForbiddenException("Cannot delete another user's link");
+    await assertCanModifyAuthoredRecord(this.access, u, { userId: link.createdBy }, null, "Cannot delete another user's link");
     await this.db.delete(ticketRelatedLinks).where(
       and(
         eq(ticketRelatedLinks.orgId, u.orgId),

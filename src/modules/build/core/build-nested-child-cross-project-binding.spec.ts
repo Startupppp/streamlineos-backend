@@ -9,6 +9,7 @@ import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
 import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";
 import { ProjectsWebhooksService } from "./webhooks/projects-webhooks.service";
+import type { WebhookEndpointService } from "../../webhooks/webhook-endpoint.service";
 import type { UpdateCustomFieldInput } from "./dto/custom-fields.schemas";
 import type { UpdateCustomStateInput } from "./dto/projects.schemas";
 
@@ -273,7 +274,7 @@ function makeWebhooksService(store: Store, afterOwnershipCheck?: () => void) {
     }),
   } as unknown as Db;
 
-  return { svc: new ProjectsWebhooksService(db), deleteStatements };
+  return { svc: new ProjectsWebhooksService(db, {} as unknown as WebhookEndpointService), deleteStatements };
 }
 
 const rename = (name: string): UpdateCustomStateInput => ({ name });

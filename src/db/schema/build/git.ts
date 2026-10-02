@@ -15,7 +15,6 @@ export const gitConnections = build.table("git_connections", {
   provider: gitProviderEnum("provider").notNull(),
   repoUrl: text("repo_url").notNull(),
   repoName: text("repo_name"),
-  webhookSecret: text("webhook_secret").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),

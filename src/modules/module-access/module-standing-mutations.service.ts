@@ -16,9 +16,11 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { AuditService } from "../../common/audit/audit.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import {
+  commitAccessChange,
+  type AccessRevocation,
+} from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   canGrantToRank,
@@ -47,8 +49,15 @@ export class ModuleStandingMutationsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly cache: CacheService,
-    private readonly audit: AuditService,
   ) {}
+
+  private standingRevocation(orgId: string, userId: string): AccessRevocation {
+    return {
+      cache: this.cache,
+      loses: [{ kind: "permissions", userIds: [userId] }],
+      listKeys: [CACHE_KEYS.rolesList(orgId)],
+    };
+  }
 
   private async assertManageAccess(
     actor: CurrentUserContext,
@@ -135,28 +144,23 @@ export class ModuleStandingMutationsService {
             assignedByMembershipId: null,
           })
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "module_access.standing_granted",
+            userId: actor.userId,
+            targetId: String(membershipId),
+            targetType: "membership",
+            metadata: {
+              moduleKey,
+              rank: ROLE_RANK.MODULE_ADMIN,
+              targetUserId: targetMembership.userId,
+            },
+          },
+          revoke: this.standingRevocation(actor.orgId, targetMembership.userId),
+        });
       },
       { orgId: actor.orgId },
     );
-
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId)),
-      this.cache.invalidate(CACHE_KEYS.userSession(targetMembership.userId)),
-    ]);
-
-    this.audit.log({
-      action: "module_access.standing_granted",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(membershipId),
-      targetType: "membership",
-      metadata: {
-        moduleKey,
-        rank: ROLE_RANK.MODULE_ADMIN,
-        targetUserId: targetMembership.userId,
-      },
-    });
 
     return { success: true };
   }
@@ -205,25 +209,20 @@ export class ModuleStandingMutationsService {
                 inArray(roleAssignments.roleId, allModuleRoleIds),
               ),
             );
-          await bumpPermissionsVersion(tx, actor.orgId);
+          await commitAccessChange(tx, actor.orgId, {
+            audit: {
+              action: "module_access.standing_revoked",
+              userId: actor.userId,
+              targetId: String(membershipId),
+              targetType: "membership",
+              metadata: { moduleKey, targetUserId: targetMembership.userId },
+            },
+            revoke: this.standingRevocation(actor.orgId, targetMembership.userId),
+          });
         },
         { orgId: actor.orgId },
       );
     }
-
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId)),
-      this.cache.invalidate(CACHE_KEYS.userSession(targetMembership.userId)),
-    ]);
-
-    this.audit.log({
-      action: "module_access.standing_revoked",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(membershipId),
-      targetType: "membership",
-      metadata: { moduleKey, targetUserId: targetMembership.userId },
-    });
 
     return { success: true };
   }
@@ -317,27 +316,39 @@ export class ModuleStandingMutationsService {
           await revokeModuleOwnerRole(tx, actor.orgId, moduleKey, prevOwnership.ownerMembershipId);
 
         await assertModuleOwnerRoleAssigned(tx, actor.orgId, moduleKey, toMembershipId);
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "module_access.ownership_transferred",
+            userId: actor.userId,
+            targetId: String(toMembershipId),
+            targetType: "membership",
+            metadata: { moduleKey, toMembershipId },
+          },
+          revoke: {
+            cache: this.cache,
+            loses: [
+              {
+                kind: "memberships",
+                membershipIds:
+                  prevOwnership === undefined
+                    ? [toMembershipId]
+                    : [toMembershipId, prevOwnership.ownerMembershipId],
+              },
+            ],
+            listKeys: [
+              CACHE_KEYS.rolesList(actor.orgId),
+              CACHE_KEYS.moduleOwnershipsList(actor.orgId),
+              CACHE_KEYS.moduleOwnershipDetail(actor.orgId, moduleKey),
+              CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey),
+            ],
+          },
+          afterCommit: async () => {
+            await this.cache.invalidateNamespaceForOrg(actor.orgId, "ownership:transfers");
+          },
+        });
       },
       { orgId: actor.orgId },
     );
-
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId)),
-      this.cache.invalidate(CACHE_KEYS.moduleOwnershipsList(actor.orgId)),
-      this.cache.invalidate(CACHE_KEYS.moduleOwnershipDetail(actor.orgId, moduleKey)),
-      this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey)),
-      this.cache.invalidateNamespaceForOrg(actor.orgId, "ownership:transfers"),
-    ]);
-
-    this.audit.log({
-      action: "module_access.ownership_transferred",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(toMembershipId),
-      targetType: "membership",
-      metadata: { moduleKey, toMembershipId },
-    });
 
     return { success: true };
   }

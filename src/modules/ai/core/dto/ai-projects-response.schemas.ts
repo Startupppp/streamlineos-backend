@@ -75,14 +75,13 @@ export const suggestDraftFieldsResponseSchema = z.object({
 export const summarizeTicketResponseSchema = z.object({
   summary: z.string(),
   keyPoints: z.array(z.string()),
-  actionItems: z.array(z.string()),
-  sentiment: z.enum(["positive", "neutral", "negative"]).optional(),
+  blockers: z.array(z.string()),
 });
 
 export const summarizeCommentsResponseSchema = z.object({
   summary: z.string(),
-  keyPoints: z.array(z.string()),
-  actionItems: z.array(z.string()),
+  themes: z.array(z.string()),
+  openQuestions: z.array(z.string()),
 });
 
 export const improveTicketDescriptionResponseSchema = z.object({ description: z.string() });
@@ -129,8 +128,15 @@ export const changeImpactResponseSchema = z.object({
   }),
 });
 
+const handoffCitationSchema = z.object({
+  source: z.enum(["description", "comment", "decision"]),
+  excerpt: z.string(),
+});
+
 export const ticketHandoffResponseSchema = z.object({
-  summary: z.string(),
-  openItems: z.array(z.string()),
-  context: z.string(),
+  currentState: z.string(),
+  keyDecisions: z.array(z.string()),
+  nextAction: z.string(),
+  blockers: z.array(z.string()),
+  citations: z.array(handoffCitationSchema),
 });

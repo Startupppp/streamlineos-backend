@@ -348,32 +348,38 @@ export async function fetchBuildApprovalItems(
     cursor?.t ?? null,
   );
 
-  return rows.map(
-    (row): BuildApprovalInboxItem => ({
+  return rows.map((row): BuildApprovalInboxItem => {
+    const ticketId = row.entityType === "task" ? row.entityId : null;
+    return {
       kind: "build_approval",
       id: row.id,
       projectId: row.projectId,
       approvalKind: "build",
-      ticketId: row.entityType === "task" ? row.entityId : null,
+      ticketId,
       status: row.status,
       subject: row.title,
       sourceModule: "build",
       actor: null,
-      deepLink: buildApprovalDeepLink(row.projectId),
+      deepLink: buildApprovalDeepLink(row.projectId, ticketId),
       isRead: false,
       objectType: BUILD_APPROVAL_OBJECT_TYPE,
       objectId: String(row.id),
       dedupKey: `approval:build:${String(row.id)}`,
       timestamp: row.createdAt.toISOString(),
       dueAt: row.dueAt ? row.dueAt.toISOString() : null,
-    }),
-  );
+    };
+  });
 }
 
-export function buildApprovalDeepLink(projectId: number | null): string {
-  return projectId === null
-    ? "/build/approvals"
-    : `/build/approvals?projectId=${String(projectId)}`;
+export function buildApprovalDeepLink(
+  projectId: number | null,
+  ticketId: number | null = null,
+): string {
+  if (projectId === null) return "/build/approvals";
+  if (ticketId !== null) {
+    return `/build/${String(projectId)}/issues?ticket=${String(ticketId)}`;
+  }
+  return `/build/approvals?projectId=${String(projectId)}`;
 }
 
 export function buildApprovalAdapter(

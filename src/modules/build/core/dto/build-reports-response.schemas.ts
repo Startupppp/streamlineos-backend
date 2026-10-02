@@ -42,20 +42,35 @@ export const customerListItemSchema = z.object({
 export const customerPageSchema = cursorPageSchema(customerListItemSchema);
 
 export const analyticsSchema = z.object({
-  stateDistribution: z.unknown(),
-  priorityBreakdown: z.unknown(),
-  assigneeCompletion: z.unknown(),
-  volumeOverTime: z.unknown(),
-  cycleVelocity: z.unknown(),
-  estimateVsActual: z.unknown(),
+  stateDistribution: z.array(z.object({ status: z.string(), count: z.number() })),
+  priorityBreakdown: z.array(z.object({ priority: z.string().nullable(), count: z.number() })),
+  assigneeCompletion: z.array(z.object({
+    assigneeId: z.string().nullable(),
+    assigneeName: z.string().nullable(),
+    total: z.number(),
+    completed: z.number(),
+  })),
+  volumeOverTime: z.array(z.object({ week: z.string(), count: z.number() })),
+  cycleVelocity: z.array(z.object({
+    cycleId: z.number().int(),
+    cycleName: z.string(),
+    completedPoints: z.number(),
+  })),
+  estimateVsActual: z.array(z.object({
+    ticketId: z.number().int(),
+    title: z.string(),
+    estimated: z.string().nullable(),
+    actual: z.number(),
+  })),
   healthScore: z.number().int(),
-  healthStatus: z.string(),
+  healthStatus: z.enum(["NOT_STARTED", "EXCELLENT", "GOOD", "AT_RISK", "CRITICAL"]),
   healthBreakdown: z.object({
     completionPct: z.number().int(),
     onTimePct: z.number().int(),
     velocityScore: z.number().int(),
     overdueTickets: z.number().int(),
     totalTickets: z.number().int(),
+    openTickets: z.number().int(),
   }),
 });
 

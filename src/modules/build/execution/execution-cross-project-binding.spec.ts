@@ -15,6 +15,8 @@ import { ModulesService } from "./modules.service";
 import { IntakeService, MilestonesService, ViewsService } from "./workspace.service";
 import { BuildTicketCreationService } from "../core/tickets";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function makeIntakeTicketCreation() {
   return {
@@ -33,6 +35,10 @@ function makeIntakeTicketCreation() {
   } as unknown as BuildTicketCreationService;
 }
 
+jest.mock("../core/project-crud/project-access", () => ({
+  ...jest.requireActual("../core/project-crud/project-access"),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock("../core/lib/allocate-ticket-number", () => ({
   allocateTicketNumbers: jest.fn(async () => 1),
 }));
@@ -44,6 +50,18 @@ const ORG = "org-1";
 const OTHER_ORG = "org-2";
 const USER = "user-7";
 const OTHER_USER = "user-9";
+
+function milestoneActor(orgId: string, userId = "user-1"): CurrentUserContext {
+  return {
+    userId,
+    orgId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(7, false),
+  };
+}
 const PROJECT_A = 11;
 const PROJECT_B = 22;
 const SPRINT_A = 100;
@@ -262,8 +280,8 @@ describe("SprintsService — the frozen surface cannot bind to any project, in o
     ["getSprint, in-project", (svc) => svc.getSprint(ORG, PROJECT_A, SPRINT_A)],
     ["getSprint, sibling project", (svc) => svc.getSprint(ORG, PROJECT_A, SPRINT_B)],
     ["getSprint, foreign tenant", (svc) => svc.getSprint(OTHER_ORG, PROJECT_A, SPRINT_A)],
-    ["updateSprint, in-project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_A, { name: "sprint-a-v2" }, USER)],
-    ["updateSprint, sibling project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_B, { name: "hijacked" }, USER)],
+    ["updateSprint, in-project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_A, { name: "sprint-a-v2", startDate: undefined, endDate: undefined }, USER)],
+    ["updateSprint, sibling project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_B, { name: "hijacked", startDate: undefined, endDate: undefined }, USER)],
     ["deleteSprint, sibling project", (svc) => svc.deleteSprint(ORG, PROJECT_A, SPRINT_B)],
     ["listSprints, in-project", (svc) => svc.listSprints(ORG, PROJECT_A)],
   ];
@@ -287,7 +305,7 @@ describe("SprintsService — the frozen surface cannot bind to any project, in o
     const { db, outbox } = makeDb(makeStore());
 
     await expect(
-      new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_A, { status: "COMPLETED" }, USER),
+      new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_A, { status: "COMPLETED", startDate: undefined, endDate: undefined }, USER),
     ).rejects.toThrow(GoneException);
 
     expect(outbox).toHaveLength(0);
@@ -300,7 +318,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_B, { name: "hijacked", version: 1 }),
+      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_B, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_B)?.name).toBe("module-b");
   });
@@ -310,7 +328,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1 }),
+      new ModulesService(db).updateModule(ORG, PROJECT_A, MODULE_A, { name: "module-a-v2", version: 1, startDate: undefined, endDate: undefined }),
     ).resolves.toMatchObject({ id: MODULE_A, name: "module-a-v2" });
   });
 
@@ -319,7 +337,7 @@ describe("ModulesService — a module addressed through /build/:projectId must b
     const { db } = makeDb(store);
 
     await expect(
-      new ModulesService(db).updateModule(OTHER_ORG, PROJECT_A, MODULE_A, { name: "hijacked", version: 1 }),
+      new ModulesService(db).updateModule(OTHER_ORG, PROJECT_A, MODULE_A, { name: "hijacked", version: 1, startDate: undefined, endDate: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(store.modules.find((row) => row.id === MODULE_A)?.name).toBe("module-a");
   });
@@ -363,7 +381,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_A, MILESTONE_B, { name: "hijacked", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(milestoneActor(ORG), PROJECT_A, MILESTONE_B, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_B)?.name).toBe("milestone-b");
   });
@@ -373,7 +391,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_A, MILESTONE_A, { name: "milestone-a-v2", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(milestoneActor(ORG), PROJECT_A, MILESTONE_A, { name: "milestone-a-v2", version: 1 }),
     ).resolves.toMatchObject({ id: MILESTONE_A, name: "milestone-a-v2" });
   });
 
@@ -382,7 +400,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(OTHER_ORG, PROJECT_A, MILESTONE_A, { name: "hijacked", version: 1 }),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).updateMilestone(milestoneActor(OTHER_ORG), PROJECT_A, MILESTONE_A, { name: "hijacked", version: 1 }),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_A)?.name).toBe("milestone-a");
   });
@@ -392,7 +410,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(ORG, "user-1", PROJECT_A, MILESTONE_B),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(milestoneActor(ORG), PROJECT_A, MILESTONE_B),
     ).rejects.toThrow(NotFoundException);
     expect(store.milestones.find((row) => row.id === MILESTONE_B)?.deletedAt).toBeNull();
   });
@@ -402,7 +420,7 @@ describe("MilestonesService — a milestone addressed through /build/:projectId 
     const { db } = makeDb(store);
 
     await expect(
-      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(ORG, "user-1", PROJECT_A, MILESTONE_A),
+      new MilestonesService(db, {} as never, lifecycleAuditDouble()).deleteMilestone(milestoneActor(ORG), PROJECT_A, MILESTONE_A),
     ).resolves.toEqual({ success: true });
     expect(store.milestones.find((row) => row.id === MILESTONE_A)?.deletedAt).toBeInstanceOf(Date);
   });
@@ -414,7 +432,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db } = makeDb(store);
 
     await expect(
-      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(ORG, USER, PROJECT_A, INTAKE_B, {
+      new IntakeService(db, makeIntakeTicketCreation(), {} as never).updateIntake(milestoneActor(ORG, USER), PROJECT_A, INTAKE_B, {
         status: "declined",
         declineReason: "not mine",
       }),
@@ -427,7 +445,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db } = makeDb(store);
 
     await expect(
-      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(ORG, USER, PROJECT_A, INTAKE_A, {
+      new IntakeService(db, makeIntakeTicketCreation(), {} as never).updateIntake(milestoneActor(ORG, USER), PROJECT_A, INTAKE_A, {
         status: "declined",
         declineReason: "duplicate of ABC",
       }),
@@ -439,7 +457,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db, transaction } = makeDb(store);
 
     await expect(
-      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(ORG, USER, PROJECT_A, INTAKE_B, { status: "accepted" }),
+      new IntakeService(db, makeIntakeTicketCreation(), {} as never).updateIntake(milestoneActor(ORG, USER), PROJECT_A, INTAKE_B, { status: "accepted" }),
     ).rejects.toThrow(NotFoundException);
     expect(transaction).not.toHaveBeenCalled();
     expect(store.tickets).toHaveLength(2);
@@ -451,7 +469,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db, transaction } = makeDb(store);
 
     await expect(
-      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(ORG, USER, PROJECT_A, INTAKE_A, { status: "accepted" }),
+      new IntakeService(db, makeIntakeTicketCreation(), {} as never).updateIntake(milestoneActor(ORG, USER), PROJECT_A, INTAKE_A, { status: "accepted" }),
     ).resolves.toMatchObject({ id: INTAKE_A, status: "accepted" });
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(store.tickets).toHaveLength(3);
@@ -463,7 +481,7 @@ describe("IntakeService — an intake request addressed through /build/:projectI
     const { db } = makeDb(store);
 
     await expect(
-      new IntakeService(db, makeIntakeTicketCreation()).updateIntake(OTHER_ORG, USER, PROJECT_A, INTAKE_A, {
+      new IntakeService(db, makeIntakeTicketCreation(), {} as never).updateIntake(milestoneActor(OTHER_ORG, USER), PROJECT_A, INTAKE_A, {
         status: "declined",
         declineReason: "x",
       }),
@@ -478,7 +496,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const { db } = makeDb(store);
 
     await expect(
-      new ViewsService(db).updateView(ORG, USER, PROJECT_A, VIEW_B, { name: "hijacked" }),
+      new ViewsService(db, {} as never).updateView(milestoneActor(ORG, USER), PROJECT_A, VIEW_B, { name: "hijacked" }),
     ).rejects.toThrow(NotFoundException);
     expect(store.views.find((row) => row.id === VIEW_B)?.name).toBe("view-b");
   });
@@ -488,7 +506,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const { db } = makeDb(store);
 
     await expect(
-      new ViewsService(db).updateView(ORG, USER, PROJECT_A, VIEW_A, { name: "view-a-v2" }),
+      new ViewsService(db, {} as never).updateView(milestoneActor(ORG, USER), PROJECT_A, VIEW_A, { name: "view-a-v2" }),
     ).resolves.toMatchObject({ id: VIEW_A, name: "view-a-v2" });
   });
 
@@ -497,7 +515,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const { db } = makeDb(store);
 
     await expect(
-      new ViewsService(db).updateView(ORG, USER, PROJECT_A, VIEW_A_OTHERS_PRIVATE, { name: "hijacked" }),
+      new ViewsService(db, {} as never).updateView(milestoneActor(ORG, USER), PROJECT_A, VIEW_A_OTHERS_PRIVATE, { name: "hijacked" }),
     ).rejects.toThrow(ForbiddenException);
     expect(store.views.find((row) => row.id === VIEW_A_OTHERS_PRIVATE)?.name).toBe("view-private");
   });
@@ -507,7 +525,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const { db } = makeDb(store);
 
     await expect(
-      new ViewsService(db).updateView(ORG, USER, PROJECT_A, VIEW_WORKSPACE, { name: "hijacked" }),
+      new ViewsService(db, {} as never).updateView(milestoneActor(ORG, USER), PROJECT_A, VIEW_WORKSPACE, { name: "hijacked" }),
     ).rejects.toThrow(NotFoundException);
     expect(store.views.find((row) => row.id === VIEW_WORKSPACE)?.name).toBe("view-workspace");
   });
@@ -517,7 +535,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const { db } = makeDb(store);
 
     await expect(
-      new ViewsService(db).updateWorkspaceView(ORG, USER, VIEW_WORKSPACE, { name: "view-workspace-v2" }),
+      new ViewsService(db, {} as never).updateWorkspaceView(ORG, USER, VIEW_WORKSPACE, { name: "view-workspace-v2" }),
     ).resolves.toMatchObject({ id: VIEW_WORKSPACE, name: "view-workspace-v2" });
   });
 
@@ -525,7 +543,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const store = makeStore();
     const { db } = makeDb(store);
 
-    await expect(new ViewsService(db).deleteView(ORG, USER, PROJECT_A, VIEW_B)).rejects.toThrow(
+    await expect(new ViewsService(db, {} as never).deleteView(milestoneActor(ORG, USER), PROJECT_A, VIEW_B)).rejects.toThrow(
       NotFoundException,
     );
     expect(store.views.some((row) => row.id === VIEW_B)).toBe(true);
@@ -535,7 +553,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const store = makeStore();
     const { db } = makeDb(store);
 
-    await expect(new ViewsService(db).deleteView(ORG, USER, PROJECT_A, VIEW_A)).resolves.toEqual({
+    await expect(new ViewsService(db, {} as never).deleteView(milestoneActor(ORG, USER), PROJECT_A, VIEW_A)).resolves.toEqual({
       success: true,
     });
     expect(store.views.some((row) => row.id === VIEW_A)).toBe(false);
@@ -546,7 +564,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const { db } = makeDb(store);
 
     await expect(
-      new ViewsService(db).deleteView(ORG, USER, PROJECT_A, VIEW_A_OTHERS_PRIVATE),
+      new ViewsService(db, {} as never).deleteView(milestoneActor(ORG, USER), PROJECT_A, VIEW_A_OTHERS_PRIVATE),
     ).rejects.toThrow(ForbiddenException);
     expect(store.views.some((row) => row.id === VIEW_A_OTHERS_PRIVATE)).toBe(true);
   });
@@ -555,7 +573,7 @@ describe("ViewsService — a view addressed through /build/:projectId must belon
     const store = makeStore();
     const { db } = makeDb(store);
 
-    await expect(new ViewsService(db).deleteView(OTHER_ORG, USER, PROJECT_A, VIEW_A)).rejects.toThrow(
+    await expect(new ViewsService(db, {} as never).deleteView(milestoneActor(OTHER_ORG, USER), PROJECT_A, VIEW_A)).rejects.toThrow(
       NotFoundException,
     );
     expect(store.views.some((row) => row.id === VIEW_A)).toBe(true);

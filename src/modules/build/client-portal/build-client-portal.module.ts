@@ -9,6 +9,7 @@ import { ChangeRequestsService } from "./change-requests.service";
 import { ChangeRequestAffectedItemsService } from "./change-request-affected-items.service";
 import { ClientVisibilityService } from "./client-visibility.service";
 import { ClientPortalManagementService } from "./client-portal-management.service";
+import { PortalProjectionService } from "./portal-projection.service";
 
 @Module({
   controllers: [
@@ -24,6 +25,8 @@ import { ClientPortalManagementService } from "./client-portal-management.servic
     ChangeRequestAffectedItemsService,
     ClientVisibilityService,
     ClientPortalManagementService,
+    PortalProjectionService,
   ],
+  exports: [PortalProjectionService],
 })
 export class BuildClientPortalModule {}

@@ -13,8 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { AuditService } from "../../common/audit/audit.service";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
@@ -23,7 +22,7 @@ import {
   assertGroupsBelongToModule,
   assertMayEditOwnerMemberships,
   findActiveMembershipId,
-  invalidateMemberAccessCaches,
+  memberRevocation,
   listModuleRoleIds,
   type FlatMemberWriteDeps,
 } from "./lib/flat-member-writes";
@@ -38,7 +37,6 @@ export class ModuleAccessFlatMembersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
-    private readonly audit: AuditService,
     private readonly access: AccessService,
     private readonly groupPolicy: ModuleAccessGroupPolicyService,
   ) {}
@@ -92,24 +90,19 @@ export class ModuleAccessFlatMembersService {
             })),
           )
           .onConflictDoNothing();
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "module_access.member_added",
+            userId: actor.userId,
+            targetId: input.userId,
+            targetType: "user",
+            metadata: { moduleKey, groupIds: input.groupIds },
+          },
+          revoke: memberRevocation(this.writeDeps, actor.orgId, input.userId),
+        });
       },
       { orgId: actor.orgId },
     );
-
-    await invalidateMemberAccessCaches(
-      this.writeDeps,
-      actor.orgId,
-      input.userId,
-    );
-    this.audit.log({
-      action: "module_access.member_added",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: input.userId,
-      targetType: "user",
-      metadata: { moduleKey, groupIds: input.groupIds },
-    });
     return { success: true };
   }
 
@@ -188,20 +181,19 @@ export class ModuleAccessFlatMembersService {
             .onConflictDoNothing();
         }
 
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "module_access.member_groups_updated",
+            userId: actor.userId,
+            targetId: userId,
+            targetType: "user",
+            metadata: { moduleKey, groupIds: input.groupIds },
+          },
+          revoke: memberRevocation(this.writeDeps, actor.orgId, userId),
+        });
       },
       { orgId: actor.orgId },
     );
-
-    await invalidateMemberAccessCaches(this.writeDeps, actor.orgId, userId);
-    this.audit.log({
-      action: "module_access.member_groups_updated",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: userId,
-      targetType: "user",
-      metadata: { moduleKey, groupIds: input.groupIds },
-    });
     return { success: true };
   }
 
@@ -253,20 +245,19 @@ export class ModuleAccessFlatMembersService {
               inArray(roleAssignments.roleId, allModuleRoleIds),
             ),
           );
-        await bumpPermissionsVersion(tx, actor.orgId);
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "module_access.member_removed",
+            userId: actor.userId,
+            targetId: userId,
+            targetType: "user",
+            metadata: { moduleKey },
+          },
+          revoke: memberRevocation(this.writeDeps, actor.orgId, userId),
+        });
       },
       { orgId: actor.orgId },
     );
-
-    await invalidateMemberAccessCaches(this.writeDeps, actor.orgId, userId);
-    this.audit.log({
-      action: "module_access.member_removed",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: userId,
-      targetType: "user",
-      metadata: { moduleKey },
-    });
     return { success: true };
   }
 

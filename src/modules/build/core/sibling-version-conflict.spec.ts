@@ -7,6 +7,11 @@ import { ProjectsRoadmapService } from "./roadmap/projects-roadmap.service";
 import { AccessService } from "../../access/access.service";
 import { systemActor } from "../../../common/auth/system-actor";
 
+jest.mock("./project-crud/project-access", () => ({
+  ...jest.requireActual("./project-crud/project-access"),
+  assertProjectAccess: jest.fn().mockResolvedValue(undefined),
+}));
+
 const actor = systemActor("integrations.git.webhook", "org-1");
 
 const accessWithBuildManage = {
@@ -100,7 +105,7 @@ async function roadmapService(itemRow: Record<string, unknown> | undefined, upda
 
 it("milestone stale token returns 409 with currentVersion in details (ticket-13)", async () => {
   const { service, module } = await milestonesService({ version: 4 });
-  const error = await service.updateMilestone("org-1", 1, 10, { version: 2, name: "M1" }).catch((e: unknown) => e);
+  const error = await service.updateMilestone(actor, 1, 10, { version: 2, name: "M1" }).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(TicketVersionConflictException);
   expect((error as TicketVersionConflictException).getResponse()).toMatchObject({ details: { currentVersion: 4 } });
   await module.close();
@@ -109,7 +114,7 @@ it("milestone stale token returns 409 with currentVersion in details (ticket-13)
 it("milestone matching token does not throw TicketVersionConflictException and runs the update query (BE-141 positive pair)", async () => {
   const updatedMilestone = { id: 10, orgId: "org-1", projectId: 1, name: "M1", version: 5 };
   const { service, module, update } = await milestonesService({ version: 4 }, [updatedMilestone]);
-  const error = await service.updateMilestone("org-1", 1, 10, { version: 4, name: "M1" }).catch((e: unknown) => e);
+  const error = await service.updateMilestone(actor, 1, 10, { version: 4, name: "M1" }).catch((e: unknown) => e);
   expect(error).not.toBeInstanceOf(TicketVersionConflictException);
   expect(update).toHaveBeenCalled();
   await module.close();
@@ -117,7 +122,7 @@ it("milestone matching token does not throw TicketVersionConflictException and r
 
 it("release stale token returns 409 with currentVersion in details (ticket-13)", async () => {
   const { service, module } = await releasesService({ rowVersion: 6 }, []);
-  const error = await service.updateRelease(actor, 1, 20, { rowVersion: 2, name: "v2" }).catch((e: unknown) => e);
+  const error = await service.updateRelease(actor, 1, 20, { rowVersion: 2, name: "v2", releaseDate: null }).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(TicketVersionConflictException);
   expect((error as TicketVersionConflictException).getResponse()).toMatchObject({ details: { currentVersion: 6 } });
   await module.close();
@@ -126,7 +131,7 @@ it("release stale token returns 409 with currentVersion in details (ticket-13)",
 it("release matching token does not throw TicketVersionConflictException and runs the transaction (BE-141 positive pair)", async () => {
   const releaseRow = { id: 20, orgId: "org-1", projectId: 1, name: "v2", version: "1.0.0", rowVersion: 7, description: null, status: "draft", releaseDate: null, createdBy: null, deletedAt: null, createdAt: new Date(), updatedAt: new Date() };
   const { service, module, transaction } = await releasesService({ rowVersion: 6 }, [releaseRow]);
-  const error = await service.updateRelease(actor, 1, 20, { rowVersion: 6, name: "v2" }).catch((e: unknown) => e);
+  const error = await service.updateRelease(actor, 1, 20, { rowVersion: 6, name: "v2", releaseDate: null }).catch((e: unknown) => e);
   expect(error).not.toBeInstanceOf(TicketVersionConflictException);
   expect(transaction).toHaveBeenCalled();
   await module.close();

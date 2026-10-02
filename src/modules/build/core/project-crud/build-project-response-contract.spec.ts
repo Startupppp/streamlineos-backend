@@ -43,4 +43,9 @@ describe("releaseRowWithCount", () => {
   it("satisfies the declared release response schema", () => {
     expect(() => projectReleaseRowSchema.parse(releaseRowWithCount(ROW, 0))).not.toThrow();
   });
+
+  it("preserves ticketCount in the parsed value so the FE can display it without an extra fetch", () => {
+    const parsed = projectReleaseRowSchema.parse(releaseRowWithCount(ROW, 7));
+    expect((parsed as Record<string, unknown>).ticketCount).toBe(7);
+  });
 });

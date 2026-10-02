@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+} from "../../../../common/openapi/wire-types";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const testSuiteRowSchema = z.object({
   id: z.number().int(),
@@ -27,12 +31,14 @@ export const testCaseRowSchema = z.object({
   caseNumber: z.number().int(),
   title: z.string(),
   preconditions: z.string().nullable(),
-  steps: z.unknown(),
+  steps: z
+    .array(z.object({ action: z.string(), expected: z.string() }))
+    .nullable(),
   expectedResult: z.string().nullable(),
-  priority: z.enum(["low", "medium", "high"]),
+  priority: z.enum(DB_ENUMS.test_case_priority),
   component: z.string().nullable(),
   linkedTicketId: z.number().int().nullable(),
-  automationStatus: z.enum(["manual", "automated", "planned"]),
+  automationStatus: z.enum(DB_ENUMS.test_case_automation_status),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
@@ -57,7 +63,7 @@ export const testRunRowSchema = z.object({
   browserDevice: z.string().nullable(),
   testerId: z.string().nullable(),
   testerMembershipId: z.number().int().nullable(),
-  status: z.enum(["not_started", "in_progress", "completed", "aborted"]),
+  status: z.enum(DB_ENUMS.test_run_status),
   startedAt: nullableWireDate(),
   completedAt: nullableWireDate(),
   createdBy: z.string().nullable(),
@@ -86,7 +92,7 @@ export const testRunResultRowSchema = z.object({
   projectId: z.number().int(),
   runId: z.number().int(),
   testCaseId: z.number().int(),
-  status: z.enum(["not_run", "passed", "failed", "blocked", "skipped"]),
+  status: z.enum(DB_ENUMS.test_result_status),
   notes: z.string().nullable(),
   executedBy: z.string().nullable(),
   executedAt: nullableWireDate(),
@@ -105,7 +111,7 @@ export const testRunDetailResultSchema = testRunResultRowSchema.extend({
   testCase: z.object({
     caseNumber: z.number().int(),
     title: z.string(),
-    priority: z.enum(["low", "medium", "high"]),
+    priority: z.enum(DB_ENUMS.test_case_priority),
   }),
 });
 
@@ -122,14 +128,14 @@ export const bugRowSchema = z.object({
   description: z.string().nullable(),
   type: z.literal("BUG"),
   status: z.string(),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]),
+  priority: z.enum(DB_ENUMS.ticket_priority),
   assigneeMembershipId: z.number().int().nullable(),
   reporterId: z.string().nullable(),
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
-  qaState: z.enum(["new", "triaged", "assigned", "in_progress", "fixed", "ready_for_qa", "verified", "reopened", "closed"]).nullable(),
-  severity: z.enum(["blocker", "critical", "major", "minor", "trivial"]).nullable(),
+  qaState: z.enum(DB_ENUMS.bug_status).nullable(),
+  severity: z.enum(DB_ENUMS.bug_severity).nullable(),
   stepsToReproduce: z.string().nullable(),
   expectedResult: z.string().nullable(),
   actualResult: z.string().nullable(),
@@ -142,4 +148,5 @@ export const bugRowSchema = z.object({
   linkedTestCaseId: z.number().int().nullable(),
   reopenCount: z.number().int().nullable(),
   createdByUserId: z.string().nullable(),
+  version: z.number().int(),
 });

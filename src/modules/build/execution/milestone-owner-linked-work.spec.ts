@@ -278,7 +278,10 @@ describe("MilestonesService — updateMilestone projects the real counts, so a c
     countChainWithJoin.where = jest.fn(self);
     countChainWithJoin.groupBy = jest.fn(() => Promise.resolve(counts));
     return {
-      query: { projectMilestones: { findFirst: jest.fn().mockResolvedValue({ version: 1, ownerMembershipId: null }) } },
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+        projectMilestones: { findFirst: jest.fn().mockResolvedValue({ version: 1, ownerMembershipId: null }) },
+      },
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -292,14 +295,14 @@ describe("MilestonesService — updateMilestone projects the real counts, so a c
 
   it("returns the milestone's four linked and three completed tickets instead of the zero the previous projection hardcoded", async () => {
     const db = makeUpdateDb([{ milestoneId: 1, linked: 4, completed: 3 }]);
-    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_ID, 1, { version: 1, name: "M1" });
+    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).updateMilestone(makeU(), PROJECT_ID, 1, { version: 1, name: "M1" });
     expect(result.linkedTicketCount).toBe(4);
     expect(result.completedTicketCount).toBe(3);
   });
 
   it("returns zero counts for a milestone the aggregate returned no row for", async () => {
     const db = makeUpdateDb([]);
-    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).updateMilestone(ORG, PROJECT_ID, 1, { version: 1, name: "M1" });
+    const result = await new MilestonesService(db, mockAccess, lifecycleAuditDouble()).updateMilestone(makeU(), PROJECT_ID, 1, { version: 1, name: "M1" });
     expect(result.linkedTicketCount).toBe(0);
     expect(result.completedTicketCount).toBe(0);
   });

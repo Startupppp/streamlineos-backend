@@ -1,9 +1,9 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { ticketComments, tickets } from "../../../../db/schema";
-import { assertTicketReadAccess } from "./build-ticket-read-access";
+import { assertTicketReadAccess } from "../project-crud/project-access";
 import { ProjectsTicketsRestoreService } from "./projects-tickets-restore.service";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn(),
 }));
 

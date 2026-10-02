@@ -9,8 +9,7 @@ import { assertProjectAccess, escapeLike } from "../core";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
 import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
-import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
-import { BuildTicketCreationService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 
 @Injectable()
 export class BugsService {
@@ -19,6 +18,8 @@ export class BugsService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
     private readonly ticketCreation: BuildTicketCreationService,
+    private readonly ticketChange: ProjectsTicketsUpdateService,
+    private readonly ticketDelete: ProjectsTicketsDeleteService,
   ) {}
 
   async listBugs(u: CurrentUserContext, projectId: number, query: BugListQuery) {
@@ -66,6 +67,7 @@ export class BugsService {
         linkedTestCaseId: workItemQaDetails.linkedTestCaseId,
         reopenCount: workItemQaDetails.reopenCount,
         createdByUserId: workItemQaDetails.createdByUserId,
+        version: tickets.version,
       })
       .from(tickets)
       .leftJoin(
@@ -109,6 +111,7 @@ export class BugsService {
         linkedTestCaseId: workItemQaDetails.linkedTestCaseId,
         reopenCount: workItemQaDetails.reopenCount,
         createdByUserId: workItemQaDetails.createdByUserId,
+        version: tickets.version,
       })
       .from(tickets)
       .leftJoin(
@@ -226,28 +229,14 @@ export class BugsService {
         eq(tickets.type, "BUG"),
         isNull(tickets.deletedAt),
       ),
-      columns: { id: true, status: true, version: true },
+      columns: { id: true, version: true },
     });
     if (!existingTicket) throw new NotFoundException("Bug not found");
-    if (input.version !== undefined && input.version !== existingTicket.version)
-      throw new TicketVersionConflictException(existingTicket.version);
     const existingSidecar = await this.db.query.workItemQaDetails.findFirst({
       where: and(eq(workItemQaDetails.orgId, u.orgId), eq(workItemQaDetails.workItemId, bugId)),
       columns: { qaState: true, reopenCount: true },
     });
     const isReopening = input.status === "reopened" && existingSidecar?.qaState !== "reopened";
-    let resolvedAssigneeMembershipId: number | null | undefined;
-    if (input.assigneeId !== undefined) {
-      const member = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, u.orgId),
-          eq(organizationMembers.userId, input.assigneeId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-        columns: { id: true },
-      });
-      resolvedAssigneeMembershipId = member?.id ?? null;
-    }
     let newTicketStatus: string | undefined;
     if (input.status !== undefined) {
       const availableStatuses = await this.db
@@ -257,32 +246,14 @@ export class BugsService {
       newTicketStatus = resolveWorkItemStatus(input.status, availableStatuses);
     }
     const ticketPriority = input.priority !== undefined ? resolveTicketPriority(input.priority) : undefined;
-    const [updatedTicket] = await this.db
-      .update(tickets)
-      .set({
-        ...(input.title !== undefined && { title: input.title }),
-        ...(input.description !== undefined && { description: input.description }),
-        ...(ticketPriority !== undefined && { priority: ticketPriority }),
-        ...(newTicketStatus !== undefined && { status: newTicketStatus }),
-        ...(resolvedAssigneeMembershipId !== undefined && { assigneeMembershipId: resolvedAssigneeMembershipId }),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(tickets.id, bugId),
-          eq(tickets.orgId, u.orgId),
-          isNull(tickets.deletedAt),
-          input.version !== undefined
-            ? eq(tickets.version, input.version)
-            : undefined,
-        ),
-      )
-      .returning();
-    if (!updatedTicket) {
-      if (input.version !== undefined)
-        throw new TicketVersionConflictException(existingTicket.version);
-      throw new NotFoundException("Bug not found");
-    }
+    await this.ticketChange.updateTicket(u, projectId, bugId, {
+      version: input.version ?? existingTicket.version,
+      ...(input.title !== undefined && { title: input.title }),
+      ...(input.description !== undefined && { description: input.description }),
+      ...(ticketPriority !== undefined && { priority: ticketPriority }),
+      ...(newTicketStatus !== undefined && { status: newTicketStatus }),
+      ...(input.assigneeId !== undefined && { assigneeId: input.assigneeId }),
+    });
     const sidecarSet: Record<string, unknown> = { updatedAt: new Date() };
     if (input.status !== undefined) sidecarSet["qaState"] = input.status;
     if (input.severity !== undefined) sidecarSet["severity"] = input.severity;
@@ -311,8 +282,30 @@ export class BugsService {
         metadata: { ticketId: bugId, projectId, from: existingSidecar?.qaState, to: input.status },
       });
     }
+    const [rereadTicket] = await this.db
+      .select({
+        id: tickets.id,
+        orgId: tickets.orgId,
+        projectId: tickets.projectId,
+        ticketNumber: tickets.ticketNumber,
+        title: tickets.title,
+        description: tickets.description,
+        type: tickets.type,
+        status: tickets.status,
+        priority: tickets.priority,
+        assigneeMembershipId: tickets.assigneeMembershipId,
+        reporterId: tickets.reporterId,
+        deletedAt: tickets.deletedAt,
+        createdAt: tickets.createdAt,
+        updatedAt: tickets.updatedAt,
+        version: tickets.version,
+      })
+      .from(tickets)
+      .where(and(eq(tickets.id, bugId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)))
+      .limit(1);
+    if (!rereadTicket) throw new NotFoundException("Bug not found after update");
     return {
-      ...updatedTicket,
+      ...rereadTicket,
       qaState: updatedSidecar?.qaState ?? existingSidecar?.qaState ?? null,
       severity: updatedSidecar?.severity ?? null,
       stepsToReproduce: updatedSidecar?.stepsToReproduce ?? null,
@@ -343,18 +336,7 @@ export class BugsService {
       columns: { id: true },
     });
     if (!existing) throw new NotFoundException("Bug not found");
-    await this.db
-      .update(tickets)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(tickets.id, bugId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)));
-    this.audit.log({
-      action: "bug.deleted",
-      userId: u.userId,
-      orgId: u.orgId,
-      resourceType: "ticket",
-      resourceId: String(bugId),
-      metadata: { ticketId: bugId, projectId },
-    });
+    await this.ticketDelete.deleteTicket(u, projectId, bugId, false);
     return { success: true };
   }
 }

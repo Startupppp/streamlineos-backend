@@ -25,7 +25,7 @@ const row = {
     parentCommentId: null, createdAt: new Date(), updatedAt: new Date(),
     user, reactions: [{ emoji: "👍", membership: { userId: "user-1" } }],
   }],
-  attachments: [{ id: 3, fileName: "notes.txt", fileUrl: "https://example.test/notes", uploader: user }],
+  attachments: [{ id: 3, fileName: "notes.txt", fileUrl: "https://example.test/notes", mimeType: "text/plain", uploader: user }],
   labels: [{ label: { id: 4, name: "Bug", color: null } }],
 };
 

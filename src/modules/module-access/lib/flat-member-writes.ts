@@ -4,6 +4,7 @@ import { organizationMembers, roles } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import type { AccessRevocation } from "../../../common/rbac/access-mutation-commit";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import {
@@ -135,15 +136,14 @@ export async function assertGroupsBelongToModule(
   }
 }
 
-/**
- * The two keys a membership change invalidates: the org's group list, and the
- * target's own session, which carries their resolved permissions.
- */
-export async function invalidateMemberAccessCaches(
+export function memberRevocation(
   deps: FlatMemberWriteDeps,
   orgId: string,
   userId: string,
-): Promise<void> {
-  await deps.cache.invalidate(CACHE_KEYS.rolesList(orgId));
-  await deps.cache.invalidate(CACHE_KEYS.userSession(userId));
+): AccessRevocation {
+  return {
+    cache: deps.cache,
+    loses: [{ kind: "permissions", userIds: [userId] }],
+    listKeys: [CACHE_KEYS.rolesList(orgId)],
+  };
 }

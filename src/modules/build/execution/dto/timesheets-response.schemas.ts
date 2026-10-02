@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 const ticketRefSchema = z.object({
   id: z.number().int(),
@@ -22,28 +23,28 @@ export const timesheetRowSchema = z.object({
   description: z.string().nullable(),
   imageUrl: z.string().nullable(),
   workLink: z.string().nullable(),
-  status: z.string(),
+  status: z.enum(DB_ENUMS.timesheet_entry_status),
   approvedByMembershipId: z.number().int().nullable(),
   approvedAt: nullableWireDate(),
   rejectionReason: z.string().nullable(),
   isBillable: z.boolean(),
-  payrollStatus: z.string().nullable(),
+  payrollStatus: z.enum(DB_ENUMS.timesheet_payroll_status).nullable(),
   payrollExportId: z.number().int().nullable(),
   projectId: z.number().int().nullable(),
   timesheetPeriodId: z.number().int().nullable(),
   timerSessionId: z.number().int().nullable(),
-  billingType: z.string().nullable(),
+  billingType: z.enum(DB_ENUMS.timesheet_billing_type).nullable(),
   billRate: z.string().nullable(),
   costRate: z.string().nullable(),
   currency: z.string().nullable(),
-  rateSource: z.string().nullable(),
-  invoicingStatus: z.string().nullable(),
+  rateSource: z.enum(DB_ENUMS.timesheet_rate_source).nullable(),
+  invoicingStatus: z.enum(DB_ENUMS.timesheet_invoicing_status).nullable(),
   submittedAt: nullableWireDate(),
   lockedAt: nullableWireDate(),
   lockedByMembershipId: z.number().int().nullable(),
   voidedAt: nullableWireDate(),
   voidReason: z.string().nullable(),
-  source: z.string(),
+  source: z.enum(DB_ENUMS.timesheet_entry_source),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });

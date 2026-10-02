@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
+import { DB_ENUMS } from "../../../../db/enums.generated";
 
 export const workflowTransitionSchema = z.object({
   id: z.number().int(),
@@ -24,7 +25,7 @@ export const projectStatusSchema = z.object({
   name: z.string(),
   order: z.number().int(),
   color: z.string().nullable(),
-  type: z.string(),
+  type: z.enum(DB_ENUMS.state_group),
   wipLimit: z.number().int().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),

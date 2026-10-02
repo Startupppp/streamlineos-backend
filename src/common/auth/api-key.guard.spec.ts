@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ApiKeyGuard } from "./api-key.guard";
+import { ModuleDisabledException } from "../http/api-exceptions";
 import type { Db } from "../../db/drizzle.module";
 import type { RateLimitService } from "../ratelimit/rate-limit.service";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
@@ -91,6 +92,30 @@ describe("ApiKeyGuard", () => {
     const g = new ApiKeyGuard(makeDb(row), makeRl(true), makeEntitlements());
     const { ctx } = ctxWith({ "x-api-key": "raw" });
     await expect(g.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it("402 MODULE_NOT_ENABLED, not 403, when the org has the CRM module off (BE-22/BE-23)", async () => {
+    const row = { id: "k", orgId: "o", scopes: ["leads:write"], expiresAt: new Date(Date.now() + 60_000) };
+    const g = new ApiKeyGuard(makeDb(row), makeRl(true), makeEntitlements(false));
+    const { ctx } = ctxWith({ "x-api-key": "raw" });
+    const error = await g.canActivate(ctx).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ModuleDisabledException);
+    expect(error).not.toBeInstanceOf(ForbiddenException);
+    if (!(error instanceof ModuleDisabledException)) return;
+    expect(error.getStatus()).toBe(402);
+    expect(error.getResponse()).toMatchObject({
+      code: "MODULE_NOT_ENABLED",
+      details: { moduleKey: "crm", reason: "org-disabled", upgradePath: null },
+    });
+  });
+
+  it("lets a valid scoped key through when the org has the CRM module on", async () => {
+    const row = { id: "k", orgId: "o", scopes: ["leads:write"], expiresAt: new Date(Date.now() + 60_000) };
+    const entitlements = makeEntitlements(true);
+    const g = new ApiKeyGuard(makeDb(row), makeRl(true), entitlements);
+    const { ctx } = ctxWith({ "x-api-key": "raw" });
+    await expect(g.canActivate(ctx)).resolves.toBe(true);
+    expect(entitlements.isModuleEnabled).toHaveBeenCalledWith("o", "crm");
   });
 
   it("403 when scopes lack leads:write", async () => {

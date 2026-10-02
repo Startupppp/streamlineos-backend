@@ -9,9 +9,10 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 
-jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+jest.mock("../../../common/rbac/access-mutation-commit", () => ({
+  commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 
 function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
@@ -66,9 +67,10 @@ function mockGroupPolicyService() {
   };
 }
 
+beforeEach(() => jest.mocked(commitAccessChange).mockClear());
+
 describe("ModuleAccessGroupCrudService — audit: group created", () => {
-  it("logs module_access.group_created with moduleKey after the transaction commits", async () => {
-    const auditLog = jest.fn();
+  it("passes audit opts with module_access.group_created and moduleKey to commitAccessChange inside the transaction so the audit is atomic", async () => {
 
     const createdRow = { id: 42, name: "HR Admins", isSystem: false, version: 1 };
     const txMock = {
@@ -96,26 +98,28 @@ describe("ModuleAccessGroupCrudService — audit: group created", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn(), cached: jest.fn() } },
-        { provide: AuditService, useValue: { log: auditLog } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
         mockGroupPolicyService(),
       ],
     }).compile();
 
     await m.get(ModuleAccessGroupCrudService).createGroup(makeActor(), "hr", { name: "HR Admins" });
 
-    expect(auditLog).toHaveBeenCalledTimes(1);
-    expect(auditLog).toHaveBeenCalledWith(
+    expect(jest.mocked(commitAccessChange)).toHaveBeenCalledWith(
+      expect.anything(),
+      "org-1",
       expect.objectContaining({
-        action: "module_access.group_created",
-        metadata: expect.objectContaining({ moduleKey: "hr" }),
+        audit: expect.objectContaining({
+          action: "module_access.group_created",
+          metadata: expect.objectContaining({ moduleKey: "hr" }),
+        }),
       }),
     );
   });
 });
 
 describe("ModuleAccessGroupCrudService — audit: group deleted", () => {
-  it("logs module_access.group_deleted with moduleKey after the transaction commits", async () => {
-    const auditLog = jest.fn();
+  it("passes audit opts with module_access.group_deleted and moduleKey to commitAccessChange so the audit row rolls back if the delete fails", async () => {
 
     const existingGroup = { id: 9, orgId: "org-1", moduleKey: "hr", isSystem: false, name: "Old Group" };
     const txMock = {
@@ -141,26 +145,28 @@ describe("ModuleAccessGroupCrudService — audit: group deleted", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn(), cached: jest.fn() } },
-        { provide: AuditService, useValue: { log: auditLog } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
         mockGroupPolicyService(),
       ],
     }).compile();
 
     await m.get(ModuleAccessGroupCrudService).deleteGroup(makeActor(), "hr", 9);
 
-    expect(auditLog).toHaveBeenCalledTimes(1);
-    expect(auditLog).toHaveBeenCalledWith(
+    expect(jest.mocked(commitAccessChange)).toHaveBeenCalledWith(
+      expect.anything(),
+      "org-1",
       expect.objectContaining({
-        action: "module_access.group_deleted",
-        metadata: expect.objectContaining({ moduleKey: "hr", name: "Old Group" }),
+        audit: expect.objectContaining({
+          action: "module_access.group_deleted",
+          metadata: expect.objectContaining({ moduleKey: "hr", name: "Old Group" }),
+        }),
       }),
     );
   });
 });
 
 describe("ModuleAccessGroupMembersService — audit: group member added", () => {
-  it("logs module_access.group_member_added with moduleKey and targetUserId", async () => {
-    const auditLog = jest.fn();
+  it("passes audit opts with module_access.group_member_added and targetUserId to commitAccessChange so membership changes are traceable", async () => {
 
     const txMock = {
       execute: jest.fn().mockResolvedValue([]),
@@ -187,7 +193,7 @@ describe("ModuleAccessGroupMembersService — audit: group member added", () => 
         ModuleAccessGroupMembersService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
-        { provide: AuditService, useValue: { log: auditLog } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
         mockGroupPolicyService(),
       ],
     }).compile();
@@ -196,20 +202,21 @@ describe("ModuleAccessGroupMembersService — audit: group member added", () => 
       .get(ModuleAccessGroupMembersService)
       .addGroupMember(makeActor(), "hr", 9, { userId: "u-target" });
 
-    expect(auditLog).toHaveBeenCalledTimes(1);
-    expect(auditLog).toHaveBeenCalledWith(
+    expect(jest.mocked(commitAccessChange)).toHaveBeenCalledWith(
+      expect.anything(),
+      "org-1",
       expect.objectContaining({
-        action: "module_access.group_member_added",
-        metadata: expect.objectContaining({ moduleKey: "hr", targetUserId: "u-target" }),
+        audit: expect.objectContaining({
+          action: "module_access.group_member_added",
+          metadata: expect.objectContaining({ moduleKey: "hr", targetUserId: "u-target" }),
+        }),
       }),
     );
   });
 });
 
 describe("ModuleAccessService — audit: role permissions set with diff", () => {
-  it("logs module_access.role_permissions_set with correct added/removed diff after the transaction", async () => {
-    const auditLog = jest.fn();
-
+  it("passes added/removed diff in audit opts to commitAccessChange so permission changes are explainable inside the transaction", async () => {
     const role = {
       id: 5,
       slug: "CUSTOM_ROLE",
@@ -252,7 +259,7 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
-        { provide: AuditService, useValue: { log: auditLog } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
       ],
     }).compile();
 
@@ -261,18 +268,16 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
       items: [{ permissionKey: "hr:employees:create", scope: "all" }],
     });
 
-    expect(auditLog).toHaveBeenCalledTimes(1);
-    const call = auditLog.mock.calls[0][0] as Record<string, unknown>;
-    expect(call.action).toBe("module_access.role_permissions_set");
-    const meta = call.metadata as Record<string, unknown>;
+    const call = jest.mocked(commitAccessChange).mock.calls[0];
+    const auditOpts = (call?.[2] as { audit?: Record<string, unknown> })?.audit ?? {};
+    expect(auditOpts.action).toBe("module_access.role_permissions_set");
+    const meta = auditOpts.metadata as Record<string, unknown>;
     expect(meta.moduleKey).toBe("hr");
     expect(meta.added).toEqual(expect.arrayContaining(["hr:employees:create"]));
     expect(meta.removed).toEqual([]);
   });
 
-  it("logs module_access.role_permissions_set with truncated=true when diff exceeds the cap", async () => {
-    const auditLog = jest.fn();
-
+  it("caps the diff at 50 entries and sets truncated=true in audit opts so oversized diffs do not bloat the audit row", async () => {
     const role = {
       id: 5,
       slug: "CUSTOM_ROLE",
@@ -318,7 +323,7 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
-        { provide: AuditService, useValue: { log: auditLog } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
       ],
     }).compile();
 
@@ -327,9 +332,9 @@ describe("ModuleAccessService — audit: role permissions set with diff", () => 
       items: [],
     });
 
-    expect(auditLog).toHaveBeenCalledTimes(1);
-    const call = auditLog.mock.calls[0][0] as Record<string, unknown>;
-    const meta = call.metadata as Record<string, unknown>;
+    const call = jest.mocked(commitAccessChange).mock.calls[0];
+    const auditOpts = (call?.[2] as { audit?: Record<string, unknown> })?.audit ?? {};
+    const meta = auditOpts.metadata as Record<string, unknown>;
     expect(meta.truncated).toBe(true);
     expect((meta.removed as string[]).length).toBeLessThanOrEqual(50);
   });

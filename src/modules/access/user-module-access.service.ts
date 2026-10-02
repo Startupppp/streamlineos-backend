@@ -10,11 +10,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import {
   ADMINISTRABLE_MODULES,
 } from "../../common/rbac/module-vocabulary";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { EntitlementsService } from "./entitlements.service";
 import { MANAGEABLE_MODULE_SET } from "./access-policy";
 import { AccessVersionCache } from "./access-version-cache";
@@ -152,12 +151,12 @@ export class UserModuleAccessService {
             ],
             set: { enabled, updatedBy },
           });
-        await bumpPermissionsVersion(tx, orgId);
+        await commitAccessChange(tx, orgId, {
+          revoke: { cache: this.cache, loses: [{ kind: "permissions", userIds: [userId] }] },
+        });
       },
       { orgId },
     );
-
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     return this.getUserModuleAccess(orgId, userId);
   }
 }

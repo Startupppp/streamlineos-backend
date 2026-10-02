@@ -9,7 +9,6 @@ import {
 import { and, count, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import {
   organizationMembers,
-  projectMembers,
   projects,
   tickets,
   timesheets,
@@ -35,7 +34,7 @@ import type {
   TimeEntryPaginationQuery,
   UpdateEntryInput,
 } from "./dto/timesheets.schemas";
-import { assertProjectInOrg } from "../core";
+import { assertProjectAccess, assertProjectInOrg } from "../core";
 
 @Injectable()
 export class TimesheetsService {
@@ -426,30 +425,10 @@ export class TimesheetsService {
         isNull(tickets.deletedAt),
       ),
       columns: { projectId: true },
-      with: { project: { columns: { managerMembershipId: true, id: true } } },
     });
-    if (!ticket?.project) throw new NotFoundException("Ticket not found");
+    if (!ticket) throw new NotFoundException("Ticket not found");
 
-    const isOwnerOrAdmin = await this.access.holds(user, "build:manage");
-    const isManager =
-      (membershipId !== null && ticket.project.managerMembershipId === membershipId) ||
-      false;
-
-    if (!isOwnerOrAdmin && !isManager) {
-      const membership = await this.db.query.projectMembers.findFirst({
-        columns: { id: true },
-        where: and(
-          eq(projectMembers.orgId, user.orgId),
-          eq(projectMembers.projectId, ticket.project.id),
-          eq(projectMembers.membershipId, membershipId ?? -1),
-        ),
-      });
-      if (!membership) {
-        throw new ForbiddenException(
-          "You must be a project member to log time.",
-        );
-      }
-    }
+    await assertProjectAccess(this.db, this.access, user, projectId);
 
     const entryDate = formatDateOnly(input.date);
     const settings = await this.periodService.loadSettings(user.orgId);

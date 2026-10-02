@@ -208,8 +208,23 @@ export class MeetingsService {
     const meeting = await this.loadMeeting(u.orgId, projectId, meetingId);
     const [attendees, actionItems, standupEntries] = await Promise.all([
       this.db
-        .select()
+        .select({
+          id: meetingAttendees.id,
+          orgId: meetingAttendees.orgId,
+          meetingId: meetingAttendees.meetingId,
+          membershipId: meetingAttendees.membershipId,
+          userId: organizationMembers.userId,
+          attended: meetingAttendees.attended,
+          createdAt: meetingAttendees.createdAt,
+        })
         .from(meetingAttendees)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, meetingAttendees.membershipId),
+            eq(organizationMembers.orgId, u.orgId),
+          ),
+        )
         .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, u.orgId)))
         .limit(100),
       this.db

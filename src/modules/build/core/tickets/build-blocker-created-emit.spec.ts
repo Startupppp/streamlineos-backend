@@ -6,7 +6,7 @@ import { buildBlockerCreatedPayloadSchema } from "../dto/build-blocker-created-p
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import type { AddRelationInput } from "../dto/ticket-subresources.schemas";
 
-jest.mock("./build-ticket-read-access", () => ({
+jest.mock("../project-crud/project-access", () => ({
   assertTicketReadAccess: jest.fn().mockResolvedValue(undefined),
 }));
 

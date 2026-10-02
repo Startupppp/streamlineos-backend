@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, ilike, or } from "drizzle-orm";
-import { gitConnections } from "../../../db/schema";
+import { gitConnections, integrationGitConnectionCredentials } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -47,11 +47,18 @@ export class GitConnectionsService {
         repoUrl: gitConnections.repoUrl,
         repoName: gitConnections.repoName,
         isActive: gitConnections.isActive,
-        webhookSecret: gitConnections.webhookSecret,
+        signingSecret: integrationGitConnectionCredentials.signingSecret,
         createdAt: gitConnections.createdAt,
         updatedAt: gitConnections.updatedAt,
       })
       .from(gitConnections)
+      .leftJoin(
+        integrationGitConnectionCredentials,
+        and(
+          eq(integrationGitConnectionCredentials.orgId, gitConnections.orgId),
+          eq(integrationGitConnectionCredentials.gitConnectionId, gitConnections.id),
+        ),
+      )
       .where(
         and(
           eq(gitConnections.orgId, orgId),
@@ -81,7 +88,7 @@ export class GitConnectionsService {
         repoUrl: row.repoUrl,
         repoName: row.repoName,
         isActive: row.isActive,
-        maskedSecret: maskSecret(row.webhookSecret),
+        maskedSecret: row.signingSecret !== null ? maskSecret(row.signingSecret) : "••••••••••••",
         webhookUrl: gitWebhookUrl(row.id),
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -105,10 +112,17 @@ export class GitConnectionsService {
         repoUrl: input.repoUrl,
         repoName: input.repoName ?? null,
         projectId: input.projectId ?? null,
-        webhookSecret: secret,
         createdBy: userId,
       })
       .returning();
+
+    const now = new Date();
+    await this.db.insert(integrationGitConnectionCredentials).values({
+      orgId,
+      gitConnectionId: created.id,
+      signingSecret: secret,
+      secretSetAt: now,
+    });
 
     return {
       id: created.id,
