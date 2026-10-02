@@ -1,8 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   users,
-  organizations,
   organizationPeople,
   magicLinkTokens,
 } from "../../../db/schema";
@@ -35,6 +34,9 @@ import {
 import { OutboxWakeSignal } from "../../../common/outbox/outbox-wake.signal";
 import { logger } from "../../../common/logger/logger.service";
 import { emitSetupCompleted, claimOnboardingStamp } from "./org-setup-internals";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { PLAN_LOCKED_MODULES } from "../../billing/core/plan-entitlements.constants";
+import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 
 export { DEFAULT_SKIP_MODULES, provisionOrgModules };
 
@@ -51,7 +53,21 @@ export class OrgSetupService {
     private readonly resolver: OrgSetupResolverService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
     private readonly wakeSignal: OutboxWakeSignal,
+    private readonly planLimits: PlanLimitsService,
   ) {}
+
+  private async assertModulesIncludedInPlan(
+    tx: TenantTx,
+    orgId: string,
+    moduleKeys: readonly string[],
+  ): Promise<void> {
+    const { tier } = await this.planLimits.resolveTierFreshInTransaction(tx, orgId);
+    const locked = PLAN_LOCKED_MODULES[tier];
+    for (const moduleKey of moduleKeys) {
+      if (locked.includes(moduleKey))
+        throw new ModuleDisabledException(moduleKey, "not-in-plan");
+    }
+  }
 
   // Runs on replays too, and writes before invalidating so no concurrent read re-caches the old org.
   private async publishSetupResult(
@@ -95,6 +111,7 @@ export class OrgSetupService {
         });
         if (!stamped) return false;
 
+        await this.assertModulesIncludedInPlan(tx, orgId, input.enabledModules);
         await provisionOrgModules(tx, orgId, input.enabledModules, u.userId);
         await provisionEmployeeSelfService(tx, orgId);
 
@@ -207,6 +224,7 @@ export class OrgSetupService {
         });
         if (!stamped) return false;
 
+        await this.assertModulesIncludedInPlan(tx, orgId, DEFAULT_SKIP_MODULES);
         await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, u.userId);
         await provisionEmployeeSelfService(tx, orgId);
 

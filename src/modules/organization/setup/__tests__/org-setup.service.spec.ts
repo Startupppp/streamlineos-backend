@@ -15,6 +15,8 @@ import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-check
 import { ACCESS_MANAGED_MODULES } from "../../../rbac/permissions";
 import { ForbiddenException } from "@nestjs/common";
 import { OutboxWakeSignal } from "../../../../common/outbox/outbox-wake.signal";
+import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
+import { ModuleDisabledException } from "../../../../common/http/api-exceptions";
 
 jest.mock("../../../../common/rbac/access-mutation-commit", () => ({
   commitAccessChange: jest.fn().mockResolvedValue(undefined),
@@ -193,6 +195,9 @@ async function buildService(
     activate: jest.fn().mockResolvedValue({ status: "activated" }),
     refreshForUser: jest.fn(),
   },
+  planLimits: { resolveTierFreshInTransaction: jest.Mock } = {
+    resolveTierFreshInTransaction: jest.fn().mockResolvedValue({ tier: "PAID", plan: "STARTER" }),
+  },
 ) {
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -225,6 +230,7 @@ async function buildService(
         useValue: { emit: jest.fn().mockResolvedValue(undefined) },
       },
       { provide: OutboxWakeSignal, useValue: wakeSignal },
+      { provide: PlanLimitsService, useValue: planLimits },
     ],
   }).compile();
   return moduleRef.get(OrgSetupService);
@@ -254,6 +260,114 @@ async function buildQueryService(db: unknown) {
   }).compile();
   return moduleRef.get(OrgSetupQueryService);
 }
+
+describe("OrgSetupService plan eligibility", () => {
+  const input = {
+    fullName: "Test Owner",
+    industry: "IT Services",
+    companySize: "1-10",
+    enabledModules: ["build"],
+  } as Parameters<OrgSetupService["completeSetup"]>[1];
+
+  it.each(["payroll", "inventory"])(
+    "rejects a mixed Build and %s selection on FREE before provisioning",
+    async (moduleKey) => {
+      const { db, txMocks } = buildDb(99);
+      const planLimits = {
+        resolveTierFreshInTransaction: jest.fn().mockResolvedValue({ tier: "FREE", plan: "FREE" }),
+      };
+      const svc = await buildService(db, undefined, undefined, undefined, planLimits);
+
+      await expect(
+        svc.completeSetup(ownerActor(), {
+          ...input,
+          enabledModules: ["build", moduleKey],
+        }),
+      ).rejects.toBeInstanceOf(ModuleDisabledException);
+
+      expect(planLimits.resolveTierFreshInTransaction).toHaveBeenCalledWith(
+        expect.anything(),
+        "org-1",
+      );
+      expect(txMocks.insert).not.toHaveBeenCalled();
+      expect(txMocks.onConflictDoUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows Build alone on FREE and the default skip selection", async () => {
+    const { db, txMocks } = buildDb(99);
+    const planLimits = {
+      resolveTierFreshInTransaction: jest.fn().mockResolvedValue({ tier: "FREE", plan: "FREE" }),
+    };
+    const svc = await buildService(db, undefined, undefined, undefined, planLimits);
+
+    await expect(svc.completeSetup(ownerActor(), input)).resolves.toMatchObject({
+      success: true,
+      orgId: "org-1",
+    });
+    expect(txMocks.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+    expect(planLimits.resolveTierFreshInTransaction).toHaveBeenCalledTimes(1);
+
+    const skipDb = buildDb(99);
+    const skipSvc = await buildService(skipDb.db, undefined, undefined, undefined, planLimits);
+    await expect(skipSvc.skipSetup(ownerActor())).resolves.toMatchObject({
+      success: true,
+      orgId: "org-1",
+    });
+    expect(planLimits.resolveTierFreshInTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts a selected paid module on an active STARTER trial", async () => {
+    const { db, txMocks } = buildDb(99);
+    const planLimits = {
+      resolveTierFreshInTransaction: jest.fn().mockResolvedValue({ tier: "PAID", plan: "STARTER" }),
+    };
+    const svc = await buildService(db, undefined, undefined, undefined, planLimits);
+
+    await expect(
+      svc.completeSetup(ownerActor(), {
+        ...input,
+        enabledModules: ["build", "payroll"],
+      }),
+    ).resolves.toMatchObject({ success: true, orgId: "org-1" });
+    const moduleCall = txMocks.values.mock.calls.find(
+      (args: unknown[]) =>
+        Array.isArray(args[0]) &&
+        (args[0] as Record<string, unknown>[])[0]?.enabled !== undefined,
+    );
+    const rows = moduleCall?.[0] as { moduleKey: string; enabled: boolean }[];
+    expect(rows).toContainEqual(expect.objectContaining({ moduleKey: "payroll", enabled: true }));
+  });
+
+  it("allows a corrected selection after plan eligibility rejects an attempt", async () => {
+    const { db } = buildDb(99);
+    const planLimits = {
+      resolveTierFreshInTransaction: jest.fn().mockResolvedValue({ tier: "FREE", plan: "FREE" }),
+    };
+    const svc = await buildService(db, undefined, undefined, undefined, planLimits);
+
+    await expect(
+      svc.completeSetup(ownerActor(), { ...input, enabledModules: ["build", "inventory"] }),
+    ).rejects.toBeInstanceOf(ModuleDisabledException);
+    await expect(svc.completeSetup(ownerActor(), input)).resolves.toMatchObject({
+      success: true,
+      orgId: "org-1",
+    });
+  });
+
+  it("does not deny a completed replay after the plan changes", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const planLimits = { resolveTierFreshInTransaction: jest.fn() };
+    const svc = await buildService(db, undefined, undefined, undefined, planLimits);
+
+    await expect(svc.completeSetup(ownerActor(), input)).resolves.toEqual({
+      success: true,
+      orgId: "org-1",
+    });
+    expect(planLimits.resolveTierFreshInTransaction).not.toHaveBeenCalled();
+  });
+});
 
 describe("OrgSetupService — provisionOrgModules ownership seeding", () => {
   it("inserts one ownership row per access-managed module when provisioning via skipSetup", async () => {

@@ -36,12 +36,12 @@ describe("PlanLimitsService", () => {
   let service: PlanLimitsService;
   let mockDb: ReturnType<typeof makeDb>;
 
-  async function build(db: ReturnType<typeof makeDb>) {
+  async function build(db: ReturnType<typeof makeDb>, cache = makeCache()) {
     const module = await Test.createTestingModule({
       providers: [
         PlanLimitsService,
         { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: makeCache() },
+        { provide: CacheService, useValue: cache },
       ],
     }).compile();
     return module.get(PlanLimitsService);
@@ -53,6 +53,30 @@ describe("PlanLimitsService", () => {
   });
 
   describe("resolveTier", () => {
+    it("reads the current transaction without using the cached tier", async () => {
+      const cache = makeCache();
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "STARTER", status: "ACTIVE" }]),
+      });
+      service = await build(mockDb, cache);
+      const tx = {
+        execute: jest.fn().mockResolvedValue([{
+          plan: "STARTER",
+          status: "CANCELLED",
+          trial_ends_at: null,
+          current_period_end: null,
+        }]),
+      };
+
+      await expect(service.resolveTierFreshInTransaction(tx as never, "org1")).resolves.toEqual({
+        tier: "FREE",
+        plan: "FREE",
+      });
+      expect(tx.execute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).not.toHaveBeenCalled();
+      expect(cache.cached).not.toHaveBeenCalled();
+    });
+
     it("returns FREE when no subscription row exists", async () => {
       mockDb = makeDb({ execute: jest.fn().mockResolvedValue([]) });
       service = await build(mockDb);

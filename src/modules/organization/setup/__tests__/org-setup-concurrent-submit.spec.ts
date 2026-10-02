@@ -12,6 +12,7 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-checklist.service";
 import { OutboxWakeSignal } from "../../../../common/outbox/outbox-wake.signal";
+import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 
 jest.mock("../../../../common/rbac/access-mutation-commit", () => ({
   commitAccessChange: jest.fn().mockResolvedValue(undefined),
@@ -185,6 +186,12 @@ async function buildService(db: unknown) {
       },
       { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
       { provide: OutboxWakeSignal, useValue: { wake, register: jest.fn() } },
+      {
+        provide: PlanLimitsService,
+        useValue: {
+          resolveTierFreshInTransaction: jest.fn().mockResolvedValue({ tier: "PAID", plan: "STARTER" }),
+        },
+      },
     ],
   }).compile();
   return { svc: moduleRef.get(OrgSetupService), wake };

@@ -122,6 +122,7 @@ describe("OrgSetupService — cross-tenant isolation", () => {
       resolver,
       accountOrgIndex as never,
       { wake: jest.fn(), register: jest.fn() } as never,
+      { resolveTierFreshInTransaction: jest.fn().mockResolvedValue({ tier: "PAID", plan: "STARTER" }) } as never,
     );
     return { svc, db, sessions, whereArgs };
   }

@@ -12,6 +12,7 @@ import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { OrganizationModule } from "../core/organization.module";
 import { WorkspaceOnboardingModule } from "../onboarding/workspace-onboarding.module";
 import { OrgSetupCompletedConsumerService } from "./org-setup-completed-consumer.service";
+import { BillingModule } from "../../billing/core/billing.module";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { OrgSetupCompletedConsumerService } from "./org-setup-completed-consumer
     OutboxModule,
     OrganizationModule,
     WorkspaceOnboardingModule,
+    BillingModule,
   ],
   controllers: [OrgController, AnnouncementsController],
   providers: [
