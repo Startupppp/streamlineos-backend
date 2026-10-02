@@ -441,17 +441,37 @@ describe("OrgSetupService — replay of a completed setup", () => {
 
 describe("OrgSetupService stale-session membership guards", () => {
   function buildMembershipDb(rows: Record<string, unknown>[]) {
-    const chain: Record<string, jest.Mock> = {};
-    chain.from = jest.fn().mockReturnValue(chain);
-    chain.leftJoin = jest.fn().mockReturnValue(chain);
-    chain.where = jest.fn().mockReturnValue(chain);
-    chain.orderBy = jest
-      .fn()
-      .mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) });
+    const activeRows = rows
+      .filter(
+        (row) =>
+          row.status === "ACTIVE" &&
+          row.orgStatus === "ACTIVE" &&
+          row.orgDeletedAt === null,
+      )
+      .map((row) => ({ orgId: row.orgId, isOwner: row.isOwner }));
+    const query = () => {
+      const chain: Record<string, jest.Mock> = {};
+      let resultRows = rows;
+      chain.from = jest.fn().mockReturnValue(chain);
+      chain.innerJoin = jest.fn().mockImplementation(() => {
+        resultRows = activeRows;
+        return chain;
+      });
+      chain.leftJoin = jest.fn().mockImplementation(() => {
+        resultRows = rows;
+        return chain;
+      });
+      chain.where = jest.fn().mockReturnValue(chain);
+      chain.orderBy = jest.fn().mockReturnValue(chain);
+      chain.limit = jest
+        .fn()
+        .mockImplementation((count: number) => Promise.resolve(resultRows.slice(0, count)));
+      return chain;
+    };
 
     const tx = {
       execute: jest.fn().mockResolvedValue([]),
-      select: jest.fn().mockReturnValue(chain),
+      select: jest.fn().mockImplementation(query),
     };
 
     return {
