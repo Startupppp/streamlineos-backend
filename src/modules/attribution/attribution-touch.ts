@@ -15,7 +15,7 @@
  */
 
 /** Which table a touch came out of. Kept on the row so a reader can go look. */
-export const TOUCH_KINDS = ["touchpoint", "activity"] as const;
+const TOUCH_KINDS = ["touchpoint", "activity"] as const;
 export type TouchKind = (typeof TOUCH_KINDS)[number];
 
 export interface AttributionTouch {

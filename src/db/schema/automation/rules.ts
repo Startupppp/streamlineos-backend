@@ -1,7 +1,21 @@
-import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  foreignKey,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  unique,
+} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
-import type { AutomationCondition, AutomationAction } from "../../../modules/automation/dto/automation.schemas";
+import type {
+  AutomationCondition,
+  AutomationAction,
+} from "../../../modules/automation/dto/automation.schemas";
 
 export type { AutomationCondition, AutomationAction };
 
@@ -65,49 +79,85 @@ export const AUTOMATION_TRIGGERS = [
 
 export type AutomationTriggerEvent = (typeof AUTOMATION_TRIGGERS)[number];
 
-export const AUTOMATION_RUN_STATUSES = ["success", "failed", "skipped"] as const;
+export const automationRules = pgTable(
+  "automation_rules",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    triggerEvent: text("trigger_event").notNull(),
+    conditions: jsonb("conditions")
+      .$type<AutomationCondition[]>()
+      .default([])
+      .notNull(),
+    actions: jsonb("actions").$type<AutomationAction[]>().default([]).notNull(),
+    isEnabled: boolean("is_enabled").default(true).notNull(),
+    runCount: integer("run_count").default(0).notNull(),
+    lastRunAt: timestamp("last_run_at"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("idx_automation_rules_org_trigger_enabled").on(
+      table.orgId,
+      table.triggerEvent,
+      table.isEnabled,
+    ),
+    unique("uniq_automation_rules_org_id").on(table.orgId, table.id),
+  ],
+);
 
-export const automationRules = pgTable("automation_rules", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  description: text("description"),
-  triggerEvent: text("trigger_event").notNull(),
-  conditions: jsonb("conditions").$type<AutomationCondition[]>().default([]).notNull(),
-  actions: jsonb("actions").$type<AutomationAction[]>().default([]).notNull(),
-  isEnabled: boolean("is_enabled").default(true).notNull(),
-  runCount: integer("run_count").default(0).notNull(),
-  lastRunAt: timestamp("last_run_at"),
-  createdBy: text("created_by"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_automation_rules_org_trigger_enabled").on(table.orgId, table.triggerEvent, table.isEnabled),
-  unique("uniq_automation_rules_org_id").on(table.orgId, table.id),
-]);
+export const automationRuns = pgTable(
+  "automation_runs",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    ruleId: integer("rule_id").notNull(),
+    triggerEvent: text("trigger_event").notNull(),
+    status: text("status").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.orgId, table.ruleId],
+      foreignColumns: [automationRules.orgId, automationRules.id],
+      name: "fk_automation_runs_rule_id_org",
+    }).onDelete("cascade"),
+    index("idx_automation_runs_rule").on(table.ruleId),
+    unique("uniq_automation_runs_org_id").on(table.orgId, table.id),
+  ],
+);
 
-export const automationRuns = pgTable("automation_runs", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  ruleId: integer("rule_id").notNull(),
-  triggerEvent: text("trigger_event").notNull(),
-  status: text("status").notNull(),
-  payload: jsonb("payload").$type<Record<string, unknown>>(),
-  result: jsonb("result").$type<Record<string, unknown>>(),
-  error: text("error"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  foreignKey({ columns: [table.orgId, table.ruleId], foreignColumns: [automationRules.orgId, automationRules.id], name: "fk_automation_runs_rule_id_org" }).onDelete("cascade"),
-  index("idx_automation_runs_rule").on(table.ruleId),
-  unique("uniq_automation_runs_org_id").on(table.orgId, table.id),
-]);
-
-export const automationRulesRelations = relations(automationRules, ({ one, many }) => ({
-  organization: one(organizations, { fields: [automationRules.orgId], references: [organizations.id] }),
-  runs: many(automationRuns),
-}));
+export const automationRulesRelations = relations(
+  automationRules,
+  ({ one, many }) => ({
+    organization: one(organizations, {
+      fields: [automationRules.orgId],
+      references: [organizations.id],
+    }),
+    runs: many(automationRuns),
+  }),
+);
 
 export const automationRunsRelations = relations(automationRuns, ({ one }) => ({
-  organization: one(organizations, { fields: [automationRuns.orgId], references: [organizations.id] }),
-  rule: one(automationRules, { fields: [automationRuns.ruleId], references: [automationRules.id] }),
+  organization: one(organizations, {
+    fields: [automationRuns.orgId],
+    references: [organizations.id],
+  }),
+  rule: one(automationRules, {
+    fields: [automationRuns.ruleId],
+    references: [automationRules.id],
+  }),
 }));
