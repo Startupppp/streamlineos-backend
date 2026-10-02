@@ -5,6 +5,7 @@ import { chatChannelInviteLinks, chatChannelMembers, chatChannels, organizationM
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../db/drizzle.types";
+import { assertChannelAdmin } from "./chat-channel-authorization";
 import {
   decryptSecret,
   encryptSecret,
@@ -38,20 +39,6 @@ function validLinkCondition() {
 export class ChatInviteLinksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private async assertAdmin(channelId: number, userId: string, orgId: string) {
-    const orgMember = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")),
-      columns: { id: true },
-    });
-    if (!orgMember) throw new NotFoundException("Channel not found");
-    const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.membershipId, orgMember.id)),
-    });
-    if (!member) throw new NotFoundException("Channel not found");
-    if (member.role !== "ADMIN") throw new ForbiddenException("Only channel admins can manage the invite link");
-    return member;
-  }
-
   private async findActiveLink(orgId: string, channelId: number, executor: Db | TenantTx = this.db) {
     return executor.query.chatChannelInviteLinks.findFirst({
       where: and(
@@ -79,7 +66,7 @@ export class ChatInviteLinksService {
   }
 
   async getOrCreateInviteLink(channelId: number, userId: string, orgId: string, options?: ChatInviteLinkMintOptions) {
-    const member = await this.assertAdmin(channelId, userId, orgId);
+    const membershipId = await assertChannelAdmin(this.db, channelId, userId, orgId);
 
     const existing = await this.findActiveLink(orgId, channelId);
     if (existing) {
@@ -112,12 +99,12 @@ export class ChatInviteLinksService {
       const [inserted] = await tx
         .insert(chatChannelInviteLinks)
         .values({
-          orgId: member.orgId,
+          orgId,
           channelId,
           token: null,
           tokenHash: minted.tokenHash,
           tokenEncrypted: minted.tokenEncrypted,
-          createdByMembershipId: member.membershipId ?? null,
+          createdByMembershipId: membershipId,
           expiresAt,
           maxUses,
           useCount: 0,
@@ -139,7 +126,7 @@ export class ChatInviteLinksService {
   }
 
   async regenerateInviteLink(channelId: number, userId: string, orgId: string, options?: ChatInviteLinkMintOptions) {
-    const member = await this.assertAdmin(channelId, userId, orgId);
+    const membershipId = await assertChannelAdmin(this.db, channelId, userId, orgId);
 
     await this.db
       .update(chatChannelInviteLinks)
@@ -157,12 +144,12 @@ export class ChatInviteLinksService {
     const maxUses = options?.maxUses ?? null;
 
     await this.db.insert(chatChannelInviteLinks).values({
-      orgId: member.orgId,
+      orgId,
       channelId,
       token: null,
       tokenHash: minted.tokenHash,
       tokenEncrypted: minted.tokenEncrypted,
-      createdByMembershipId: member.membershipId ?? null,
+      createdByMembershipId: membershipId,
       expiresAt,
       maxUses,
       useCount: 0,

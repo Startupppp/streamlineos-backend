@@ -58,6 +58,7 @@ describe("ChatInviteLinksService", () => {
 
   beforeEach(async () => {
     mockDb = buildMockDb();
+    mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: CHANNEL_ID, isPrivate: false, entityType: null, entityId: null });
     mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: MEMBERSHIP_ID });
     const module: TestingModule = await Test.createTestingModule({
       providers: [ChatInviteLinksService, { provide: DRIZZLE, useValue: mockDb }],
@@ -66,14 +67,27 @@ describe("ChatInviteLinksService", () => {
   });
 
   describe("getOrCreateInviteLink", () => {
-    it("throws NotFoundException when caller is not in the org", async () => {
+    it("throws ForbiddenException when caller is not in the org (same-tenant denial per BE-22)", async () => {
       mockDb.query.organizationMembers.findFirst.mockResolvedValueOnce(null);
+      await expect(service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID)).rejects.toThrow(ForbiddenException);
+    });
+
+    it("throws ForbiddenException when caller is not a member of this public channel (same-tenant membership denial)", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce(null);
+      await expect(service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID)).rejects.toThrow(ForbiddenException);
+    });
+
+    it("throws NotFoundException when the channel itself does not exist in the caller's org (cross-tenant oracle prevention)", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce(null);
       await expect(service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID)).rejects.toThrow(NotFoundException);
     });
 
-    it("throws NotFoundException when caller is not a member of this channel", async () => {
-      mockDb.query.chatChannelMembers.findFirst.mockResolvedValueOnce(null);
-      await expect(service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID)).rejects.toThrow(NotFoundException);
+    it("same-org non-member gets ForbiddenException — 403 not 404 — when the channel exists (BE-22 same-tenant denial)", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValueOnce({ id: CHANNEL_ID, isPrivate: false });
+      mockDb.query.organizationMembers.findFirst.mockResolvedValueOnce(null);
+      const err = await service.getOrCreateInviteLink(CHANNEL_ID, USER_ID, ORG_ID).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(err).not.toBeInstanceOf(NotFoundException);
     });
 
     it("throws ForbiddenException if requester is not an admin", async () => {

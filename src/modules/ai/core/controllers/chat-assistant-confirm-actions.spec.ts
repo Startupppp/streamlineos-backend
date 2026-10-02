@@ -10,6 +10,7 @@ import { ChatAssistantController } from "./chat-assistant.controller";
 import { CONFIRMABLE_ACTIONS, CONFIRM_ACTION_PERMISSION } from "../confirm-actions";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import type { AuthContext } from "../../../../common/auth/auth-context";
 
 const ACTOR: CurrentUserContext = {
   userId: "user-actions-test",
@@ -20,6 +21,11 @@ const ACTOR: CurrentUserContext = {
   tokenScopes: null,
   principal: humanSessionPrincipal(42, false),
 };
+
+const MODULE_AVAILABLE = {
+  actor: ACTOR,
+  moduleAvailable: async () => ({ available: true as const }),
+} as unknown as AuthContext;
 
 const SELF_PROVIDER_ACTIONS = [
   "self.applyLeave",
@@ -47,6 +53,7 @@ function makeController(action: string, payload: Record<string, unknown>, denyRe
   const confirmation = {
     confirm: jest.fn().mockResolvedValue({ proposalId: 1, action, payload }),
     markExecuted,
+    auditDeniedExecution: jest.fn(),
   };
   const moduleRef = { get: jest.fn().mockReturnValue({}) };
   const controller = new ChatAssistantController(
@@ -102,13 +109,13 @@ describe("POST /chat/confirm — permission re-check on confirmed action", () =>
     "throws ForbiddenException when denyReason is set for action %s",
     async (action) => {
       const { controller } = makeController(action, {}, "Permission denied for this resource");
-      await expect(controller.confirmAction({ token: "t.t.t" }, ACTOR)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(controller.confirmAction({ token: "t.t.t" }, ACTOR, MODULE_AVAILABLE)).rejects.toBeInstanceOf(ForbiddenException);
     },
   );
 
   it("markExecuted is never called when permission is denied", async () => {
     const { controller, markExecuted } = makeController("self.submitExpense", {}, "denied");
-    await expect(controller.confirmAction({ token: "t.t.t" }, ACTOR)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.confirmAction({ token: "t.t.t" }, ACTOR, MODULE_AVAILABLE)).rejects.toBeInstanceOf(ForbiddenException);
     expect(markExecuted).not.toHaveBeenCalled();
   });
 });
@@ -149,7 +156,7 @@ describe("POST /chat/confirm — actor identity never sourced from payload", () 
       moduleRef as never,
     );
 
-    await controller.confirmAction({ token: "t.t.t" }, ACTOR);
+    await controller.confirmAction({ token: "t.t.t" }, ACTOR, MODULE_AVAILABLE);
 
     expect(leaveSvc.create).toHaveBeenCalledTimes(1);
     const [actorArg] = leaveSvc.create.mock.calls[0] as [CurrentUserContext];
@@ -185,7 +192,7 @@ describe("POST /chat/confirm — actor identity never sourced from payload", () 
       moduleRef as never,
     );
 
-    await controller.confirmAction({ token: "t.t.t" }, ACTOR);
+    await controller.confirmAction({ token: "t.t.t" }, ACTOR, MODULE_AVAILABLE);
 
     expect(expenseSvc.create).toHaveBeenCalledTimes(1);
     const [orgIdArg, userIdArg] = expenseSvc.create.mock.calls[0] as [string, string];
@@ -225,7 +232,7 @@ describe("POST /chat/confirm — actor identity never sourced from payload", () 
       moduleRef as never,
     );
 
-    await controller.confirmAction({ token: "t.t.t" }, ACTOR);
+    await controller.confirmAction({ token: "t.t.t" }, ACTOR, MODULE_AVAILABLE);
 
     const actorArg = capturedActors[0] as CurrentUserContext;
     expect(actorArg.userId).toBe(ACTOR.userId);

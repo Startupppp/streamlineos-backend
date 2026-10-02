@@ -323,6 +323,23 @@ export class AiConfirmationService implements OnModuleInit {
     return { db: this.db, audit: this.audit };
   }
 
+  auditDeniedExecution(input: {
+    proposalId: number;
+    orgId: string;
+    userId: string;
+    action: string;
+    reason: string;
+  }): void {
+    this.audit.log({
+      action: "ai.proposal.execution_denied",
+      userId: input.userId,
+      orgId: input.orgId,
+      resourceType: "ai_action_proposal",
+      resourceId: String(input.proposalId),
+      metadata: { action: input.action, reason: input.reason },
+    });
+  }
+
   async markExecuted(
     proposalId: number,
     result: Record<string, unknown>,

@@ -1,21 +1,18 @@
 import {
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
-  chatChannelMembers,
-  chatChannels,
   chatMessageReactions,
   chatMessages,
-  organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { MESSAGE_REACTIONS_WITH, foldReactions } from "./chat-message-reaction-shape";
+import { assertChannelMember } from "./chat-channel-authorization";
 
 @Injectable()
 export class ChatReactionsService {
@@ -23,46 +20,6 @@ export class ChatReactionsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
   ) {}
-
-  private async resolveMembershipId(
-    orgId: string,
-    userId: string,
-  ): Promise<number | null> {
-    const row = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
-    return row?.id ?? null;
-  }
-
-  private async assertChannelMember(
-    channelId: number,
-    orgId: string,
-    membershipId: number,
-  ): Promise<void> {
-    const channel = await this.db.query.chatChannels.findFirst({
-      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
-      columns: { id: true, isPrivate: true },
-    });
-    if (!channel) throw new NotFoundException("Channel not found");
-    const m = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.membershipId, membershipId),
-      ),
-      columns: { id: true },
-    });
-    if (!m) {
-      // A private channel must not confirm its own existence to a non-member.
-      if (channel.isPrivate) throw new NotFoundException("Channel not found");
-      throw new ForbiddenException("You are not a member of this channel");
-    }
-  }
 
   private async assertMessage(
     messageId: number,
@@ -88,8 +45,6 @@ export class ChatReactionsService {
     orgId: string,
     messageId: number,
   ): Promise<Record<string, string[]>> {
-    // The same projection and the same folder the message reads use, so the map this
-    // mutation returns and the map a refetch produces cannot drift apart.
     const rows = await this.db.query.chatMessageReactions.findMany({
       where: and(
         eq(chatMessageReactions.orgId, orgId),
@@ -107,12 +62,7 @@ export class ChatReactionsService {
     orgId: string,
     emoji: string,
   ): Promise<{ reactions: Record<string, string[]> }> {
-    const membershipId = await this.resolveMembershipId(orgId, userId);
-    if (membershipId === null)
-      throw new ForbiddenException(
-        "You are not a member of this organization",
-      );
-    await this.assertChannelMember(channelId, orgId, membershipId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     await this.assertMessage(messageId, channelId, orgId);
 
     await this.db
@@ -136,12 +86,7 @@ export class ChatReactionsService {
     orgId: string,
     emoji: string,
   ): Promise<{ reactions: Record<string, string[]> }> {
-    const membershipId = await this.resolveMembershipId(orgId, userId);
-    if (membershipId === null)
-      throw new ForbiddenException(
-        "You are not a member of this organization",
-      );
-    await this.assertChannelMember(channelId, orgId, membershipId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     await this.assertMessage(messageId, channelId, orgId);
 
     await this.db.delete(chatMessageReactions).where(
