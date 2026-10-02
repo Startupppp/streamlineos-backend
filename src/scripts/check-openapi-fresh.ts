@@ -8,6 +8,10 @@ interface Difference {
   pointer: string;
 }
 
+export function artifactsMatch(committed: string, generated: string): boolean {
+  return committed.replace(/\r\n/g, "\n") === generated.replace(/\r\n/g, "\n");
+}
+
 function operationIndex(json: string): Map<string, string> {
   const parsed: unknown = JSON.parse(json);
   const index = new Map<string, string>();
@@ -118,13 +122,23 @@ function selfTest(): void {
   if (diffArtifacts(committed, committed).length !== 0)
     failures.push("an identical artifact reported a difference");
 
+  const pretty = `${JSON.stringify({ ...base, components: { schemas: { Entry: { type: "object" } } } }, null, 2)}\n`;
+  const windowsLines = pretty.replace(/\n/g, "\r\n");
+  if (!artifactsMatch(windowsLines, pretty))
+    failures.push("CRLF-only differences must not mark an otherwise current artifact stale");
+  const changedComponent = pretty.replace('"type": "object"', '"type": "string"');
+  if (artifactsMatch(windowsLines, changedComponent))
+    failures.push("a changed component must mark the artifact stale after newline normalization");
+  if (artifactsMatch(committed, renamedField))
+    failures.push("a changed operation must mark the artifact stale after newline normalization");
+
   if (failures.length > 0) {
     process.stderr.write(`self-test FAILED\n${failures.join("\n")}\n`);
     process.exit(1);
   }
 
   process.stdout.write(
-    "self-test passed — the staleness check detects a changed operation, a removed route and an added route, and reports nothing for an identical artifact\n",
+    "self-test passed — CRLF/LF artifacts match; changed components and operations remain stale; operation additions and removals are detected\n",
   );
 }
 
@@ -164,7 +178,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  if (committed === generated.json) {
+  if (artifactsMatch(committed, generated.json)) {
     process.stdout.write(
       `openapi.json is current — ${String(generated.operations)} operations, ${String(generated.contractsApplied)} carrying a zod contract, ${String(generated.stamped)} exposure-stamped\n`,
     );
