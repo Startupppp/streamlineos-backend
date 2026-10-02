@@ -6,7 +6,7 @@ import { ProjectsBudgetService } from "../budget/projects-budget.service";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 import { analyticsService } from "./__tests__/analytics-service-double";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 

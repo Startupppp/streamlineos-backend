@@ -5,7 +5,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { WorkloadCapacityService } from "./workload-capacity.service";
-import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const CALLER_MEMBERSHIP = 21;

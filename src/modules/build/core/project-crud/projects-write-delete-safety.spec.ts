@@ -3,7 +3,7 @@ import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import { ticketComments, tickets } from "../../../../db/schema";
 import { ProjectsWriteService } from "./projects-write.service";
-import { standingAccess } from "./__tests__/project-access-doubles";
+import { standingAccess } from "../../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 

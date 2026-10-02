@@ -6,7 +6,7 @@ import { BugsService } from "../bugs.service";
 import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../../core/tickets";
 import { bugRowSchema } from "../dto/qa-response.schemas";
 import { tickets, workItemQaDetails } from "../../../../db/schema";
-import { projectAccessRow, standingAccess } from "../../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 3;

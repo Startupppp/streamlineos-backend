@@ -16,7 +16,7 @@ import { VALIDATION_SCHEMAS } from "../../../common/validation/validate.decorato
 import { RESPONSE_SCHEMA } from "../../../common/openapi/zod-operation-contracts";
 import { PermissionGuard } from "../../access/permission.guard";
 import type { AccessService } from "../../access/access.service";
-import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 import type { DataScope } from "../../access/access.types";
 import type { Db } from "../../../db/drizzle.types";
 import type { BuildTicketCreationService } from "../core/tickets";

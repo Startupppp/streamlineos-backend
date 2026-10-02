@@ -9,7 +9,7 @@ import {
   projectAccessRow,
   standingAccess,
   type ProjectAccessRow,
-} from "../project-crud/__tests__/project-access-doubles";
+} from "../../__tests__/project-access-doubles";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 import { createCustomFieldSchema } from "../dto/custom-fields.schemas";
 

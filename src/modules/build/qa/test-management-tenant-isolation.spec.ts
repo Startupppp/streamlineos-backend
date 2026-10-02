@@ -6,7 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestManagementService } from "./test-management.service";
 import { createTestCaseSchema } from "./dto/qa.schemas";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 function gatedSelect(row: object | null, after: () => unknown) {
   let first = true;

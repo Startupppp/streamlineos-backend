@@ -9,7 +9,7 @@ import type { Db } from "../../../../db/drizzle.types";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import { ProjectsReportsService } from "./projects-reports.service";
 import { computeCriticalPath } from "./projects-critical-path.util";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 const ORG = "org-points";

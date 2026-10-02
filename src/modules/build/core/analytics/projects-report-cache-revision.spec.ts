@@ -5,7 +5,7 @@ import { ProjectsReportsService } from "./projects-reports.service";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { projects } from "../../../../db/schema";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 describe("Build report cache revision", () => {
   it("reuses an unchanged report but refetches after a committed project revision", async () => {

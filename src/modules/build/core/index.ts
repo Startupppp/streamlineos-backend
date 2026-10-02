@@ -10,6 +10,7 @@ export {
   assertTicketInProject,
   assertTicketReadAccess,
   authorizeApprovalDecision,
+  decideProjectWrite,
   authorizeProjectTicketRead,
   authorizeTicketMutation,
   decideTicketRead,
@@ -18,6 +19,7 @@ export {
   lockProjectTicketMutation,
   readMutationTickets,
   resolveProjectAccess,
+  type ProjectState,
   type TicketReadAccess,
 } from "./project-crud/project-access";
 export { resolveProjectAssignableMemberships } from "./project-crud/project-assignable-members";
@@ -37,7 +39,7 @@ export { escapeLike } from "./lib/escape-like";
 export { createTicketSchema } from "./dto/ticket.schemas";
 export { refineDueOnOrAfterStart } from "./dto/project-core.schemas";
 export { PROJECTS_MANAGE_PERMISSION, resolveProjectsScope } from "./project-crud/projects-scope";
-export { reachableProjectsSql } from "./project-crud/project-relationship";
+export { projectReachFor, reachableProjectsSql, ticketProjectReachableSql, ticketVisibleSql } from "./project-crud/project-relationship";
 export { TicketVersionConflictException } from "./tickets/ticket-version-conflict.exception";
 export { queryTickets } from "./tickets/projects-tickets-read.query";
 export { ProjectsModule } from "./projects.module";
@@ -82,3 +84,16 @@ export {
 } from "./dto/projects.schemas";
 export { projectListPageSchema, recentProjectsSchema } from "./dto/build-core-response.schemas";
 export { myIssuesSchema } from "./dto/build-tickets-response.schemas";
+export { ProjectsActivityService } from "./activity/projects-activity.service";
+export {
+  BuildAutomationActionExecutor,
+  type AutomationTicketChange,
+  type StoredAction,
+} from "./automation/build-automation-actions.service";
+export { ProjectsRestoreService } from "./project-crud/projects-restore.service";
+export { ProjectsRetentionSettingsService } from "./settings/projects-retention-settings.service";
+export { ProjectsSettingsIterationsService } from "./settings/projects-settings-iterations.service";
+export { setLegalHoldSchema } from "./dto/project-retention-settings.schemas";
+export { updateIterationSettingsSchema } from "./dto/iterations-settings.schemas";
+export { ProjectsWebhooksController } from "./webhooks/projects-webhooks.controller";
+export { ProjectsCustomFieldsController } from "./custom-fields/projects-custom-fields.controller";

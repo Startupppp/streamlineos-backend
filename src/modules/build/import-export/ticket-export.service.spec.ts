@@ -9,7 +9,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { parseCsvRows } from "./csv-source";
 import { parseImportSource } from "./import-source";
 import { TicketExportService, TICKET_EXPORT_COLUMNS } from "./ticket-export.service";
-import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const PROJECT = 42;

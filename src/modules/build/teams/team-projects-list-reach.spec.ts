@@ -12,7 +12,7 @@ import {
   MEMBER_STANDING,
   standingAccess,
   type StandingScopes,
-} from "../core/project-crud/__tests__/project-access-doubles";
+} from "../__tests__/project-access-doubles";
 import { TeamProjectsService } from "./team-projects.service";
 import { TeamsService } from "./teams.service";
 

@@ -15,7 +15,7 @@ import { WebhookEndpointService } from "../integrations/core/webhook-endpoint.se
 import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "./core/tickets";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { MANAGER_STANDING, projectAccessRow, standingAccess } from "./core/project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "./__tests__/project-access-doubles";
 
 const EXECUTE_ROWS: Record<string, unknown>[] = [
   { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: "3", completed: "1" },

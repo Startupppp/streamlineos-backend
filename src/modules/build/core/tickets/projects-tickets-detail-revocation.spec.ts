@@ -6,7 +6,7 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsForbiddenTicketException } from "../../../../common/http/api-exceptions";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
-import { MEMBER_STANDING, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, standingAccess } from "../../__tests__/project-access-doubles";
 
 const user: CurrentUserContext = {
   orgId: "org-a", userId: "user-a", role: "MEMBER", isOrgOwner: false,

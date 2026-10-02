@@ -11,7 +11,7 @@ import {
   standingAccess,
   type ProjectAccessRow,
   type StandingScopes,
-} from "../project-crud/__tests__/project-access-doubles";
+} from "../../__tests__/project-access-doubles";
 
 const ORG_ID = "org-col-agg";
 const PROJECT_ID = 42;

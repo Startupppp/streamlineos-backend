@@ -6,7 +6,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CreateChangeRequestInput } from "./dto/change-requests.schemas";
-import { projectAccessRow, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 
 function makeOwner(orgId: string): CurrentUserContext {
   return {

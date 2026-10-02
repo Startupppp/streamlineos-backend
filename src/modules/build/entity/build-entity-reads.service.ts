@@ -13,7 +13,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { ScopedRead } from "../../access/scoped-read";
 import { resolveEntityCardScope } from "./build-entity-scope";
 import { entityProjectReach } from "./build-entity-action-helpers";
-import { ticketVisibleSql } from "../core/project-crud/project-relationship";
+import { ticketVisibleSql } from "../core";
 import { type Permissions } from "../../entity-reference/entity-scope";
 import {
   unresolved,

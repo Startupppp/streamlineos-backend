@@ -5,7 +5,7 @@ import {
   MEMBER_STANDING,
   projectAccessRow,
   type ProjectAccessRow,
-} from "../core/project-crud/__tests__/project-access-doubles";
+} from "../__tests__/project-access-doubles";
 import { actorIn, portfoliosService, programsService } from "./__tests__/portfolio-spec-fixtures";
 
 const ORG = "org-1";

@@ -6,7 +6,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ProjectsRetentionSettingsService } from "./projects-retention-settings.service";
 import { setLegalHoldSchema, updateRetentionPolicySchema } from "../dto/project-retention-settings.schemas";
-import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "../../__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const CALLER_MEMBERSHIP = 21;

@@ -8,7 +8,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { BuildTicketCreationService } from "../core/tickets";
 import { ActionItemsService } from "./action-items.service";
 import { createActionItemSchema, updateActionItemSchema } from "./dto/meetings.schemas";
-import { MEMBER_STANDING, projectAccessRow, principalAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, principalAccess } from "../__tests__/project-access-doubles";
 
 const projectSelect = () => ({ from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) });
 

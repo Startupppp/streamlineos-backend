@@ -1,7 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsWriteService } from "./projects-write.service";
-import { standingAccess } from "./__tests__/project-access-doubles";
+import { standingAccess } from "../../__tests__/project-access-doubles";
 
 describe("ProjectsWriteService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";

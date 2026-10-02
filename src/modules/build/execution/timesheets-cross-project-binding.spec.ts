@@ -7,7 +7,7 @@ import type { EntriesPeriodService } from "../../timesheets/core/entries-period.
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { projects, tickets, timesheets } from "../../../db/schema";
-import { projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 import { TimesheetsService } from "./timesheets.service";
 import type { LogTimeInput } from "./dto/timesheets.schemas";
 

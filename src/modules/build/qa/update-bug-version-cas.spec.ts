@@ -7,7 +7,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { TicketVersionConflictException } from "../core/tickets";
 import { updateBugSchema } from "./dto/bugs.schemas";
-import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 function makeU(orgId: string): CurrentUserContext {
   return {

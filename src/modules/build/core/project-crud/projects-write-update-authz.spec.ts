@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsWriteService } from "./projects-write.service";
-import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "./__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-authz-1";
 

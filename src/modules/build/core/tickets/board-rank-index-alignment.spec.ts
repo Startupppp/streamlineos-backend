@@ -31,7 +31,7 @@ import type { AccessService } from "../../../access/access.service";
 import type { DataScope } from "../../../access/access.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { TICKETS_PERMISSION } from "../lib/tickets-scope";
 
 const dialect = new PgDialect();

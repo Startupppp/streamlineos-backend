@@ -1,4 +1,4 @@
-import { orgWideRoadmapAccess } from "../core/roadmap/__tests__/roadmap-access-double";
+import { orgWideRoadmapAccess } from "../__tests__/roadmap-access-double";
 import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
@@ -11,7 +11,7 @@ import { TestRunsService } from "../qa/test-runs.service";
 import { MilestonesService } from "../execution/workspace.service";
 import { WhiteboardsService } from "../execution/whiteboards.service";
 import { BugsService } from "../qa/bugs.service";
-import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../__tests__/project-access-doubles";
 import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 import { EpicsService } from "../execution/epics.service";
 

@@ -17,7 +17,7 @@ import type {
   UpdateModuleInput,
 } from "./dto/iterations.schemas";
 import { assertProjectAccess } from "../core";
-import { assertProjectVisible } from "../core/project-crud/project-access";
+import { assertProjectVisible } from "../core";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {

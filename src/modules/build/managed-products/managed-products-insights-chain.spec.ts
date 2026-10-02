@@ -1,4 +1,4 @@
-import { MEMBER_STANDING } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING } from "../__tests__/project-access-doubles";
 import { managedProductsService, productActorIn } from "./__tests__/managed-products-spec-fixtures";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";

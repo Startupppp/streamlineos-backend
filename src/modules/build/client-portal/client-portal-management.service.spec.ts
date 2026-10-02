@@ -4,7 +4,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { projectAccessRow, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 
 function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
   return jest.fn((fields?: Record<string, unknown>) =>

@@ -35,7 +35,7 @@ import type {
   UpdateEntryInput,
 } from "./dto/timesheets.schemas";
 import { assertProjectWriteAccess } from "../core";
-import { assertProjectVisible } from "../core/project-crud/project-access";
+import { assertProjectVisible } from "../core";
 
 @Injectable()
 export class TimesheetsService {

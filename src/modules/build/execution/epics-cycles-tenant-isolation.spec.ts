@@ -9,7 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 type TxHandle = { insert: jest.Mock; execute: jest.Mock };
 

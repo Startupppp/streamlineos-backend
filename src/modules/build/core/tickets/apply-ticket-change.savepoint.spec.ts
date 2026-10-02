@@ -2,7 +2,7 @@ import { runWithTenantContext } from "../../../../common/tenant/tenant-context";
 import type { TenantTx } from "../../../../db/drizzle.types";
 import type { Db } from "../../../../db/drizzle.module";
 import { applyTicketChange } from "./apply-ticket-change";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import type { ApplyTicketChangeDeps } from "./apply-ticket-change";
 
 function makeTicket(overrides: Record<string, unknown> = {}) {

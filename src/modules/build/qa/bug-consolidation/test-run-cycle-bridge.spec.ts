@@ -6,7 +6,7 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { TestRunsService } from "../test-runs.service";
 import type { BuildTicketCreationService } from "../../core/tickets";
 import { cycles, testRuns } from "../../../../db/schema";
-import { projectAccessRow, standingAccess } from "../../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 4;

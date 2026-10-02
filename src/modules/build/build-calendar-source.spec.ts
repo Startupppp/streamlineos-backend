@@ -8,7 +8,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
 import { MembershipStateService } from "../../common/auth/membership-state.service";
-import { MEMBER_STANDING, principalAccess } from "./core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess } from "./__tests__/project-access-doubles";
 
 const MEMBERSHIP_ID = 77;
 

@@ -5,7 +5,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { projectStatuses, projectWebhooks, projects, tickets } from "../../../db/schema";
-import { MANAGER_STANDING, projectAccessRow, standingAccess } from "./project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { ProjectsCustomStatesService } from "./custom-states/projects-custom-states.service";
 import { ProjectsCustomFieldsService } from "./custom-fields/projects-custom-fields.service";

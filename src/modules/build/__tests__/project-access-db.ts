@@ -1,4 +1,4 @@
-import type { Db } from "../../../../../db/drizzle.types";
+import type { Db } from "../../../db/drizzle.types";
 
 export type Rows = readonly object[];
 

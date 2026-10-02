@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { orgWideRoadmapAccess, roadmapActor } from "./__tests__/roadmap-access-double";
+import { orgWideRoadmapAccess, roadmapActor } from "../../__tests__/roadmap-access-double";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";

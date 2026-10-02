@@ -17,7 +17,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { assertTicketReadAccess } from "../core";
-import { resolveTicketVisibility } from "../core/project-crud/project-access";
+import { resolveTicketVisibility } from "../core";
 
 @Injectable()
 export class CommentDraftsService {

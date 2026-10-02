@@ -14,7 +14,7 @@ import {
   MEMBER_STANDING,
   projectAccessRow,
   type ProjectAccessRow,
-} from "../core/project-crud/__tests__/project-access-doubles";
+} from "../__tests__/project-access-doubles";
 
 function projectGateSelect(rows: ProjectAccessRow[], rest: jest.Mock = jest.fn()): jest.Mock {
   return jest.fn((fields?: Record<string, unknown>) =>

@@ -6,7 +6,7 @@ import type { Db } from "../../../../db/drizzle.types";
 import { rankTicket } from "./projects-tickets-rank-utils";
 import { TicketVersionConflictException } from "./ticket-version-conflict.exception";
 import { rankTicketSchema } from "../dto/projects.schemas";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 const actor: CurrentUserContext = {
   orgId: "11111111-1111-4111-8111-111111111111",

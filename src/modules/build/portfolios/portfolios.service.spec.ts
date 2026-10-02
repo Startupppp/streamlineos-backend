@@ -6,7 +6,7 @@ import { PortfoliosService } from "./portfolios.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
-import { MANAGER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, standingAccess } from "../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 function renderSql(value: unknown): string {

@@ -16,8 +16,8 @@ import {
   readMutationTickets,
   resolveProjectAccess,
 } from "./project-access";
-import { MEMBER_STANDING, projectAccessRow, standingAccess, type StandingScopes } from "./__tests__/project-access-doubles";
-import { queuedSelectDb } from "./__tests__/project-access-db";
+import { MEMBER_STANDING, projectAccessRow, standingAccess, type StandingScopes } from "../../__tests__/project-access-doubles";
+import { queuedSelectDb } from "../../__tests__/project-access-db";
 
 const MEMBER_MID = 42;
 const PROJECT_ID = 10;

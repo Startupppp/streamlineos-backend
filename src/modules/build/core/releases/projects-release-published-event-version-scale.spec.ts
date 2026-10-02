@@ -13,7 +13,7 @@ import {
 } from "../../../../db/schema";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-rel-scale-1";
 const MEMBERSHIP_ID = 5;

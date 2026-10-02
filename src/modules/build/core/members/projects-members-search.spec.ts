@@ -7,7 +7,7 @@ import type { ProjectsLabelsService } from "../lib/projects-labels.service";
 import type { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
-import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 

@@ -4,7 +4,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 
 const dialect = new PgDialect();

@@ -6,7 +6,7 @@ import type { BuildTicketCreationService, ProjectsTicketsUpdateService, Projects
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 

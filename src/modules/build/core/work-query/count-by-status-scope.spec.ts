@@ -7,7 +7,7 @@ import { projects, tickets } from "../../../../db/schema";
 import { allCountByStatusQuery, ProjectsWorkQueryService } from "./projects-work-query.service";
 import { mineCountByStatusSql } from "./work-scope-union";
 import { reachableProjectsSql } from "../project-crud/project-relationship";
-import { MANAGER_STANDING, MEMBER_STANDING, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, MEMBER_STANDING, standingAccess } from "../../__tests__/project-access-doubles";
 import type { AccessService } from "../../../access/access.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";

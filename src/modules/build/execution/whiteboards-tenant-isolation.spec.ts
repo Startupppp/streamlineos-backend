@@ -6,7 +6,7 @@ import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 function projectGate(found: boolean) {
   return { from: () => ({ where: () => ({ limit: async () => (found ? [projectAccessRow({ manages: true })] : []) }) }) };

@@ -4,7 +4,7 @@ import type { AccessService } from "../../access/access.service";
 import { MeetingsService } from "./meetings.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 describe("MeetingsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";

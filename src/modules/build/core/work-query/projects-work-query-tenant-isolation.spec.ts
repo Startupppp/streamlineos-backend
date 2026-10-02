@@ -5,7 +5,7 @@ import { orgTicketSearchQuery } from "../project-crud/projects-search.service";
 import { resolveTicketVisibility } from "../project-crud/project-access";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { MEMBER_STANDING, principalAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess } from "../../__tests__/project-access-doubles";
 
 /**
  * Ticket search is one bounded, tenant-joined statement.

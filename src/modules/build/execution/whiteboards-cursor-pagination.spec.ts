@@ -4,7 +4,7 @@ import { WhiteboardsService } from "./whiteboards.service";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 function projectGate(found: boolean) {
   return { from: () => ({ where: () => ({ limit: async () => (found ? [projectAccessRow()] : []) }) }) };

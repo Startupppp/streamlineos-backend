@@ -7,7 +7,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ChangeRequestAffectedItemsService } from "./change-request-affected-items.service";
 import { ChangeRequestsService } from "./change-requests.service";
-import { MEMBER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, standingAccess } from "../__tests__/project-access-doubles";
 
 const PROJECT_ID = 10;
 const TICKET_ID = 55;

@@ -7,7 +7,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService, IntakeService, ViewsService } from "./workspace.service";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
 import { projects } from "../../../db/schema";
-import { MEMBER_STANDING, principalAccess, projectAccessRow, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess, projectAccessRow, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 
 const projectAccessWheres: unknown[] = [];
 

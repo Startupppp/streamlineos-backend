@@ -9,7 +9,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
-import { principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 type OpenApiObject = Record<string, unknown>;
 

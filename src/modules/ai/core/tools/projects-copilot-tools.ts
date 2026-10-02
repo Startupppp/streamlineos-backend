@@ -7,7 +7,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
 import { ticketScope } from "../../../build/core/tickets";
-import { projectReachFor, ticketProjectReachableSql } from "../../../build/core/project-crud/project-relationship";
+import { projectReachFor, ticketProjectReachableSql } from "../../../build/core";
 import {
   type AskOsToolDefinition,
   type AskOsToolProvider,

@@ -14,7 +14,7 @@ import {
   standingAccess,
   type ProjectAccessRow,
   type StandingScopes,
-} from "../core/project-crud/__tests__/project-access-doubles";
+} from "../__tests__/project-access-doubles";
 import { TimesheetsService } from "./timesheets.service";
 
 const PROJECT_ID = 7;

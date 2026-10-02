@@ -5,7 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { FormsService } from "./forms.service";
 import { createFormSchema, updateFormSchema } from "./dto/forms.schemas";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 function rowsChain(rows: unknown[]) {
   const chain = {

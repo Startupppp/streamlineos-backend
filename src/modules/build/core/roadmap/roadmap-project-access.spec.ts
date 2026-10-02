@@ -10,8 +10,8 @@ import {
   projectAccessRow,
   standingAccess,
   type ProjectAccessRow,
-} from "../project-crud/__tests__/project-access-doubles";
-import { roadmapActor } from "./__tests__/roadmap-access-double";
+} from "../../__tests__/project-access-doubles";
+import { roadmapActor } from "../../__tests__/roadmap-access-double";
 import { createRoadmapSchema, updateRoadmapSchema } from "../dto/projects.schemas";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
 

@@ -6,7 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { BuildTicketCreationService } from "../core/tickets";
 import { IntakeService, ViewsService } from "./workspace.service";
 import { createIntakeSchema, createViewSchema } from "./dto/workspace.schemas";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 1;

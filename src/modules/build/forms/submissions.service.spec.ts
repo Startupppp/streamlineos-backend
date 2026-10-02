@@ -8,7 +8,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { Test } from "@nestjs/testing";
 import { encodeTupleCursor } from "../../../common/pagination/cursor";
-import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../__tests__/project-access-doubles";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";

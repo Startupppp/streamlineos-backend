@@ -10,7 +10,7 @@ import {
   MANAGER_STANDING,
   projectAccessRow,
   standingAccess,
-} from "../../core/project-crud/__tests__/project-access-doubles";
+} from "../../__tests__/project-access-doubles";
 
 function makeTicketCreation() {
   return {

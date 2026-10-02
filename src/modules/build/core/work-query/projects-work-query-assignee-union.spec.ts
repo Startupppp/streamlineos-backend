@@ -1,7 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
 import type { AccessService } from "../../../access/access.service";
-import { MEMBER_STANDING, principalAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess } from "../../__tests__/project-access-doubles";
 
 const memberAccess = () => principalAccess(MEMBER_STANDING) as unknown as AccessService;
 import type { Db } from "../../../../db/drizzle.module";

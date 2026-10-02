@@ -10,7 +10,7 @@ import { ProjectsActivityService } from "../activity/projects-activity.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 import { AuditService } from "../../../../common/audit/audit.service";
-import { MEMBER_STANDING, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, standingAccess } from "../../__tests__/project-access-doubles";
 
 const PROJECT_ID = 3;
 const TICKET_ID = 9;

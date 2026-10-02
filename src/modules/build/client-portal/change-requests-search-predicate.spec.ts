@@ -5,7 +5,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 

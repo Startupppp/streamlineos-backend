@@ -2,7 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import type { AccessService } from "../../../access/access.service";
-import type { StandingScopes } from "../../core/project-crud/__tests__/project-access-doubles";
+import type { StandingScopes } from "../../__tests__/project-access-doubles";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ScopeDirectoryService } from "../scope-directory.service";

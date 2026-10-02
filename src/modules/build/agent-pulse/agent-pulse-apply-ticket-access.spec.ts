@@ -6,10 +6,10 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ProjectsTicketCommentsService } from "../core/tickets";
-import { ProjectsActivityService } from "../core/activity/projects-activity.service";
-import { ProjectsWebhooksDispatchService } from "../core/webhooks/projects-webhooks-dispatch.service";
+import { ProjectsActivityService } from "../core";
+import { ProjectsWebhooksDispatchService } from "../core";
 import { AgentPulseService } from "./agent-pulse.service";
-import { MEMBER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, standingAccess } from "../__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const TICKET_ID = 55;

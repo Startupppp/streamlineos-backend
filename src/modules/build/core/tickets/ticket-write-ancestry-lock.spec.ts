@@ -4,7 +4,7 @@ import { systemActor } from "../../../../common/auth/system-actor";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const TICKET_ID = 1;
 const PROPOSED_PARENT_ID = 2;

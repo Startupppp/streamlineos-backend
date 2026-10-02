@@ -10,7 +10,7 @@ import { AccessService } from "../../access/access.service";
 import { ChatChannelsService } from "../../chat/chat-channels.service";
 import { ChatMessagesService } from "../../chat/chat-messages.service";
 import { assertProjectWriteAccess } from "../core";
-import { projectAccessRow, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 import { ApprovalsService } from "./approvals.service";
 
 jest.mock("../core/project-crud/project-access", () => ({

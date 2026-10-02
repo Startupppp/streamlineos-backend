@@ -11,7 +11,7 @@ import {
   MEMBER_STANDING,
   standingAccess,
   type StandingScopes,
-} from "../core/project-crud/__tests__/project-access-doubles";
+} from "../__tests__/project-access-doubles";
 import { CommentDraftsService } from "./comment-drafts.service";
 
 const actor: CurrentUserContext = {

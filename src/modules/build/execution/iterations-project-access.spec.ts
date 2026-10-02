@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../__tests__/project-access-doubles";
 import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { CyclesService } from "./cycles.service";
 import { EpicsService } from "./epics.service";

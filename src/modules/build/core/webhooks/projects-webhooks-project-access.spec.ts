@@ -10,7 +10,7 @@ import {
   projectAccessRow,
   standingAccess,
   type ProjectAccessRow,
-} from "../project-crud/__tests__/project-access-doubles";
+} from "../../__tests__/project-access-doubles";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 

@@ -5,7 +5,7 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { AccessService } from "../../../access/access.service";
-import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "./__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "../../__tests__/project-access-doubles";
 import { ProjectsQueryService } from "./projects-query.service";
 import { ProjectsWriteService } from "./projects-write.service";
 

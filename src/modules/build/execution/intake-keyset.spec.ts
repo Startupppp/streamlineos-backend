@@ -15,7 +15,7 @@ const owner: CurrentUserContext = {
 };
 import { encodeCursor } from "../../../common/pagination/cursor";
 import { intakeListSchema } from "./dto/workspace-response.schemas";
-import { projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 import type { AccessService } from "../../access/access.service";
 
 const ownerAccess = standingAccess({ "build:manage": "all" }) as unknown as AccessService;

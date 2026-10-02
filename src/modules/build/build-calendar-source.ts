@@ -13,7 +13,7 @@ import type {
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
 import { CalendarSourceRegistry, CALENDAR_PER_SOURCE_CAP } from "../calendar/calendar-source.registry";
-import { resolveTicketVisibility } from "./core/project-crud/project-access";
+import { resolveTicketVisibility } from "./core";
 
 function dateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);

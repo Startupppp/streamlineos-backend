@@ -7,7 +7,7 @@ import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ProjectsActivityFeedService } from "./projects-activity-feed.service";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const CALLER_MEMBERSHIP = 21;

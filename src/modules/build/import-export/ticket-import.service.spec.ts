@@ -13,7 +13,7 @@ import type { Db } from "../../../db/drizzle.types";
 import { BuildTicketCreationService } from "../core/tickets";
 import { TicketImportService } from "./ticket-import.service";
 import type { TicketImportReport } from "./ticket-import-report";
-import { projectAccessRow, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 
 function makeTicketCreation() {
   return {

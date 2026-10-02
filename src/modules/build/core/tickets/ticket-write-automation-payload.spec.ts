@@ -1,5 +1,5 @@
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import type { Db } from "../../../../db/drizzle.module";
 
 describe("ProjectsTicketsUpdateService — automation payload reflects current assignee", () => {

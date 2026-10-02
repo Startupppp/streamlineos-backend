@@ -5,7 +5,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { stubService } from "../../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../../access/access.service";
-import { principalAccess } from "./__tests__/project-access-doubles";
+import { principalAccess } from "../../__tests__/project-access-doubles";
 
 const member: CurrentUserContext = {
   userId: "user-2",

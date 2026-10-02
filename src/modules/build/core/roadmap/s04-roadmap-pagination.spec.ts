@@ -2,7 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../../db/drizzle.module";
 import { decodeTupleCursor } from "../../../../common/pagination/cursor";
-import { orgWideRoadmapAccess } from "./__tests__/roadmap-access-double";
+import { orgWideRoadmapAccess } from "../../__tests__/roadmap-access-double";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
 

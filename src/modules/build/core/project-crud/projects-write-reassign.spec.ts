@@ -4,7 +4,7 @@ import { ProjectsWriteService } from "./projects-write.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
-import { MANAGER_STANDING, projectAccessRow, standingAccess } from "./__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 const ORG = "org-pw-1";

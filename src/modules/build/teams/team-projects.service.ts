@@ -10,7 +10,7 @@ import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertCanManageProject } from "../core";
-import { resolveProjectReach } from "../core/project-crud/project-access";
+import { resolveProjectReach } from "../core";
 
 @Injectable()
 export class TeamProjectsService {

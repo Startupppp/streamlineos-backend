@@ -10,7 +10,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveProjectReach } from "../core/project-crud/project-access";
+import { resolveProjectReach } from "../core";
 import { encodeTupleCursor, decodeTupleCursor } from "../../../common/pagination/cursor";
 import type { ScopeDirectoryRef } from "./dto/scope-directory.schemas";
 

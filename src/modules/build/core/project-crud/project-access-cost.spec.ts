@@ -1,8 +1,8 @@
 import { resolveProjectAccess } from "./project-access";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { MEMBER_STANDING, projectAccessRow, principalAccess, type ProjectAccessRow } from "./__tests__/project-access-doubles";
-import { queuedSelectDb } from "./__tests__/project-access-db";
+import { MEMBER_STANDING, projectAccessRow, principalAccess, type ProjectAccessRow } from "../../__tests__/project-access-doubles";
+import { queuedSelectDb } from "../../__tests__/project-access-db";
 
 function user(isOrgOwner = false): CurrentUserContext {
   return {

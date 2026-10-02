@@ -9,7 +9,7 @@ import {
   updateProjectSchema,
 } from "../dto/projects.schemas";
 import { projectIdParams } from "../dto/build-params.schemas";
-import { MANAGER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "./__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess, type ProjectAccessRow } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-line-detail";
 

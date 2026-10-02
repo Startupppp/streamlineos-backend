@@ -6,7 +6,7 @@ import { ProjectsTicketCommentsService } from "../core/tickets";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
-import { MANAGER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, standingAccess } from "../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const USER = "user-1";

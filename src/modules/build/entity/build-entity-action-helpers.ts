@@ -2,8 +2,8 @@ import type { SQL } from "drizzle-orm";
 import { type Db } from "../../../db/drizzle.module";
 import type { Permissions } from "../../entity-reference/entity-scope";
 import type { EntityActionFailure, EntityActor } from "../../entity-reference/entity-reference.types";
-import { decideProjectWrite } from "../core/project-crud/project-access";
-import { projectReachFor } from "../core/project-crud/project-relationship";
+import { decideProjectWrite } from "../core";
+import { projectReachFor } from "../core";
 import { resolveEntityCardScope } from "./build-entity-scope";
 
 export function text(input: Record<string, unknown>, name: string): string | null {

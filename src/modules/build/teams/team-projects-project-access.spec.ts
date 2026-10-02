@@ -7,7 +7,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TeamProjectsService } from "./team-projects.service";
 import { TeamsService } from "./teams.service";
-import { MEMBER_STANDING, projectAccessRow, principalAccess, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, principalAccess, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 
 const TEAM_ID = 4;
 const PROJECT_ID = 7;

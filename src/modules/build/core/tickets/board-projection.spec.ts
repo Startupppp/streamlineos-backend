@@ -4,7 +4,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.module";
 import type { DataScope } from "../../../access/access.types";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { TICKETS_PERMISSION } from "../lib/tickets-scope";
 
 const ORG_ID = "org-board-proj";

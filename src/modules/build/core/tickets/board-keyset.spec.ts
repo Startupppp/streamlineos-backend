@@ -7,7 +7,7 @@ import type { DataScope } from "../../../access/access.types";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { TICKETS_PERMISSION } from "../lib/tickets-scope";
 import { encodeCursor } from "../../../../common/pagination/cursor";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 const ORG = "org-keyset";

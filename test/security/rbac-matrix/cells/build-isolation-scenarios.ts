@@ -6,15 +6,15 @@ import {
   BuildAutomationActionExecutor,
   type AutomationTicketChange,
   type StoredAction,
-} from "src/modules/build/core/automation/build-automation-actions.service";
-import type { ProjectsTicketLabelsService } from "src/modules/build/core/tickets/projects-ticket-labels.service";
-import type { ProjectsTicketCommentsService } from "src/modules/build/core/tickets/projects-ticket-comments.service";
-import { ProjectsRestoreService } from "src/modules/build/core/project-crud/projects-restore.service";
-import { ProjectsRetentionSettingsService } from "src/modules/build/core/settings/projects-retention-settings.service";
-import { ProjectsSettingsIterationsService } from "src/modules/build/core/settings/projects-settings-iterations.service";
-import { ProjectsTicketsRestoreService } from "src/modules/build/core/tickets/projects-tickets-restore.service";
-import { setLegalHoldSchema } from "src/modules/build/core/dto/project-retention-settings.schemas";
-import { updateIterationSettingsSchema } from "src/modules/build/core/dto/iterations-settings.schemas";
+} from "src/modules/build/core";
+import type { ProjectsTicketLabelsService } from "src/modules/build/core/tickets";
+import type { ProjectsTicketCommentsService } from "src/modules/build/core/tickets";
+import { ProjectsRestoreService } from "src/modules/build/core";
+import { ProjectsRetentionSettingsService } from "src/modules/build/core";
+import { ProjectsSettingsIterationsService } from "src/modules/build/core";
+import { ProjectsTicketsRestoreService } from "src/modules/build/core/tickets";
+import { setLegalHoldSchema } from "src/modules/build/core";
+import { updateIterationSettingsSchema } from "src/modules/build/core";
 import type { Observation, Scenario } from "../matrix.types";
 import { audit, cache } from "../adapters/real-services";
 import { tenantBound } from "../adapters/hr-adapter";

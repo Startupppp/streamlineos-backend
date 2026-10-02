@@ -4,7 +4,7 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { projects, timesheets } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { ScopedRead } from "../../access/scoped-read";
-import { resolveProjectReach } from "../core/project-crud/project-access";
+import { resolveProjectReach } from "../core";
 
 export const TIMESHEETS_VIEW_PERMISSION = "build:timesheets:view";
 export const TIMESHEETS_MANAGE_PERMISSION = "build:timesheets:manage";

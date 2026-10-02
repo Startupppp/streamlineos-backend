@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
-import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 import { TicketExportService } from "./ticket-export.service";
 
 const ORG = "org-own";

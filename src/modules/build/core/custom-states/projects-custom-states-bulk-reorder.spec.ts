@@ -7,7 +7,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { bulkReorderStatesSchema, type BulkReorderStatesInput } from "../dto/projects.schemas";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
-import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 10;

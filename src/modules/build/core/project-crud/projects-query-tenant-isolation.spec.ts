@@ -2,7 +2,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsNotFoundException } from "../../../../common/http/api-exceptions";
 import { ProjectsQueryService } from "./projects-query.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
-import { projectAccessRow } from "./__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 describe("ProjectsQueryService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";

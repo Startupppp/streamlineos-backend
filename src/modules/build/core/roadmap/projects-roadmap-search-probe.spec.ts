@@ -1,4 +1,4 @@
-import { orgWideRoadmapAccess } from "./__tests__/roadmap-access-double";
+import { orgWideRoadmapAccess } from "../../__tests__/roadmap-access-double";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";

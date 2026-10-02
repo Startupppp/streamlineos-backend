@@ -2,7 +2,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import type { ApplyTicketChangeDeps } from "./apply-ticket-change";
 import { applyTicketChange } from "./apply-ticket-change";
 import type { UpdateTicketInput } from "../dto/ticket.schemas";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 function ti(input: UpdateTicketInput): UpdateTicketInput { return input; }
 

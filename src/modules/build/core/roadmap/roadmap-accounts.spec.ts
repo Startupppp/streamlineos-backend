@@ -1,4 +1,4 @@
-import { orgWideRoadmapAccess, roadmapActor } from "./__tests__/roadmap-access-double";
+import { orgWideRoadmapAccess, roadmapActor } from "../../__tests__/roadmap-access-double";
 import { NotFoundException } from "@nestjs/common";
 import { SQL } from "drizzle-orm";
 import { feedbackPosts } from "../../../../db/schema";

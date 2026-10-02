@@ -4,7 +4,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { AccessService } from "../../../access/access.service";
 import type { CacheService } from "../../../../common/cache/cache.service";
 import type { Db } from "../../../../db/drizzle.types";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { rankTicket, rebalanceProjectRanks } from "./projects-tickets-rank-utils";
 
 const actor: CurrentUserContext = {

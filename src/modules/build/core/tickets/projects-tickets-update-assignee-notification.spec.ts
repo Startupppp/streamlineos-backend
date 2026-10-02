@@ -1,5 +1,5 @@
 import type { Db } from "../../../../db/drizzle.module";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
 
 /**

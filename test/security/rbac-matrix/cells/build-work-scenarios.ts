@@ -1,8 +1,8 @@
 import { FilesController } from "src/modules/build/files/files.controller";
 import { MilestonesController } from "src/modules/build/execution/workspace.controller";
 import { MilestonesService } from "src/modules/build/execution/workspace.service";
-import { ProjectsTicketAssociationsController } from "src/modules/build/core/tickets/projects-ticket-associations.controller";
-import { ProjectsTicketLinksService } from "src/modules/build/core/tickets/projects-ticket-links.service";
+import { ProjectsTicketAssociationsController } from "src/modules/build/core/tickets";
+import { ProjectsTicketLinksService } from "src/modules/build/core/tickets";
 import type { ExpectedOutcome, Scenario, ScenarioState } from "../matrix.types";
 import { probeHttp } from "../adapters/http-adapter";
 import { milestoneLifecycle, ticketRead } from "../adapters/service-adapter";

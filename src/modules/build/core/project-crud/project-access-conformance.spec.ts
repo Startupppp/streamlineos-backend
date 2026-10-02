@@ -3,8 +3,8 @@ import { assertProjectAccess, assertCanManageProject } from "./project-access";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { systemActor } from "../../../../common/auth/system-actor";
-import { MEMBER_STANDING, projectAccessRow, principalAccess, type ProjectAccessRow } from "./__tests__/project-access-doubles";
-import { queuedSelectDb } from "./__tests__/project-access-db";
+import { MEMBER_STANDING, projectAccessRow, principalAccess, type ProjectAccessRow } from "../../__tests__/project-access-doubles";
+import { queuedSelectDb } from "../../__tests__/project-access-db";
 
 function dbWith(row: ProjectAccessRow | undefined) {
   return queuedSelectDb({ selects: [row === undefined ? [] : [row]] }).db;

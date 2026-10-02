@@ -5,7 +5,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
 const dialect = new PgDialect();

@@ -19,7 +19,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { ProjectsTicketCommentsService } from "../core/tickets";
 import { AccessService } from "../../access/access.service";
-import { resolveProjectReach } from "../core/project-crud/project-access";
+import { resolveProjectReach } from "../core";
 
 const DEPENDENCY_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 const COMMENT_DRAFT_MIN_CONFIDENCE = 50;

@@ -6,7 +6,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../access/access.service";
-import { authorizeTicketMutation } from "../core/project-crud/project-access";
+import { authorizeTicketMutation } from "../core";
 import { ForbiddenException } from "@nestjs/common";
 
 jest.mock("../core/project-crud/project-access", () => ({

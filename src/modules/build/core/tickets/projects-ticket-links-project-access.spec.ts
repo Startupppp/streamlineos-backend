@@ -2,7 +2,7 @@ import { ForbiddenException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
-import { standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { standingAccess } from "../../__tests__/project-access-doubles";
 
 type Chain = Record<string, unknown>;
 

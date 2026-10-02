@@ -6,7 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestRunsService } from "./test-runs.service";
 import type { BuildTicketCreationService } from "../core/tickets";
 
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 const MEMBERSHIP_ID = 7;
 

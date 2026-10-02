@@ -11,7 +11,7 @@ import { parseImportSource } from "./import-source";
 import { insertTicketBatch, type ImportActor } from "./ticket-import-batches";
 import { buildTicketImportPreview } from "./ticket-import-preview";
 import { TicketExportService } from "./ticket-export.service";
-import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../__tests__/project-access-doubles";
 
 const ORG = "org-points";
 const PROJECT = 42;

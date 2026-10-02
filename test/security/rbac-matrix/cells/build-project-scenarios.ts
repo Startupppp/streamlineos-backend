@@ -3,8 +3,8 @@ import { IntakeController, ViewsController } from "src/modules/build/execution/w
 import { IntakeService, ViewsService } from "src/modules/build/execution/workspace.service";
 import { ModulesController } from "src/modules/build/execution/iterations.controller";
 import { ModulesService } from "src/modules/build/execution/modules.service";
-import { ProjectsWebhooksController } from "src/modules/build/core/webhooks/projects-webhooks.controller";
-import { ProjectsCustomFieldsController } from "src/modules/build/core/custom-fields/projects-custom-fields.controller";
+import { ProjectsWebhooksController } from "src/modules/build/core";
+import { ProjectsCustomFieldsController } from "src/modules/build/core";
 import { ProjectsCustomFieldsService, ProjectsWebhooksService } from "src/modules/build/core";
 import { createIntakeSchema, createViewSchema } from "src/modules/build/execution/dto/workspace.schemas";
 import type { AdapterBinding, ExpectedOutcome, Scenario, ScenarioState } from "../matrix.types";

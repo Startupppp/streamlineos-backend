@@ -4,7 +4,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { WorkflowService } from "./workflow.service";
-import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";
 
 function projectRowSelect() {
   return { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) };

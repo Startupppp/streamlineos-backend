@@ -10,7 +10,7 @@ import {
   projectAccessRow,
   standingAccess,
   type StandingScopes,
-} from "../core/project-crud/__tests__/project-access-doubles";
+} from "../__tests__/project-access-doubles";
 
 function makeSelectChain(rows: unknown[]) {
   const chain: {

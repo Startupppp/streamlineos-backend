@@ -12,7 +12,7 @@ import { orgTicketSearchQuery } from "./projects-search.service";
 import { resolveTicketVisibility } from "./project-access";
 import { ProjectsReleasesService } from "../releases/projects-releases.service";
 import { ProjectsWorkQueryService } from "../work-query/projects-work-query.service";
-import { MEMBER_STANDING, principalAccess } from "./__tests__/project-access-doubles";
+import { MEMBER_STANDING, principalAccess } from "../../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 const unconnected = drizzle(postgres("postgres://unused:unused@127.0.0.1:1/unused", { max: 1 }), { schema });

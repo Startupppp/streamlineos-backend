@@ -8,7 +8,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { decodeCursor } from "../../../../common/pagination/cursor";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ticketsListQuerySchema } from "../dto/projects.schemas";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 const preciseTimestamp = "2026-09-09 00:00:00.123456+00";
 const actor: CurrentUserContext = {

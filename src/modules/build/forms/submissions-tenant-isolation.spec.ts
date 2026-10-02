@@ -7,7 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import { SubmissionsService } from "./submissions.service";
 import { BuildTicketCreationService } from "../core/tickets";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 function makeActor(orgId: string): CurrentUserContext {
   return {

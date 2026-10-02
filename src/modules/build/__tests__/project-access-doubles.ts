@@ -1,7 +1,7 @@
-import type { CurrentUserContext } from "../../../../../common/auth/backend-claims";
-import type { DataScope } from "../../../../access/access.types";
-import { resolvePrincipalScope } from "../../../../access/access-principal-scope";
-import type { ProjectState } from "../project-access";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { DataScope } from "../../access/access.types";
+import { resolvePrincipalScope } from "../../access/access-principal-scope";
+import type { ProjectState } from "../core";
 
 export type StandingScopes = Partial<Record<string, DataScope>>;
 

@@ -5,7 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService } from "./workspace.service";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 const ORG = "org-1";
 const PROJECT_ID = 1;

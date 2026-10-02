@@ -12,7 +12,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";

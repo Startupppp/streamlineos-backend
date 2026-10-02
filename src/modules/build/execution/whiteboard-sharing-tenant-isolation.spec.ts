@@ -5,7 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../access/access.service";
-import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../__tests__/project-access-doubles";
 
 function actorIn(orgId: string, isOrgOwner: boolean): CurrentUserContext {
   return {

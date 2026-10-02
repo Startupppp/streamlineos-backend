@@ -10,7 +10,7 @@ import {
   projectAccessRow,
   standingAccess,
   type ProjectAccessRow,
-} from "../project-crud/__tests__/project-access-doubles";
+} from "../../__tests__/project-access-doubles";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 
 const PROJECT_ID = 7;

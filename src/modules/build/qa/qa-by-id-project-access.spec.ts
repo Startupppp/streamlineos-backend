@@ -11,7 +11,7 @@ import {
   MEMBER_STANDING,
   projectAccessRow,
   standingAccess,
-} from "../core/project-crud/__tests__/project-access-doubles";
+} from "../__tests__/project-access-doubles";
 
 const MEMBERSHIP_ID = 7;
 const ORG = "org-1";

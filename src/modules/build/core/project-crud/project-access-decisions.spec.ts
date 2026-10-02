@@ -26,8 +26,8 @@ import {
   resolveProjectReach,
   type ProjectState,
 } from "./project-access";
-import { MEMBER_STANDING, projectAccessRow, principalAccess } from "./__tests__/project-access-doubles";
-import { queuedSelectDb } from "./__tests__/project-access-db";
+import { MEMBER_STANDING, projectAccessRow, principalAccess } from "../../__tests__/project-access-doubles";
+import { queuedSelectDb } from "../../__tests__/project-access-db";
 
 const ORG_ID = "org-1";
 const MID = 7;

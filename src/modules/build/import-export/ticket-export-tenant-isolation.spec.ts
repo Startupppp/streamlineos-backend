@@ -6,7 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.types";
 import { TicketExportService } from "./ticket-export.service";
-import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow, standingAccess, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 
 const OWNER_ORG = "org-owner";
 const ATTACKER_ORG = "org-attacker";

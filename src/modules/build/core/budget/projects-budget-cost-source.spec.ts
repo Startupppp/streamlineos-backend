@@ -20,7 +20,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ProjectsBudgetService } from "./projects-budget.service";
-import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
+import { MANAGER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 /**
  * Every `table.column` named anywhere in a projection, predicate or raw `sql`

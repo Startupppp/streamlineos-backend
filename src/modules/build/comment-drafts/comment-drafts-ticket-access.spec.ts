@@ -9,7 +9,7 @@ import { primeRelocationTrafficTracker } from "../../../common/relocation/reloca
 import { withDelegatingTransaction } from "../../../test/delegating-transaction";
 import { CommentDraftGeneratorService } from "./comment-draft-generator.service";
 import { CommentDraftsService } from "./comment-drafts.service";
-import { MEMBER_STANDING, standingAccess } from "../core/project-crud/__tests__/project-access-doubles";
+import { MEMBER_STANDING, standingAccess } from "../__tests__/project-access-doubles";
 
 const PROJECT_ID = 7;
 const TICKET_ID = 55;

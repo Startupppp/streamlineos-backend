@@ -2,8 +2,8 @@ import { NotFoundException } from "@nestjs/common";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { assertProjectInOrg, resolveProjectAccess } from "./project-access";
-import { projectAccessRow, principalAccess } from "./__tests__/project-access-doubles";
-import { queuedSelectDb } from "./__tests__/project-access-db";
+import { projectAccessRow, principalAccess } from "../../__tests__/project-access-doubles";
+import { queuedSelectDb } from "../../__tests__/project-access-db";
 
 describe("build project access — a projectId outside the caller's org is a 404 even for an org owner", () => {
   const ATTACKER_ORG = "org-attacker";

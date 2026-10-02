@@ -8,7 +8,7 @@ import { NOTIFICATION_EVENT_MAP } from "../../../notifications/notification-even
 import { BUILD_APPROVAL_RESOURCE, BUILD_RELEASE_RESOURCE } from "../../../notifications/notification-events-build.catalog";
 import { BuildNotificationContextService } from "./build-notification-context.service";
 import { BuildNotificationVisibility } from "./build-notification-visibility";
-import { principalAccess, type StandingScopes } from "../project-crud/__tests__/project-access-doubles";
+import { principalAccess, type StandingScopes } from "../../__tests__/project-access-doubles";
 
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: jest.fn(async (db: unknown, work: (tx: unknown) => Promise<unknown>) => work(db)),

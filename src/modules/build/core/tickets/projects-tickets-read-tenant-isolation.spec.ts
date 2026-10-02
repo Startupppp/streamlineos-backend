@@ -1,8 +1,8 @@
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { resolveProjectAccess } from "../project-crud/project-access";
-import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../project-crud/__tests__/project-access-doubles";
-import { queuedSelectDb } from "../project-crud/__tests__/project-access-db";
+import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
+import { queuedSelectDb } from "../../__tests__/project-access-db";
 
 function makeUser(orgId: string, membershipId: number): CurrentUserContext {
   return {

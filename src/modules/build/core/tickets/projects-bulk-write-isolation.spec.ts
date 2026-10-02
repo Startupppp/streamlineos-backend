@@ -6,7 +6,7 @@ import { AccessService } from "../../../access/access.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { organizationMembers, projectMembers, projectStatuses, projects, tickets, workflowTransitions } from "../../../../db/schema";
-import { projectAccessRow } from "../project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWebhooksDispatchService } from "../webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "../automation/build-automation-runner.service";

@@ -7,8 +7,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { AccessService } from "../access/access.service";
 import { stubService } from "../../test/service-stub.spec-fixtures";
-import { MEMBER_STANDING, principalAccess, projectAccessRow } from "./core/project-crud/__tests__/project-access-doubles";
-import { queuedSelectDb } from "./core/project-crud/__tests__/project-access-db";
+import { MEMBER_STANDING, principalAccess, projectAccessRow } from "./__tests__/project-access-doubles";
+import { queuedSelectDb } from "./__tests__/project-access-db";
 
 
 function txDb(deleted: Array<{ id: number }>) {

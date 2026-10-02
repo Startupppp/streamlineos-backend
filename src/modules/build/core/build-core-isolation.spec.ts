@@ -15,7 +15,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { lifecycleAuditDouble } from "../lifecycle/audit-double";
-import { standingAccess } from "./project-crud/__tests__/project-access-doubles";
+import { standingAccess } from "../__tests__/project-access-doubles";
 
 function makeNotFoundDb(): Db {
   return {

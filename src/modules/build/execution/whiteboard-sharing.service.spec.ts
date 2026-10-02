@@ -6,7 +6,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
-import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import { projectAccessRow } from "../__tests__/project-access-doubles";
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
