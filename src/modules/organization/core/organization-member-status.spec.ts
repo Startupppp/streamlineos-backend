@@ -25,8 +25,7 @@ import {
 } from "../../../common/tenant/tenant-context";
 
 jest.mock("../../../common/auth/membership-state.service", () => ({
-  bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
-  bustMembershipStatusCacheMany: jest.fn().mockResolvedValue(undefined),
+  membershipStandingChannel: { publish: jest.fn() },
 }));
 
 const ORG_ID = "org-1";

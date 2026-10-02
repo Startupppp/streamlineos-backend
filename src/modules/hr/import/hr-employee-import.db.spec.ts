@@ -139,19 +139,11 @@ describeDb("employee import reaches the directory — real database", () => {
 
   /**
    * The real membership writer, through the real wrapper — the same call shape
-   * `commitJob` uses. Only the cache it drains into is a collector: the drain
-   * runs after the transaction resolves and publishes nothing this suite reads.
+   * `commitJob` uses. The drain runs after the transaction resolves and clears
+   * only this process's local membership standing, which this suite never reads.
    */
   async function importSheet(rows: ReadonlyArray<Record<string, unknown>>): Promise<CommitOutcome[]> {
-    const noop = async (): Promise<undefined> => undefined;
-    const cache = {
-      invalidateMany: noop,
-      invalidateNamespaceMany: noop,
-      invalidateNamespace: noop,
-      invalidateNamespaceForOrg: noop,
-      del: noop,
-    };
-    return withMembershipMutations(cache as never, (membership) =>
+    return withMembershipMutations((membership) =>
       db.transaction(async (tx) => {
         const outcomes: CommitOutcome[] = [];
         for (const row of rows) {
@@ -422,9 +414,7 @@ describeDb("employee import reaches the directory — real database", () => {
    * 23503 and the whole job 500'd. The employment goes first now; its lines and top-level role cascade.
    */
   it("rolls back an employee the job created, employment and top-level role included", async () => {
-    const noop = async (): Promise<undefined> => undefined;
-    const cache = { invalidate: noop, invalidateMany: noop, invalidateNamespaceMany: noop, invalidateNamespace: noop, invalidateNamespaceForOrg: noop, del: noop };
-    const ref = await withMembershipMutations(cache as never, (membership) =>
+    const ref = await withMembershipMutations((membership) =>
       db.transaction((tx) =>
         service.commitRow(tx, { orgId, actorId: ownerId, membership, actor: { orgId, userId: ownerId, isOrgOwner: true } }, "employees", ROLLBACK_ROW),
       ),

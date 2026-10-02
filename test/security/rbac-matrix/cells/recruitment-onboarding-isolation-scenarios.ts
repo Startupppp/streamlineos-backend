@@ -4,7 +4,6 @@ import type { MembershipAdmissionService } from "src/modules/organization/core/m
 import type { OnboardingInitiationService } from "src/modules/hr/onboarding/core/onboarding-initiation.service";
 import { RecruitmentOnboardingStartService } from "src/modules/hr/recruitment/recruitment-onboarding-start.service";
 import type { Observation, Scenario } from "../matrix.types";
-import { cache } from "../adapters/real-services";
 import { outcomeOfError } from "../matrix-runner";
 import { ORG_A, ORG_B } from "../standings";
 import { standIn, worldDb, type Row } from "../world-db";
@@ -49,7 +48,7 @@ async function startOnboarding(callerOrg: string): Promise<Observation> {
       return { tasksCreated: 2, fromTemplate: false };
     },
   });
-  const service = new RecruitmentOnboardingStartService(world.db, cache, admission, onboarding);
+  const service = new RecruitmentOnboardingStartService(world.db, admission, onboarding);
   const mark = markOf(world);
   const checks = (): Record<string, boolean> => {
     const bound = boundBy(world, mark, "candidates");

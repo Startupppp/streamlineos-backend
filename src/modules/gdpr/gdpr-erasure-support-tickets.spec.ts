@@ -16,7 +16,7 @@ jest.mock("../../common/rbac/access-mutation-commit", () => ({
 }));
 
 jest.mock("../../common/auth/membership-state.service", () => ({
-  bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
+  membershipStandingChannel: { publish: jest.fn() },
 }));
 
 /**

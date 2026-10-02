@@ -46,7 +46,6 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 jest.mock("../../../common/org/membership-mutations", () => ({
   withMembershipMutations: (
-    _cache: unknown,
     fn: (membership: unknown) => unknown,
   ) => fn({ allocateMembershipId: async () => 7, createOwnerMembership: async () => undefined }),
 }));
@@ -492,7 +491,7 @@ describe("bootstrapCellOrganization", () => {
       async (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
     );
 
-    await realBootstrap()({} as never, {} as never, INPUT);
+    await realBootstrap()({} as never, INPUT);
 
     expect(ensureManyFromUsers).toHaveBeenCalledTimes(1);
     const [handle, orgId, inputs] = ensureManyFromUsers.mock.calls[0] as [
@@ -529,7 +528,7 @@ describe("bootstrapCellOrganization", () => {
       async (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
     );
 
-    await realBootstrap()({} as never, {} as never, INPUT);
+    await realBootstrap()({} as never, INPUT);
 
     expect(ensureManyFromUsers).not.toHaveBeenCalled();
   });

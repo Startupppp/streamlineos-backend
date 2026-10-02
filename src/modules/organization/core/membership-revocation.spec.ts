@@ -43,7 +43,7 @@ import {
 } from "../../../common/tenant/tenant-context";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { membershipStandingChannel } from "../../../common/auth/membership-state.service";
 
 const mockRunInTenantTransaction = runInTenantTransaction as jest.MockedFunction<
   typeof runInTenantTransaction
@@ -54,8 +54,7 @@ const mockWithIdentity = withIdentity as jest.MockedFunction<typeof withIdentity
 const mockRegisterAfterCommit = registerAfterCommit as jest.MockedFunction<
   typeof registerAfterCommit
 >;
-const mockBustMembershipStatusCache =
-  bustMembershipStatusCache as jest.MockedFunction<typeof bustMembershipStatusCache>;
+const mockStandingPublish = jest.mocked(membershipStandingChannel.publish);
 const mockOutboxWriterEmitMany = OutboxWriter.emitMany as jest.MockedFunction<
   typeof OutboxWriter.emitMany
 >;
@@ -179,7 +178,6 @@ async function buildService(opts: {
     return fn({ select: selectFn } as unknown as Parameters<typeof fn>[0]);
   });
 
-  mockBustMembershipStatusCache.mockResolvedValue(undefined);
   mockRegisterAfterCommit.mockImplementation((_fn) => true);
 
   return { service, sessions, ably, mockDb };
@@ -570,9 +568,9 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(mockBustMembershipStatusCache).not.toHaveBeenCalled();
+      expect(mockStandingPublish).not.toHaveBeenCalled();
       for (const [hook] of mockRegisterAfterCommit.mock.calls) await hook();
-      expect(mockBustMembershipStatusCache).toHaveBeenCalledWith(expect.anything(), USER_ID);
+      expect(mockStandingPublish).toHaveBeenCalledWith(USER_ID);
     });
 
     it("busts inline when there is no transaction to defer to so the revocation is never dropped", async () => {
@@ -583,7 +581,7 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(mockBustMembershipStatusCache).toHaveBeenCalledWith(expect.anything(), USER_ID);
+      expect(mockStandingPublish).toHaveBeenCalledWith(USER_ID);
     });
   });
 

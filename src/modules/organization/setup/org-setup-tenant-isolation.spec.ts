@@ -34,7 +34,7 @@ jest.mock("../../../common/rbac/access-mutation-commit", () => ({
   commitAccessChange: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock("../../../common/auth/membership-state.service", () => ({
-  bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
+  membershipStandingChannel: { publish: jest.fn() },
 }));
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -109,7 +109,7 @@ describe("OrgSetupService — cross-tenant isolation", () => {
     const audit = { log: jest.fn() };
     const sessions = { skipSession: jest.fn().mockResolvedValue(undefined) };
     const creation = { createFromSetup: jest.fn() } as unknown as OrganizationCreationService;
-    const resolver = new OrgSetupResolverService(db, cache as never, audit as never, creation);
+    const resolver = new OrgSetupResolverService(db, audit as never, creation);
     const accountOrgIndex = {
       activate: jest.fn().mockResolvedValue({ status: "activated" }),
       refreshForUser: jest.fn().mockResolvedValue(undefined),

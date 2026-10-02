@@ -21,7 +21,7 @@ jest.mock("../../common/rbac/access-mutation-commit", () => {
 });
 
 jest.mock("../../common/auth/membership-state.service", () => ({
-  bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
+  membershipStandingChannel: { publish: jest.fn() },
 }));
 
 /**
@@ -41,7 +41,7 @@ jest.mock("../../common/tenant/with-identity", () => ({
 }));
 
 import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { membershipStandingChannel } from "../../common/auth/membership-state.service";
 import { withIdentity } from "../../common/tenant/with-identity";
 
 const mockWithIdentity = withIdentity as jest.MockedFunction<typeof withIdentity>;
@@ -464,16 +464,13 @@ describe("GdprSubjectErasureService — cache invalidation", () => {
     );
   });
 
-  it("calls bustMembershipStatusCache after the transaction commits", async () => {
+  it("clears the subject's local membership standing after the transaction commits", async () => {
     const { db } = makeDb({});
     const svc = buildService(db);
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(
-      expect.anything(),
-      SUBJECT,
-    );
+    expect(membershipStandingChannel.publish).toHaveBeenCalledWith(SUBJECT);
   });
 
   it("(bite proof) skipping the transaction means commitAccessChange is never called — test catches it", async () => {
@@ -492,7 +489,7 @@ describe("GdprSubjectErasureService — cache invalidation", () => {
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
     expect(commitAccessChange).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
   });
 
   it("does not call cache invalidation on a dry run", async () => {
@@ -502,7 +499,7 @@ describe("GdprSubjectErasureService — cache invalidation", () => {
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: true });
 
     expect(commitAccessChange).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
   });
 });
 
@@ -845,7 +842,7 @@ describe("GdprSubjectErasureService — session revocation", () => {
     for (const hook of hooks) await hook();
 
     expect(sessions.publishRevocations).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(expect.anything(), SUBJECT);
+    expect(membershipStandingChannel.publish).toHaveBeenCalledWith(SUBJECT);
   });
 
   it("revokes nothing when a legal hold blocks erasure", async () => {
