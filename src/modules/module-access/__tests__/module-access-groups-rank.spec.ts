@@ -108,6 +108,7 @@ async function buildSvc(
         useValue: {
           resolveUserPermissions,
           isModuleEnabled: jest.fn().mockResolvedValue(true),
+          getUserDeniedModules: jest.fn().mockResolvedValue(new Set()),
         },
       },
       { provide: CacheService, useValue: { invalidate: jest.fn() } },

@@ -8,6 +8,7 @@ import {
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
 
 function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -31,25 +32,33 @@ function selectChain(rows: unknown[] = []): Record<string, unknown> {
     then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
     catch: (reject: (e: unknown) => unknown) => Promise.resolve(rows).catch(reject),
   });
-  return node as unknown as Record<string, unknown>;
+  return node;
 }
 
-function makeStubDb(): ModuleAccessPolicyDeps["db"] {
-  return {
-    select: jest.fn(() => selectChain()),
-    query: {
-      organizationMembers: {
-        findFirst: jest.fn().mockResolvedValue({ id: 1, role: "MEMBER", status: "ACTIVE", isOwner: false }),
-      },
-    },
-  } as never;
+function makeStubDb(
+  authorityRows: unknown[] = [],
+  memberRole = "MEMBER",
+): ModuleAccessPolicyDeps["db"] {
+  return stubService<ModuleAccessPolicyDeps["db"]>({
+    select: jest.fn(() => selectChain(authorityRows)),
+    query: stubService<ModuleAccessPolicyDeps["db"]["query"]>({
+      organizationMembers: stubService<ModuleAccessPolicyDeps["db"]["query"]["organizationMembers"]>({
+        findFirst: jest.fn().mockResolvedValue({ id: 1, role: memberRole, status: "ACTIVE", isOwner: false }),
+      }),
+    }),
+  });
 }
 
-function makeDeps(moduleEnabled = true): ModuleAccessPolicyDeps {
+function makeDeps(
+  moduleEnabled = true,
+  authorityRows: unknown[] = [],
+  memberRole = "MEMBER",
+): ModuleAccessPolicyDeps {
   return {
-    db: makeStubDb(),
+    db: makeStubDb(authorityRows, memberRole),
     isModuleEnabled: jest.fn().mockResolvedValue(moduleEnabled),
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
+    getUserDeniedModules: jest.fn().mockResolvedValue(new Set()),
   };
 }
 
@@ -135,11 +144,91 @@ describe("module-key vocabulary — case normalisation", () => {
     });
   });
 
+  describe("assertModuleAccessPolicy — per-person Build denial", () => {
+    it("refuses an unassigned Org Member's Build view while the org has Build enabled", async () => {
+      const deps = makeDeps(true);
+
+      await expect(
+        assertModuleAccessPolicy(deps, makeActor(), "build", "view"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(deps.isModuleEnabled).toHaveBeenCalledWith("org-1", "build");
+      expect(deps.getUserDeniedModules).not.toHaveBeenCalled();
+    });
+
+    it("allows an assigned Org Member's Build view", async () => {
+      const deps = makeDeps(true);
+      deps.resolveUserPermissions = jest.fn().mockResolvedValue(
+        new Map([["build:access:view", "all"]]),
+      );
+
+      await expect(
+        assertModuleAccessPolicy(deps, makeActor(), "build", "view"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("refuses a denied module admin's Build management despite a surviving role", async () => {
+      const deps = makeDeps(true, [{ rank: 20, moduleKey: "build" }]);
+      deps.getUserDeniedModules = jest.fn().mockResolvedValue(new Set(["build"]));
+
+      const denial = assertModuleAccessPolicy(deps, makeActor(), "build", "manage");
+      await expect(denial).rejects.toBeInstanceOf(ModuleDisabledException);
+      const error = await denial.catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ModuleDisabledException);
+      if (error instanceof ModuleDisabledException)
+        expect(error.getResponse()).toMatchObject({
+          code: "MODULE_NOT_ENABLED",
+          details: { moduleKey: "build", reason: "user-denied" },
+        });
+      expect(deps.getUserDeniedModules).toHaveBeenCalledWith("org-1", "u-1");
+    });
+
+    it("refuses a denied Build owner reading the access roster through a surviving ownership row", async () => {
+      const deps = makeDeps(true, [{ userId: "u-1" }]);
+      deps.getUserDeniedModules = jest.fn().mockResolvedValue(new Set(["build"]));
+
+      await expect(
+        assertModuleAccessPolicy(deps, makeActor(), "build", "view"),
+      ).rejects.toBeInstanceOf(ModuleDisabledException);
+      expect(deps.getUserDeniedModules).toHaveBeenCalledWith("org-1", "u-1");
+    });
+
+    it("fails closed when a module admin's denial list cannot be read", async () => {
+      const deps = makeDeps(true, [{ rank: 20, moduleKey: "build" }]);
+      deps.getUserDeniedModules = jest.fn().mockRejectedValue(new Error("denial store unavailable"));
+
+      await expect(
+        assertModuleAccessPolicy(deps, makeActor(), "build", "manage"),
+      ).rejects.toThrow("denial store unavailable");
+    });
+
+    it("retains active Org Admin management of enabled Build despite a stale per-user deny", async () => {
+      const deps = makeDeps(true, [], "ORG_ADMIN");
+      deps.getUserDeniedModules = jest.fn().mockResolvedValue(new Set(["build"]));
+
+      await expect(
+        assertModuleAccessPolicy(deps, makeActor({ role: "ORG_ADMIN" }), "build", "manage"),
+      ).resolves.toBeUndefined();
+      expect(deps.getUserDeniedModules).not.toHaveBeenCalled();
+    });
+
+    it("reads the denial only from the acting tenant and person", async () => {
+      const deps = makeDeps(true, [{ rank: 20, moduleKey: "build" }]);
+      deps.getUserDeniedModules = jest.fn().mockImplementation(async (orgId: string) =>
+        orgId === "org-other" ? new Set(["build"]) : new Set<string>(),
+      );
+
+      await expect(
+        assertModuleAccessPolicy(deps, makeActor(), "build", "manage"),
+      ).resolves.toBeUndefined();
+      expect(deps.getUserDeniedModules).toHaveBeenCalledWith("org-1", "u-1");
+    });
+  });
+
   describe("two-vocabulary trap — stored UPPERCASE vs catalog lowercase", () => {
     it("isModuleEnabled normalises the incoming key so UPPERCASE input does not silently miss", async () => {
       const deps = makeDeps(true);
       await assertModuleEnabled(deps, "org-1", "hr");
-      const [, passedKey] = (deps.isModuleEnabled as jest.Mock).mock.calls[0] as [string, string];
+      const [, passedKey] = jest.mocked(deps.isModuleEnabled).mock.calls[0];
       expect(passedKey).toBe("hr");
     });
   });

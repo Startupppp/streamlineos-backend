@@ -329,6 +329,44 @@ describe("AccessService.resolveUserPermissions — module ownership grants", () 
   });
 });
 
+describe("AccessService.resolveUserPermissions — Build assignment and denial", () => {
+  function buildMemberDb(denied: boolean) {
+    return {
+      query: {
+        accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ isOwner: false, role: "MEMBER", status: "ACTIVE", id: 7 }),
+        },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ principalGroupId: "group-build" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ permissionKey: "build:tickets:view", scope: "all" }]))
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 55 }]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 55, slug: "BUILD_MEMBER" }]))
+        .mockReturnValueOnce(makeSelectChain([{ roleId: 55, permissionKey: "build:access:view", scope: "all" }]))
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain(denied ? [{ moduleKey: "build" }] : [])),
+    };
+  }
+
+  it("keeps a group-assigned member's Build view and a direct Build grant when not denied", async () => {
+    const result = await buildService(buildMemberDb(false)).resolveUserPermissions("org-build", "user-build");
+
+    expect(result.get("build:access:view")).toBe("all");
+    expect(result.get("build:tickets:view")).toBe("all");
+  });
+
+  it("removes group-derived and direct Build grants for a denied Org Member", async () => {
+    const result = await buildService(buildMemberDb(true)).resolveUserPermissions("org-build", "user-build");
+
+    expect(result.has("build:access:view")).toBe(false);
+    expect(result.has("build:tickets:view")).toBe(false);
+    expect(result.get("self:onboarding-docs")).toBe("own");
+  });
+});
+
 describe("AccessService.resolveUserPermissions — version bump invalidates local version cache", () => {
   it("a permission version bump is observed by the next resolve call in the same process", async () => {
     let currentVersion = 1;

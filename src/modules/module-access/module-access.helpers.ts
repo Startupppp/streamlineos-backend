@@ -21,15 +21,6 @@ export { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
  * ownership row; and Module Admin is an active, unexpired rank-20 assignment
  * for this module.
  */
-export async function hasModuleAccessManagementAuthority(
-  db: Db,
-  actor: CurrentUserContext,
-  moduleKey: string,
-): Promise<boolean> {
-  const standing = await resolveModuleManagementStanding(db, actor, moduleKey);
-  return standing?.canManageAccess ?? false;
-}
-
 const MANAGED_MODULES = new Set<string>(ACCESS_MANAGED_MODULES);
 
 export interface ModuleAccessPolicyDeps {
@@ -39,6 +30,7 @@ export interface ModuleAccessPolicyDeps {
     orgId: string,
     userId: string,
   ) => Promise<ReadonlyMap<string, DataScope>>;
+  getUserDeniedModules: (orgId: string, userId: string) => Promise<ReadonlySet<string>>;
 }
 
 interface ModuleAccessPolicySource {
@@ -47,6 +39,7 @@ interface ModuleAccessPolicySource {
     orgId: string,
     userId: string,
   ): Promise<ReadonlyMap<string, DataScope>>;
+  getUserDeniedModules(orgId: string, userId: string): Promise<ReadonlySet<string>>;
 }
 
 export function moduleAccessPolicyDeps(
@@ -58,6 +51,8 @@ export function moduleAccessPolicyDeps(
     isModuleEnabled: (orgId, key) => access.isModuleEnabled(orgId, key),
     resolveUserPermissions: (orgId, userId) =>
       access.resolveUserPermissions(orgId, userId),
+    getUserDeniedModules: (orgId, userId) =>
+      access.getUserDeniedModules(orgId, userId),
   };
 }
 
@@ -89,14 +84,30 @@ export async function assertModuleAccessPolicy(
   if (actor.isOrgOwner) return;
 
   if (action === "manage") {
-    if (await hasModuleAccessManagementAuthority(deps.db, actor, moduleKey))
-      return;
+    const standing = await resolveModuleManagementStanding(deps.db, actor, moduleKey);
+    if (
+      standing?.source === "module-ownership" ||
+      standing?.source === "module-role"
+    ) {
+      const denied = await deps.getUserDeniedModules(actor.orgId, actor.userId);
+      if (denied.has(moduleKey))
+        throw new ModuleDisabledException(moduleKey, "user-denied");
+    }
+    if (standing?.canManageAccess) return;
 
     throw moduleAccessDenied(action);
   }
 
   const resolved = await deps.resolveUserPermissions(actor.orgId, actor.userId);
   const standing = await resolveModuleStanding(deps.db, actor, moduleKey, resolved);
+  if (
+    standing.source === "module-ownership" ||
+    standing.source === "module-role"
+  ) {
+    const denied = await deps.getUserDeniedModules(actor.orgId, actor.userId);
+    if (denied.has(moduleKey))
+      throw new ModuleDisabledException(moduleKey, "user-denied");
+  }
   if (standing.level !== "none") return;
 
   throw moduleAccessDenied(action);
