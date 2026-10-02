@@ -36,7 +36,8 @@ describe("an admin can copy a working join link without a mailbox, and the raw t
     );
     expect(resend).toContain("@Idempotent");
     expect(resend).not.toContain("rawToken");
-    expect(resend).toContain("return { success: true as const };");
+    expect(resend).toContain("deliveryQueued: result.deliveryQueued");
+    expect(resend).toContain("deliveryFailureReason: result.deliveryFailureReason");
   });
 
   it("does not mark the join-link route idempotent, which would store the token it returns", () => {

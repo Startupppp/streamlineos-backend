@@ -50,6 +50,7 @@ import {
   bulkUpdateResponseSchema,
   importUsersResponseSchema,
   invitationMutationResponseSchema,
+  invitationResendResponseSchema,
   invitationJoinLinkResponseSchema,
   userIdentityResponseSchema,
   userDetailResponseSchema,
@@ -270,7 +271,7 @@ export class UsersController {
   // ── Invitation sub-routes (static prefix "invitations/") ──
 
   @RequirePermission("settings:organization:manage")
-  @ResponseSchema(invitationMutationResponseSchema)
+  @ResponseSchema(invitationResendResponseSchema)
   @Post("invitations/:invitationId/resend")
   @Idempotent("users.invitation.resend")
   @HttpCode(200)
@@ -280,11 +281,15 @@ export class UsersController {
     @Param("invitationId") invitationId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.invitationsLifecycle.resend(u.orgId, invitationId, {
+    const result = await this.invitationsLifecycle.resend(u.orgId, invitationId, {
       userId: u.userId,
       isOrgOwner: u.isOrgOwner,
     });
-    return { success: true as const };
+    return {
+      success: true as const,
+      deliveryQueued: result.deliveryQueued,
+      deliveryFailureReason: result.deliveryFailureReason,
+    };
   }
 
   @RequirePermission("settings:organization:manage")

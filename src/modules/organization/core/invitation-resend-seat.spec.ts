@@ -43,6 +43,7 @@ function buildQuery() {
 }
 
 function buildUniversalTx(query: ReturnType<typeof buildQuery>) {
+  const insertedValues: unknown[] = [];
   const updateResult = {
     returning: jest.fn().mockResolvedValue([{ id: INVITATION_ID }]),
   };
@@ -59,8 +60,12 @@ function buildUniversalTx(query: ReturnType<typeof buildQuery>) {
     update: jest.fn(),
     set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(updateResult) }),
     insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockResolvedValue(undefined),
+      values: jest.fn().mockImplementation((value: unknown) => {
+        insertedValues.push(value);
+        return Promise.resolve(undefined);
+      }),
     }),
+    insertedValues,
   };
   tx.select.mockReturnValue(tx);
   tx.from.mockReturnValue(tx);
@@ -95,12 +100,17 @@ describe("InvitationLifecycleService.resend — seat admission for time-expired 
   let mockDb: ReturnType<typeof buildMockDb>;
   let mockPlanLimits: { assertWithinLimit: jest.Mock };
   let mockSeatLedger: { recordSeatEvent: jest.Mock };
+  let mockEmail: { queueInvitationEmails: jest.Mock; sendInvitationEmail: jest.Mock };
 
   beforeEach(async () => {
     jest.resetAllMocks();
     mockDb = buildMockDb();
     mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
     mockSeatLedger = { recordSeatEvent: jest.fn().mockResolvedValue(undefined) };
+    mockEmail = {
+      queueInvitationEmails: jest.fn().mockResolvedValue([{ queued: true }]),
+      sendInvitationEmail: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -116,7 +126,7 @@ describe("InvitationLifecycleService.resend — seat admission for time-expired 
         },
         {
           provide: EmailService,
-          useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined) },
+          useValue: mockEmail,
         },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: SeatLedgerService, useValue: mockSeatLedger },
@@ -211,6 +221,55 @@ describe("InvitationLifecycleService.resend — seat admission for time-expired 
     await svc.resend(ORG_ID, INVITATION_ID, ACTOR);
 
     expect(mockSeatLedger.recordSeatEvent).not.toHaveBeenCalled();
+  });
+
+  it("queues the renewed invitation durably and reports the accepted queue outcome", async () => {
+    const result = await svc.resend(ORG_ID, INVITATION_ID, ACTOR);
+
+    expect(mockEmail.queueInvitationEmails).toHaveBeenCalledWith([
+      {
+        email: "invitee@example.com",
+        token: expect.any(String),
+        organizationName: "Acme",
+        organizationId: ORG_ID,
+      },
+    ]);
+    expect(mockEmail.sendInvitationEmail).not.toHaveBeenCalled();
+    expect(result.deliveryQueued).toBe(true);
+    expect(result.deliveryFailureReason).toBeNull();
+    expect(mockDb.universalTx.insertedValues).toContainEqual(
+      expect.objectContaining({ event: "RESENT" }),
+    );
+    expect(mockDb.universalTx.insertedValues).not.toContainEqual(
+      expect.objectContaining({ event: "DELIVERY_FAILED" }),
+    );
+  });
+
+  it.each([
+    ["suppressed recipient", "Recipient is suppressed"],
+    ["missing provider", "No email provider configured"],
+  ])("records %s as a refused delivery rather than a queued resend", async (_case, reason) => {
+    mockEmail.queueInvitationEmails.mockResolvedValue([{ queued: false, reason }]);
+
+    const result = await svc.resend(ORG_ID, INVITATION_ID, ACTOR);
+
+    expect(result.deliveryQueued).toBe(false);
+    expect(result.deliveryFailureReason).toBe(reason);
+    expect(mockDb.universalTx.insertedValues).toContainEqual(
+      expect.objectContaining({ event: "RESENT" }),
+    );
+    expect(mockDb.universalTx.insertedValues).toContainEqual(
+      expect.objectContaining({ event: "DELIVERY_FAILED" }),
+    );
+    expect(mockEmail.sendInvitationEmail).not.toHaveBeenCalled();
+  });
+
+  it("rolls back the reissue when the durable queue does not return one outcome", async () => {
+    mockEmail.queueInvitationEmails.mockResolvedValue([]);
+
+    await expect(svc.resend(ORG_ID, INVITATION_ID, ACTOR)).rejects.toThrow(
+      "Invitation email queue returned an incomplete batch result",
+    );
   });
 
   it("throws NotFoundException when the in-transaction row-lock finds no matching invitation", async () => {

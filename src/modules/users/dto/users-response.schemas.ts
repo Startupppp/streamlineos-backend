@@ -162,8 +162,14 @@ export const bulkInviteResponseSchema = z.object({
   ),
 });
 
-/** `InvitationLifecycleService.resend` / `changeRole` / `cancel` */
+/** `InvitationLifecycleService.changeRole` / `cancel` */
 export const invitationMutationResponseSchema = successResponseSchema;
+
+export const invitationResendResponseSchema = z.object({
+  success: z.literal(true),
+  deliveryQueued: z.boolean(),
+  deliveryFailureReason: z.string().nullable(),
+});
 
 export const invitationJoinLinkResponseSchema = z.object({
   joinUrl: z.string(),

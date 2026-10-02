@@ -10,7 +10,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { registerAfterCommit } from "../../../common/tenant";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import {
@@ -28,7 +27,6 @@ import {
   invitationEvents,
   invitationModuleAccess,
   invitations,
-  users,
 } from "../../../db/schema";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { assertMayAssignRole } from "../../rbac/assert-role-assignment";
@@ -39,16 +37,18 @@ import {
   findActorMembershipId,
   invitationTransition,
   openAdminInvitationFilter,
-  recordDeliveryFailure,
   requireActiveOrg,
   type InviteActor,
 } from "./invitations.helpers";
+import type { EmailQueueOutcome } from "../../email/email-outbox.service";
 
 export interface ReissuedInvitation {
   success: true;
   rawToken: string;
   email: string;
   expiresAt: Date;
+  deliveryQueued: boolean;
+  deliveryFailureReason: string | null;
 }
 
 @Injectable()
@@ -111,10 +111,10 @@ export class InvitationLifecycleService {
     const newExpiresAt = addDays(new Date(), 7);
 
     const actorMembership = await findActorMembershipId(this.db, orgId, actorUserId);
-
-    await runInTenantTransaction(
+    const deliveryOutcome = await runInTenantTransaction(
       this.db,
       async (tx) => {
+        let txDeliveryOutcome: EmailQueueOutcome | null = null;
         await tx.execute(lockMembersQuota(orgId));
 
         const [current] = await tx
@@ -190,37 +190,32 @@ export class InvitationLifecycleService {
           event: "RESENT",
           actorMembershipId: actorMembership?.id ?? null,
         });
+
+        if (deliverEmail) {
+          const outcomes = await this.email.queueInvitationEmails([
+            {
+              email: invitation.email,
+              token: rawToken,
+              organizationName: org.name,
+              organizationId: orgId,
+            },
+          ]);
+          if (outcomes.length !== 1)
+            throw new Error("Invitation email queue returned an incomplete batch result");
+          txDeliveryOutcome = outcomes[0] ?? null;
+          if (txDeliveryOutcome?.queued === false) {
+            await tx.insert(invitationEvents).values({
+              orgId,
+              invitationId,
+              event: "DELIVERY_FAILED",
+              actorMembershipId: null,
+            });
+          }
+        }
+        return txDeliveryOutcome;
       },
       { orgId },
     );
-
-    const inviter = await this.db.query.users.findFirst({
-      where: eq(users.id, actorUserId),
-      columns: { name: true, firstName: true, lastName: true },
-    });
-
-    const inviterName =
-      inviter?.firstName && inviter?.lastName
-        ? `${inviter.firstName} ${inviter.lastName}`
-        : (inviter?.name ?? undefined);
-
-    const sendRenewedInvitation = async (): Promise<void> => {
-      try {
-        await this.email.sendInvitationEmail(
-          invitation.email,
-          rawToken,
-          org.name,
-          inviterName,
-        );
-      } catch (error: unknown) {
-        await recordDeliveryFailure(this.db, this.logger, orgId, invitationId, error);
-      }
-    };
-
-    if (deliverEmail) {
-      const registered = registerAfterCommit(sendRenewedInvitation);
-      if (!registered) await sendRenewedInvitation();
-    }
 
     this.audit.log({
       action: deliverEmail
@@ -230,7 +225,12 @@ export class InvitationLifecycleService {
       orgId,
       targetId: invitationId,
       targetType: "invitation",
-      metadata: { email: invitation.email },
+      metadata: {
+        email: invitation.email,
+        deliveryQueued: deliveryOutcome?.queued === true,
+        deliveryFailureReason:
+          deliveryOutcome?.queued === false ? deliveryOutcome.reason : null,
+      },
     });
 
     await this.cache.invalidateForOrg(orgId, "users:stats");
@@ -239,6 +239,9 @@ export class InvitationLifecycleService {
       rawToken,
       email: invitation.email,
       expiresAt: newExpiresAt,
+      deliveryQueued: deliveryOutcome?.queued === true,
+      deliveryFailureReason:
+        deliveryOutcome?.queued === false ? deliveryOutcome.reason : null,
     };
   }
 
