@@ -178,13 +178,19 @@ export class OrgSetupCompletedConsumerService
                 "enqueue",
               ),
         );
-        const failed = results.filter((result) => !result.success);
+        const failed = results.filter(
+          (result) => !result.success || result.deliveryQueued === false,
+        );
         if (failed.length > 0)
           failures.push(
             `${groupLabel}: ${failed.length} of ${emails.length} invitation(s) failed ` +
               `(${failed
                 .map((result) =>
-                  result.error ? `${result.email} — ${result.error}` : result.email,
+                  result.deliveryQueued === false
+                    ? `${result.email} — email not queued`
+                    : result.error
+                      ? `${result.email} — ${result.error}`
+                      : result.email,
                 )
                 .join(", ")})`,
           );

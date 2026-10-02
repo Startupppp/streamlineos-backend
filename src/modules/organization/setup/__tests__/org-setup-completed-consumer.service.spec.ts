@@ -464,6 +464,36 @@ describe("OrgSetupCompletedConsumerService", () => {
     );
   });
 
+  it("marks an undeliverable persisted invitation as a partial setup result", async () => {
+    const { svc, bulkInvite, completeSession } = await build();
+    bulkInvite.mockResolvedValueOnce({
+      results: [
+        {
+          email: "new@acme.test",
+          success: true,
+          invitationId: "inv-1",
+          deliveryQueued: false,
+        },
+      ],
+    });
+
+    await svc.handle(event(COMPLETE_PAYLOAD));
+
+    expect(completeSession).toHaveBeenCalledWith("org-1", "user-1", "org_setup");
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      expect.stringContaining("new@acme.test — email not queued"),
+    );
+    expect(markProcessed).not.toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "FAILED",
+      expect.anything(),
+    );
+  });
+
   it("does no work when the inbox fence says the event was already processed", async () => {
     claim.mockResolvedValueOnce(false);
     const { svc, completeSession } = await build();

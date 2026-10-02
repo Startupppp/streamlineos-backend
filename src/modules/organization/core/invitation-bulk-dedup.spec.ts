@@ -11,6 +11,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 
 import { InvitationCreateService } from "./invitation-create.service";
 import { canonicalAdmissionEmail } from "./membership-admission.service";
+import { invitationEvents } from "../../../db/schema";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { EmailService } from "../../email/email.service";
@@ -36,6 +37,7 @@ function harness(options: HarnessOptions = {}) {
     })),
   }));
   const insertedInvitationRows: Array<{ id: string; email: string }> = [];
+  const insertedEventRows: Array<{ invitationId: string; event: string }> = [];
   const insert = jest.fn(() => ({
     values: jest.fn((input: unknown) => {
       const rows = (Array.isArray(input) ? input : [input]) as Array<{
@@ -46,6 +48,11 @@ function harness(options: HarnessOptions = {}) {
         .filter((row) => row.email && !options.omitInserted?.has(row.email))
         .map((row) => ({ id: row.id!, email: row.email! }));
       insertedInvitationRows.push(...returned);
+      insertedEventRows.push(
+        ...(rows as Array<{ invitationId?: string; event?: string }>)
+          .filter((row) => row.invitationId && row.event)
+          .map((row) => ({ invitationId: row.invitationId!, event: row.event! })),
+      );
       return {
         then: (resolve: (value: unknown) => unknown) =>
           Promise.resolve(undefined).then(resolve),
@@ -97,7 +104,9 @@ function harness(options: HarnessOptions = {}) {
         ),
       ),
   );
-  const queueInvitationEmails = jest.fn().mockResolvedValue([]);
+  const queueInvitationEmails = jest.fn((items: readonly unknown[]) =>
+    Promise.resolve(items.map(() => ({ queued: true as const }))),
+  );
   const headroomFor = jest.fn().mockResolvedValue({
     limit: options.available,
     used: 0,
@@ -129,6 +138,7 @@ function harness(options: HarnessOptions = {}) {
     invalidateForOrg,
     logMany,
     insertedInvitationRows,
+    insertedEventRows,
   };
 }
 
@@ -179,6 +189,43 @@ describe("InvitationCreateService.bulkInvite", () => {
     expect(h.queueInvitationEmails).toHaveBeenCalledWith([
       expect.objectContaining({ email: "fresh@example.com", organizationId: orgId }),
     ]);
+  });
+
+  it("keeps persisted invitations successful while recording suppressed and unavailable delivery", async () => {
+    const h = harness();
+    h.queueInvitationEmails.mockResolvedValueOnce([
+      { queued: true },
+      { queued: false, reason: "recipient suppressed" },
+      { queued: false, reason: "provider unavailable" },
+    ]);
+
+    const result = await h.service.bulkInvite(
+      orgId,
+      actor,
+      ["queued@example.com", "suppressed@example.com", "unavailable@example.com"],
+      "MEMBER",
+    );
+
+    expect(result.results).toEqual([
+      expect.objectContaining({ email: "queued@example.com", success: true, deliveryQueued: true }),
+      expect.objectContaining({ email: "suppressed@example.com", success: true, deliveryQueued: false }),
+      expect.objectContaining({ email: "unavailable@example.com", success: true, deliveryQueued: false }),
+    ]);
+    expect(h.tx.insert).toHaveBeenCalledWith(invitationEvents);
+    expect(h.insertedEventRows.filter((row) => row.event === "DELIVERY_FAILED")).toEqual([
+      { invitationId: result.results[1]?.invitationId, event: "DELIVERY_FAILED" },
+      { invitationId: result.results[2]?.invitationId, event: "DELIVERY_FAILED" },
+    ]);
+    expect(h.insertedInvitationRows).toHaveLength(3);
+  });
+
+  it("rejects an incomplete queue result instead of claiming delivery", async () => {
+    const h = harness();
+    h.queueInvitationEmails.mockResolvedValueOnce([]);
+
+    await expect(
+      h.service.bulkInvite(orgId, actor, ["queued@example.com"], "MEMBER"),
+    ).rejects.toThrow("incomplete batch result");
   });
 
   it("maps a concurrent unique winner to one failed row without aborting the batch", async () => {

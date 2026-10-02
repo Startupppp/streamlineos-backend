@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   inboxRecords,
   invitations,
+  invitationEvents,
   outboxEvents,
   modulesCatalog,
   orgModules,
@@ -114,10 +115,31 @@ export class OrgSetupQueryService {
       if (email !== actorEmail) nonSkippedEmails.push(email);
     }
 
-    const invitationStatusByEmail = new Map<string, string>();
+    const invitationStatusByEmail = new Map<
+      string,
+      { status: string; deliveryFailed: boolean }
+    >();
     if (nonSkippedEmails.length > 0) {
       const invitationRows = await tx
-        .select({ email: invitations.email, status: invitations.status })
+        .select({
+          email: invitations.email,
+          status: invitations.status,
+          deliveryFailed: sql<boolean>`EXISTS (
+            SELECT 1 FROM ${invitationEvents} f
+            WHERE f.invitation_id = ${invitations.id}
+              AND f.org_id = ${orgId}
+              AND f.event = 'DELIVERY_FAILED'
+              AND f.created_at >= COALESCE(
+                (
+                  SELECT MAX(r.created_at) FROM ${invitationEvents} r
+                  WHERE r.invitation_id = ${invitations.id}
+                    AND r.org_id = ${orgId}
+                    AND r.event = 'RESENT'
+                ),
+                ${invitations.createdAt}
+              )
+          )`,
+        })
         .from(invitations)
         .where(
           and(
@@ -130,16 +152,19 @@ export class OrgSetupQueryService {
         const existing = invitationStatusByEmail.get(row.email);
         if (
           !existing ||
-          inviteeStatusPriority(row.status) > inviteeStatusPriority(existing)
+          inviteeStatusPriority(row.status) > inviteeStatusPriority(existing.status)
         ) {
-          invitationStatusByEmail.set(row.email, row.status);
+          invitationStatusByEmail.set(row.email, {
+            status: row.status,
+            deliveryFailed: row.deliveryFailed,
+          });
         }
       }
     }
 
     const failedEmails = nonSkippedEmails.filter((email) => {
-      const status = invitationStatusByEmail.get(email);
-      return status !== "PENDING" && status !== "ACCEPTED";
+      const invitation = invitationStatusByEmail.get(email);
+      return invitation?.status !== "PENDING" && invitation?.status !== "ACCEPTED";
     });
 
     const activeMemberEmailSet = new Set<string>();
@@ -173,8 +198,11 @@ export class OrgSetupQueryService {
         continue;
       }
 
-      const status = invitationStatusByEmail.get(email);
-      if (status === "PENDING") {
+      const invitation = invitationStatusByEmail.get(email);
+      const status = invitation?.status;
+      if (status === "PENDING" && invitation?.deliveryFailed === true) {
+        outcomes.push({ email, outcome: "failed", reason: "email_not_sent" });
+      } else if (status === "PENDING") {
         outcomes.push({ email, outcome: "queued", reason: null });
       } else if (status === "ACCEPTED") {
         outcomes.push({ email, outcome: "successful", reason: null });

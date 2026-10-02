@@ -164,7 +164,7 @@ describe("InvitationCreateService.invite — plan limit enforcement", () => {
         { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined), recordSeatEvents: jest.fn().mockResolvedValue(undefined) } },
         { provide: AuditService, useValue: { log: jest.fn(), logMany: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), invalidateForOrg: jest.fn().mockResolvedValue(undefined), invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined) } },
-        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined), queueInvitationEmails: jest.fn().mockResolvedValue([]) } },
+        { provide: EmailService, useValue: { sendInvitationEmail: jest.fn().mockResolvedValue(undefined), queueInvitationEmails: jest.fn((items: readonly unknown[]) => Promise.resolve(items.map(() => ({ queued: true as const })))) } },
         {
           provide: AccessService,
           useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },

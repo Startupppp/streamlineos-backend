@@ -844,7 +844,7 @@ describe("OrgSetupService.getSetupStatus — response shape", () => {
 type OutcomesDbOptions = StatusDbOptions & {
   outboxPayload: Record<string, unknown> | null;
   actorEmail: string | null;
-  invitationRows: Array<{ email: string; status: string }>;
+  invitationRows: Array<{ email: string; status: string; deliveryFailed?: boolean }>;
   activeMemberEmails: string[];
 };
 
@@ -981,6 +981,30 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
     expect(actor?.reason).toBeNull();
   });
 
+  it("reports an undeliverable pending invitation as failed instead of queued", async () => {
+    const db = buildOutcomesDb({
+      onboardingCompletedAt: STAMP,
+      hasSubscription: true,
+      hasEnabledModule: true,
+      inboxStatus: "COMPLETED",
+      inboxHasOptionalFailure: true,
+      outboxDeliveryState: "DELIVERED",
+      outboxPayload: {
+        ...PARTIAL_PAYLOAD,
+        invitees: [{ email: "withheld@example.com", role: "MEMBER" }],
+      },
+      actorEmail: "actor@example.com",
+      invitationRows: [{ email: "withheld@example.com", status: "PENDING", deliveryFailed: true }],
+      activeMemberEmails: [],
+    });
+    const svc = await buildStatusService(db, { orgId: "org-1" });
+    const status = await svc.getSetupStatus(ownerActor());
+
+    expect(status.recipientOutcomes).toEqual([
+      { email: "withheld@example.com", outcome: "failed", reason: "email_not_sent" },
+    ]);
+  });
+
   it("a failed invitee who is now an active member gets already_member reason", async () => {
     const db = buildOutcomesDb({
       onboardingCompletedAt: STAMP,
@@ -1076,7 +1100,7 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
         invitees: [{ email: "accepted@example.com", role: "MEMBER" }],
       },
       actorEmail: "actor@example.com",
-      invitationRows: [{ email: "accepted@example.com", status: "ACCEPTED" }],
+      invitationRows: [{ email: "accepted@example.com", status: "ACCEPTED", deliveryFailed: true }],
       activeMemberEmails: [],
     });
     const svc = await buildStatusService(db, { orgId: "org-1" });
@@ -1088,7 +1112,7 @@ describe("OrgSetupService.getSetupStatus — recipient outcomes (P12)", () => {
     expect(accepted?.reason).toBeNull();
   });
 
-  it("retry does not duplicate: PENDING invitation for already-queued recipient stays queued not duplicated", async () => {
+  it("deduplicates a repeated payload email in status while preserving the pending invitation outcome", async () => {
     const db = buildOutcomesDb({
       onboardingCompletedAt: STAMP,
       hasSubscription: true,

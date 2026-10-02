@@ -81,6 +81,7 @@ interface Harness {
   db: Db;
   selectCalls: () => number;
   whereClauses: () => unknown[];
+  selectedFields: () => Record<string, unknown> | null;
 }
 
 const TUPLE_BOUND = /\(\s*"invitations"\."created_at",\s*"invitations"\."id"\s*\)\s*<\s*\(\s*\$(\d+),\s*\$(\d+)\s*\)/;
@@ -114,6 +115,7 @@ function keysetBoundFromSql(rendered: { sql: string; params: unknown[] }): Decod
  */
 function makeHarness(rows: InvitationFixtureRow[]): Harness {
   const whereClauses: unknown[] = [];
+  let selectedFields: Record<string, unknown> | null = null;
   let selectCalls = 0;
   let requestedLimit = Number.POSITIVE_INFINITY;
 
@@ -165,13 +167,19 @@ function makeHarness(rows: InvitationFixtureRow[]): Harness {
   });
 
   const db = {
-    select: jest.fn().mockImplementation(() => {
+    select: jest.fn().mockImplementation((fields: Record<string, unknown>) => {
+      selectedFields = fields;
       selectCalls += 1;
       return builder;
     }),
   } as unknown as Db;
 
-  return { db, selectCalls: () => selectCalls, whereClauses: () => whereClauses };
+  return {
+    db,
+    selectCalls: () => selectCalls,
+    whereClauses: () => whereClauses,
+    selectedFields: () => selectedFields,
+  };
 }
 
 interface WalkedPage {
@@ -473,5 +481,17 @@ describe("InvitationsReadService.listPaginated — no unbounded COUNT query", ()
     const service = new InvitationsReadService(harness.db);
     const page = await service.listPaginated("org-page", { limit: 5000 });
     expect(page.pagination.limit).toBe(100);
+  });
+});
+
+describe("InvitationsReadService.listPaginated — delivery failure projection", () => {
+  it("includes a failure recorded in the same transaction timestamp as invitation creation", async () => {
+    const harness = makeHarness([row("inv-1", new Date("2030-01-01T00:00:00.000Z"))]);
+    await new InvitationsReadService(harness.db).listPaginated("org-page");
+
+    const rendered = renderWhere(harness.selectedFields()?.deliveryFailed);
+    expect(rendered.sql).toContain("f.created_at >= COALESCE");
+    expect(rendered.sql).toContain("'DELIVERY_FAILED'");
+    expect(rendered.sql).toContain("'RESENT'");
   });
 });

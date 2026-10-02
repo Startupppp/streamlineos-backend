@@ -157,6 +157,7 @@ export const bulkInviteResponseSchema = z.object({
       invitationId: z.string().optional(),
       isDuplicate: z.boolean().optional(),
       error: z.string().optional(),
+      deliveryQueued: z.boolean().optional(),
     }),
   ),
 });

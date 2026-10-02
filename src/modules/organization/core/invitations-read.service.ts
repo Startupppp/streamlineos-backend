@@ -121,7 +121,7 @@ export class InvitationsReadService {
             WHERE f.invitation_id = "invitations"."id"
               AND f.org_id = ${orgId}
               AND f.event = 'DELIVERY_FAILED'
-              AND f.created_at > COALESCE(
+              AND f.created_at >= COALESCE(
                 (
                   SELECT MAX(r.created_at) FROM ${invitationEvents} r
                   WHERE r.invitation_id = "invitations"."id"

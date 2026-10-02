@@ -63,6 +63,7 @@ interface BulkInviteRowResult {
   invitationId?: string;
   isDuplicate?: boolean;
   error?: string;
+  deliveryQueued?: boolean;
 }
 
 interface BulkInvitationDraft {
@@ -384,7 +385,7 @@ export class InvitationCreateService {
             })),
           ]);
 
-          await this.email.queueInvitationEmails(
+          const deliveryOutcomes = await this.email.queueInvitationEmails(
             successful.map((candidate) => ({
               email: candidate.email,
               token: candidate.rawToken,
@@ -392,6 +393,21 @@ export class InvitationCreateService {
               organizationId: orgId,
             })),
           );
+          if (deliveryOutcomes.length !== successful.length)
+            throw new Error("Invitation email queue returned an incomplete batch result");
+
+          const deliveryFailures = successful.filter(
+            (_candidate, index) => deliveryOutcomes[index]?.queued === false,
+          );
+          if (deliveryFailures.length > 0)
+            await tx.insert(invitationEvents).values(
+              deliveryFailures.map((candidate) => ({
+                orgId,
+                invitationId: candidate.invitationId,
+                event: "DELIVERY_FAILED" as const,
+                actorMembershipId: null,
+              })),
+            );
 
           await this.replaceInvitationModuleAccess(
             tx,
@@ -400,12 +416,13 @@ export class InvitationCreateService {
             validatedAccess,
           );
 
-          for (const candidate of successful) {
+          for (const [index, candidate] of successful.entries()) {
             results[candidate.index] = {
               email: candidate.email,
               originalEmail: candidate.originalEmail,
               success: true,
               invitationId: candidate.invitationId,
+              deliveryQueued: deliveryOutcomes[index]?.queued === true,
             };
           }
         },

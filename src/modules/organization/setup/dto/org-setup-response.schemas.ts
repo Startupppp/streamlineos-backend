@@ -74,6 +74,7 @@ export const inviteeOutcomeSchema = z.enum([
 export const inviteeFailureReasonSchema = z.enum([
   "already_member",
   "invitation_revoked",
+  "email_not_sent",
   "unknown",
 ]);
 

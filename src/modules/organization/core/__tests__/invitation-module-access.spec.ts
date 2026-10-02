@@ -656,7 +656,11 @@ describe("InvitationCreateService.bulkInvite() — module access (BUG-HRMS-003)"
         },
         {
           provide: EmailService,
-          useValue: { queueInvitationEmails: jest.fn().mockResolvedValue([]) },
+          useValue: {
+            queueInvitationEmails: jest.fn((items: readonly unknown[]) =>
+              Promise.resolve(items.map(() => ({ queued: true as const }))),
+            ),
+          },
         },
         {
           provide: PlanLimitsService,

@@ -97,7 +97,9 @@ function buildHarness(options: { writeRejectsWith?: Error } = {}): Harness {
 
   const email = {
     queueInvitationEmail: jest.fn(() => Promise.resolve()),
-    queueInvitationEmails: jest.fn(() => Promise.resolve([])),
+    queueInvitationEmails: jest.fn((items: readonly unknown[]) =>
+      Promise.resolve(items.map(() => ({ queued: true as const }))),
+    ),
     sendInvitationEmail: jest.fn(() => Promise.resolve()),
   };
 
