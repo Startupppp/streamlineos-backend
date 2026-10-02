@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { organizationMembers, userModuleAccess } from "../../db/schema";
+import { organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -14,11 +14,13 @@ import {
   ADMINISTRABLE_MODULES,
 } from "../../common/rbac/module-vocabulary";
 import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { EntitlementsService } from "./entitlements.service";
 import { MANAGEABLE_MODULE_SET } from "./access-policy";
 import { AccessVersionCache } from "./access-version-cache";
 import { DeniedModulesResolver } from "./denied-modules.resolver";
 import type { ReadAccessTable } from "./access-permission.resolver";
+import { writeUserModuleAccessOverride } from "./user-module-access.writer";
 
 @Injectable()
 export class UserModuleAccessService {
@@ -124,7 +126,7 @@ export class UserModuleAccessService {
             eq(organizationMembers.orgId, orgId),
             eq(organizationMembers.userId, userId),
           ),
-          columns: { id: true, userId: true, status: true },
+          columns: { id: true, userId: true, status: true, role: true, isOwner: true },
         });
         if (!member)
           throw new NotFoundException(
@@ -134,23 +136,18 @@ export class UserModuleAccessService {
           throw new BadRequestException(
             "Module access can only be changed for active members",
           );
-        await tx
-          .insert(userModuleAccess)
-          .values({
-            orgId,
-            organizationMembershipId: member.id,
-            moduleKey,
-            enabled,
-            updatedBy,
-          })
-          .onConflictDoUpdate({
-            target: [
-              userModuleAccess.orgId,
-              userModuleAccess.organizationMembershipId,
-              userModuleAccess.moduleKey,
-            ],
-            set: { enabled, updatedBy },
-          });
+        if (!enabled && (member.isOwner || member.role === ORG_MEMBER_ROLES.ORG_ADMIN))
+          throw new BadRequestException(
+            "Organization Owner and Admin access cannot be disabled per member",
+          );
+        await writeUserModuleAccessOverride(
+          tx,
+          orgId,
+          member.id,
+          moduleKey,
+          enabled,
+          updatedBy,
+        );
         await commitAccessChange(tx, orgId, {
           audit: {
             action: enabled ? "module_access.user_enabled" : "module_access.user_disabled",

@@ -43,6 +43,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
           const done = Promise.resolve();
           return {
             onConflictDoNothing: () => done,
+            onConflictDoUpdate: () => done,
             then: done.then.bind(done),
             catch: done.catch.bind(done),
             finally: done.finally.bind(done),
@@ -310,11 +311,17 @@ describe("Condition 3 — principal group membership drives permission via trans
       .get(ModuleAccessGroupMembersService)
       .addGroupMember(ownerActor(), MODULE, 9, { userId: "u-target" });
 
-    expect(txInserted).toHaveLength(1);
+    expect(txInserted).toHaveLength(2);
     expect(txInserted[0]).toMatchObject({
       orgId: ORG,
       organizationMembershipId: 55,
       roleId: 9,
+    });
+    expect(txInserted[1]).toMatchObject({
+      orgId: ORG,
+      organizationMembershipId: 55,
+      moduleKey: MODULE,
+      enabled: true,
     });
     expect(txHandles.write).not.toBeNull();
     expect(txHandles.bump).toBe(txHandles.write);

@@ -173,7 +173,7 @@ async function buildSvc(opts: {
           getUserDeniedModules: jest.fn().mockResolvedValue(new Set()),
         },
       },
-      { provide: CacheService, useValue: { invalidate: jest.fn() } },
+      { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateMany: jest.fn() } },
       { provide: AuditService, useValue: { log: jest.fn() } },
     ],
   }).compile();

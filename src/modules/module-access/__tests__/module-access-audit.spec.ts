@@ -173,6 +173,7 @@ describe("ModuleAccessGroupMembersService — audit: group member added", () => 
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
           onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
         }),
       }),
     };

@@ -18,7 +18,7 @@ import { MANAGEABLE_MODULE_SET } from "./access-policy";
 
 const MODULE = [...MANAGEABLE_MODULE_SET][0] ?? "hr";
 
-function makeService(member: { id: number; userId: string; status: string } | undefined) {
+function makeService(member: { id: number; userId: string; status: string; role?: string; isOwner?: boolean } | undefined) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const db = {
     query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(member) } },
@@ -75,6 +75,26 @@ describe("per-member module access changes commit with an audit row", () => {
     await expect(
       svc.setUserModuleAccess("org-1", "stranger", MODULE, false, "admin-1"),
     ).rejects.toThrow("not a member");
+
+    expect(onConflictDoUpdate).not.toHaveBeenCalled();
+    expect(commitAccessChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { role: "OWNER", isOwner: true },
+    { role: "ORG_ADMIN", isOwner: false },
+  ])("rejects ineffective denial for structural $role standing", async ({ role, isOwner }) => {
+    const { svc, onConflictDoUpdate } = makeService({
+      id: 9,
+      userId: "structural-admin",
+      status: "ACTIVE",
+      role,
+      isOwner,
+    });
+
+    await expect(
+      svc.setUserModuleAccess("org-1", "structural-admin", MODULE, false, "admin-1"),
+    ).rejects.toThrow("Organization Owner and Admin access cannot be disabled per member");
 
     expect(onConflictDoUpdate).not.toHaveBeenCalled();
     expect(commitAccessChange).not.toHaveBeenCalled();

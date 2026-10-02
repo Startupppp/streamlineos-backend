@@ -32,6 +32,7 @@ import { moduleDefinition } from "../../common/rbac/module-registry";
 import {
   assertManagedModule,
   assertModuleAccessPolicy,
+  assertRevocableMembershipStanding,
   moduleAccessPolicyDeps,
   resolveModuleOwnerUserId,
 } from "./module-access.helpers";
@@ -42,6 +43,7 @@ import {
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { assertOwnerOnly } from "../../common/rbac/owner-only-operations";
 import { AccessService } from "../access/access.service";
+import { writeUserModuleAccessOverride } from "../access/user-module-access.writer";
 
 @Injectable()
 export class ModuleStandingMutationsService {
@@ -144,6 +146,14 @@ export class ModuleStandingMutationsService {
             assignedByMembershipId: null,
           })
           .onConflictDoNothing();
+        await writeUserModuleAccessOverride(
+          tx,
+          actor.orgId,
+          membershipId,
+          moduleKey,
+          true,
+          actor.userId,
+        );
         await commitAccessChange(tx, actor.orgId, {
           audit: {
             action: "module_access.standing_granted",
@@ -177,9 +187,11 @@ export class ModuleStandingMutationsService {
         eq(organizationMembers.orgId, actor.orgId),
         eq(organizationMembers.id, membershipId),
       ),
-      columns: { id: true, userId: true },
+      columns: { id: true, userId: true, role: true, isOwner: true },
     });
     if (!targetMembership) throw new NotFoundException("Member not found");
+
+    assertRevocableMembershipStanding(targetMembership);
 
     const ownerUserId = await resolveModuleOwnerUserId(this.db, actor.orgId, moduleKey);
     if (ownerUserId !== null && targetMembership.userId === ownerUserId)
@@ -195,11 +207,11 @@ export class ModuleStandingMutationsService {
       .from(roles)
       .where(and(eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)));
 
-    if (allModuleRoles.length > 0) {
-      const allModuleRoleIds = allModuleRoles.map((r) => r.id);
-      await runInTenantTransaction(
-        this.db,
-        async (tx): Promise<void> => {
+    const allModuleRoleIds = allModuleRoles.map((r) => r.id);
+    await runInTenantTransaction(
+      this.db,
+      async (tx): Promise<void> => {
+        if (allModuleRoleIds.length > 0) {
           await tx
             .delete(roleAssignments)
             .where(
@@ -209,20 +221,28 @@ export class ModuleStandingMutationsService {
                 inArray(roleAssignments.roleId, allModuleRoleIds),
               ),
             );
-          await commitAccessChange(tx, actor.orgId, {
-            audit: {
-              action: "module_access.standing_revoked",
-              userId: actor.userId,
-              targetId: String(membershipId),
-              targetType: "membership",
-              metadata: { moduleKey, targetUserId: targetMembership.userId },
-            },
-            revoke: this.standingRevocation(actor.orgId, targetMembership.userId),
-          });
-        },
-        { orgId: actor.orgId },
-      );
-    }
+        }
+        await writeUserModuleAccessOverride(
+          tx,
+          actor.orgId,
+          membershipId,
+          moduleKey,
+          false,
+          actor.userId,
+        );
+        await commitAccessChange(tx, actor.orgId, {
+          audit: {
+            action: "module_access.standing_revoked",
+            userId: actor.userId,
+            targetId: String(membershipId),
+            targetType: "membership",
+            metadata: { moduleKey, targetUserId: targetMembership.userId },
+          },
+          revoke: this.standingRevocation(actor.orgId, targetMembership.userId),
+        });
+      },
+      { orgId: actor.orgId },
+    );
 
     return { success: true };
   }
@@ -316,6 +336,14 @@ export class ModuleStandingMutationsService {
           await revokeModuleOwnerRole(tx, actor.orgId, moduleKey, prevOwnership.ownerMembershipId);
 
         await assertModuleOwnerRoleAssigned(tx, actor.orgId, moduleKey, toMembershipId);
+        await writeUserModuleAccessOverride(
+          tx,
+          actor.orgId,
+          toMembershipId,
+          moduleKey,
+          true,
+          actor.userId,
+        );
         await commitAccessChange(tx, actor.orgId, {
           audit: {
             action: "module_access.ownership_transferred",

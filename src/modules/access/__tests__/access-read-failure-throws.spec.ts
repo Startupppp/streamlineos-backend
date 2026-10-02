@@ -31,6 +31,8 @@ import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
+import { moduleAvailability, moduleAvailabilityResolver } from "../../../common/rbac/module-availability";
+import { isCoreModuleKey } from "../entitlements.service";
 
 function resolvingChain(result: unknown[]): Record<string, jest.Mock> {
   const chain: Record<string, jest.Mock> = {
@@ -145,6 +147,56 @@ describe("DeniedModulesResolver — an unreadable denial list never resolves to 
     );
 
     await expect(resolver.resolve("org-1", "user-1")).rejects.toBeDefined();
+  });
+});
+
+describe("DeniedModulesResolver — structural access survives legacy deny rows", () => {
+  function serviceForRow(role: string, isOwner: boolean): AccessService {
+    return buildService({
+      query: { accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) } },
+      select: jest.fn().mockReturnValue(resolvingChain([
+        { moduleKey: "build", role, isOwner },
+      ])),
+    });
+  }
+
+  async function availabilityFor(service: AccessService, enabled: boolean) {
+    return moduleAvailability(
+      moduleAvailabilityResolver(
+        {
+          isCoreModule: isCoreModuleKey,
+          getModuleMap: async () => ({ build: enabled }),
+          getPlanLockedModules: async () => [],
+        },
+        { getUserDeniedModules: (orgId, userId) => service.getUserDeniedModules(orgId, userId) },
+      ),
+      "org-1",
+      "user-1",
+      "build",
+    );
+  }
+
+  it.each([
+    ["OWNER", true],
+    ["ORG_ADMIN", false],
+  ])("ignores a historical deny for structural %s and keeps enabled Build available", async (role, isOwner) => {
+    const service = serviceForRow(role, isOwner);
+
+    await expect(service.getUserDeniedModules("org-1", "user-1"))
+      .resolves.toEqual(new Set());
+    await expect(availabilityFor(service, true))
+      .resolves.toEqual({ available: true });
+    await expect(availabilityFor(service, false))
+      .resolves.toEqual({ available: false, reason: "org-disabled" });
+  });
+
+  it("keeps a revoked Org Member denied even when Build is enabled", async () => {
+    const service = serviceForRow("MEMBER", false);
+
+    await expect(service.getUserDeniedModules("org-1", "user-1"))
+      .resolves.toEqual(new Set(["build"]));
+    await expect(availabilityFor(service, true))
+      .resolves.toEqual({ available: false, reason: "user-denied" });
   });
 });
 

@@ -17,6 +17,8 @@ import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
+import { writeUserModuleAccessOverride } from "../access/user-module-access.writer";
+import { assertRevocableMembershipStanding } from "./module-access.helpers";
 import {
   assertFlatMemberWriteAllowed,
   assertGroupsBelongToModule,
@@ -90,6 +92,14 @@ export class ModuleAccessFlatMembersService {
             })),
           )
           .onConflictDoNothing();
+        await writeUserModuleAccessOverride(
+          tx,
+          actor.orgId,
+          membershipId,
+          moduleKey,
+          true,
+          actor.userId,
+        );
         await commitAccessChange(tx, actor.orgId, {
           audit: {
             action: "module_access.member_added",
@@ -113,6 +123,12 @@ export class ModuleAccessFlatMembersService {
     input: UpdateMemberGroupsInput,
   ): Promise<{ success: true }> {
     await assertFlatMemberWriteAllowed(this.writeDeps, actor, moduleKey);
+
+    if (input.groupIds.length === 0) {
+      throw new BadRequestException(
+        "A member needs at least one group — remove them from the module instead",
+      );
+    }
 
     if (!actor.isOrgOwner && userId === actor.userId) {
       throw new ForbiddenException(
@@ -141,14 +157,12 @@ export class ModuleAccessFlatMembersService {
       moduleKey,
     );
 
-    if (input.groupIds.length > 0) {
-      const validIds = new Set(allModuleRoleIds);
-      for (const id of input.groupIds) {
-        if (!validIds.has(id)) {
-          throw new BadRequestException(
-            `Group ${id} does not belong to this module`,
-          );
-        }
+    const validIds = new Set(allModuleRoleIds);
+    for (const id of input.groupIds) {
+      if (!validIds.has(id)) {
+        throw new BadRequestException(
+          `Group ${id} does not belong to this module`,
+        );
       }
     }
 
@@ -167,19 +181,26 @@ export class ModuleAccessFlatMembersService {
             );
         }
 
-        if (input.groupIds.length > 0) {
-          await tx
-            .insert(roleAssignments)
-            .values(
-              input.groupIds.map((groupId) => ({
-                orgId: actor.orgId,
-                organizationMembershipId: membershipId,
-                roleId: groupId,
-                assignedByMembershipId: null,
-              })),
-            )
-            .onConflictDoNothing();
-        }
+        await tx
+          .insert(roleAssignments)
+          .values(
+            input.groupIds.map((groupId) => ({
+              orgId: actor.orgId,
+              organizationMembershipId: membershipId,
+              roleId: groupId,
+              assignedByMembershipId: null,
+            })),
+          )
+          .onConflictDoNothing();
+
+        await writeUserModuleAccessOverride(
+          tx,
+          actor.orgId,
+          membershipId,
+          moduleKey,
+          true,
+          actor.userId,
+        );
 
         await commitAccessChange(tx, actor.orgId, {
           audit: {
@@ -221,30 +242,40 @@ export class ModuleAccessFlatMembersService {
         eq(organizationMembers.orgId, actor.orgId),
         eq(organizationMembers.userId, userId),
       ),
-      columns: { id: true },
+      columns: { id: true, role: true, isOwner: true },
     });
 
     if (!member) return { success: true };
+
+    assertRevocableMembershipStanding(member);
 
     const allModuleRoleIds = await listModuleRoleIds(
       this.writeDeps,
       actor.orgId,
       moduleKey,
     );
-    if (allModuleRoleIds.length === 0) return { success: true };
-
     await runInTenantTransaction(
       this.db,
       async (tx): Promise<void> => {
-        await tx
-          .delete(roleAssignments)
-          .where(
-            and(
-              eq(roleAssignments.orgId, actor.orgId),
-              eq(roleAssignments.organizationMembershipId, member.id),
-              inArray(roleAssignments.roleId, allModuleRoleIds),
-            ),
-          );
+        if (allModuleRoleIds.length > 0) {
+          await tx
+            .delete(roleAssignments)
+            .where(
+              and(
+                eq(roleAssignments.orgId, actor.orgId),
+                eq(roleAssignments.organizationMembershipId, member.id),
+                inArray(roleAssignments.roleId, allModuleRoleIds),
+              ),
+            );
+        }
+        await writeUserModuleAccessOverride(
+          tx,
+          actor.orgId,
+          member.id,
+          moduleKey,
+          false,
+          actor.userId,
+        );
         await commitAccessChange(tx, actor.orgId, {
           audit: {
             action: "module_access.member_removed",

@@ -19,6 +19,7 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AddModuleGroupMemberInput } from "./dto/module-access.schemas";
 import { ModuleAccessGroupPolicyService } from "./module-access-group-policy.service";
+import { writeUserModuleAccessOverride } from "../access/user-module-access.writer";
 
 export interface ModuleGroupMember {
   userId: string;
@@ -117,6 +118,14 @@ export class ModuleAccessGroupMembersService {
             assignedByMembershipId: null,
           })
           .onConflictDoNothing();
+        await writeUserModuleAccessOverride(
+          tx,
+          actor.orgId,
+          member.id,
+          moduleKey,
+          true,
+          actor.userId,
+        );
         await commitAccessChange(tx, actor.orgId, {
           audit: {
             action: "module_access.group_member_added",

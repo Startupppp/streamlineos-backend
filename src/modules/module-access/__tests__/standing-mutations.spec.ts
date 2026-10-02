@@ -9,6 +9,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
+import { userModuleAccess } from "../../../db/schema";
 
 jest.mock("../../../common/rbac/access-mutation-commit", () => ({
   commitAccessChange: jest.fn().mockResolvedValue(undefined),
@@ -102,11 +103,13 @@ async function buildSvc(mockDb: unknown, auditLog = jest.fn()) {
 describe("ModuleStandingMutationsService.grantAdminStanding", () => {
   it("grants MODULE_ADMIN standing and bumps permissions version", async () => {
     const auditLog = jest.fn();
+    const values = jest.fn().mockReturnValue({
+      onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+      onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+    });
     const txMock = {
       execute: jest.fn().mockResolvedValue(undefined),
-      insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) }),
-      }),
+      insert: jest.fn().mockReturnValue({ values }),
     };
     const mockDb = {
       query: {
@@ -126,6 +129,14 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
     const result = await svc.grantAdminStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
 
     expect(result).toEqual({ success: true });
+    expect(txMock.insert).toHaveBeenCalledWith(userModuleAccess);
+    expect(values).toHaveBeenCalledWith({
+      orgId: ORG,
+      organizationMembershipId: TARGET_MEMBERSHIP_ID,
+      moduleKey: MODULE,
+      enabled: true,
+      updatedBy: ACTOR_USER,
+    });
     expect(commitAccessChange).toHaveBeenCalledWith(
       expect.anything(),
       ORG,
@@ -146,7 +157,10 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
     const txMock = {
       execute: jest.fn().mockResolvedValue(undefined),
       insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) }),
+        values: jest.fn().mockReturnValue({
+          onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+        }),
       }),
     };
     const mockDb = {
@@ -166,7 +180,8 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
     const svc = await buildSvc(mockDb);
     await svc.grantAdminStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
 
-    expect(txMock.insert).toHaveBeenCalledTimes(1);
+    expect(txMock.insert).toHaveBeenCalledTimes(2);
+    expect(txMock.insert).toHaveBeenCalledWith(userModuleAccess);
     expect(commitAccessChange).toHaveBeenCalledWith(txMock, ORG, expect.any(Object));
   });
 
@@ -233,11 +248,16 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
 });
 
 describe("ModuleStandingMutationsService.revokeStanding", () => {
-  it("removes all module role assignments, bumps permissions, and audits", async () => {
+  it("denies surviving group, delegation, and personal grants when direct standing is revoked", async () => {
     const auditLog = jest.fn();
+    const denyValues = jest.fn().mockReturnValue({ onConflictDoUpdate: jest.fn().mockResolvedValue(undefined) });
     const txMock = {
       execute: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({ onConflictDoUpdate: jest.fn().mockResolvedValue(undefined) }),
+      }),
+      insert: jest.fn().mockReturnValue({ values: denyValues }),
     };
     const mockDb = {
       query: {
@@ -258,6 +278,14 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
 
     expect(result).toEqual({ success: true });
     expect(txMock.delete).toHaveBeenCalled();
+    expect(txMock.insert).toHaveBeenCalledWith(userModuleAccess);
+    expect(denyValues).toHaveBeenCalledWith({
+      orgId: ORG,
+      organizationMembershipId: TARGET_MEMBERSHIP_ID,
+      moduleKey: MODULE,
+      enabled: false,
+      updatedBy: ACTOR_USER,
+    });
     expect(commitAccessChange).toHaveBeenCalledWith(
       expect.anything(),
       ORG,
@@ -274,6 +302,9 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
     const txMock = {
       execute: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({ onConflictDoUpdate: jest.fn().mockResolvedValue(undefined) }),
+      }),
     };
     const mockDb = {
       query: {
@@ -293,6 +324,7 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
     await svc.revokeStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
 
     expect(txMock.delete).toHaveBeenCalledTimes(1);
+    expect(txMock.insert).toHaveBeenCalledWith(userModuleAccess);
     expect(commitAccessChange).toHaveBeenCalledWith(txMock, ORG, expect.any(Object));
   });
 
@@ -310,6 +342,29 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
     await expect(
       svc.revokeStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it("does not report structural Org Admin access as revoked", async () => {
+    const mockDb = {
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: TARGET_MEMBERSHIP_ID,
+            userId: TARGET_USER,
+            role: "ORG_ADMIN",
+            isOwner: false,
+          }),
+        },
+      },
+      select: jest.fn().mockReturnValueOnce(makeSelectChain([])),
+      transaction: jest.fn(),
+    };
+
+    const svc = await buildSvc(mockDb);
+    await expect(
+      svc.revokeStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(mockDb.transaction).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the membership does not exist", async () => {
@@ -342,6 +397,9 @@ describe("ModuleStandingMutationsService.directTransferOwnership", () => {
       ? [{ ownerMembershipId: prevOwnerMembershipId }]
       : [];
 
+    const insertValues = jest.fn().mockReturnValue({
+      onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+    });
     const txMock = {
       execute: jest.fn().mockResolvedValue(undefined),
       select: jest.fn().mockReturnValue({
@@ -350,9 +408,7 @@ describe("ModuleStandingMutationsService.directTransferOwnership", () => {
         }),
       }),
       insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockReturnValue({
-          onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
-        }),
+        values: insertValues,
       }),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
@@ -374,7 +430,7 @@ describe("ModuleStandingMutationsService.directTransferOwnership", () => {
       ),
     };
 
-    return { mockDb, txMock };
+    return { mockDb, txMock, insertValues };
   }
 
   it("transfers ownership atomically: new owner assigned, old owner revoked in one transaction", async () => {
@@ -407,12 +463,20 @@ describe("ModuleStandingMutationsService.directTransferOwnership", () => {
 
   it("the outgoing owner's revoke, the incoming owner's grant and the version bump all run on one transaction handle", async () => {
     const PREV_OWNER_ID = 99;
-    const { mockDb, txMock } = makeTransferDb(PREV_OWNER_ID);
+    const { mockDb, txMock, insertValues } = makeTransferDb(PREV_OWNER_ID);
 
     const svc = await buildSvc(mockDb);
     await svc.directTransferOwnership(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
 
-    expect(txMock.insert).toHaveBeenCalledTimes(1);
+    expect(txMock.insert).toHaveBeenCalledTimes(2);
+    expect(txMock.insert).toHaveBeenCalledWith(userModuleAccess);
+    expect(insertValues).toHaveBeenCalledWith({
+      orgId: ORG,
+      organizationMembershipId: TARGET_MEMBERSHIP_ID,
+      moduleKey: MODULE,
+      enabled: true,
+      updatedBy: ACTOR_USER,
+    });
     expect(revokeModuleOwnerRole).toHaveBeenCalledWith(txMock, ORG, MODULE, PREV_OWNER_ID);
     expect(assertModuleOwnerRoleAssigned).toHaveBeenCalledWith(
       txMock,

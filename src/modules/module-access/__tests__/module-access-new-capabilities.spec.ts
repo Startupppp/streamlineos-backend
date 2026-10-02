@@ -372,6 +372,7 @@ describe("ModuleAccessFlatMembersService.addMember — self-assignment block", (
     const mockInsertChain = {
       values: jest.fn().mockReturnValue({
         onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+        onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
       }),
     };
     const txMock = {
@@ -426,7 +427,10 @@ describe("ModuleAccessFlatMembersService.addMember — self-assignment block", (
     const groupIds = [9, 10, 11];
     const ownerChain = makeFlexChain([{ userId: "u-other" }]);
     const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
-    const values = jest.fn().mockReturnValue({ onConflictDoNothing });
+    const values = jest.fn().mockReturnValue({
+      onConflictDoNothing,
+      onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+    });
     const txMock = {
       execute: jest.fn().mockResolvedValue([]),
       insert: jest.fn().mockReturnValue({ values }),
@@ -474,8 +478,8 @@ describe("ModuleAccessFlatMembersService.addMember — self-assignment block", (
       { userId: "u-target", groupIds },
     );
 
-    expect(txMock.insert).toHaveBeenCalledTimes(1);
-    expect(values).toHaveBeenCalledTimes(1);
+    expect(txMock.insert).toHaveBeenCalledTimes(2);
+    expect(values).toHaveBeenCalledTimes(2);
     expect(values).toHaveBeenCalledWith(
       groupIds.map((roleId) => ({
         orgId: "org-1",

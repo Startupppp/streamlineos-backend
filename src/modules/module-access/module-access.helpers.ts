@@ -6,6 +6,7 @@ import type { Db } from "../../db/drizzle.module";
 import { resolveModuleManagementStanding, resolveModuleStanding } from "./module-standing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 
 export {
   resolveModuleOwnerUserId,
@@ -63,6 +64,13 @@ export function assertManagedModule(moduleKey: string): void {
     );
 }
 
+export function assertRevocableMembershipStanding(
+  membership: { role: string; isOwner: boolean },
+): void {
+  if (membership.isOwner || membership.role === ORG_MEMBER_ROLES.ORG_ADMIN)
+    throw moduleAccessDenied("manage");
+}
+
 export async function assertModuleEnabled(
   deps: Pick<ModuleAccessPolicyDeps, "isModuleEnabled">,
   orgId: string,
@@ -85,10 +93,7 @@ export async function assertModuleAccessPolicy(
 
   if (action === "manage") {
     const standing = await resolveModuleManagementStanding(deps.db, actor, moduleKey);
-    if (
-      standing?.source === "module-ownership" ||
-      standing?.source === "module-role"
-    ) {
+    if (standing?.source === "module-ownership" || standing?.source === "module-role") {
       const denied = await deps.getUserDeniedModules(actor.orgId, actor.userId);
       if (denied.has(moduleKey))
         throw new ModuleDisabledException(moduleKey, "user-denied");
@@ -100,10 +105,7 @@ export async function assertModuleAccessPolicy(
 
   const resolved = await deps.resolveUserPermissions(actor.orgId, actor.userId);
   const standing = await resolveModuleStanding(deps.db, actor, moduleKey, resolved);
-  if (
-    standing.source === "module-ownership" ||
-    standing.source === "module-role"
-  ) {
+  if (standing.level !== "none" && standing.source !== "org-owner" && standing.source !== "org-admin") {
     const denied = await deps.getUserDeniedModules(actor.orgId, actor.userId);
     if (denied.has(moduleKey))
       throw new ModuleDisabledException(moduleKey, "user-denied");

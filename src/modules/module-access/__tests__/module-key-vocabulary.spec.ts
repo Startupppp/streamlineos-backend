@@ -166,6 +166,18 @@ describe("module-key vocabulary — case normalisation", () => {
       ).resolves.toBeUndefined();
     });
 
+    it("refuses permission-derived Build standing when a per-person denial remains", async () => {
+      const deps = makeDeps(true);
+      deps.resolveUserPermissions = jest.fn().mockResolvedValue(
+        new Map([["build:access:view", "all"]]),
+      );
+      deps.getUserDeniedModules = jest.fn().mockResolvedValue(new Set(["build"]));
+
+      await expect(
+        assertModuleAccessPolicy(deps, makeActor(), "build", "view"),
+      ).rejects.toBeInstanceOf(ModuleDisabledException);
+    });
+
     it("refuses a denied module admin's Build management despite a surviving role", async () => {
       const deps = makeDeps(true, [{ rank: 20, moduleKey: "build" }]);
       deps.getUserDeniedModules = jest.fn().mockResolvedValue(new Set(["build"]));

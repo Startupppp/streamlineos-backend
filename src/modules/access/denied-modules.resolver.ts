@@ -3,6 +3,7 @@ import { organizationMembers, userModuleAccess } from "../../db/schema";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../db/drizzle.module";
 import type { ReadAccessTable } from "./access-permission.resolver";
+import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 
 const DENIED_MODULES_CACHE_TTL_MS = 15_000;
 
@@ -35,7 +36,11 @@ export class DeniedModulesResolver {
         this.readTable(
           () =>
             db
-              .select({ moduleKey: userModuleAccess.moduleKey })
+              .select({
+                moduleKey: userModuleAccess.moduleKey,
+                role: organizationMembers.role,
+                isOwner: organizationMembers.isOwner,
+              })
               .from(userModuleAccess)
               .innerJoin(
                 organizationMembers,
@@ -56,7 +61,10 @@ export class DeniedModulesResolver {
       { orgId },
     );
     const modules = new Set(
-      rows.map((row) => row.moduleKey).filter((moduleKey) => !this.isCoreModule(moduleKey)),
+      rows
+        .filter((row) => !row.isOwner && row.role !== ORG_MEMBER_ROLES.ORG_ADMIN)
+        .map((row) => row.moduleKey)
+        .filter((moduleKey) => !this.isCoreModule(moduleKey)),
     );
     this.cache.set(cacheKey, { modules, expiresAt: Date.now() + DENIED_MODULES_CACHE_TTL_MS });
     return modules;
