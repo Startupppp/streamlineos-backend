@@ -7316,6 +7316,27 @@
       "when": 1803093660725,
       "tag": "1727_git_connection_credentials_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 1173,
+      "version": "7",
+      "when": 1803093661725,
+      "tag": "1347_kb_hr_documents_guard_scanned_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 1174,
+      "version": "7",
+      "when": 1803093662725,
+      "tag": "1427_kb_pages_contradiction_title_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1175,
+      "version": "7",
+      "when": 1803093663725,
+      "tag": "1431_kb_health_items_repair_action",
+      "breakpoints": true
     }
   ]
 }

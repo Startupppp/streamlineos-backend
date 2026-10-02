@@ -507,7 +507,8 @@
     "perf:index-redundancy:self-test": "node test/perf/measure-index-redundancy.mjs --self-test",
     "perf:projection-bytes:self-test": "node test/perf/measure-projection-bytes.mjs --self-test",
     "perf:seed-heavy-query:self-test": "node test/perf/seed-heavy-query-load.mjs --self-test",
-    "perf:benchmark-environment:self-test": "node test/perf/benchmark-environment.mjs --self-test"
+    "perf:benchmark-environment:self-test": "node test/perf/benchmark-environment.mjs --self-test",
+    "check:concurrent-migration:self-test": "node -e \"import('./src/scripts/lib/concurrent-migration.mjs').then(m=>m.selfTest())\""
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

@@ -32,7 +32,7 @@ export function buildContextPrompt(
   const email = asPromptData(actor.email, MAX_IDENTITY_CHARS);
   const speakingAs = displayName || "the signed-in user";
   const attendance = context.todayAttendance
-    ? `${context.todayAttendance.checkedIn ? "Checked in" : "Not checked in"}${context.todayAttendance.checkedOut ? ", checked out" : ""}${context.todayAttendance.workHours ? `, worked ${context.todayAttendance.workHours} hrs` : ""}`
+    ? `${context.todayAttendance.checkedIn ? "Checked in" : "Not checked in"}${context.todayAttendance.checkedOut ? ", checked out" : ""}${context.todayAttendance.workHours ? `, worked ${asPromptData(context.todayAttendance.workHours, 20)} hrs` : ""}`
     : "No attendance record";
   const payroll =
     context.recentPayrolls

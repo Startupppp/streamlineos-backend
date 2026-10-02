@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { tool, type ToolSet } from "ai";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../../../db/drizzle.module";
@@ -14,6 +15,8 @@ import type {
 } from "./ask-os-tool.types";
 import type { AskOsDirective } from "../streaming/ask-os-directive";
 import { isRecord } from "../../../../common/types/is-record";
+
+const logger = new Logger("AskOsTool");
 
 export const ACTION_LABELS: Record<string, { title: string; confirmLabel: string }> = {
   "email.send": { title: "Send email", confirmLabel: "Send" },
@@ -212,25 +215,27 @@ export function buildAskOsToolset(input: AskOsToolsetInput): ToolSet {
               }
               const parsed: unknown = parseToolInput(definition.input, rawInput);
               const outcome = await definition.run(parsed, runContext);
-              if (onDirective !== undefined) {
-                if (outcome.kind === "needs-confirmation") {
-                  onDirective(labelledConfirmDirective(outcome));
-                  return { status: "pending_confirmation", summary: outcome.summary };
-                }
-                if (outcome.kind === "needs-connection") {
-                  onDirective({
-                    kind: "connect-integration",
-                    toolkit: outcome.toolkit,
-                    reason: outcome.reason,
-                    summary: outcome.summary,
-                  });
-                  return { status: "connection_required", summary: outcome.summary };
-                }
+              if (outcome.kind === "needs-confirmation") {
+                onDirective?.(labelledConfirmDirective(outcome));
+                return { status: "pending_confirmation", summary: outcome.summary };
+              }
+              if (outcome.kind === "needs-connection") {
+                onDirective?.({
+                  kind: "connect-integration",
+                  toolkit: outcome.toolkit,
+                  reason: outcome.reason,
+                  summary: outcome.summary,
+                });
+                return { status: "connection_required", summary: outcome.summary };
               }
               return renderOutcome(outcome);
             }),
           );
         } catch (error) {
+          logger.error(
+            `tool ${definition.key} failed for org ${actor.orgId}`,
+            error instanceof Error ? error.stack : String(error),
+          );
           return toJsonSafe(
             renderOutcome({
               kind: "failed",

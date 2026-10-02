@@ -2,15 +2,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { SCANNED_DOCUMENT_FIELDS } from "./document-pii-scan";
 
-function readMigration(name: string): string {
-  return readFileSync(resolve(process.cwd(), "migrations", name), "utf8");
+function readMigration(...segments: string[]): string {
+  return readFileSync(resolve(process.cwd(), "migrations", ...segments), "utf8");
 }
 
 const MIGRATION_TAG = "1347_kb_hr_documents_guard_scanned_fields";
 
-describe("migration 1347 (unapplied, unjournalled): the forward file's trigger OF clause covers every scanned document metadata field", () => {
+describe("migration 1347: the forward file's trigger OF clause covers every scanned document metadata field", () => {
   const migration = readMigration(`${MIGRATION_TAG}.sql`);
-  const rollback = readMigration(`${MIGRATION_TAG}_rollback.sql`);
+  const rollback = readMigration("rollback", `${MIGRATION_TAG}.down.sql`);
 
   const triggerStatement = (() => {
     const match = migration.match(/CREATE TRIGGER[\s\S]*?EXECUTE FUNCTION[^\n]+\n/);
