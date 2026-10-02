@@ -1,9 +1,8 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { organizationMembers } from "../../db/schema";
-import type { CacheService } from "../cache/cache.service";
 import {
   commitAccessChange,
-  scheduleStandingRevocation,
+  scheduleStandingChange,
   type CommitAccessOpts,
   type DbOrTx,
 } from "../rbac/access-mutation-commit";
@@ -38,9 +37,8 @@ export class MembershipMutations {
     this.pending.add(userId);
   }
 
-  async [DRAIN](cache: CacheService): Promise<void> {
-    if (this.pending.size === 0) return;
-    await scheduleStandingRevocation(cache, [...this.pending]);
+  async [DRAIN](): Promise<void> {
+    await scheduleStandingChange([...this.pending]);
   }
 
   // organizations.owner_membership_id and organization_members.org_id point at each other, so a bootstrap needs the id first.
@@ -216,7 +214,7 @@ export class MembershipMutations {
    * permission version bump: the column grants nothing, it records that every
    * onboarding task closed.
    *
-   * It is still a membership write and still needs the bust, because the guard
+   * It is still a membership write and still needs the standing clear, because the guard
    * caches the whole row — two writers were setting it directly
    * (`cron/cron-hr.service.ts` and `hr/onboarding/core/onboarding-submission.service.ts`),
    * which is the second-writer shape `check:membership-writes` exists to stop.
@@ -312,13 +310,12 @@ export class MembershipMutations {
   }
 }
 
-// `run` rejecting drains nothing, so a rolled-back membership change publishes no bust.
+// `run` rejecting drains nothing, so a rolled-back membership change publishes no standing change.
 export async function withMembershipMutations<T>(
-  cache: CacheService,
   run: (mutations: MembershipMutations) => Promise<T>,
 ): Promise<T> {
   const mutations = new MembershipMutations();
   const result = await run(mutations);
-  await mutations[DRAIN](cache);
+  await mutations[DRAIN]();
   return result;
 }

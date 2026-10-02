@@ -78,7 +78,7 @@ describe("createMembership", () => {
     const { tx, captured } = makeTx();
     const cache = makeCache();
 
-    const membershipId = await withMembershipMutations(cache, (membership) =>
+    const membershipId = await withMembershipMutations((membership) =>
       membership.createMembership(tx, { orgId: ORG, userId: USER, role: "MEMBER" }),
     );
 
@@ -95,7 +95,7 @@ describe("createMembership", () => {
     const { tx, captured } = makeTx([]);
     const cache = makeCache();
 
-    const membershipId = await withMembershipMutations(cache, (membership) =>
+    const membershipId = await withMembershipMutations((membership) =>
       membership.createMembership(tx, {
         orgId: ORG,
         userId: USER,
@@ -116,7 +116,7 @@ describe("createOwnerMembership", () => {
     const { tx, captured } = makeTx();
     const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.createOwnerMembership(tx, {
         orgId: ORG,
         userId: USER,
@@ -153,7 +153,7 @@ describe("changeRole", () => {
     const { tx, captured } = makeTx();
     const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.changeRole(tx, { orgId: ORG, userId: USER, role: "ORG_ADMIN" }),
     );
 
@@ -172,7 +172,7 @@ describe("changeRole", () => {
       revoke: { cache, loses: [{ kind: "standing" as const, userIds: [USER] }] },
     };
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.changeRole(tx, { orgId: ORG, userId: USER, role: "ORG_ADMIN" }, access),
     );
 
@@ -185,7 +185,7 @@ describe("changeRole", () => {
     const cache = makeCache();
     const access = { audit: { action: "user.bulk_updated", userId: "actor" } };
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.changeRoles(tx, { orgId: ORG, userIds: ["a", "b"], role: "MEMBER" }, access),
     );
 
@@ -199,7 +199,7 @@ describe("setLifecycleStatus", () => {
     const cache = makeCache();
     const occurredAt = new Date("2026-09-10T00:00:00.000Z");
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.setLifecycleStatus(tx, {
         orgId: ORG,
         userId: USER,
@@ -228,7 +228,7 @@ describe("setLifecycleStatus", () => {
     const cache = makeCache();
     const access = { audit: { action: "org.member_suspended", userId: "actor" } };
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.setLifecycleStatus(
         tx,
         { orgId: ORG, userId: USER, status: "SUSPENDED", occurredAt: new Date() },
@@ -245,7 +245,7 @@ describe("setLifecycleStatus", () => {
     const cache = makeCache();
     const occurredAt = new Date("2026-09-10T00:00:00.000Z");
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.setLifecycleStatus(tx, {
         orgId: ORG,
         userId: USER,
@@ -274,7 +274,7 @@ describe("deleteMembership", () => {
     const { tx, captured } = makeTx();
     const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.deleteMembership(tx, { orgId: ORG, userId: USER }),
     );
 
@@ -292,7 +292,7 @@ describe("deleteMembership", () => {
       return Promise.resolve();
     });
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.deleteMembership(tx, { orgId: ORG, userId: USER }, access),
     );
 
@@ -304,7 +304,7 @@ describe("deleteMembership", () => {
     const { tx, captured } = makeTx();
     const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.deleteMembershipsById(tx, {
         orgId: ORG,
         userId: USER,
@@ -325,7 +325,7 @@ describe("transferOrgOwnership", () => {
     const { tx, captured } = makeTx();
     const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.transferOrgOwnership(tx, {
         orgId: ORG,
         from: { membershipId: 1, userId: "user-from" },
@@ -366,7 +366,7 @@ describe("bulk operations are bounded", () => {
     );
     const cache = makeCache();
 
-    const byUserId = await withMembershipMutations(cache, (membership) =>
+    const byUserId = await withMembershipMutations((membership) =>
       membership.createMemberships(tx, { orgId: ORG, members }),
     );
 
@@ -400,7 +400,7 @@ describe("bulk operations are bounded", () => {
     const { tx, captured } = makeTx(userIds.map((_, index) => [index + 1]));
     const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.changeRoles(tx, { orgId: ORG, userIds, role: "MEMBER" }),
     );
 
@@ -426,7 +426,7 @@ describe("transaction coupling", () => {
     const cache = makeCache();
 
     await expect(
-      withMembershipMutations(cache, async (membership) => {
+      withMembershipMutations(async (membership) => {
         await membership.createMembership(tx, { orgId: ORG, userId: USER, role: "MEMBER" });
         throw new Error("rolled back");
       }),
@@ -444,7 +444,7 @@ describe("transaction coupling", () => {
     await runWithTenantContext(
       { orgId: ORG, audience: "INTERNAL", tx: {} as never, afterCommit: hooks },
       () =>
-        withMembershipMutations(cache, (membership) =>
+        withMembershipMutations((membership) =>
           membership.createMembership(tx, { orgId: ORG, userId: USER, role: "MEMBER" }),
         ),
     );
@@ -461,7 +461,7 @@ describe("transaction coupling", () => {
     const { tx } = makeTx();
     const cache = makeCache();
 
-    await withMembershipMutations(cache, (membership) =>
+    await withMembershipMutations((membership) =>
       membership.createMembership(tx, { orgId: ORG, userId: USER, role: "MEMBER" }),
     );
 

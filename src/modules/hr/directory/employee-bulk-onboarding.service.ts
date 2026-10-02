@@ -140,7 +140,7 @@ export class EmployeeBulkOnboardingService {
     }));
     if (plan.accepted.length > 0) {
       const today = await orgBusinessDate(this.db, actor.orgId);
-      outcome = await withMembershipMutations(this.cache, (membership) =>
+      outcome = await withMembershipMutations((membership) =>
         runInTenantTransaction(
           this.db,
           (tx) =>

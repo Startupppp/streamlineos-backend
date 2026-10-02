@@ -111,7 +111,7 @@ export class OrganizationCreationService {
       );
       if (!organization)
         throw new Error(`Completed organization ${orgId} is no longer active`);
-      await scheduleStandingRevocation(this.cache, [input.userId], { withSessions: true });
+      await scheduleStandingRevocation(this.cache, [input.userId]);
       return organization;
     }
     if (saga.state === "COMPENSATED")
@@ -205,7 +205,7 @@ export class OrganizationCreationService {
           saga.sagaId,
           "bootstrap-cell-organization",
           () =>
-            bootstrapCellOrganization(this.db, this.cache, {
+            bootstrapCellOrganization(this.db, {
               orgId,
               userId: input.userId,
               region: bootstrapRegion,
@@ -271,7 +271,7 @@ export class OrganizationCreationService {
       throw error;
     }
 
-    await scheduleStandingRevocation(this.cache, [input.userId], { withSessions: true });
+    await scheduleStandingRevocation(this.cache, [input.userId]);
     return createdOrganization;
   }
 

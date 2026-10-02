@@ -127,7 +127,7 @@ export class EmployeeOnboardingService {
         ? null
         : await resolveOrgSalaryCurrency(this.db, actor.orgId);
 
-    const admitted = await withMembershipMutations(this.cache, (membership) =>
+    const admitted = await withMembershipMutations((membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {

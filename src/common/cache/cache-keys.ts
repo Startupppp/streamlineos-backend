@@ -15,7 +15,6 @@ const namespace = (value: string): CacheNamespace => value as CacheNamespace;
 export const CACHE_KEYS = {
   dashboardStats: (orgId: string) => `dashboard:stats:${orgId}`,
   userSession: (userId: string) => `user:session:${userId}`,
-  membershipAccount: (userId: string) => `membership:account:${userId}`,
 
   rolesList: (orgId: string) => `org:roles:${orgId}`,
 

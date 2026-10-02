@@ -89,7 +89,7 @@ export class OrgPurgeService {
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
-    await scheduleStandingRevocation(this.cache, memberUserIds, { withSessions: true });
+    await scheduleStandingRevocation(this.cache, memberUserIds);
   }
 
   private async revokeMembersAccess(orgId: string, memberUserIds: string[]): Promise<void> {

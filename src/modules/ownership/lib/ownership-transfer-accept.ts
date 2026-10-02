@@ -231,7 +231,7 @@ export async function acceptOwnershipTransfer(
         await deps.saga.runStep(
           sagaCtx.saga.sagaId,
           "transfer-ownership",
-          () => applyOrgTransfer(deps.db, deps.cache, orgId, transferId, transfer.fromMembershipId, transfer.toMembershipId, commit),
+          () => applyOrgTransfer(deps.db, orgId, transferId, transfer.fromMembershipId, transfer.toMembershipId, commit),
         );
 
       await deps.saga.complete(sagaCtx.saga.sagaId);

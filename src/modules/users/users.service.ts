@@ -99,7 +99,7 @@ export class UsersService {
       [trimmedFirst, trimmedLast].filter(Boolean).join(" ") || null;
     const emailLocal = email.split("@")[0]?.trim() || null;
 
-    const outcome = await withMembershipMutations(this.cache, (membership) =>
+    const outcome = await withMembershipMutations((membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {
@@ -220,7 +220,7 @@ export class UsersService {
       data.departmentId !== undefined || data.teamId !== undefined;
     const hasReportingUpdate = data.reportingTo !== undefined;
 
-    await withMembershipMutations(this.cache, (membership) =>
+    await withMembershipMutations((membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {

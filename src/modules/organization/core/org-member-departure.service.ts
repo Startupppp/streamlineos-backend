@@ -75,7 +75,7 @@ export class OrgMemberDepartureService {
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
     try {
-      await withMembershipMutations(this.cache, (mutations) =>
+      await withMembershipMutations((mutations) =>
         runInTenantTransaction(
           this.db,
           async (tx) => {
@@ -245,7 +245,7 @@ export class OrgMemberDepartureService {
     }
 
     try {
-      const nextOrgId = await withMembershipMutations(this.cache, (mutations) =>
+      const nextOrgId = await withMembershipMutations((mutations) =>
         runInTenantTransaction(
           this.db,
           async (tx) => {

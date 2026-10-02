@@ -250,7 +250,7 @@ export class HrImportService {
     // transaction resolves — draining inside it would publish a membership the
     // commit could still roll back.
     try {
-      await withMembershipMutations(this.cache, (membership) =>
+      await withMembershipMutations((membership) =>
       this.db.transaction(async (tx) => {
       const ctx = { orgId, actorId, membership, timeZone, actor: actor ?? { orgId, userId: actorId, isOrgOwner: false } };
       const order = await importCommitOrder(tx, jobId, job.entity);
