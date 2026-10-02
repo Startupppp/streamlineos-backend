@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestRunsService } from "./test-runs.service";
 import type { BuildTicketCreationService } from "../core/tickets";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
 
 import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 

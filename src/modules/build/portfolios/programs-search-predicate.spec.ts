@@ -2,11 +2,25 @@ import type { Db } from "../../../db/drizzle.module";
 import { ProgramsService } from "./programs.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import { PgDialect } from "drizzle-orm/pg-core";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { principalAccess } from "../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 
 const mockAudit = {} as AuditService;
 const ORG = "org-programs-search";
+const mockAccess = principalAccess() as unknown as AccessService;
+const owner: CurrentUserContext = {
+  userId: "user-1",
+  orgId: ORG,
+  role: "OWNER",
+  isOrgOwner: true,
+  sessionId: "s1",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(7, true),
+};
 
 interface Captured {
   where: unknown;
@@ -34,8 +48,8 @@ describe("ProgramsService.listPrograms — search predicate (BE-49, BE-80)", () 
   it("uses inArray of IDs returned by the SECURITY DEFINER function so the FTS index is exercised rather than a leading-wildcard ILIKE (BE-80)", async () => {
     const captured: Captured = { where: undefined };
     const db = makeDb(captured, [{ id: "42" }, { id: "77" }]);
-    const svc = new ProgramsService(db, mockAudit);
-    await svc.listPrograms(ORG, { limit: 20, sort: "createdAt", order: "desc", q: "product-launch" });
+    const svc = new ProgramsService(db, mockAudit, mockAccess);
+    await svc.listPrograms(owner, { limit: 20, sort: "createdAt", order: "desc", q: "product-launch" });
     const { sql: rendered, params } = dialect.sqlToQuery(
       captured.where as Parameters<PgDialect["sqlToQuery"]>[0],
     );
@@ -47,8 +61,8 @@ describe("ProgramsService.listPrograms — search predicate (BE-49, BE-80)", () 
   it("keeps orgId in WHERE alongside the search condition so programs from another org cannot be returned", async () => {
     const captured: Captured = { where: undefined };
     const db = makeDb(captured, [{ id: "10" }]);
-    const svc = new ProgramsService(db, mockAudit);
-    await svc.listPrograms(ORG, { limit: 20, sort: "createdAt", order: "desc", q: "product-launch" });
+    const svc = new ProgramsService(db, mockAudit, mockAccess);
+    await svc.listPrograms(owner, { limit: 20, sort: "createdAt", order: "desc", q: "product-launch" });
     const { params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(params).toContain(ORG);
   });
@@ -56,8 +70,8 @@ describe("ProgramsService.listPrograms — search predicate (BE-49, BE-80)", () 
   it("omits a search condition when q is absent so all org programs are returned without a false filter", async () => {
     const captured: Captured = { where: undefined };
     const db = makeDb(captured, []);
-    const svc = new ProgramsService(db, mockAudit);
-    await svc.listPrograms(ORG, { limit: 20, sort: "createdAt", order: "desc" });
+    const svc = new ProgramsService(db, mockAudit, mockAccess);
+    await svc.listPrograms(owner, { limit: 20, sort: "createdAt", order: "desc" });
     const { sql: rendered } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(rendered).not.toContain("ilike");
     expect(rendered).not.toContain("search_project_program_ids");

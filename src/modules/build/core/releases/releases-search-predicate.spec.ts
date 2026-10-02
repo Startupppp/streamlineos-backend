@@ -4,6 +4,7 @@ import type { AccessService } from "../../../access/access.service";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { Db } from "../../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { principalAccess, projectAccessRow } from "../../__tests__/project-access-doubles";
 
 const dialect = new PgDialect();
 
@@ -28,7 +29,11 @@ function buildDb(captured: Captured) {
         findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }),
       },
     },
-    select: jest.fn().mockReturnValue(builder),
+    select: jest.fn((projection: Record<string, unknown> = {}) =>
+      "manages" in projection
+        ? { from: () => ({ where: () => ({ limit: async () => [projectAccessRow()] }) }) }
+        : builder,
+    ),
   } as unknown as Db;
 }
 
@@ -44,7 +49,7 @@ function makeOwner(orgId: string) {
   };
 }
 
-const mockAccess = {} as AccessService;
+const mockAccess = principalAccess() as unknown as AccessService;
 const mockAudit = {} as AuditService;
 
 describe("ProjectsReleasesService.listReleases — search predicate shape (BE-49)", () => {

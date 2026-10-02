@@ -14,7 +14,6 @@ import {
 } from "../../../../db/schema";
 import type { CreateReleaseInput, ListReleasesQuery, OrgListReleasesQuery, UpdateReleaseInput } from "../dto/releases.schemas";
 import { assertProjectAccess, assertProjectWriteAccess, resolveProjectReach } from "../project-crud/project-access";
-import { escapeLike } from "../lib/escape-like";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { AccessService } from "../../../access/access.service";
 import { AuditService } from "../../../../common/audit/audit.service";

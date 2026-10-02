@@ -59,7 +59,7 @@ function makeDb(project: ProjectAccessRow | null) {
   const writeChain = { values: () => ({ returning }), set: () => writeChain, where: () => ({ returning }) };
   const insert = jest.fn(() => writeChain);
   const update = jest.fn(() => writeChain);
-  const remove = jest.fn(() => ({ where: () => Promise.resolve([]) }));
+  const remove = jest.fn(() => ({ where: () => ({ returning: () => Promise.resolve([{ id: hookRow.id }]) }) }));
   const tx = { select, insert, update, delete: remove };
   const transaction = jest.fn((work: (handle: typeof tx) => Promise<unknown>) => work(tx));
   return { select, insert, update, delete: remove, transaction };

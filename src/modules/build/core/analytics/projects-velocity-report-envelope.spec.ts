@@ -4,6 +4,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { AccessService } from "../../../access/access.service";
 import type { Db } from "../../../../db/drizzle.types";
 import { ProjectsReportsService } from "./projects-reports.service";
+import { projectAccessRow } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-envelope";
 const PROJECT = 99;
@@ -45,9 +46,10 @@ function buildDb(cursorRows: Row[], statsRows: Row[]): Db {
         findFirst: async () => ({ id: PROJECT, reportRevision: 0, managerMembershipId: null }),
       },
     },
-    select: () => {
-      selectCallCount++;
-      const rows = selectCallCount === 1 ? cursorRows : statsRows;
+    select: (projection: Row = {}) => {
+      const isAccessRead = "manages" in projection;
+      if (!isAccessRead) selectCallCount++;
+      const rows = isAccessRead ? [projectAccessRow()] : selectCallCount === 1 ? cursorRows : statsRows;
       const chain: Record<string, unknown> = {};
       for (const m of ["from", "leftJoin", "innerJoin", "where", "groupBy", "orderBy", "limit"])
         chain[m] = () => chain;
