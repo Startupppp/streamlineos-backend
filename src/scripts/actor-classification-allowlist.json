@@ -3,84 +3,6 @@
   "_description": "Historical-display-only users.id FK allowlist. Every entry here is excluded from the ACTIONABLE gate. A column may only appear here if NO service reads it in a WHERE predicate for authorization, DataScope, ownership or routing. The former per-relationship justification document was already absent on 2026-09-03. These entries are accepted exclusions with no recorded justification; presence is not evidence of assessment. Current review requirements belong to architecture-refactor/prd/completion-plan.md.",
   "entries": [
     {
-      "table": "fin_approval_requests",
-      "column": "requested_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: who submitted the approval request; no authorization predicate reads it"
-    },
-    {
-      "table": "fin_approval_requests",
-      "column": "decided_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: who made the decision; no authorization predicate reads it"
-    },
-    {
-      "table": "fin_recurring_journal_templates",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "template audit: display who created the template; no predicate"
-    },
-    {
-      "table": "journal_entries",
-      "column": "approved_by",
-      "classification": "historical-display-only",
-      "justification": "past action: who approved a posted entry; no predicate reads it for auth"
-    },
-    {
-      "table": "journal_entries",
-      "column": "posted_by",
-      "classification": "historical-display-only",
-      "justification": "past action: who posted the entry; no predicate reads it for auth"
-    },
-    {
-      "table": "credit_notes",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
-    },
-    {
-      "table": "vendor_credits",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
-    },
-    {
-      "table": "fin_recurring_invoice_templates",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
-    },
-    {
-      "table": "fin_recurring_bill_templates",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
-    },
-    {
-      "table": "fin_collection_activities",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
-    },
-    {
-      "table": "fin_payment_runs",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
-    },
-    {
-      "table": "fin_payment_runs",
-      "column": "approved_by",
-      "classification": "historical-display-only",
-      "justification": "past action: approval display; no predicate"
-    },
-    {
-      "table": "acc_depreciation_runs",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
-    },
-    {
       "table": "fin_reimbursement_batches",
       "column": "created_by",
       "classification": "historical-display-only",
@@ -91,18 +13,6 @@
       "column": "approved_by",
       "classification": "historical-display-only",
       "justification": "past action: approval display; no predicate"
-    },
-    {
-      "table": "fin_budget_revisions",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
-    },
-    {
-      "table": "acc_tax_payments",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
     },
     {
       "table": "ap_allocations",
@@ -529,18 +439,6 @@
       "column": "executed_by",
       "classification": "historical-display-only",
       "justification": "past action: who ran the test; display only"
-    },
-    {
-      "table": "bugs",
-      "column": "reporter_id",
-      "classification": "historical-display-only",
-      "justification": "attribution: bug reporter display; no auth predicate found"
-    },
-    {
-      "table": "bugs",
-      "column": "created_by",
-      "classification": "historical-display-only",
-      "justification": "audit trail: creator display"
     },
     {
       "table": "roadmap_items",
@@ -1023,12 +921,6 @@
       "justification": "audit trail: source creator display"
     },
     {
-      "table": "kb_article_versions",
-      "column": "author_id",
-      "classification": "historical-display-only",
-      "justification": "content attribution: version author display; no auth predicate"
-    },
-    {
       "table": "payroll_periods",
       "column": "locked_by",
       "classification": "historical-display-only",
@@ -1221,18 +1113,6 @@
       "justification": "raw-sql audit: path creator display; no auth predicate"
     },
     {
-      "table": "kb_article_attachments",
-      "column": "uploaded_by",
-      "classification": "historical-display-only",
-      "justification": "attribution: who uploaded the attachment; no auth predicate found in support KB services"
-    },
-    {
-      "table": "kb_articles",
-      "column": "author_id",
-      "classification": "historical-display-only",
-      "justification": "content attribution: article author display; owner_id IS auth (DataScope ownerColumn)"
-    },
-    {
       "table": "support_routing_rules",
       "column": "created_by",
       "classification": "historical-display-only",
@@ -1249,12 +1129,6 @@
       "column": "user_id",
       "classification": "historical-display-only",
       "justification": "activity log attribution: support-ticket-activity.service uses leftJoin(users) for display only; no auth predicate"
-    },
-    {
-      "table": "kb_article_comments",
-      "column": "author_id",
-      "classification": "historical-display-only",
-      "justification": "content attribution: comment author display; no auth predicate"
     },
     {
       "table": "support_ai_suggestions",
@@ -1398,7 +1272,7 @@
       "table": "login_history",
       "column": "user_id",
       "classification": "deferred-permanent",
-      "justification": "authentication audit table \u2014 must retain global users.id identity semantics; org-scoped membership FK would break the login audit purpose"
+      "justification": "authentication audit table — must retain global users.id identity semantics; org-scoped membership FK would break the login audit purpose"
     },
     {
       "table": "user_api_tokens",
@@ -1455,12 +1329,6 @@
       "justification": "no service reads source_user_id in a WHERE predicate for authorization; it is a reconciliation-source attribution field (CHECK constraint confirms it is one of several nullable source columns)"
     },
     {
-      "table": "bugs",
-      "column": "qa_owner_id",
-      "classification": "historical-display-only",
-      "justification": "bugs.service.ts writes qaOwnerId at lines 85 and 132 for display attribution only; no WHERE predicate reads qa_owner_id for authorization; qa_owner_membership_id (SET NULL FK, membership-artifacts.ts entry) carries revocation authority"
-    },
-    {
       "table": "change_requests",
       "column": "approval_owner_id",
       "classification": "historical-display-only",
@@ -1489,6 +1357,42 @@
       "column": "mentioned_user_id",
       "classification": "historical-display-only",
       "justification": "mentioned_user_id is a delivery/display target (notification routing); no WHERE predicate reads it for authorization; mentioned_user_membership_id (SET NULL FK, membership-artifacts.ts entry) carries revocation authority"
+    },
+    {
+      "table": "change_request_affected_items",
+      "column": "created_by",
+      "classification": "historical-display-only",
+      "justification": "audit: who linked the affected item; ChangeRequestAffectedItemsService only writes it and returns it for display"
+    },
+    {
+      "table": "incident_decisions",
+      "column": "decided_by",
+      "classification": "historical-display-only",
+      "justification": "audit: who recorded the decision; IncidentsService writes u.userId and never reads it in a predicate"
+    },
+    {
+      "table": "incident_follow_up_actions",
+      "column": "owner_id",
+      "classification": "historical-display-only",
+      "justification": "assignee label: validated by assertUsersInOrg on write, returned for display; no authorization, scope or routing reads it"
+    },
+    {
+      "table": "incident_follow_up_actions",
+      "column": "created_by",
+      "classification": "historical-display-only",
+      "justification": "audit: who added the follow-up; written on insert only"
+    },
+    {
+      "table": "work_item_qa_details",
+      "column": "qa_owner_user_id",
+      "classification": "historical-display-only",
+      "justification": "assignee label on the bug sidecar; BugsService selects it for display only (qa_owner_membership_id is the membership-keyed companion)"
+    },
+    {
+      "table": "work_item_qa_details",
+      "column": "created_by_user_id",
+      "classification": "historical-display-only",
+      "justification": "audit: who filed the bug; written on insert, selected for display only"
     }
   ]
 }
