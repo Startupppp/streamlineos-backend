@@ -78,4 +78,20 @@ describe("ProjectsWriteService.linkProjectToManagedProduct — requires manage o
     await expect(svc.linkProjectToManagedProduct(actor, 5, { managedProductId: 3 })).resolves.toMatchObject({ id: 5, managedProductId: 3 });
     expect(db.update).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["ARCHIVED", "COMPLETED"] as const)("links the managed product to a %s project the caller manages", async (state) => {
+    const db = linkDb(projectAccessRow({ state, manages: true }));
+    const svc = await writeService(db);
+
+    await expect(svc.linkProjectToManagedProduct(actor, 5, { managedProductId: 3 })).resolves.toMatchObject({ id: 5, managedProductId: 3 });
+    expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses an archived project the caller is only a member of with 403, updating nothing", async () => {
+    const db = linkDb(projectAccessRow({ state: "ARCHIVED", memberRole: "MEMBER" }));
+    const svc = await writeService(db);
+
+    await expect(svc.linkProjectToManagedProduct(actor, 5, { managedProductId: 3 })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(db.update).not.toHaveBeenCalled();
+  });
 });

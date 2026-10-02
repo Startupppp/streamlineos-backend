@@ -239,7 +239,7 @@
         },
         {
           "file": "src/modules/build/core/project-crud/project-access.ts",
-          "line": 479,
+          "line": 488,
           "note": "the decision path lets the assigned approver act without project reach"
         }
       ]
@@ -16259,7 +16259,7 @@
       "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:342",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertCanManageProject)",
+      "projectRelationship": "ENFORCED (assertCanManageProjectLink)",
       "projectEvidence": "src/modules/build/portfolios/portfolios.service.ts:349",
       "leads": [],
       "notes": [
@@ -16308,14 +16308,14 @@
       "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:365",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/portfolios/portfolios.service.ts:365",
-      "projectRelationship": "ENFORCED (assertCanManageProject)",
+      "projectRelationship": "ENFORCED (assertCanManageProjectLink)",
       "projectEvidence": "src/modules/build/portfolios/portfolios.service.ts:372",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls loadPortfolio(orgId, portfolioId) first, whose WHERE binds id=portfolioId AND orgId (404 on a foreign portfolioId), then deletes the link row scoped by portfolioId+projectId+orgId. Because portfolioId is already proven to belong to this org, and orgId is repeated on the delete, a projectId belonging to another org's portfolio simply matches zero rows — it can never unlink a link row outside the caller's own org, and cannot affect the project row itself (only the join-table association). The caller must also manage the project being unlinked (assertCanManageProject).",
+      "verdictReason": "DELETE /build/portfolios/:portfolioId/projects/:projectId. unlinkProject calls loadPortfolio(orgId, portfolioId) first, whose WHERE binds id=portfolioId AND orgId (404 on a foreign portfolioId), then deletes the link row scoped by portfolioId+projectId+orgId. Because portfolioId is already proven to belong to this org, and orgId is repeated on the delete, a projectId belonging to another org's portfolio simply matches zero rows — it can never unlink a link row outside the caller's own org, and cannot affect the project row itself (only the join-table association). The caller must also manage the project being unlinked (assertCanManageProjectLink, which skips the archived/completed lock).",
       "evidence": "src/modules/build/portfolios/portfolios.controller.ts:124",
       "reviewedEvidence": [
         {
@@ -16326,7 +16326,7 @@
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
           "line": 372,
-          "note": "unlinking requires manage on the project itself: 404 cross-tenant, 403 in-tenant"
+          "note": "unlinking requires manage on the project itself: 404 cross-tenant, 403 in-tenant; an archived or completed project may still be unlinked"
         },
         {
           "file": "src/modules/build/portfolios/portfolios.service.ts",
@@ -16599,7 +16599,7 @@
       "orgEvidence": "src/modules/build/portfolios/programs.service.ts:405",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertCanManageProject)",
+      "projectRelationship": "ENFORCED (assertCanManageProjectLink)",
       "projectEvidence": "src/modules/build/portfolios/programs.service.ts:412",
       "leads": [],
       "notes": [
@@ -16648,14 +16648,14 @@
       "orgEvidence": "src/modules/build/portfolios/programs.service.ts:428",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/portfolios/programs.service.ts:428",
-      "projectRelationship": "ENFORCED (assertCanManageProject)",
+      "projectRelationship": "ENFORCED (assertCanManageProjectLink)",
       "projectEvidence": "src/modules/build/portfolios/programs.service.ts:435",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "DELETE /build/programs/:programId/projects/:projectId. Structurally identical to portfolios#unlinkProject: loadProgram(orgId, programId) binds programId to orgId (404 on a foreign programId), then the DELETE's WHERE scopes to programId+projectId+orgId. A projectId belonging to another org's program matches zero rows. The caller must also manage the project being unlinked (assertCanManageProject).",
+      "verdictReason": "DELETE /build/programs/:programId/projects/:projectId. Structurally identical to portfolios#unlinkProject: loadProgram(orgId, programId) binds programId to orgId (404 on a foreign programId), then the DELETE's WHERE scopes to programId+projectId+orgId. A projectId belonging to another org's program matches zero rows. The caller must also manage the project being unlinked (assertCanManageProjectLink, which skips the archived/completed lock).",
       "evidence": "src/modules/build/portfolios/programs.controller.ts:124",
       "reviewedEvidence": [
         {
@@ -16666,7 +16666,7 @@
         {
           "file": "src/modules/build/portfolios/programs.service.ts",
           "line": 435,
-          "note": "unlinking requires manage on the project itself: 404 cross-tenant, 403 in-tenant"
+          "note": "unlinking requires manage on the project itself: 404 cross-tenant, 403 in-tenant; an archived or completed project may still be unlinked"
         },
         {
           "file": "src/modules/build/portfolios/programs.service.ts",
