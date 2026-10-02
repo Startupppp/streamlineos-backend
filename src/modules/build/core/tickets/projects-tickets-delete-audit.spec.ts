@@ -20,7 +20,7 @@ function makeActor(): CurrentUserContext {
   };
 }
 
-function harness(existing: { id: number; projectId: number; title: string } | undefined) {
+function harness(existing: { id: number; projectId: number; title: string; type?: string } | undefined) {
   const tx = {
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
@@ -48,8 +48,8 @@ function harness(existing: { id: number; projectId: number; title: string } | un
 }
 
 describe("ProjectsTicketsDeleteService — the soft delete leaves an audit row", () => {
-  it("writes a ticket.deleted audit entry naming the actor, the ticket and its project", async () => {
-    const { service, log } = harness({ id: 7, projectId: 3, title: "Ticket 7" });
+  it("writes a ticket.deleted audit entry for a TASK naming the actor, the ticket and its project", async () => {
+    const { service, log } = harness({ id: 7, projectId: 3, title: "Ticket 7", type: "TASK" });
 
     await service.deleteTicket(makeActor(), 3, 7, false);
 
@@ -61,6 +61,26 @@ describe("ProjectsTicketsDeleteService — the soft delete leaves an audit row",
       targetType: "ticket",
       metadata: { projectId: 3, title: "Ticket 7", force: false },
     });
+  });
+
+  it("writes a bug.deleted audit entry when the ticket type is BUG", async () => {
+    const { service, log } = harness({ id: 8, projectId: 3, title: "Bug 8", type: "BUG" });
+
+    await service.deleteTicket(makeActor(), 3, 8, false);
+
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "bug.deleted", targetId: "8" }),
+    );
+  });
+
+  it("writes an epic.deleted audit entry when the ticket type is EPIC", async () => {
+    const { service, log } = harness({ id: 9, projectId: 3, title: "Epic 9", type: "EPIC" });
+
+    await service.deleteTicket(makeActor(), 3, 9, false);
+
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "epic.deleted", targetId: "9" }),
+    );
   });
 
   it("writes no audit row when the ticket was never found, so the trail records deletions and not attempts", async () => {

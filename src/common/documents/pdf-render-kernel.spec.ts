@@ -43,7 +43,7 @@ describe("renderBoundedPdf", () => {
 
   it("rejects oversized output", async () => {
     await expect(
-      renderBoundedPdf(({ addPage }) => addPage(), { ...TEST_LIMITS, maxBytes: 10 }),
+      renderBoundedPdf(({ addPage }) => { addPage(); }, { ...TEST_LIMITS, maxBytes: 10 }),
     ).rejects.toMatchObject({ code: "PDF_SIZE_LIMIT_EXCEEDED" });
   });
 

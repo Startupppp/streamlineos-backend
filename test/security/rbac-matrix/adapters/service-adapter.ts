@@ -3,7 +3,7 @@ import type { PlanLimitsService } from "src/modules/billing/core/plan-limits.ser
 import { assertModuleAccessPolicy, moduleAccessPolicyDeps } from "src/modules/module-access/module-access.helpers";
 import { ModuleStandingMutationsService } from "src/modules/module-access/module-standing-mutations.service";
 import { RecruitmentJobsService } from "src/modules/hr/recruitment/recruitment-jobs.service";
-import { assertProjectAccess, assertTicketReadAccess } from "src/modules/build/core/project-crud/project-access";
+import { assertProjectAccess, assertTicketReadAccess } from "src/modules/build/core";
 import { settle } from "../matrix-runner";
 import type { Observation } from "../matrix.types";
 import { MATRIX_MODULE, accessFor, actorFor, type Standing, type Variant } from "../standings";

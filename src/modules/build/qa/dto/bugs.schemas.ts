@@ -8,7 +8,7 @@ export const bugListQuerySchema = z.object({
   status: z.enum(bugStatusValues).optional(),
   severity: z.enum(bugSeverityValues).optional(),
   assigneeId: z.string().optional(),
-  q: z.string().optional(),
+  q: z.string().max(200).optional(),
 }).strict();
 
 export const createBugSchema = z.object({

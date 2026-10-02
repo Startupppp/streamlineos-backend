@@ -195,7 +195,7 @@ describe("TicketImportService authorization", () => {
 
   it("refuses a caller who may reach the project but may not create tickets", async () => {
     const { db, state } = makeDb({ project: projectAccessRow({ manages: true }) });
-    const service = new TicketImportService(db, makeAccess(false), makeFences());
+    const service = new TicketImportService(db, makeAccess(false), makeFences(), makeTicketCreation());
 
     await expect(
       service.commitImport(manager, PROJECT, {

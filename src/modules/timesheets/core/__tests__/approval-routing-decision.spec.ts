@@ -32,6 +32,7 @@ function chain(overrides: Partial<ApprovalRoute> = {}): ApprovalRoute {
     slaHours: 48,
     dueAt: new Date(AT.getTime() + 48 * 3_600_000).toISOString(),
     escalation: { rung: "managers_manager", approver: DIRECTOR, queue: null },
+    ownerSelfApproval: false,
     explanation: "manager approves as reporting manager.",
     ...overrides,
   };

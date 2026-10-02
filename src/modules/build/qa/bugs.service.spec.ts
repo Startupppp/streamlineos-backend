@@ -1,6 +1,6 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { BugsService } from "./bugs.service";
-import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService, TicketVersionConflictException } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService, TicketVersionConflictException } from "../core/tickets";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -39,6 +39,7 @@ function makeBugsTicketDelete() {
     deleteTicket: jest.fn().mockResolvedValue({ deleted: true }),
   } as unknown as ProjectsTicketsDeleteService;
 }
+
 
 const MEMBERSHIP_ID = 7;
 
@@ -429,38 +430,31 @@ describe("BugsService — project membership gate (assertProjectAccess)", () => 
   });
 });
 
-describe("BugsService.deleteBug — canonical delete path", () => {
-  it("routes deleteBug through canonical deleteTicket — does not call db.update(tickets) directly", async () => {
+describe("BugsService.deleteBug — delegates to ProjectsTicketsDeleteService", () => {
+  it("delegates to ticketDelete.deleteTicket and returns success", async () => {
     const mockDb = makeMockDb();
     const mockAccess = makeAccessGranted();
     const ticketDelete = makeBugsTicketDelete();
+    const u = makeU("org-1");
     const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit, makeBugsTicketCreation(), makeBugsTicketChange(), ticketDelete);
     mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: null });
     mockDb.query.tickets.findFirst.mockResolvedValue({ id: 1 });
 
-    const result = await svc.deleteBug(makeU("org-1"), 1, 1);
+    const result = await svc.deleteBug(u, 1, 1);
 
-    expect((ticketDelete.deleteTicket as jest.Mock)).toHaveBeenCalledTimes(1);
-    expect((ticketDelete.deleteTicket as jest.Mock)).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: "org-1" }),
-      1,
-      1,
-      false,
-    );
-    expect(mockDb.update).not.toHaveBeenCalled();
+    expect((ticketDelete.deleteTicket as jest.Mock)).toHaveBeenCalledWith(u, 1, 1, false);
     expect(result).toEqual({ success: true });
   });
 
-  it("propagates NotFoundException from deleteTicket to the caller", async () => {
+  it("throws NotFoundException and does not call deleteTicket when ticket is not found or not a BUG", async () => {
     const mockDb = makeMockDb();
     const mockAccess = makeAccessGranted();
     const ticketDelete = makeBugsTicketDelete();
-    (ticketDelete.deleteTicket as jest.Mock).mockRejectedValue(new NotFoundException("Ticket not found"));
     const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit, makeBugsTicketCreation(), makeBugsTicketChange(), ticketDelete);
     mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: null });
-    mockDb.query.tickets.findFirst.mockResolvedValue({ id: 1 });
+    mockDb.query.tickets.findFirst.mockResolvedValue(null);
 
     await expect(svc.deleteBug(makeU("org-1"), 1, 1)).rejects.toThrow(NotFoundException);
-    expect(mockDb.update).not.toHaveBeenCalled();
+    expect((ticketDelete.deleteTicket as jest.Mock)).not.toHaveBeenCalled();
   });
 });

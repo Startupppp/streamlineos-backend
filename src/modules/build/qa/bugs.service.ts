@@ -9,7 +9,7 @@ import { assertProjectAccess, escapeLike, assertProjectWriteAccess } from "../co
 import { AuditService } from "../../../common/audit/audit.service";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
 import { resolveWorkItemStatus, resolveTicketPriority } from "./bug-consolidation/bug-consolidation-mapping";
-import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 
 @Injectable()
 export class BugsService {

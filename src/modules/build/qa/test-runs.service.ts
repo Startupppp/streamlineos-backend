@@ -16,6 +16,7 @@ import type {
   CreateBugFromResultInput,
   CreateTestRunInput,
   RunResultsQuery,
+  TestRunListQuery,
   UpdateTestResultInput,
   UpdateTestRunInput,
 } from "./dto/qa.schemas";
@@ -53,7 +54,7 @@ export class TestRunsService {
   async listRuns(
     u: CurrentUserContext,
     projectId: number,
-    query: { status?: "not_started" | "in_progress" | "completed" | "aborted"; cursor?: number },
+    query: TestRunListQuery,
   ) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const conditions = [
@@ -62,6 +63,7 @@ export class TestRunsService {
       isNull(testRuns.deletedAt),
     ];
     if (query.status) conditions.push(eq(testRuns.status, query.status));
+    if (query.q) conditions.push(sql`to_tsvector('english', coalesce(${testRuns.name},'')) @@ plainto_tsquery('english', ${query.q})`);
     if (query.cursor !== undefined) conditions.push(gt(testRuns.id, query.cursor));
     const rawRuns = await this.db
       .select()

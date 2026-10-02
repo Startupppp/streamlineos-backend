@@ -5,6 +5,7 @@ export {
   assertProjectAccess,
   assertProjectAggregateAccess,
   assertProjectInOrg,
+  assertProjectVisible,
   assertProjectWriteAccess,
   assertTicketInProject,
   assertTicketReadAccess,
@@ -35,7 +36,8 @@ export { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 export { escapeLike } from "./lib/escape-like";
 export { createTicketSchema } from "./dto/ticket.schemas";
 export { refineDueOnOrAfterStart } from "./dto/project-core.schemas";
-export { PROJECTS_MANAGE_PERMISSION } from "./project-crud/projects-scope";
+export { PROJECTS_MANAGE_PERMISSION, resolveProjectsScope } from "./project-crud/projects-scope";
+export { reachableProjectsSql } from "./project-crud/project-relationship";
 export { TicketVersionConflictException } from "./tickets/ticket-version-conflict.exception";
 export { queryTickets } from "./tickets/projects-tickets-read.query";
 export { ProjectsModule } from "./projects.module";
@@ -56,6 +58,17 @@ export { ProjectsReportsService } from "./analytics/projects-reports.service";
 export { BuildDueSweepService } from "./due-sweep/build-due-sweep.service";
 export { computeNextRunAt } from "./lib/projects-recurrence.util";
 export { listReleasesQuerySchema } from "./dto/releases.schemas";
+export { BuildAutomationRunnerService } from "./automation/build-automation-runner.service";
+export { ProjectsRoadmapService } from "./roadmap/projects-roadmap.service";
+export { ProjectsFeedbackService } from "./feedback/projects-feedback.service";
+export { createWebhookSchema } from "./dto/webhook.schemas";
+export { createCustomFieldSchema } from "./dto/custom-fields.schemas";
+export { listProjectCustomersSchema } from "./dto/projects-customers.schemas";
+export { listBuildMembersSchema } from "./dto/build-members.schemas";
+export { BuildReleasePublishedConsumerService } from "./releases/build-release-published-consumer.service";
+export { roadmapListQuerySchema, feedbackListQuerySchema, changelogListQuerySchema } from "./dto/roadmap.schemas";
+export { searchTicketsQuerySchema } from "./dto/ticket.schemas";
+export { attachmentSchema } from "./dto/ticket-subresources.schemas";
 export {
   allWorkQuerySchema,
   createProjectSchema,

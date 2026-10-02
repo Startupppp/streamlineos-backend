@@ -105,6 +105,9 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
         ],
         captured,
       ),
+      {} as unknown as BuildTicketCreationService,
+      {} as unknown as ProjectsTicketsUpdateService,
+      {} as unknown as ProjectsTicketsDeleteService,
     );
     const page = await service.listEpics(ACTOR, PROJECT_ID, { limit: 1 });
 
@@ -118,6 +121,9 @@ describe("EpicsService — the epic list is a keyset page, not a capped array", 
     const shared = "2026-09-05T09:30:00.123456";
     const service = epicsService(
       makeDb([epicRow(9, shared, "Later id"), epicRow(4, shared, "Earlier id")]),
+      {} as unknown as BuildTicketCreationService,
+      {} as unknown as ProjectsTicketsUpdateService,
+      {} as unknown as ProjectsTicketsDeleteService,
     );
     const page = await service.listEpics(ACTOR, PROJECT_ID, { limit: 1 });
 

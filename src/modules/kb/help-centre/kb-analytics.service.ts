@@ -30,8 +30,11 @@ import type {
 } from "./dto/kb-analytics.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
-import { supportArticlePredicate } from "./kb-article-page-scope";
-import { effectiveTrustState, isVerifiedNow } from "../core/kb-page-trust-predicates";
+import { pageScopePredicate } from "./kb-article-page-scope";
+import {
+  effectiveTrustState,
+  isVerifiedNow,
+} from "../core/kb-page-trust-predicates";
 import {
   buildTupleCursorPage,
   decodeTupleCursor,
@@ -125,7 +128,7 @@ export class KbAnalyticsService {
 
     const pageConditions: SQL[] = [
       eq(kbPages.orgId, orgId),
-      supportArticlePredicate(),
+      pageScopePredicate(range.scope),
     ];
     if (range.spaceId !== undefined)
       pageConditions.push(eq(kbPages.spaceId, range.spaceId));
@@ -373,7 +376,10 @@ export class KbAnalyticsService {
     }));
   }
 
-  async reviewSla(orgId: string, range: RangeWithSpaceInput): Promise<ReviewSlaResult> {
+  async reviewSla(
+    orgId: string,
+    range: RangeWithSpaceInput,
+  ): Promise<ReviewSlaResult> {
     const decidedConditions: SQL[] = [
       eq(kbPageReviews.orgId, orgId),
       sql`${kbPageReviews.status} != 'pending'`,
@@ -426,5 +432,4 @@ export class KbAnalyticsService {
       overdueOpen: overdueStats?.overdueOpen ?? 0,
     };
   }
-
 }

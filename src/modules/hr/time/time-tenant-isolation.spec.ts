@@ -10,6 +10,7 @@ import { GeofencingService } from "./geofencing.service";
 import { LeavePoliciesService } from "./leave-policies.service";
 import { LeaveTypesService } from "./leave-types.service";
 import { LeavesApprovalService } from "./leaves-approval.service";
+import type { ApprovalAuthorityService } from "../../directory/approval-authority.service";
 import { LeavesPageService } from "./leaves-page.service";
 import { OvertimeService } from "./overtime.service";
 import { RostersService } from "./rosters.service";
@@ -308,7 +309,7 @@ describe("HR Time services — cross-tenant isolation", () => {
     it("scopes leave approval lookup to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const mockAccess = makeAccessMock("all");
-      const svc = new LeavesApprovalService(db, {} as never, mockAccess as never, {} as never, {} as never);
+      const svc = new LeavesApprovalService(db, {} as never, mockAccess as never, {} as never, {} as never, {} as unknown as ApprovalAuthorityService);
       const ctx = { orgId: ATTACKER, userId: "user-1", isOrgOwner: false } as never;
       await svc.updateStatus(ctx, 1, { status: "PENDING" }).catch(() => {});
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
@@ -318,7 +319,7 @@ describe("HR Time services — cross-tenant isolation", () => {
     it("uses owning org for leave approval lookup (CONTROL)", async () => {
       const { db, where } = makeDb([]);
       const mockAccess = makeAccessMock("all");
-      const svc = new LeavesApprovalService(db, {} as never, mockAccess as never, {} as never, {} as never);
+      const svc = new LeavesApprovalService(db, {} as never, mockAccess as never, {} as never, {} as never, {} as unknown as ApprovalAuthorityService);
       const ctx = { orgId: OWNER, userId: "user-1", isOrgOwner: false } as never;
       await svc.updateStatus(ctx, 1, { status: "PENDING" }).catch(() => {});
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));

@@ -28,11 +28,21 @@ export function wikiContentTypeOnly(): SQL {
   return ne(kbPages.contentType, SUPPORT_ARTICLE_CONTENT_TYPE);
 }
 
-export function articleVisibilityToPage(visibility: ArticleVisibility): PageVisibility {
+export type AnalyticsPageScope = "support" | "wiki";
+
+export function pageScopePredicate(scope: AnalyticsPageScope): SQL {
+  return scope === "wiki" ? wikiPagePredicate() : supportArticlePredicate();
+}
+
+export function articleVisibilityToPage(
+  visibility: ArticleVisibility,
+): PageVisibility {
   return visibility === "public" ? "public" : "org";
 }
 
-export function pageVisibilityToArticle(visibility: PageVisibility): ArticleVisibility {
+export function pageVisibilityToArticle(
+  visibility: PageVisibility,
+): ArticleVisibility {
   return visibility === "public" ? "public" : "internal";
 }
 
@@ -82,6 +92,8 @@ export function articleContentToPageContent(
   return paragraphize(contentText ?? "");
 }
 
-export function pageContentToArticleContent(content: KbPageContent | null): string {
+export function pageContentToArticleContent(
+  content: KbPageContent | null,
+): string {
   return content === null ? "" : JSON.stringify(content);
 }

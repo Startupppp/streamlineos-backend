@@ -6,7 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { projectAttachments } from "../../../db/schema/build/project-attachments";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -98,6 +98,7 @@ export class FilesService {
           eq(projectAttachments.orgId, u.orgId),
           eq(projectAttachments.projectId, projectId),
           isNull(projectAttachments.deletedAt),
+          query.q ? sql`to_tsvector('english', coalesce(${projectAttachments.fileName},'')) @@ plainto_tsquery('english', ${query.q})` : undefined,
           position
             ? keysetBeforeMicros(projectAttachments.createdAt, projectAttachments.id, position)
             : undefined,

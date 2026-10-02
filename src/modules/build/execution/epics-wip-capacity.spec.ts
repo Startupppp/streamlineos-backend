@@ -3,8 +3,9 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EpicsService } from "./epics.service";
 import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { ProjectsWebhooksDispatchService } from "../core";
-import { BuildAutomationRunnerService } from "../core/automation/build-automation-runner.service";
+import { BuildAutomationRunnerService } from "../core";
 import { CacheService } from "../../../common/cache/cache.service";
+import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -43,8 +44,9 @@ it("refuses an epic when its destination column has no remaining capacity", asyn
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: {} },
-    { provide: ProjectsTicketsUpdateService, useValue: {} },
-    { provide: ProjectsTicketsDeleteService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
+    { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {
     await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
@@ -73,8 +75,9 @@ it.each([false, true])("refuses a missing destination with configured workflow=%
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: {} },
-    { provide: ProjectsTicketsUpdateService, useValue: {} },
-    { provide: ProjectsTicketsDeleteService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
+    { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {
     await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))
@@ -105,8 +108,9 @@ it("permits an existing unlimited destination", async () => {
     { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
     { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: {} },
-    { provide: ProjectsTicketsUpdateService, useValue: {} },
-    { provide: ProjectsTicketsDeleteService, useValue: {} },
+    { provide: ProjectsTicketsUpdateService, useValue: { updateTicket: jest.fn() } },
+    { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
+    { provide: AuditService, useValue: { log: jest.fn() } },
   ] }).compile();
   try {
     await expect(module.get(EpicsService).createEpic(ACTOR, 1, { title: "Epic", startDate: undefined, dueDate: undefined }))

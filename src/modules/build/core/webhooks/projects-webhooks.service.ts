@@ -233,7 +233,7 @@ export class ProjectsWebhooksService {
         .limit(1);
       if (!row) throw new NotFoundException("Webhook not found");
 
-      await tx
+      const deleted = await tx
         .delete(projectWebhooks)
         .where(
           and(
@@ -241,7 +241,9 @@ export class ProjectsWebhooksService {
             eq(projectWebhooks.projectId, projectId),
             eq(projectWebhooks.orgId, orgId),
           ),
-        );
+        )
+        .returning({ id: projectWebhooks.id });
+      if (deleted.length === 0) throw new NotFoundException("Webhook not found");
 
       if (row.integrationsEndpointId) {
         await this.webhookEndpoint.deleteCredential(tx, orgId, row.integrationsEndpointId);

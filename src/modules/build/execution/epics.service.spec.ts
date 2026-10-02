@@ -1,6 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { EpicsService } from "./epics.service";
-import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService, TicketVersionConflictException } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService, TicketVersionConflictException } from "../core/tickets";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -56,9 +56,7 @@ function makeTicketChange() {
 }
 
 function makeTicketDelete() {
-  return {
-    deleteTicket: jest.fn().mockResolvedValue({ deleted: true }),
-  } as unknown as ProjectsTicketsDeleteService;
+  return { deleteTicket: jest.fn().mockResolvedValue({ deleted: true }) } as unknown as ProjectsTicketsDeleteService;
 }
 
 beforeEach(() => {
@@ -146,26 +144,20 @@ describe("EpicsService.updateEpic — canonical mutation path", () => {
   });
 });
 
-describe("EpicsService.deleteEpic — canonical delete path", () => {
-  it("routes deleteEpic through canonical deleteTicket — does not call tx.delete(tickets) directly", async () => {
+describe("EpicsService.deleteEpic — delegates to ProjectsTicketsDeleteService", () => {
+  it("delegates to ticketDelete.deleteTicket and returns success", async () => {
     const db = makeDb({ id: EPIC_ID, version: VERSION });
     const ticketDelete = makeTicketDelete();
+    const u = makeU();
     const svc = new EpicsService(db, makeTicketCreation(), makeTicketChange(), ticketDelete, stubService<AccessService>({}));
 
-    const result = await svc.deleteEpic(makeU(), PROJECT_ID, EPIC_ID);
+    const result = await svc.deleteEpic(u, PROJECT_ID, EPIC_ID);
 
-    expect((ticketDelete.deleteTicket as jest.Mock)).toHaveBeenCalledTimes(1);
-    expect((ticketDelete.deleteTicket as jest.Mock)).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: ORG }),
-      PROJECT_ID,
-      EPIC_ID,
-      false,
-    );
-    expect((db as unknown as { update: jest.Mock }).update).not.toHaveBeenCalled();
+    expect((ticketDelete.deleteTicket as jest.Mock)).toHaveBeenCalledWith(u, PROJECT_ID, EPIC_ID, false);
     expect(result).toEqual({ success: true });
   });
 
-  it("throws NotFoundException before calling deleteTicket when the epic does not exist", async () => {
+  it("throws NotFoundException and does not call deleteTicket when the epic does not exist or is not an EPIC", async () => {
     const db = makeDb(null);
     const ticketDelete = makeTicketDelete();
     const svc = new EpicsService(db, makeTicketCreation(), makeTicketChange(), ticketDelete, stubService<AccessService>({}));

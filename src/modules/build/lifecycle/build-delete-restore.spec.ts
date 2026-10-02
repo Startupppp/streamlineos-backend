@@ -5,15 +5,15 @@ import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { ProjectsRoadmapService } from "../core/roadmap/projects-roadmap.service";
-import { ProjectsFeedbackService } from "../core/feedback/projects-feedback.service";
-import { ProjectsReleasesService } from "../core/releases/projects-releases.service";
+import { ProjectsRoadmapService, ProjectsFeedbackService, ProjectsReleasesService } from "../core";
 import { TestManagementService } from "../qa/test-management.service";
 import { TestRunsService } from "../qa/test-runs.service";
 import { MilestonesService } from "../execution/workspace.service";
 import { WhiteboardsService } from "../execution/whiteboards.service";
 import { BugsService } from "../qa/bugs.service";
 import { projectAccessRow } from "../core/project-crud/__tests__/project-access-doubles";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
+import { EpicsService } from "../execution/epics.service";
 
 const ORG = "org-1";
 const USER = "user-7";
@@ -83,6 +83,8 @@ function projectRowChain() {
     from: () => chain,
     where: () => chain,
     limit: async () => [projectAccessRow()],
+    orderBy: () => chain,
+    for: async () => [{ id: 55, allowed: true }],
   };
   return chain;
 }
@@ -144,21 +146,32 @@ describe("build lifecycle — every soft delete in roadmap/releases/feedback/qa/
   it("deleteRun audits build.test_run.deleted", async () => {
     const written = updateDouble([]);
     const { audit, log } = auditDouble();
-    const svc = new TestRunsService(makeDb({ testRuns: { id: 5 } }, written), accessDouble(), audit);
+    const svc = new TestRunsService(makeDb({ testRuns: { id: 5 } }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService);
     await expect(svc.deleteRun(makeU(), PROJECT, 5)).resolves.toEqual({ success: true });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ action: "build.test_run.deleted", resourceId: "5" }),
     );
   });
 
-  it("deleteBug audits bug.deleted, the parallel soft-delete path onto tickets", async () => {
+  it("deleteBug delegates to ProjectsTicketsDeleteService.deleteTicket which writes the bug.deleted audit row", async () => {
     const written = updateDouble([]);
-    const { audit, log } = auditDouble();
-    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit);
-    await expect(svc.deleteBug(makeU(), PROJECT, 77)).resolves.toEqual({ success: true });
-    expect(log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "bug.deleted", resourceId: "77" }),
-    );
+    const { audit } = auditDouble();
+    const deleteTicket = jest.fn().mockResolvedValue({ deleted: true });
+    const ticketDelete = { deleteTicket } as unknown as ProjectsTicketsDeleteService;
+    const u = makeU();
+    const svc = new BugsService(makeDb({ tickets: { id: 77 } }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, ticketDelete);
+    await expect(svc.deleteBug(u, PROJECT, 77)).resolves.toEqual({ success: true });
+    expect(deleteTicket).toHaveBeenCalledWith(u, PROJECT, 77, false);
+  });
+
+  it("deleteEpic delegates to ProjectsTicketsDeleteService.deleteTicket which writes the epic.deleted audit row", async () => {
+    const written = updateDouble([]);
+    const deleteTicket = jest.fn().mockResolvedValue({ deleted: true });
+    const ticketDelete = { deleteTicket } as unknown as ProjectsTicketsDeleteService;
+    const u = makeU();
+    const svc = new EpicsService(makeDb({ tickets: { id: 55 } }, written), {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, ticketDelete, accessDouble());
+    await expect(svc.deleteEpic(u, PROJECT, 55)).resolves.toEqual({ success: true });
+    expect(deleteTicket).toHaveBeenCalledWith(u, PROJECT, 55, false);
   });
 
   it("deleteMilestone audits build.milestone.deleted", async () => {
@@ -274,7 +287,7 @@ describe("build lifecycle — restore clears deleted_at, refuses a live row, and
   it("restoreRun clears deletedAt and audits build.test_run.restored", async () => {
     const written = updateDouble([{ id: 5 }]);
     const { audit, log } = auditDouble();
-    const svc = new TestRunsService(makeDb({ testRuns: DELETED }, written), accessDouble(), audit);
+    const svc = new TestRunsService(makeDb({ testRuns: DELETED }, written), accessDouble(), audit, {} as unknown as BuildTicketCreationService);
     await expect(svc.restoreRun(makeU(), PROJECT, 5)).resolves.toEqual({ success: true });
     expect(written.set).toHaveBeenCalledWith({ deletedAt: null });
     expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: "build.test_run.restored" }));

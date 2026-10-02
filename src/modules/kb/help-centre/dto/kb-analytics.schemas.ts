@@ -15,6 +15,7 @@ export type RangeWithSpaceInput = z.infer<typeof rangeWithSpaceSchema>;
 
 export const overviewQuerySchema = rangeSchema.extend({
   spaceId: z.coerce.number().int().positive().optional(),
+  scope: z.enum(["support", "wiki"]).default("support"),
 }).strict();
 export type OverviewQueryInput = z.infer<typeof overviewQuerySchema>;
 

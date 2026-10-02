@@ -36,7 +36,7 @@ export const listSchema = z
     ownerId: z.string().optional(),
     projectId: z.coerce.number().int().optional(),
     managedProductId: z.coerce.number().int().positive().optional(),
-    search: z.string().optional(),
+    search: z.string().max(200).optional(),
     page: pageNumberField,
     limit: pageSizeField(20, 100),
     due: isoDate.optional(),

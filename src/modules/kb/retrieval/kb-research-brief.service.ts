@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { orgHasIndexedContent } from "./kb-retrieval.service";
 import { kbResearchBriefs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -61,6 +62,17 @@ export class KbResearchBriefService {
       throw new HttpException(
         { message: `Research job quota exceeded (limit: ${KB_RESEARCH_BRIEF_CONCURRENT_LIMIT} concurrent)`, code: "KB_RESEARCH_JOB_QUOTA_EXCEEDED" },
         HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const hasContent = await orgHasIndexedContent(this.db, user.orgId);
+    if (!hasContent) {
+      throw new HttpException(
+        {
+          message: "No indexed content found — publish and index at least one knowledge base page before generating a brief.",
+          code: "KB_NO_INDEXED_CONTENT",
+        },
+        HttpStatus.CONFLICT,
       );
     }
 

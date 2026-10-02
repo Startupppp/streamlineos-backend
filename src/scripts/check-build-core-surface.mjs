@@ -113,23 +113,19 @@ function collectTypeScriptFiles(dir, results = []) {
 
 export function findDeepCoreImports(source, fromDir) {
   const hits = [];
-  const lines = source.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    for (const match of line.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
-      const importPath = match[1];
-      const resolved = resolve(fromDir, importPath);
-      if (!resolved.startsWith(CORE_ROOT + sep) && resolved !== CORE_ROOT) continue;
-      const afterCore = resolved.slice(CORE_ROOT.length);
-      const isTicketsBarrel =
-        afterCore === "" ||
-        afterCore === sep + "index" ||
-        afterCore === sep + "tickets" ||
-        afterCore === sep + "tickets" + sep + "index";
-      if (!isTicketsBarrel) {
-        hits.push({ line: i + 1, text: line.trim().slice(0, 200) });
-      }
-    }
+  for (const entry of collectSpecifiers(source)) {
+    const resolved = resolveSpecifier(entry.specifier, fromDir);
+    if (resolved === null) continue;
+    if (!resolved.startsWith(CORE_ROOT + sep) && resolved !== CORE_ROOT) continue;
+    const afterCore = resolved.slice(CORE_ROOT.length);
+    const isTicketsBarrel =
+      afterCore === "" ||
+      afterCore === sep + "index" ||
+      afterCore === sep + "tickets" ||
+      afterCore === sep + "tickets" + sep + "index";
+    if (isTicketsBarrel) continue;
+    if (!/\bfrom\s*["']/.test(entry.text)) continue;
+    hits.push({ line: entry.line, text: entry.text });
   }
   return hits;
 }
@@ -171,6 +167,7 @@ function main() {
   }
   const unresolved = [];
   const externalTickets = [];
+  const externalDeepCore = [];
   let coreReachCount = 0;
   for (const file of repoFiles) {
     const source = readFileSync(file, "utf8");
@@ -181,6 +178,12 @@ function main() {
     }
     for (const reach of findExternalTicketsReaches(source, fileDir)) {
       externalTickets.push(`${relative(BACKEND_ROOT, file)}:${reach.line} — ${reach.text}`);
+    }
+    const normalizedFile = resolve(file);
+    if (!normalizedFile.startsWith(BUILD_ROOT + sep) && normalizedFile !== BUILD_ROOT) {
+      for (const hit of findDeepCoreImports(source, fileDir)) {
+        externalDeepCore.push(`${relative(BACKEND_ROOT, file)}:${hit.line} — ${hit.text}`);
+      }
     }
   }
   if (coreReachCount < CORE_REACH_FLOOR) {
@@ -197,9 +200,14 @@ function main() {
     for (const v of externalTickets) console.error(`  ${v}`);
     process.exit(1);
   }
+  if (externalDeepCore.length) {
+    console.error(`check:build-core-surface FAILED — ${externalDeepCore.length} deep core import(s) from module(s) outside build/`);
+    for (const v of externalDeepCore) console.error(`  ${v}`);
+    process.exit(1);
+  }
 
   console.log(`OK — ${siblings.length} sibling submodule file(s) scanned; 0 deep core imports.`);
-  console.log(`OK — ${repoFiles.length} repo file(s) scanned, ${coreReachCount} specifier(s) aimed into build/core; 0 unresolved, 0 external reaches past the core/tickets barrel.`);
+  console.log(`OK — ${repoFiles.length} repo file(s) scanned, ${coreReachCount} specifier(s) aimed into build/core; 0 unresolved, 0 external reaches past the core/tickets barrel, 0 external deep core imports.`);
   process.exit(0);
 }
 
@@ -287,6 +295,29 @@ function selfTest() {
     failures += 1;
   }
 
+  const dashboardDir = join(BACKEND_ROOT, "src", "modules", "dashboard");
+  const externalDeepBad = [
+    `import { myIssuesSchema } from "../build/core/dto/build-tickets-response.schemas";`,
+    `import { ProjectsRoadmapService } from "../build/core/roadmap/projects-roadmap.service";`,
+  ];
+  const externalDeepGood = [
+    `import { myIssuesSchema } from "../build/core";`,
+    `import { myIssuesSchema } from "../build/core/tickets";`,
+    `jest.mock("../build/core/dto/build-tickets-response.schemas");`,
+  ];
+  for (const sample of externalDeepBad) {
+    if (findDeepCoreImports(sample, dashboardDir).length === 0) {
+      console.error(`FAIL: external deep core import not detected — ${sample}`);
+      failures += 1;
+    }
+  }
+  for (const sample of externalDeepGood) {
+    if (findDeepCoreImports(sample, dashboardDir).length !== 0) {
+      console.error(`FAIL: external barrel import flagged as deep — ${sample}`);
+      failures += 1;
+    }
+  }
+
   if (!existsSync(BUILD_ROOT)) {
     console.error(`FAIL: build root not found at ${BUILD_ROOT}`);
     failures += 1;
@@ -323,6 +354,8 @@ function selfTest() {
     unresolvedGood.length +
     ticketsBad.length +
     ticketsGood.length +
+    externalDeepBad.length +
+    externalDeepGood.length +
     1;
   if (failures) {
     console.error(`self-test FAILED: ${failures} failing check(s)`);

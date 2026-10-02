@@ -27,6 +27,12 @@ import { type TicketReadAccess, assertTicketWriteAccess } from "../project-crud/
 
 const BLOCKER_PROBE_LIMIT = 50;
 
+function ticketAuditAction(type: string): string {
+  if (type === "BUG") return "bug.deleted";
+  if (type === "EPIC") return "epic.deleted";
+  return "ticket.deleted";
+}
+
 @Injectable()
 export class ProjectsTicketsDeleteService {
   constructor(
@@ -52,7 +58,7 @@ export class ProjectsTicketsDeleteService {
         eq(tickets.orgId, orgId),
         isNull(tickets.deletedAt),
       ),
-      columns: { id: true, projectId: true, title: true },
+      columns: { id: true, projectId: true, title: true, type: true },
     });
     if (!existing || !existing.projectId)
       throw new NotFoundException("Ticket not found");
@@ -131,7 +137,7 @@ export class ProjectsTicketsDeleteService {
     });
 
     this.audit.log({
-      action: "ticket.deleted",
+      action: ticketAuditAction(existing.type),
       userId,
       orgId,
       targetId: String(ticketId),

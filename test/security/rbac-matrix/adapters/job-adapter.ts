@@ -6,7 +6,7 @@ import { OutboxBatchClaimer } from "src/common/outbox/outbox-claim";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "src/common/outbox/outbox-consumer.registry";
 import { OutboxPublisherService } from "src/common/outbox/outbox-publisher.service";
 import type { AppConfig } from "src/config/env.validation";
-import { BuildReleasePublishedConsumerService } from "src/modules/build/core/releases/build-release-published-consumer.service";
+import { BuildReleasePublishedConsumerService } from "src/modules/build/core";
 import type { NotificationDispatchService } from "src/modules/notifications/notification-dispatch.service";
 import type { Observation } from "../matrix.types";
 import { PROJECT_A, matrixRows } from "../fixtures";

@@ -75,7 +75,7 @@ export class MilestonesService {
         eq(projectMilestones.orgId, orgId),
         isNull(projectMilestones.deletedAt),
         status ? eq(projectMilestones.status, status) : undefined,
-        q ? sql`${projectMilestones.name} ILIKE ${`%${escapeLike(q)}%`}` : undefined,
+        q ? sql`to_tsvector('english', coalesce(${projectMilestones.name},'')) @@ plainto_tsquery('english', ${q})` : undefined,
         from ? gte(projectMilestones.targetDate, from) : undefined,
         to ? lte(projectMilestones.targetDate, to) : undefined,
         ownerId ? eq(projectMilestones.ownerMembershipId, ownerId) : undefined,

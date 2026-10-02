@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import { tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -20,10 +20,10 @@ import {
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import {
   assertProjectAccess,
+  assertProjectVisible,
   authorizeTicketMutation,
   readMutationTickets,
 } from "../core";
-import { assertProjectVisible } from "../core/project-crud/project-access";
 import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { AccessService } from "../../access/access.service";
 
@@ -50,7 +50,7 @@ export class EpicsService {
       query.status ? eq(tickets.status, query.status) : undefined,
       query.health ? eq(tickets.health, query.health) : undefined,
       query.q && query.q.trim()
-        ? ilike(tickets.title, `%${query.q.trim().replace(/[%_\\]/g, "\\$&")}%`)
+        ? sql`to_tsvector('english', coalesce(${tickets.title},'')) @@ plainto_tsquery('english', ${query.q.trim()})`
         : undefined,
       query.ownerId
         ? sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${query.ownerId})`

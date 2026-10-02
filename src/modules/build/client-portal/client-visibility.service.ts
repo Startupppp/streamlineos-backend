@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { TicketVersionConflictException } from "../core/tickets/ticket-version-conflict.exception";
+import { TicketVersionConflictException } from "../core/tickets";
 import { projectMilestones, ticketAttachments, ticketComments, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";

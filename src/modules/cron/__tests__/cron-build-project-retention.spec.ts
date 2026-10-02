@@ -46,7 +46,7 @@ interface TxLog {
 
 interface TxOptions {
   orgHold?: boolean;
-  settings?: Array<Record<string, unknown>>;
+  settings?: Array<BuildRetentionSettingsRow>;
   ticketBatches?: Array<Array<{ id: number }>>;
   attachmentBatches?: Array<Array<{ id: number; storageKey: string }>>;
   ticketCount?: number;
@@ -117,7 +117,7 @@ function makeTx(opts: TxOptions): TxLog {
 
 function settingsRow(
   over: Partial<BuildRetentionSettingsRow> = {},
-): Record<string, unknown> {
+): BuildRetentionSettingsRow {
   return {
     id: 1,
     projectId: 7,

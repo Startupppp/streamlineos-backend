@@ -16,6 +16,7 @@ import { CronNotificationsService } from "./cron-notifications.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronProjectsService } from "./cron-projects.service";
+import type { BuildTicketCreationService } from "../build/core/tickets";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -289,7 +290,7 @@ describe("CronProjectsService — cross-tenant isolation", () => {
   it("spawns recurring tickets only for the org in callback (isolation — deny)", async () => {
     const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, ATTACKER);
-    const svc = new CronProjectsService(db);
+    const svc = new CronProjectsService(db, {} as unknown as BuildTicketCreationService);
 
     const result = await svc.spawnDueRecurringTickets();
     expect(result.spawned).toBe(0);
@@ -300,7 +301,7 @@ describe("CronProjectsService — cross-tenant isolation", () => {
   it("spawns recurring tickets for the owning org (isolation — control)", async () => {
     const { db, selectWhere } = makeDb([]);
     setupForEachOrg(db, OWNER);
-    const svc = new CronProjectsService(db);
+    const svc = new CronProjectsService(db, {} as unknown as BuildTicketCreationService);
 
     await svc.spawnDueRecurringTickets();
     expect(sqlValues(selectWhere.mock.calls[0]?.[0] as unknown)).toContain(OWNER);
