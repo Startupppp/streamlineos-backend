@@ -261,7 +261,6 @@ function automation(): Scenario[] {
       deny: "the ticket is resolved under the rule's org, so a rule in another organisation naming this ticket id answers 404 and the ticket writer is never called",
     },
     "tenant-only",
-    [AUTOMATION_PATH],
   );
 }
 

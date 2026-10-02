@@ -7,6 +7,7 @@ import { RolesService } from "src/modules/rbac/roles.service";
 import { IntakeService, MilestonesService, ViewsService } from "src/modules/build/execution/workspace.service";
 import { ModulesService } from "src/modules/build/execution/modules.service";
 import { ProjectsCustomFieldsService, ProjectsWebhooksService } from "src/modules/build/core";
+import { ProjectsWebhooksDispatchService } from "src/modules/build/core/webhooks/projects-webhooks-dispatch.service";
 import { WebhookEndpointService } from "src/modules/integrations/core/webhook-endpoint.service";
 import { ProjectsTicketLinksService } from "src/modules/build/core/tickets/projects-ticket-links.service";
 import { FilesService } from "src/modules/build/files/files.service";
@@ -65,7 +66,8 @@ export function modulesService(world: WorldDb): ModulesService {
 }
 
 export function webhooksService(world: WorldDb): ProjectsWebhooksService {
-  return new ProjectsWebhooksService(world.db, new WebhookEndpointService(world.db));
+  const endpoints = new WebhookEndpointService(world.db);
+  return new ProjectsWebhooksService(world.db, endpoints, accessFor(world), new ProjectsWebhooksDispatchService(world.db, endpoints));
 }
 
 export function customFieldsService(world: WorldDb): ProjectsCustomFieldsService {
