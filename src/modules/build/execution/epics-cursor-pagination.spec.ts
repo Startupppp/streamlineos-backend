@@ -170,15 +170,17 @@ describe("EpicsService — the epic filters are applied in SQL, not by the calle
     const service = epicsService(makeDb([], captured));
     await service.listEpics(ACTOR, PROJECT_ID, { q: "checkout" });
 
-    expect(sqlValues(captured.where)).toContain("%checkout%");
+    expect(sqlValues(captured.where)).toContain("checkout");
   });
 
-  it("escapes a wildcard in the search term, so a literal % cannot widen the match", async () => {
+  it("hands the search term to full-text search as a bound value, so a literal % or _ is never a pattern wildcard", async () => {
     const captured: { where?: unknown } = {};
     const service = epicsService(makeDb([], captured));
     await service.listEpics(ACTOR, PROJECT_ID, { q: "50%_off" });
 
-    expect(sqlValues(captured.where)).toContain("%50\\%\\_off%");
+    const bound = sqlValues(captured.where);
+    expect(bound).toContain("50%_off");
+    expect(bound.some((value) => typeof value === "string" && value.startsWith("%"))).toBe(false);
   });
 
   it("binds status and health, the two stored columns the page filters on", async () => {
@@ -207,7 +209,7 @@ describe("EpicsService — the epic filters are applied in SQL, not by the calle
     await service.listEpics(ACTOR, PROJECT_ID, {});
 
     const bound = sqlValues(captured.where);
-    expect(bound).not.toContain("%checkout%");
+    expect(bound).not.toContain("checkout");
     expect(bound).not.toContain("user-77");
     expect(bound).not.toContain("at_risk");
   });
