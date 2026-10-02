@@ -1,14 +1,31 @@
 import { sql, type SQL } from "drizzle-orm";
 
-export function seatCount(orgId: string): SQL<number> {
-  return sql<number>`(
-    (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId} AND status != 'LEFT') +
-    (SELECT COUNT(*)::int FROM invitations
+/*
+ * What takes a plan seat (BUG-HRMS-001). One definition; invite admission,
+ * onboarding (single and bulk), the bulk preview and `GET /billing/seats` all
+ * read it, so the numbers they show cannot disagree.
+ *
+ *   - every organization member whose status is not LEFT (ACTIVE, INVITED,
+ *     SUSPENDED). Onboarding an employee admits a member who can sign in, so
+ *     every onboarded employee takes a seat;
+ *   - every PENDING, unaccepted, unexpired invitation.
+ *
+ * An `hr_people` row with no membership takes none (plan-limits.service.spec).
+ */
+export function seatMemberCount(orgId: string): SQL<number> {
+  return sql<number>`(SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId} AND status != 'LEFT')`;
+}
+
+export function seatInvitationCount(orgId: string): SQL<number> {
+  return sql<number>`(SELECT COUNT(*)::int FROM invitations
      WHERE org_id = ${orgId}
        AND status = 'PENDING'
        AND accepted_at IS NULL
-       AND expires_at > NOW())
-  )::int`;
+       AND expires_at > NOW())`;
+}
+
+export function seatCount(orgId: string): SQL<number> {
+  return sql<number>`(${seatMemberCount(orgId)} + ${seatInvitationCount(orgId)})::int`;
 }
 
 function quotaLockKey(orgId: string, limitKey: string): string {

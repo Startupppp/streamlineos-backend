@@ -368,7 +368,8 @@ function selfTest(entries, allowlistSet) {
 
   expectClass("tickets", "reporter_id", "organizational");
   expectClass("ticket_comment_mentions", "mentioned_user_id", "organizational");
-  expectClass("bugs", "created_by", "organizational");
+  // `bugs` was folded into the work_item_qa_details sidecar; same Build actor FK.
+  expectClass("work_item_qa_details", "created_by_user_id", "organizational");
 
   expectClass("ap_documents", "posted_by", "organizational");
   expectClass("crm_commission_plans", "created_by", "organizational");
