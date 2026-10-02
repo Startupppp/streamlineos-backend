@@ -10,6 +10,7 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import type { AccessService } from "../../../access/access.service";
 import {
   assertCanManageProject,
+  assertCanManageProjectLink,
   assertProjectAccess,
   assertProjectVisibleForWrite,
   assertProjectWriteAccess,
@@ -120,6 +121,21 @@ describe("business state — an ARCHIVED or COMPLETED project refuses writes and
   it("assertCanManageProject refuses settings writes on an archived project even for the org owner", async () => {
     await lockCode(assertCanManageProject(projectDb("ARCHIVED"), memberAccess(), owner(), 1));
     await expect(assertCanManageProject(projectDb("ACTIVE"), memberAccess(), owner(), 1)).resolves.toBeUndefined();
+  });
+
+  it.each(["ARCHIVED", "COMPLETED"] as const)("assertCanManageProjectLink lets a manager link a %s project while assertCanManageProject still locks it", async (state) => {
+    await expect(assertCanManageProjectLink(projectDb(state, { manages: true }), memberAccess(), actor(), 1)).resolves.toBeUndefined();
+    await lockCode(assertCanManageProject(projectDb(state, { manages: true }), memberAccess(), actor(), 1));
+  });
+
+  it("assertCanManageProjectLink refuses a same-org member who does not manage an archived project with 403", async () => {
+    const err = await assertCanManageProjectLink(projectDb("ARCHIVED", { memberRole: "MEMBER" }), memberAccess(), actor(), 1).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+  });
+
+  it("assertCanManageProjectLink conceals a project outside the caller's org as 404", async () => {
+    const db = queuedSelectDb({ selects: [[]] }).db;
+    await expect(assertCanManageProjectLink(db, memberAccess(), owner(), 1)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("authorizeProjectUpdate lets a manager change the lifecycle of an archived project so it can be reopened", async () => {

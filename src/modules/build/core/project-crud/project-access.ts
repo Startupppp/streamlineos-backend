@@ -453,6 +453,15 @@ export async function assertCanManageProject(
   assertProjectStateAllowsWrites(state);
 }
 
+export async function assertCanManageProjectLink(
+  db: Db,
+  access: StandingAccess,
+  u: CurrentUserContext,
+  projectId: number,
+): Promise<void> {
+  await resolveProjectManagement(db, access, u, projectId);
+}
+
 export async function authorizeProjectUpdate(
   db: Db,
   access: StandingAccess,

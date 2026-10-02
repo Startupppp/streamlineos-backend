@@ -23,7 +23,7 @@ import {
 } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { resolveProjectCounts } from "./portfolio-project-counts";
-import { assertCanManageProject, escapeLike, resolveProjectReach } from "../core";
+import { assertCanManageProjectLink, escapeLike, resolveProjectReach } from "../core";
 import { reachableProjectIdsSql } from "./reachable-linked-projects";
 import type {
   CreatePortfolioInput,
@@ -346,7 +346,7 @@ export class PortfoliosService {
   ) {
     const { orgId, userId } = u;
     await this.loadPortfolio(orgId, portfolioId);
-    await assertCanManageProject(this.db, this.access, u, input.projectId);
+    await assertCanManageProjectLink(this.db, this.access, u, input.projectId);
     await this.db
       .insert(portfolioProjects)
       .values({ orgId, portfolioId, projectId: input.projectId })
@@ -369,7 +369,7 @@ export class PortfoliosService {
   ) {
     const { orgId, userId } = u;
     await this.loadPortfolio(orgId, portfolioId);
-    await assertCanManageProject(this.db, this.access, u, projectId);
+    await assertCanManageProjectLink(this.db, this.access, u, projectId);
     await this.db
       .delete(portfolioProjects)
       .where(

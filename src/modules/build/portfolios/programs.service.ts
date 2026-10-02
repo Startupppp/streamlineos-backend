@@ -31,7 +31,7 @@ import {
   keysetBeforeValue,
   microsecondCursorValue,
 } from "../../../common/pagination/keyset";
-import { assertCanManageProject, resolveProjectReach } from "../core";
+import { assertCanManageProjectLink, resolveProjectReach } from "../core";
 import { reachableProjectIdsSql } from "./reachable-linked-projects";
 import type {
   CreateProgramInput,
@@ -409,7 +409,7 @@ export class ProgramsService {
   ) {
     const { orgId, userId } = u;
     await this.loadProgram(orgId, programId);
-    await assertCanManageProject(this.db, this.access, u, input.projectId);
+    await assertCanManageProjectLink(this.db, this.access, u, input.projectId);
     await this.db
       .insert(programProjects)
       .values({ orgId, programId, projectId: input.projectId })
@@ -432,7 +432,7 @@ export class ProgramsService {
   ) {
     const { orgId, userId } = u;
     await this.loadProgram(orgId, programId);
-    await assertCanManageProject(this.db, this.access, u, projectId);
+    await assertCanManageProjectLink(this.db, this.access, u, projectId);
     await this.db
       .delete(programProjects)
       .where(

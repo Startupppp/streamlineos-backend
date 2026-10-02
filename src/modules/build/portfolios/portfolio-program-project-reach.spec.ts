@@ -102,6 +102,34 @@ describe.each([
     expect(db.onConflictDoNothing).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["ARCHIVED", "COMPLETED"] as const)("links and unlinks a %s project the caller manages", async (state) => {
+    const linkTarget = linkDb(projectAccessRow({ state, manages: true }));
+    const linkSvc = await build(linkTarget, { log: jest.fn() }, MEMBER_STANDING);
+    await expect(linkSvc.linkProject(actorIn(ORG), 1, { projectId: 5 })).resolves.toEqual({ success: true });
+    expect(linkTarget.onConflictDoNothing).toHaveBeenCalledTimes(1);
+
+    const unlinkTarget = linkDb(projectAccessRow({ state, manages: true }));
+    const unlinkSvc = await build(unlinkTarget, { log: jest.fn() }, MEMBER_STANDING);
+    await unlinkSvc.unlinkProject(actorIn(ORG), 1, 5);
+    expect(unlinkTarget.deleteWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses to link an archived project the caller only belongs to with 403, writing nothing", async () => {
+    const db = linkDb(projectAccessRow({ state: "ARCHIVED", memberRole: "MEMBER" }));
+    const svc = await build(db, { log: jest.fn() }, MEMBER_STANDING);
+
+    await expect(svc.linkProject(actorIn(ORG), 1, { projectId: 5 })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("refuses to unlink a project outside the caller's org with 404, deleting nothing", async () => {
+    const db = linkDb(null);
+    const svc = await build(db, { log: jest.fn() }, MEMBER_STANDING);
+
+    await expect(svc.unlinkProject(actorIn(ORG), 1, 99)).rejects.toBeInstanceOf(NotFoundException);
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
   it("refuses to unlink a project the caller does not manage with 403, deleting nothing", async () => {
     const db = linkDb(memberProject);
     const svc = await build(db, { log: jest.fn() }, MEMBER_STANDING);
