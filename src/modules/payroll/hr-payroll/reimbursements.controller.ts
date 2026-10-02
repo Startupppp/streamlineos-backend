@@ -29,8 +29,8 @@ import {
   patchReimbursementSchema,
   type CreateReimbursementInput,
   type PatchReimbursementInput,
-  listPageQuerySchema,
-  type ListPageQueryInput,
+  payCycleListQuerySchema,
+  type PayCycleListQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -56,11 +56,11 @@ export class HrPayrollReimbursementsController {
 
   @Get()
   @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
-  @Validate({ query: listPageQuerySchema })
+  @Validate({ query: payCycleListQuerySchema })
   @ResponseSchema(reimbursementListResponseSchema)
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query() query: ListPageQueryInput,
+    @Query() query: PayCycleListQueryInput,
   ) {
     const read = await resolveReimbursementsScope(this.access, u);
     return this.reimbursements.listReimbursements(
@@ -68,6 +68,7 @@ export class HrPayrollReimbursementsController {
       actingMembershipId(u.principal),
       query.page ?? 1,
       query.limit ?? 100,
+      query.month,
     );
   }
 

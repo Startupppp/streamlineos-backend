@@ -57,6 +57,11 @@ export const listPageQuerySchema = z.object({
 }).strict();
 export type ListPageQueryInput = z.infer<typeof listPageQuerySchema>;
 
+export const payCycleListQuerySchema = listPageQuerySchema.extend({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "month must be YYYY-MM").optional(),
+});
+export type PayCycleListQueryInput = z.infer<typeof payCycleListQuerySchema>;
+
 export const cursorListQuerySchema = z.object({
   cursor: z.string().trim().min(1).max(2048).optional(),
   limit: optionalPageSizeField(),

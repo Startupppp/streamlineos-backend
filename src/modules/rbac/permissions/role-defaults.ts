@@ -3,6 +3,7 @@ import { ALL_PERMISSION_NAMES } from "./catalog";
 export const UNIVERSAL_MEMBER_PERMISSION_GRANTS = [
   { permissionKey: "self:onboarding-docs", scope: "own" },
   { permissionKey: "self:onboarding-tasks", scope: "own" },
+  { permissionKey: "self:document-acknowledgements", scope: "own" },
   { permissionKey: "kb:articles:view", scope: "all" },
   { permissionKey: "kb:spaces:view", scope: "all" },
   { permissionKey: "kb:pages:view", scope: "all" },

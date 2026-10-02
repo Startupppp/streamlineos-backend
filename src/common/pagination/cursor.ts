@@ -138,6 +138,26 @@ export interface CursorPage<T> {
 }
 
 /**
+ * A cursor page that also reports how many rows match the filter.
+ *
+ * A separate type rather than an optional field on `CursorPage`, because
+ * `ScopedRead.read` infers its result from the shape of its fallback literal:
+ * widening the shared interface made four services whose fallback omits the new
+ * key stop type-checking. Deriving a total also costs the second count query
+ * `trimSentinel` exists to avoid, so this is for endpoints whose caller needs a
+ * denominator rather than a next page — a figure it would otherwise invent.
+ */
+export interface CursorPageWithTotal<T> {
+  readonly data: T[];
+  readonly pagination: {
+    readonly limit: number;
+    readonly nextCursor: string | null;
+    readonly hasMore: boolean;
+    readonly total: number;
+  };
+}
+
+/**
  * Trims the over-fetched sentinel row and derives the next cursor.
  *
  * Callers ask for `limit + 1` rows: the presence of that extra row is how you
@@ -165,6 +185,21 @@ export function buildCursorPage<T>(
       nextCursor: hasMore && last ? encodeCursor(toPosition(last)) : null,
     },
   };
+}
+
+/**
+ * The caller supplies the count, because only it knows which of its predicates
+ * describe the filter and which describe the cursor position — counting with the
+ * position applied would answer "how many are left", which is not a denominator.
+ */
+export function buildCursorPageWithTotal<T>(
+  rows: T[],
+  limit: number,
+  total: number,
+  toPosition: (row: T) => CursorPosition,
+): CursorPageWithTotal<T> {
+  const page = buildCursorPage(rows, limit, toPosition);
+  return { data: page.data, pagination: { ...page.pagination, total } };
 }
 
 export function buildTupleCursorPage<T>(

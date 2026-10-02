@@ -154,8 +154,6 @@ const externalReferralBaseSchema = z.object({
   updatedAt: wireDate(),
 });
 
-export const externalReferralRawSchema = externalReferralBaseSchema;
-
 export const externalReferralWithRelationsSchema = externalReferralBaseSchema.extend({
   candidate: z.object({ id: z.number().int(), firstName: z.string(), lastName: z.string(), email: z.string() }).nullable(),
   referrer: z.object({ id: z.number().int(), name: z.string(), email: z.string() }).nullable(),

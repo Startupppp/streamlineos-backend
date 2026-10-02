@@ -26,12 +26,13 @@ const ianaTimezone = z.string().refine(
   "Must be a valid IANA timezone name",
 );
 
-const titleSchema = z
+export const titleSchema = z
   .string()
+  .trim()
   .min(2, "Event title must be at least 2 characters")
   .max(100, "Event title must be at most 100 characters")
   .refine(
-    (v) => /[a-zA-Z0-9]/.test(v.trim()),
+    (v) => /[a-zA-Z0-9]/.test(v),
     "Event title must contain at least one letter or number",
   )
   .refine(

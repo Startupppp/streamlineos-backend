@@ -2,7 +2,7 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { compOffBalances, hrLeaveLedger, leaveTypes, overtimeRequests } from "../../../db/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, gte, lt, sql } from "drizzle-orm";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
@@ -24,16 +24,25 @@ export class OvertimeService {
 
   async listRequests(
     orgId: string,
-    params: { cursor?: string; pageSize?: number } = {},
+    params: { cursor?: string; pageSize?: number; month?: string } = {},
   ) {
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
     const position = decodeCursor(params.cursor);
-    const where = position
-      ? and(
-          eq(overtimeRequests.orgId, orgId),
-          keysetBeforeId(overtimeRequests.createdAt, overtimeRequests.id, position),
-        )
-      : eq(overtimeRequests.orgId, orgId);
+    const conditions = [eq(overtimeRequests.orgId, orgId)];
+    if (position) {
+      conditions.push(keysetBeforeId(overtimeRequests.createdAt, overtimeRequests.id, position));
+    }
+    if (params.month) {
+      const [year, month] = params.month.split("-").map(Number);
+      const nextMonth = month === 12
+        ? `${year + 1}-01`
+        : `${year}-${String(month + 1).padStart(2, "0")}`;
+      conditions.push(
+        gte(overtimeRequests.date, `${params.month}-01`),
+        lt(overtimeRequests.date, `${nextMonth}-01`),
+      );
+    }
+    const where = and(...conditions);
     const rows = await this.db
       .select()
       .from(overtimeRequests)

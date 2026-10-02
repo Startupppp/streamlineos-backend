@@ -1,11 +1,14 @@
 import { ExceptionsService } from "../exceptions.service";
 
-function makeDb(runRows: unknown[], exceptionRows: unknown[] = []) {
+function makeDb(runRows: unknown[], exceptionRows: unknown[] = [], total = 0) {
   const exLimit = jest.fn().mockResolvedValue(exceptionRows);
   const exOrderBy = jest.fn().mockReturnValue({ limit: exLimit });
   const exWhere = jest.fn().mockReturnValue({ orderBy: exOrderBy });
   const exLeftJoin = jest.fn().mockReturnValue({ where: exWhere });
   const exFrom = jest.fn().mockReturnValue({ leftJoin: exLeftJoin });
+
+  const countWhere = jest.fn().mockResolvedValue([{ value: total }]);
+  const countFrom = jest.fn().mockReturnValue({ where: countWhere });
 
   const runLimit = jest.fn().mockResolvedValue(runRows);
   const runWhere = jest.fn().mockReturnValue({ limit: runLimit });
@@ -14,9 +17,10 @@ function makeDb(runRows: unknown[], exceptionRows: unknown[] = []) {
   const select = jest
     .fn()
     .mockReturnValueOnce({ from: runFrom })
+    .mockReturnValueOnce({ from: countFrom })
     .mockReturnValue({ from: exFrom });
 
-  return { db: { select } as never, exLimit };
+  return { db: { select } as never, exLimit, countWhere, exWhere };
 }
 
 describe("ExceptionsService.listExceptions cursor pagination", () => {
@@ -36,18 +40,23 @@ describe("ExceptionsService.listExceptions cursor pagination", () => {
   });
 
   it("returns cursor metadata for the final page", async () => {
-    const { db } = makeDb([run], [
-      {
-        id: 1,
-        severity: "BLOCKER",
-        createdAt: new Date("2026-09-01T00:00:00.000Z"),
-      },
-    ]);
+    const { db } = makeDb(
+      [run],
+      [
+        {
+          id: 1,
+          severity: "BLOCKER",
+          createdAt: new Date("2026-09-01T00:00:00.000Z"),
+        },
+      ],
+      1,
+    );
     const result = await new ExceptionsService(db).listExceptions("org-1", 10);
     expect(result?.pagination).toEqual({
       limit: 50,
       hasMore: false,
       nextCursor: null,
+      total: 1,
     });
   });
 
@@ -56,5 +65,35 @@ describe("ExceptionsService.listExceptions cursor pagination", () => {
     await expect(
       new ExceptionsService(db).listExceptions("attacker-org", 999),
     ).resolves.toBeNull();
+  });
+
+  it("reports the filter-wide total rather than the number of rows on the page", async () => {
+    const { db } = makeDb(
+      [run],
+      [
+        { id: 1, severity: "BLOCKER", createdAt: new Date("2026-09-01T00:00:00.000Z") },
+        { id: 2, severity: "WARNING", createdAt: new Date("2026-09-02T00:00:00.000Z") },
+      ],
+      137,
+    );
+    const result = await new ExceptionsService(db).listExceptions("org-1", 10);
+
+    expect(result?.data).toHaveLength(2);
+    expect(result?.pagination.total).toBe(137);
+  });
+
+  it("counts a measured zero rather than leaving the caller to guess", async () => {
+    const { db } = makeDb([run], [], 0);
+    const result = await new ExceptionsService(db).listExceptions("org-1", 10);
+
+    expect(result?.data).toEqual([]);
+    expect(result?.pagination.total).toBe(0);
+  });
+
+  it("never runs the count before the run has been tenant-checked", async () => {
+    const { db, countWhere } = makeDb([]);
+    await new ExceptionsService(db).listExceptions("attacker-org", 999);
+
+    expect(countWhere).not.toHaveBeenCalled();
   });
 });

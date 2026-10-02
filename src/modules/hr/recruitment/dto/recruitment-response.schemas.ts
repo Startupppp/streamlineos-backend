@@ -63,7 +63,6 @@ export {
   vendorSubmissionRawSchema,
   headcountRowSchema,
   headcountListPageSchema,
-  externalReferralRawSchema,
   externalReferralWithRelationsSchema,
   externalReferrerListItemSchema,
   externalReferrerRowSchema,

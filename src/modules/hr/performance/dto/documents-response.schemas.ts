@@ -77,7 +77,7 @@ const policyAcknowledgmentSchema = z.object({
   documentId: z.number().int(),
   userId: z.string(),
   userMembershipId: z.number().int().nullable(),
-  status: z.enum(["PENDING", "ACKNOWLEDGED"]),
+  status: z.enum(["PENDING", "ACKNOWLEDGED", "DECLINED"]),
   acknowledgedAt: nullableWireDate(),
   ipAddress: z.string().nullable(),
   createdAt: wireDate(),

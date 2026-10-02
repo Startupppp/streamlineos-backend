@@ -25,7 +25,7 @@ export class ReimbursementsService {
     private readonly automation: AutomationService,
   ) {}
 
-  async listReimbursements(read: ScopedRead, membershipId: number | null, page = 1, limit = 100) {
+  async listReimbursements(read: ScopedRead, membershipId: number | null, page = 1, limit = 100, month?: string) {
     if (read.discriminator !== "all" && membershipId === null) {
       throw new ForbiddenException("Organization membership required");
     }
@@ -34,6 +34,7 @@ export class ReimbursementsService {
       {
         tenant: reimbursements.orgId,
         scope: { own: eq(reimbursements.userMembershipId, membershipId ?? -1) },
+        and: month === undefined ? undefined : [eq(reimbursements.payrollMonth, month)],
       },
       async ({ sql: where }) => {
         const [rows, [totalRow]] = await Promise.all([
