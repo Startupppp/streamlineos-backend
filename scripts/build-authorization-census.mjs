@@ -1072,6 +1072,27 @@ function argMatches(arg, aliases) {
 }
 
 // Resolve a callee to a function-like node we can re-enter.
+function exportedFunction(tsf, name, seen = new Set()) {
+  if (!tsf || seen.has(`${tsf.fileName}#${name}`)) return null;
+  seen.add(`${tsf.fileName}#${name}`);
+  for (const t of tsf.statements) {
+    if (ts.isFunctionDeclaration(t) && t.name?.text === name) return { node: t, cls: null, sf: tsf };
+    if (ts.isVariableStatement(t))
+      for (const d of t.declarationList.declarations)
+        if (ts.isIdentifier(d.name) && d.name.text === name && d.initializer && ts.isArrowFunction(d.initializer))
+          return { node: d.initializer, cls: null, sf: tsf };
+  }
+  for (const t of tsf.statements) {
+    if (!ts.isExportDeclaration(t) || !t.moduleSpecifier || !t.exportClause || !ts.isNamedExports(t.exportClause)) continue;
+    for (const el of t.exportClause.elements) {
+      if (el.name.text !== name) continue;
+      const target = resolveRelativeImport(tsf.fileName, strLit(t.moduleSpecifier) ?? "");
+      return target ? exportedFunction(parseFile(target), el.propertyName?.text ?? name, seen) : null;
+    }
+  }
+  return null;
+}
+
 function resolveCallee(callee, cls, sf) {
   if (ts.isPropertyAccessExpression(callee) && callee.expression.kind === ts.SyntaxKind.ThisKeyword) {
     const m = cls ? methodOfClass(cls, callee.name.text) : null;
@@ -1110,15 +1131,7 @@ function resolveCallee(callee, cls, sf) {
         const target = resolveRelativeImport(sf.fileName, strLit(s.moduleSpecifier) ?? "");
         const tsf = target ? parseFile(target) : null;
         if (!tsf) return null;
-        const orig = el.propertyName?.text ?? name;
-        for (const t of tsf.statements) {
-          if (ts.isFunctionDeclaration(t) && t.name?.text === orig) return { node: t, cls: null, sf: tsf };
-          if (ts.isVariableStatement(t))
-            for (const d of t.declarationList.declarations)
-              if (ts.isIdentifier(d.name) && d.name.text === orig && d.initializer && ts.isArrowFunction(d.initializer))
-                return { node: d.initializer, cls: null, sf: tsf };
-        }
-        return null;
+        return exportedFunction(tsf, el.propertyName?.text ?? name);
       }
     }
   }

@@ -280,8 +280,8 @@
       "orgEvidence": "src/modules/build/approvals/approvals-read.service.ts:108",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/approvals/approvals-read.service.ts:110",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -327,8 +327,8 @@
       "orgEvidence": "src/modules/build/approvals/approvals-read.service.ts:135",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/approvals/approvals-read.service.ts:135",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/approvals/approvals-read.service.ts:136",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -393,8 +393,8 @@
       "orgEvidence": "src/modules/build/approvals/approvals.service.ts:76",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/approvals/approvals.service.ts:85",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -440,8 +440,8 @@
       "orgEvidence": "src/modules/build/approvals/approvals.service.ts:178",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/approvals/approvals.service.ts:178",
-      "projectRelationship": "ENFORCED (authorizeApprovalDecision)",
-      "projectEvidence": "src/modules/build/approvals/approvals.service.ts:187",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -508,8 +508,8 @@
       "orgEvidence": "src/modules/build/approvals/approvals.service.ts:215",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/approvals/approvals.service.ts:215",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/approvals/approvals.service.ts:222",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -573,8 +573,8 @@
       "orgEvidence": "src/modules/build/approvals/approvals.service.ts:278",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/approvals/approvals.service.ts:278",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/approvals/approvals.service.ts:280",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -638,8 +638,8 @@
       "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:65",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:65",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:158",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -696,8 +696,8 @@
       "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:114",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:114",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:158",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -756,8 +756,8 @@
       "orgEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:167",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:167",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:158",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -814,8 +814,8 @@
       "orgEvidence": "src/modules/build/client-portal/change-requests.service.ts:81",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:83",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -861,8 +861,8 @@
       "orgEvidence": "src/modules/build/client-portal/change-requests.service.ts:157",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/change-requests.service.ts:157",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:158",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -922,8 +922,8 @@
       "orgEvidence": "src/modules/build/client-portal/change-requests.service.ts:175",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:181",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -971,8 +971,8 @@
       "orgEvidence": "src/modules/build/client-portal/change-requests.service.ts:220",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/change-requests.service.ts:220",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:227",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1036,8 +1036,8 @@
       "orgEvidence": "src/modules/build/client-portal/change-requests.service.ts:317",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/change-requests.service.ts:317",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/change-requests.service.ts:323",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1099,8 +1099,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-portal-management.service.ts:17",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal-management.service.ts:18",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -1144,8 +1144,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-portal-management.service.ts:46",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal-management.service.ts:47",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -1189,8 +1189,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-portal-management.service.ts:75",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal-management.service.ts:76",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1236,8 +1236,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:180",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:181",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -1322,8 +1322,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:172",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:173",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -1412,8 +1412,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:36",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-portal.service.ts:37",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1459,8 +1459,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-visibility.service.ts:23",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-visibility.service.ts:25",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -1506,8 +1506,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-visibility.service.ts:88",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/client-visibility.service.ts:88",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-visibility.service.ts:90",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1581,8 +1581,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-visibility.service.ts:122",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/client-visibility.service.ts:122",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-visibility.service.ts:124",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1646,8 +1646,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-visibility.service.ts:150",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/client-visibility.service.ts:150",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-visibility.service.ts:152",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1711,8 +1711,8 @@
       "orgEvidence": "src/modules/build/client-portal/client-visibility.service.ts:180",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/client-portal/client-visibility.service.ts:180",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/client-portal/client-visibility.service.ts:182",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1815,8 +1815,8 @@
       "orgEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:128",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertTicketReadAccess)",
-      "projectEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:42",
+      "projectRelationship": "ENFORCED (resolveProjectReach)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:374",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -1862,8 +1862,8 @@
       "orgEvidence": "src/modules/build/comment-drafts/comment-draft-generator.service.ts:39",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertTicketReadAccess)",
-      "projectEvidence": "src/modules/build/comment-drafts/comment-drafts.service.ts:42",
+      "projectRelationship": "ENFORCED (resolveProjectReach)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:374",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -2107,7 +2107,7 @@
       "file": "src/modules/build/core/analytics/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "getAnalytics",
-      "line": 59,
+      "line": 56,
       "verb": "GET",
       "path": "/build/:projectId/analytics",
       "routeParams": [
@@ -2144,7 +2144,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:59",
+      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:56",
       "reviewedEvidence": null
     },
     {
@@ -2152,7 +2152,7 @@
       "file": "src/modules/build/core/analytics/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "burnup",
-      "line": 71,
+      "line": 68,
       "verb": "GET",
       "path": "/build/:projectId/reports/burnup",
       "routeParams": [
@@ -2189,7 +2189,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:71",
+      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:68",
       "reviewedEvidence": null
     },
     {
@@ -2197,7 +2197,7 @@
       "file": "src/modules/build/core/analytics/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "cfd",
-      "line": 83,
+      "line": 80,
       "verb": "GET",
       "path": "/build/:projectId/reports/cfd",
       "routeParams": [
@@ -2234,7 +2234,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:83",
+      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:80",
       "reviewedEvidence": null
     },
     {
@@ -2242,7 +2242,7 @@
       "file": "src/modules/build/core/analytics/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "criticalPath",
-      "line": 95,
+      "line": 92,
       "verb": "GET",
       "path": "/build/:projectId/reports/critical-path",
       "routeParams": [
@@ -2279,7 +2279,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:95",
+      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:92",
       "reviewedEvidence": null
     },
     {
@@ -2287,7 +2287,7 @@
       "file": "src/modules/build/core/analytics/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "velocity",
-      "line": 106,
+      "line": 103,
       "verb": "GET",
       "path": "/build/:projectId/reports/velocity",
       "routeParams": [
@@ -2324,7 +2324,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:106",
+      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:103",
       "reviewedEvidence": null
     },
     {
@@ -2332,7 +2332,7 @@
       "file": "src/modules/build/core/analytics/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "getCycleTime",
-      "line": 130,
+      "line": 115,
       "verb": "GET",
       "path": "/build/:projectId/reports/cycle-time",
       "routeParams": [
@@ -2369,7 +2369,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:130",
+      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:115",
       "reviewedEvidence": null
     },
     {
@@ -2377,7 +2377,7 @@
       "file": "src/modules/build/core/analytics/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "getLeadTime",
-      "line": 141,
+      "line": 126,
       "verb": "GET",
       "path": "/build/:projectId/reports/lead-time",
       "routeParams": [
@@ -2414,7 +2414,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:141",
+      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:126",
       "reviewedEvidence": null
     },
     {
@@ -2422,7 +2422,7 @@
       "file": "src/modules/build/core/analytics/projects-reports.controller.ts",
       "class": "ProjectsReportsController",
       "method": "snapshot",
-      "line": 152,
+      "line": 137,
       "verb": "POST",
       "path": "/build/:projectId/reports/snapshot",
       "routeParams": [
@@ -2461,7 +2461,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:152",
+      "evidence": "src/modules/build/core/analytics/projects-reports.controller.ts:137",
       "reviewedEvidence": null
     },
     {
@@ -3088,8 +3088,8 @@
       "orgEvidence": "src/modules/build/core/custom-fields/projects-custom-fields.service.ts:182",
       "parentScoping": "PASSED-UNBOUND",
       "parentEvidence": "src/modules/build/core/custom-fields/projects-custom-fields.service.ts:182",
-      "projectRelationship": "ENFORCED (assertTicketReadAccess)",
-      "projectEvidence": "src/modules/build/core/custom-fields/projects-custom-fields.service.ts:183",
+      "projectRelationship": "ENFORCED (resolveProjectsScope)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:89",
       "leads": [
         "parent scoping: PASSED-UNBOUND"
       ],
@@ -4929,7 +4929,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:41",
+      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:40",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (resolveProjectsScope)",
@@ -4974,7 +4974,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:90",
+      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:89",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (projectRelationship)",
@@ -5019,7 +5019,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:140",
+      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:139",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (projectRelationship)",
@@ -5066,9 +5066,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:152",
+      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:151",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:152",
+      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:151",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -5081,12 +5081,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 212,
+          "line": 211,
           "note": "UPDATE binds id + projectId + orgId"
         },
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 202,
+          "line": 201,
           "note": "ticketCount now bound to the caller's organisation"
         }
       ]
@@ -5126,9 +5126,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:206",
+      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:205",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:206",
+      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:205",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -5141,7 +5141,7 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 212,
+          "line": 211,
           "note": "soft delete binds id + projectId + orgId"
         }
       ]
@@ -5181,9 +5181,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:226",
+      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:225",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:226",
+      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:225",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -5201,12 +5201,12 @@
         },
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 91,
+          "line": 90,
           "note": "project membership is enforced first"
         },
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 245,
+          "line": 244,
           "note": "the restoring UPDATE binds the URL project"
         }
       ]
@@ -5246,9 +5246,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:264",
+      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:263",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:264",
+      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:263",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -5261,12 +5261,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 156,
+          "line": 155,
           "note": "release bound to the URL project"
         },
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 274,
+          "line": 273,
           "note": "ticket bound to the URL project"
         }
       ]
@@ -5308,9 +5308,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:283",
+      "orgEvidence": "src/modules/build/core/releases/projects-releases.service.ts:282",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:283",
+      "parentEvidence": "src/modules/build/core/releases/projects-releases.service.ts:282",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -5323,12 +5323,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 156,
+          "line": 155,
           "note": "release bound to the URL project"
         },
         {
           "file": "src/modules/build/core/releases/projects-releases.service.ts",
-          "line": 293,
+          "line": 292,
           "note": "join delete now bound to the caller's organisation"
         }
       ]
@@ -9184,9 +9184,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/tickets/projects-tickets-delete.service.ts:40",
+      "orgEvidence": "src/modules/build/core/tickets/projects-tickets-delete.service.ts:46",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/tickets/projects-tickets-delete.service.ts:40",
+      "parentEvidence": "src/modules/build/core/tickets/projects-tickets-delete.service.ts:46",
       "projectRelationship": "ENFORCED (resolveProjectsScope)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:89",
       "leads": [],
@@ -9204,12 +9204,12 @@
         },
         {
           "file": "src/modules/build/core/tickets/projects-tickets-delete.service.ts",
-          "line": 40,
+          "line": 46,
           "note": "the terminal service accepts CurrentUserContext"
         },
         {
           "file": "src/modules/build/core/tickets/projects-tickets-delete.service.ts",
-          "line": 47,
+          "line": 53,
           "note": "canonical ticket authorization runs before the pre-read and delete path"
         },
         {
@@ -9549,9 +9549,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:271",
+      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:273",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:271",
+      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:273",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -9567,12 +9567,12 @@
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 271,
+          "line": 273,
           "note": "signature takes the actor and projectId"
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 252,
+          "line": 254,
           "note": "ownership check binds id+orgId+projectId; 404 on mismatch"
         }
       ]
@@ -9612,9 +9612,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:277",
+      "orgEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:279",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:277",
+      "parentEvidence": "src/modules/build/core/webhooks/projects-webhooks.service.ts:279",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -9632,7 +9632,7 @@
         },
         {
           "file": "src/modules/build/core/webhooks/projects-webhooks.service.ts",
-          "line": 279,
+          "line": 281,
           "note": "ownership check runs after the manage decision and before dispatch.sendTest"
         },
         {
@@ -10021,8 +10021,8 @@
       "orgEvidence": "src/modules/build/execution/cycles.service.ts:145",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/cycles.service.ts:150",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -10068,8 +10068,8 @@
       "orgEvidence": "src/modules/build/execution/cycles.service.ts:209",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/cycles.service.ts:209",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/cycles.service.ts:215",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -10133,8 +10133,8 @@
       "orgEvidence": "src/modules/build/execution/cycles.service.ts:289",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/cycles.service.ts:289",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/cycles.service.ts:290",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -10241,8 +10241,8 @@
       "orgEvidence": "src/modules/build/execution/modules.service.ts:127",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/modules.service.ts:134",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -10290,8 +10290,8 @@
       "orgEvidence": "src/modules/build/execution/modules.service.ts:180",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/modules.service.ts:180",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/modules.service.ts:186",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -10345,8 +10345,8 @@
       "orgEvidence": "src/modules/build/execution/modules.service.ts:216",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/modules.service.ts:216",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/modules.service.ts:217",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -10439,15 +10439,13 @@
         "file": "src/modules/build/execution/epics.service.ts",
         "resolved": true
       },
-      "orgScoping": "PASSED-UNBOUND",
+      "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/epics.service.ts:118",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/epics.service.ts:119",
-      "leads": [
-        "org scoping: PASSED-UNBOUND"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
@@ -10585,8 +10583,8 @@
       "orgEvidence": "src/modules/build/execution/epics.service.ts:175",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/epics.service.ts:175",
-      "projectRelationship": "ENFORCED (authorizeTicketMutation)",
-      "projectEvidence": "src/modules/build/execution/epics.service.ts:193",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11037,8 +11035,8 @@
       "orgEvidence": "src/modules/build/execution/timesheets.service.ts:421",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/timesheets.service.ts:421",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/timesheets.service.ts:440",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11490,8 +11488,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:45",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:47",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -11535,8 +11533,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:152",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:154",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11584,8 +11582,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:178",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/workspace.service.ts:178",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:179",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11644,8 +11642,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:209",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/workspace.service.ts:209",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:210",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11704,8 +11702,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:229",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/workspace.service.ts:229",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:230",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11767,8 +11765,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:276",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:277",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -11808,15 +11806,13 @@
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
-      "orgScoping": "PASSED-UNBOUND",
+      "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:317",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:318",
-      "leads": [
-        "org scoping: PASSED-UNBOUND"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
@@ -11879,8 +11875,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:337",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/workspace.service.ts:337",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:338",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11937,8 +11933,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:420",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:421",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -11978,15 +11974,13 @@
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
-      "orgScoping": "PASSED-UNBOUND",
+      "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:458",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:459",
-      "leads": [
-        "org scoping: PASSED-UNBOUND"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
@@ -12049,8 +12043,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:481",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/workspace.service.ts:481",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:482",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12114,8 +12108,8 @@
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:500",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/execution/workspace.service.ts:500",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/execution/workspace.service.ts:501",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12361,11 +12355,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:207",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:205",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (resolveProjectsScope)",
-      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:208",
+      "projectEvidence": "src/modules/build/execution/whiteboards.service.ts:206",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -12406,7 +12400,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:126",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:124",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (projectRelationship)",
@@ -12451,7 +12445,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:271",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:269",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (projectRelationship)",
@@ -12500,9 +12494,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:264",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:262",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:264",
+      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:262",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -12518,12 +12512,12 @@
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 264,
+          "line": 262,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 82,
+          "line": 80,
           "note": "private helper's WHERE (a few lines below) binds id+projectId+orgId together; 404 on mismatch"
         }
       ]
@@ -12563,9 +12557,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:290",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:288",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:290",
+      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:288",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -12583,12 +12577,12 @@
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 290,
+          "line": 288,
           "note": "signature"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 313,
+          "line": 311,
           "note": "the UPDATE's own WHERE re-binds id+projectId+orgId"
         }
       ]
@@ -12628,9 +12622,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:326",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:324",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:326",
+      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:324",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -12648,12 +12642,12 @@
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 326,
+          "line": 324,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 313,
+          "line": 311,
           "note": "the soft-delete UPDATE's own WHERE re-binds id+projectId+orgId"
         }
       ]
@@ -12693,9 +12687,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:356",
+      "orgEvidence": "src/modules/build/execution/whiteboards.service.ts:354",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:356",
+      "parentEvidence": "src/modules/build/execution/whiteboards.service.ts:354",
       "projectRelationship": "ENFORCED (projectRelationship)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
@@ -12713,17 +12707,17 @@
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 357,
+          "line": 355,
           "note": "the URL project is resolved through the project-access decision, which 404s a project outside the caller's org"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 340,
+          "line": 338,
           "note": "the board lookup binds the URL project"
         },
         {
           "file": "src/modules/build/execution/whiteboards.service.ts",
-          "line": 375,
+          "line": 373,
           "note": "board manage access is required"
         }
       ]
@@ -12762,8 +12756,8 @@
       "orgEvidence": "src/modules/build/files/files.service.ts:85",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/files/files.service.ts:86",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -12803,15 +12797,13 @@
         "file": "src/modules/build/files/files.service.ts",
         "resolved": true
       },
-      "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/files/files.service.ts:115",
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/files/files.service.ts:116",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/files/files.service.ts:116",
-      "leads": [
-        "org scoping: PASSED-UNBOUND"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)",
         "mutating verb without @Idempotent"
@@ -12827,12 +12819,12 @@
         },
         {
           "file": "src/modules/build/files/files.service.ts",
-          "line": 115,
+          "line": 116,
           "note": "the terminal service accepts CurrentUserContext"
         },
         {
           "file": "src/modules/build/files/files.service.ts",
-          "line": 143,
+          "line": 144,
           "note": "the INSERT writes the tenant from the actor; this is a value, not a predicate"
         },
         {
@@ -12882,11 +12874,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/files/files.service.ts:167",
+      "orgEvidence": "src/modules/build/files/files.service.ts:168",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/files/files.service.ts:167",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/files/files.service.ts:168",
+      "parentEvidence": "src/modules/build/files/files.service.ts:168",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -12900,7 +12892,7 @@
         },
         {
           "file": "src/modules/build/files/files.service.ts",
-          "line": 167,
+          "line": 168,
           "note": "signature takes projectId"
         },
         {
@@ -12945,11 +12937,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/files/files.service.ts:174",
+      "orgEvidence": "src/modules/build/files/files.service.ts:175",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/files/files.service.ts:174",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/files/files.service.ts:175",
+      "parentEvidence": "src/modules/build/files/files.service.ts:175",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -12965,12 +12957,12 @@
         },
         {
           "file": "src/modules/build/files/files.service.ts",
-          "line": 174,
+          "line": 175,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/files/files.service.ts",
-          "line": 189,
+          "line": 190,
           "note": "the soft-delete UPDATE's own WHERE re-binds id+orgId+projectId"
         }
       ]
@@ -13009,8 +13001,8 @@
       "orgEvidence": "src/modules/build/forms/forms.service.ts:52",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/forms/forms.service.ts:53",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -13058,8 +13050,8 @@
       "orgEvidence": "src/modules/build/forms/forms.service.ts:101",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/forms/forms.service.ts:101",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/forms/forms.service.ts:102",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -13117,8 +13109,8 @@
       "orgEvidence": "src/modules/build/forms/forms.service.ts:106",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/forms/forms.service.ts:107",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)",
@@ -13167,8 +13159,8 @@
       "orgEvidence": "src/modules/build/forms/forms.service.ts:143",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/forms/forms.service.ts:143",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/forms/forms.service.ts:144",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13232,8 +13224,8 @@
       "orgEvidence": "src/modules/build/forms/forms.service.ts:182",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/forms/forms.service.ts:182",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/forms/forms.service.ts:183",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13294,8 +13286,8 @@
       "orgEvidence": "src/modules/build/forms/submissions.service.ts:166",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/forms/submissions.service.ts:166",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/forms/submissions.service.ts:168",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -13361,8 +13353,8 @@
       "orgEvidence": "src/modules/build/forms/submissions.service.ts:204",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/forms/submissions.service.ts:204",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/forms/submissions.service.ts:211",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)",
@@ -13434,8 +13426,8 @@
       "orgEvidence": "src/modules/build/forms/submissions.service.ts:257",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/forms/submissions.service.ts:257",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/forms/submissions.service.ts:265",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13570,8 +13562,8 @@
       "orgEvidence": "src/modules/build/governance/decisions.service.ts:51",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/governance/decisions.service.ts:52",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -13619,8 +13611,8 @@
       "orgEvidence": "src/modules/build/governance/decisions.service.ts:74",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/governance/decisions.service.ts:74",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/governance/decisions.service.ts:75",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -13678,8 +13670,8 @@
       "orgEvidence": "src/modules/build/governance/decisions.service.ts:79",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/governance/decisions.service.ts:80",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -13727,8 +13719,8 @@
       "orgEvidence": "src/modules/build/governance/decisions.service.ts:119",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/governance/decisions.service.ts:119",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/governance/decisions.service.ts:125",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13792,8 +13784,8 @@
       "orgEvidence": "src/modules/build/governance/decisions.service.ts:156",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/governance/decisions.service.ts:156",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/governance/decisions.service.ts:157",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13894,8 +13886,8 @@
       "orgEvidence": "src/modules/build/governance/risks.service.ts:123",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/governance/risks.service.ts:124",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -13939,8 +13931,8 @@
       "orgEvidence": "src/modules/build/governance/risks.service.ts:68",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/governance/risks.service.ts:69",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (no @Validate)"
@@ -13988,8 +13980,8 @@
       "orgEvidence": "src/modules/build/governance/risks.service.ts:148",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/governance/risks.service.ts:148",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/governance/risks.service.ts:149",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -14047,8 +14039,8 @@
       "orgEvidence": "src/modules/build/governance/risks.service.ts:153",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/governance/risks.service.ts:154",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -14096,8 +14088,8 @@
       "orgEvidence": "src/modules/build/governance/risks.service.ts:192",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/governance/risks.service.ts:192",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/governance/risks.service.ts:198",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14161,8 +14153,8 @@
       "orgEvidence": "src/modules/build/governance/risks.service.ts:228",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/governance/risks.service.ts:228",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/governance/risks.service.ts:229",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14224,8 +14216,8 @@
       "orgEvidence": "src/modules/build/import-export/ticket-import.service.ts:68",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/import-export/ticket-import.service.ts:128",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14271,8 +14263,8 @@
       "orgEvidence": "src/modules/build/import-export/ticket-import.service.ts:77",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/import-export/ticket-import.service.ts:128",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14314,15 +14306,13 @@
         "file": "src/modules/build/import-export/ticket-export.service.ts",
         "resolved": true
       },
-      "orgScoping": "PASSED-UNBOUND",
+      "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/import-export/ticket-export.service.ts:48",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (authorizeProjectTicketRead)",
-      "projectEvidence": "src/modules/build/import-export/ticket-export.service.ts:53",
-      "leads": [
-        "org scoping: PASSED-UNBOUND"
-      ],
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
+      "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/import-export/tickets/export. An export is the highest-value target here and it is the best-bound handler of the six. The tenant predicate is not written by this service at all: ScopedRead mints an unforgeable where-token whose first clause is eq(tickets.orgId, actor.orgId), and the token class is unexported with a private field so no call site can hand-roll a where that omits it. The URL project is AND-ed into the same token, the caller's DataScope narrows further, a `none` scope short-circuits to an empty array, and the read is capped. The permission key on the route matches the key the row scope resolves.",
@@ -14394,8 +14384,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:91",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:92",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -14443,8 +14433,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:126",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/incidents/incidents.service.ts:126",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:132",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -14502,8 +14492,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:137",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:138",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -14551,8 +14541,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:179",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/incidents/incidents.service.ts:179",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:185",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14621,8 +14611,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:286",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/incidents/incidents.service.ts:286",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:287",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14691,8 +14681,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:309",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/incidents/incidents.service.ts:309",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:315",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14756,8 +14746,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:380",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/incidents/incidents.service.ts:380",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:386",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14816,8 +14806,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:411",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/incidents/incidents.service.ts:411",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:417",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -14878,8 +14868,8 @@
       "orgEvidence": "src/modules/build/incidents/incidents.service.ts:445",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/incidents/incidents.service.ts:445",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/incidents/incidents.service.ts:452",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15173,8 +15163,8 @@
       "orgEvidence": "src/modules/build/managed-products/managed-products.service.ts:291",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (resolveProjectReach)",
-      "projectEvidence": "src/modules/build/managed-products/managed-products.service.ts:298",
+      "projectRelationship": "ENFORCED (resolveProjectsScope)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:89",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -15267,8 +15257,8 @@
       "orgEvidence": "src/modules/build/meetings/action-items.service.ts:61",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/action-items.service.ts:61",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:34",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15334,8 +15324,8 @@
       "orgEvidence": "src/modules/build/meetings/action-items.service.ts:94",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/action-items.service.ts:94",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:34",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15406,8 +15396,8 @@
       "orgEvidence": "src/modules/build/meetings/action-items.service.ts:127",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/action-items.service.ts:127",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:34",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15478,8 +15468,8 @@
       "orgEvidence": "src/modules/build/meetings/action-items.service.ts:145",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/action-items.service.ts:145",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/meetings/action-items.service.ts:146",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15546,8 +15536,8 @@
       "orgEvidence": "src/modules/build/meetings/meetings.service.ts:70",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:71",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -15593,8 +15583,8 @@
       "orgEvidence": "src/modules/build/meetings/meetings.service.ts:211",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/meetings.service.ts:211",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:212",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -15654,8 +15644,8 @@
       "orgEvidence": "src/modules/build/meetings/meetings.service.ts:255",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:256",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15703,8 +15693,8 @@
       "orgEvidence": "src/modules/build/meetings/meetings.service.ts:331",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/meetings.service.ts:331",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:53",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15768,8 +15758,8 @@
       "orgEvidence": "src/modules/build/meetings/meetings.service.ts:363",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/meetings.service.ts:363",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:53",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15833,8 +15823,8 @@
       "orgEvidence": "src/modules/build/meetings/meetings.service.ts:380",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/meetings.service.ts:380",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:53",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15900,8 +15890,8 @@
       "orgEvidence": "src/modules/build/meetings/meetings.service.ts:400",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/meetings.service.ts:400",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:53",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -15965,8 +15955,8 @@
       "orgEvidence": "src/modules/build/meetings/meetings.service.ts:414",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/meetings/meetings.service.ts:414",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/meetings/meetings.service.ts:53",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -16019,8 +16009,8 @@
       "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:67",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (resolveProjectReach)",
-      "projectEvidence": "src/modules/build/portfolios/portfolios.service.ts:69",
+      "projectRelationship": "ENFORCED (resolveProjectsScope)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:89",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -16064,8 +16054,8 @@
       "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:234",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (resolveProjectReach)",
-      "projectEvidence": "src/modules/build/portfolios/portfolios.service.ts:238",
+      "projectRelationship": "ENFORCED (resolveProjectsScope)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:89",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -16259,8 +16249,8 @@
       "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:342",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertCanManageProjectLink)",
-      "projectEvidence": "src/modules/build/portfolios/portfolios.service.ts:349",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -16308,8 +16298,8 @@
       "orgEvidence": "src/modules/build/portfolios/portfolios.service.ts:365",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/portfolios/portfolios.service.ts:365",
-      "projectRelationship": "ENFORCED (assertCanManageProjectLink)",
-      "projectEvidence": "src/modules/build/portfolios/portfolios.service.ts:372",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -16372,8 +16362,8 @@
       "orgEvidence": "src/modules/build/portfolios/programs.service.ts:144",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (resolveProjectReach)",
-      "projectEvidence": "src/modules/build/portfolios/programs.service.ts:146",
+      "projectRelationship": "ENFORCED (resolveProjectsScope)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:89",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -16417,8 +16407,8 @@
       "orgEvidence": "src/modules/build/portfolios/programs.service.ts:299",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (resolveProjectReach)",
-      "projectEvidence": "src/modules/build/portfolios/programs.service.ts:303",
+      "projectRelationship": "ENFORCED (resolveProjectsScope)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:89",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -16599,8 +16589,8 @@
       "orgEvidence": "src/modules/build/portfolios/programs.service.ts:405",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertCanManageProjectLink)",
-      "projectEvidence": "src/modules/build/portfolios/programs.service.ts:412",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -16648,8 +16638,8 @@
       "orgEvidence": "src/modules/build/portfolios/programs.service.ts:428",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/portfolios/programs.service.ts:428",
-      "projectRelationship": "ENFORCED (assertCanManageProjectLink)",
-      "projectEvidence": "src/modules/build/portfolios/programs.service.ts:435",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -16714,8 +16704,8 @@
       "orgEvidence": "src/modules/build/qa/bugs.service.ts:25",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:26",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -16763,8 +16753,8 @@
       "orgEvidence": "src/modules/build/qa/bugs.service.ts:82",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/bugs.service.ts:82",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:83",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -16817,8 +16807,8 @@
       "orgEvidence": "src/modules/build/qa/bugs.service.ts:134",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:135",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)",
@@ -16867,8 +16857,8 @@
       "orgEvidence": "src/modules/build/qa/bugs.service.ts:217",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/bugs.service.ts:217",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:223",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -16932,8 +16922,8 @@
       "orgEvidence": "src/modules/build/qa/bugs.service.ts:326",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/bugs.service.ts:326",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:327",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -16993,8 +16983,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:205",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:206",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -17042,8 +17032,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:226",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/test-management.service.ts:226",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:227",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -17096,8 +17086,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:241",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:242",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -17145,8 +17135,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:272",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/test-management.service.ts:272",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:278",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17210,8 +17200,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:309",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/test-management.service.ts:309",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:310",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17275,8 +17265,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:337",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/test-management.service.ts:337",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:338",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17333,11 +17323,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:53",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:54",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:58",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -17382,11 +17372,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:108",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:110",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:108",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:109",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:110",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -17400,7 +17390,7 @@
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 115,
+          "line": 117,
           "note": "SELECT WHERE clause binds runId to projectId and orgId together"
         }
       ]
@@ -17440,11 +17430,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:147",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:149",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:147",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:153",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:149",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -17458,7 +17448,7 @@
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 159,
+          "line": 161,
           "note": "existence check binds runId to projectId and orgId before listing results"
         }
       ]
@@ -17494,11 +17484,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:196",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:198",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:197",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -17543,11 +17533,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:278",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:280",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:278",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:284",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:280",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17563,12 +17553,12 @@
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 291,
+          "line": 293,
           "note": "existence check binds runId to projectId and orgId before patching"
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 313,
+          "line": 315,
           "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -17608,11 +17598,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:328",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:330",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:328",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:329",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:330",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17628,12 +17618,12 @@
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 335,
+          "line": 337,
           "note": "existence check binds runId to projectId and orgId before deleting"
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 344,
+          "line": 346,
           "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -17673,11 +17663,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:356",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:358",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:356",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:357",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:358",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17693,12 +17683,12 @@
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 153,
+          "line": 155,
           "note": "project membership is enforced first"
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 376,
+          "line": 378,
           "note": "the restoring UPDATE binds the URL project"
         }
       ]
@@ -17740,11 +17730,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:394",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:396",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:394",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:401",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:396",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17760,12 +17750,12 @@
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 407,
+          "line": 409,
           "note": "existence check binds resultId to runId, orgId, and projectId together in one WHERE"
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 426,
+          "line": 428,
           "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -17807,11 +17797,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:431",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:433",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:431",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-runs.service.ts:438",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:433",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -17827,12 +17817,12 @@
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 409,
+          "line": 411,
           "note": "existence check binds resultId to runId, orgId, and projectId together in one WHERE"
         },
         {
           "file": "src/modules/build/qa/test-runs.service.ts",
-          "line": 452,
+          "line": 454,
           "note": "linked test case is resolved from the already-validated result row's own testCaseId, not a client param"
         }
       ]
@@ -17871,8 +17861,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:35",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:36",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -17916,8 +17906,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:80",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:81",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -17965,8 +17955,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:108",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/test-management.service.ts:108",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:114",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -18030,8 +18020,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:139",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/test-management.service.ts:139",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:140",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -18095,8 +18085,8 @@
       "orgEvidence": "src/modules/build/qa/test-management.service.ts:167",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/qa/test-management.service.ts:167",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/test-management.service.ts:168",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -18745,8 +18735,8 @@
       "orgEvidence": "src/modules/build/teams/team-projects.service.ts:52",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertCanManageProject)",
-      "projectEvidence": "src/modules/build/teams/team-projects.service.ts:55",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -18794,8 +18784,8 @@
       "orgEvidence": "src/modules/build/teams/team-projects.service.ts:81",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/teams/team-projects.service.ts:81",
-      "projectRelationship": "ENFORCED (assertCanManageProject)",
-      "projectEvidence": "src/modules/build/teams/team-projects.service.ts:84",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -18855,8 +18845,8 @@
       "orgEvidence": "src/modules/build/updates/updates.service.ts:87",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/updates/updates.service.ts:88",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -18900,8 +18890,8 @@
       "orgEvidence": "src/modules/build/updates/updates.service.ts:150",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/updates/updates.service.ts:151",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -18949,8 +18939,8 @@
       "orgEvidence": "src/modules/build/updates/updates.service.ts:186",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/updates/updates.service.ts:186",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/updates/updates.service.ts:187",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -19014,8 +19004,8 @@
       "orgEvidence": "src/modules/build/updates/updates.service.ts:226",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/updates/updates.service.ts:226",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/updates/updates.service.ts:227",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -19075,8 +19065,8 @@
       "orgEvidence": "src/modules/build/workflow/workflow.service.ts:50",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/workflow/workflow.service.ts:52",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (no @Validate)"
@@ -19120,8 +19110,8 @@
       "orgEvidence": "src/modules/build/workflow/workflow.service.ts:64",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/workflow/workflow.service.ts:66",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)",
@@ -19170,8 +19160,8 @@
       "orgEvidence": "src/modules/build/workflow/workflow.service.ts:102",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/workflow/workflow.service.ts:102",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/workflow/workflow.service.ts:109",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -19235,8 +19225,8 @@
       "orgEvidence": "src/modules/build/workflow/workflow.service.ts:147",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/workflow/workflow.service.ts:147",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/workflow/workflow.service.ts:149",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -19300,8 +19290,8 @@
       "orgEvidence": "src/modules/build/workflow/workflow.service.ts:169",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/workflow/workflow.service.ts:169",
-      "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/workflow/workflow.service.ts:171",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -19358,8 +19348,8 @@
       "orgEvidence": "src/modules/build/workflow/workflow.service.ts:187",
       "parentScoping": "BOUND",
       "parentEvidence": "src/modules/build/workflow/workflow.service.ts:187",
-      "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/workflow/workflow.service.ts:189",
+      "projectRelationship": "ENFORCED (projectRelationship)",
+      "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:132",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
