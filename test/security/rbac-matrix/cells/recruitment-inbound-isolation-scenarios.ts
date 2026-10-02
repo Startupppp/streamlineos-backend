@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import type { Table } from "drizzle-orm";
-import { candidates, jobBoardPostings, jobPostings, organizations } from "src/db/schema";
+import { candidateDocumentsVault, candidates, jobBoardPostings, jobPostings, organizations } from "src/db/schema";
+import { CareersService } from "src/modules/careers/careers.service";
+import type { StorageService } from "src/modules/storage/storage.service";
 import { BgvService } from "src/modules/hr/recruitment/bgv/bgv.service";
 import { BgvCallbackService } from "src/modules/hr/recruitment/bgv/bgv-callback.service";
 import { BoardApplyIngressService } from "src/modules/hr/recruitment/boards/board-apply-ingress.service";
@@ -9,7 +11,7 @@ import { audit } from "../adapters/real-services";
 import { tenantBound } from "../adapters/hr-adapter";
 import { ORG_A, ORG_B } from "../standings";
 import { mergeRows, standIn, worldDb, type Row, type WorldDb } from "../world-db";
-import { TENANT_ONLY, pair } from "./isolation-kit";
+import { TENANT_ONLY, pair, reached } from "./isolation-kit";
 import { CANDIDATE_A, CANDIDATE_B, candidateRow, credentialsWith } from "./recruitment-pipeline-isolation-scenarios";
 
 const SLUG_A = "org-a";
@@ -48,6 +50,7 @@ function inboundWorld(): WorldDb {
           ],
         ],
         [jobBoardPostings, []],
+        [candidateDocumentsVault, []],
       ]),
     ),
     { mutable: true },
@@ -125,6 +128,39 @@ function boardApply(): Scenario[] {
   );
 }
 
+function resumeUpload(): Scenario[] {
+  const run = (candidateId: number) => (): Promise<Observation> => {
+    const world = inboundWorld();
+    const stored: string[] = [];
+    const storage = standIn<StorageService>({
+      uploadFile: async (orgId: string, _file: Buffer, folder: string, name: string) => {
+        stored.push(`${orgId}/${folder}/${name}`);
+        return { key: `${orgId}/${folder}/${name}`, size: 4 };
+      },
+    });
+    const service = new CareersService(world.db, storage);
+    const vault = (): Row[] => world.rows.get(candidateDocumentsVault) ?? [];
+    return reached(
+      () => service.uploadResume(ORG_A, candidateId, "user-a", Buffer.from("%PDF"), "cv.pdf", "application/pdf"),
+      () => vault().some((row) => row.candidateId === candidateId && row.orgId === ORG_A),
+      () => ({
+        storesOnlyUnderTheCallersOrg: stored.every((key) => key.startsWith(`${ORG_A}/`)),
+        victimCandidateHasNoDocument: !vault().some((row) => row.candidateId === CANDIDATE_B),
+      }),
+    );
+  };
+  const entry = "CareersService.uploadResume(orgId, candidateId) <- POST /careers/resumes/upload";
+  return pair(
+    { ...TENANT_ONLY, resource: "hr:candidate-resume", action: "upload" },
+    "hr-candidate-resume-upload",
+    { because: "a recruiter attaching a resume to their own organisation's candidate stores it under that organisation and records it in the vault", bindings: [{ adapter: "service", entry, run: run(CANDIDATE_A) }] },
+    {
+      because: "the candidate is resolved only under the caller's organisation, so another organisation's candidate id answers 404 before a byte is stored",
+      bindings: [{ adapter: "service", entry, run: run(CANDIDATE_B) }],
+    },
+  );
+}
+
 export function recruitmentInboundIsolationScenarios(): Scenario[] {
-  return [...bgvCallback(), ...boardApply()];
+  return [...bgvCallback(), ...boardApply(), ...resumeUpload()];
 }
