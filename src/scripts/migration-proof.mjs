@@ -16,6 +16,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import postgres from "postgres";
+import { grantAppRoleDefaultPrivileges } from "./lib/app-role-default-privileges.mjs";
+import { requiresAutocommit } from "./lib/concurrent-migration.mjs";
 
 const SCRIPT_START = Date.now();
 const elapsed = () => `[${((Date.now() - SCRIPT_START) / 1000).toFixed(1)}s]`;
@@ -103,6 +105,7 @@ async function ensureInfrastructure(sql) {
   await sql.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
   for (const ext of ["vector", "pg_trgm", "btree_gist", "pgcrypto", '"uuid-ossp"'])
     await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS ${ext}`);
+  await grantAppRoleDefaultPrivileges(sql);
   await sql.unsafe("CREATE SCHEMA IF NOT EXISTS drizzle");
   await sql.unsafe(
     `CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
@@ -144,7 +147,11 @@ async function applyEntries(url, entries, migrationsDir, label) {
       // Keep each migration in one transaction so ON COMMIT DROP temporary helper
       // tables remain available across statement-breakpoint sections. A clean
       // disposable database must not need duplicate or missing-object recovery.
-      await sql.begin(async (tx) => {
+      // The exception is a file that cannot run inside one (CREATE INDEX
+      // CONCURRENTLY, an explicit BEGIN/COMMIT): it runs statement by statement,
+      // exactly as db:bootstrap and db:migrate run it. Wrapping it died at 1205 with
+      // 25001 CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
+      const applyStatements = async (tx) => {
       for (let i = 0; i < statements.length; i++) {
         try {
           await tx.unsafe(statements[i]);
@@ -179,7 +186,9 @@ async function applyEntries(url, entries, migrationsDir, label) {
       await tx`
         INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
         VALUES (${hash}, ${entry.when})`;
-      });
+      };
+      if (requiresAutocommit(content)) await applyStatements(sql);
+      else await sql.begin(applyStatements);
 
       executed++;
       process.stdout.write(
@@ -267,9 +276,13 @@ async function collectCatalog(url) {
       await sql`SELECT extname AS k FROM pg_extension WHERE extname != 'plpgsql'`
     ).map((r) => r.k);
 
-    const migrationRows = (
-      await sql`SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at`
-    );
+    // The live side is report-only. CI's migration-proof job points DATABASE_URL at a server
+    // whose own database was never migrated, so a missing ledger is an empty ledger there, not
+    // a crash that hides the probe verdict.
+    const [{ ledger }] = await sql`SELECT to_regclass('drizzle.__drizzle_migrations') AS ledger`;
+    const migrationRows = ledger
+      ? await sql`SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at`
+      : [];
 
     return {
       tables, columns, indexes, constraints, enums, functions,
