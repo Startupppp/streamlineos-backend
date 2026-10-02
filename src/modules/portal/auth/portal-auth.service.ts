@@ -19,23 +19,51 @@ export class PortalAuthService {
 
   async acceptInvitation(rawToken: string): Promise<MintedToken> {
     const tokenHash = hashToken(rawToken);
-    const now = new Date();
+    const lookupTime = new Date();
 
-    const invitation = await withPublicToken(this.db, tokenHash, (tx) =>
+    const invitationLocator = await withPublicToken(this.db, tokenHash, (tx) =>
       tx.query.portalInvitations.findFirst({
         where: and(
           eq(portalInvitations.tokenHash, tokenHash),
           eq(portalInvitations.status, "PENDING"),
-          gt(portalInvitations.expiresAt, now),
+          gt(portalInvitations.expiresAt, lookupTime),
         ),
       }),
     );
-    if (!invitation) throw new UnauthorizedException(GENERIC_REJECTION);
+    if (!invitationLocator) throw new UnauthorizedException(GENERIC_REJECTION);
 
     try {
       return await runInTenantTransaction(
         this.db,
         async (tx) => {
+          const claimTime = new Date();
+          const [invitation] = await tx
+            .update(portalInvitations)
+            .set({ status: "ACCEPTED" })
+            .where(
+              and(
+                eq(
+                  portalInvitations.portalInvitationId,
+                  invitationLocator.portalInvitationId,
+                ),
+                eq(
+                  portalInvitations.organizationId,
+                  invitationLocator.organizationId,
+                ),
+                eq(portalInvitations.tokenHash, tokenHash),
+                eq(portalInvitations.status, "PENDING"),
+                gt(portalInvitations.expiresAt, claimTime),
+              ),
+            )
+            .returning({
+              portalInvitationId: portalInvitations.portalInvitationId,
+              organizationId: portalInvitations.organizationId,
+              partyContactId: portalInvitations.partyContactId,
+              audience: portalInvitations.audience,
+            });
+
+          if (!invitation) throw new UnauthorizedException(GENERIC_REJECTION);
+
           const [existing] = await tx
             .select()
             .from(portalMemberships)
@@ -101,7 +129,6 @@ export class PortalAuthService {
           await tx
             .update(portalInvitations)
             .set({
-              status: "ACCEPTED",
               acceptedPortalMembershipId: membershipId,
             })
             .where(
@@ -119,7 +146,7 @@ export class PortalAuthService {
             userId: null,
           });
         },
-        { orgId: invitation.organizationId, audience: "PORTAL" },
+        { orgId: invitationLocator.organizationId, audience: "PORTAL" },
       );
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;

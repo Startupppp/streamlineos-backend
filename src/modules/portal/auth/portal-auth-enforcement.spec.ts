@@ -7,6 +7,7 @@ import { PortalTokenService } from "./portal-token.service";
 import * as tokenUtil from "../../../common/security/token.util";
 import * as withPublicTokenModule from "../../../common/tenant/with-public-token";
 import * as withTenantModule from "../../../common/tenant/run-in-tenant-transaction";
+import { portalInvitations } from "../../../db/schema";
 
 jest.mock("../../../common/security/token.util");
 jest.mock("../../../common/tenant/with-public-token");
@@ -168,6 +169,119 @@ describe("PortalAuthService.acceptInvitation — rejection when no matching invi
   });
 });
 
+describe("PortalAuthService.acceptInvitation — transactional invitation claim", () => {
+  it("revalidates token, tenant, PENDING status, and expiry before any membership write", async () => {
+    mockWithPublicToken.mockImplementation(async (_db, _token, fn) => {
+      const tx = {
+        query: {
+          portalInvitations: { findFirst: jest.fn().mockResolvedValue(VALID_INVITATION) },
+        },
+      };
+      return fn(tx as never);
+    });
+
+    let claimWhere: unknown;
+    const select = jest.fn();
+    const insert = jest.fn();
+    mockRunInTenant.mockImplementation(async (_db, fn) => {
+      const tx = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({
+            where: jest.fn().mockImplementation((where: unknown) => {
+              claimWhere = where;
+              return { returning: jest.fn().mockResolvedValue([]) };
+            }),
+          }),
+        }),
+        select,
+        insert,
+      };
+      return (fn as (tx: unknown) => Promise<unknown>)(tx);
+    });
+
+    const svc = new PortalAuthService(makeDb(), mockTokenService);
+    await expect(svc.acceptInvitation("raw-token")).rejects.toThrow(
+      "Invalid or expired invitation token",
+    );
+
+    const query = dialect.sqlToQuery(claimWhere as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(query.sql).toContain("portal_invitation_id");
+    expect(query.sql).toContain("organization_id");
+    expect(query.sql).toContain("token_hash");
+    expect(query.sql).toContain("status");
+    expect(query.sql).toContain("expires_at");
+    expect(query.params).toEqual(
+      expect.arrayContaining(["inv-1", "org-1", "hashed-token", "PENDING"]),
+    );
+    expect(select).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(mockTokenService.mint).not.toHaveBeenCalled();
+  });
+
+  it("allows only one concurrent or replayed acceptance to create a membership and mint a session", async () => {
+    mockWithPublicToken.mockImplementation(async (_db, _token, fn) => {
+      const tx = {
+        query: {
+          portalInvitations: { findFirst: jest.fn().mockResolvedValue(VALID_INVITATION) },
+        },
+      };
+      return fn(tx as never);
+    });
+
+    let claimed = false;
+    const inserts: unknown[] = [];
+    mockRunInTenant.mockImplementation(async (_db, fn) => {
+      let invitationUpdateCount = 0;
+      const tx = {
+        update: jest.fn().mockImplementation((table) => {
+          if (table === portalInvitations && invitationUpdateCount++ === 0) {
+            const rows = claimed ? [] : [VALID_INVITATION];
+            claimed = true;
+            return {
+              set: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({
+                  returning: jest.fn().mockResolvedValue(rows),
+                }),
+              }),
+            };
+          }
+          return {
+            set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+          };
+        }),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([]),
+        }),
+        insert: jest.fn().mockImplementation((table) => {
+          inserts.push(table);
+          return {
+            values: jest.fn().mockReturnValue({
+              returning: jest
+                .fn()
+                .mockResolvedValue([{ portalMembershipId: "mem-new", sessionEpoch: 0 }]),
+            }),
+          };
+        }),
+      };
+      return (fn as (tx: unknown) => Promise<unknown>)(tx);
+    });
+    (mockTokenService.mint as jest.Mock).mockResolvedValue({ token: "minted-jwt" });
+
+    const svc = new PortalAuthService(makeDb(), mockTokenService);
+    const results = await Promise.allSettled([
+      svc.acceptInvitation("raw-token"),
+      svc.acceptInvitation("raw-token"),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(inserts).toHaveLength(1);
+    expect(mockTokenService.mint).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("PortalAuthService.acceptInvitation — suspended membership gate", () => {
   it("throws UnauthorizedException when the existing portal membership is SUSPENDED — suspended users cannot re-enter", async () => {
     mockWithPublicToken.mockImplementation(async (_db, _token, fn) => {
@@ -180,6 +294,9 @@ describe("PortalAuthService.acceptInvitation — suspended membership gate", () 
       organizationId: "org-1",
     };
     mockRunInTenant.mockImplementation(async (_db, fn) => {
+      const claimReturning = jest.fn().mockResolvedValue([VALID_INVITATION]);
+      const claimWhere = jest.fn().mockReturnValue({ returning: claimReturning });
+      const claimSet = jest.fn().mockReturnValue({ where: claimWhere });
       const selectChain = {
         from: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -187,14 +304,10 @@ describe("PortalAuthService.acceptInvitation — suspended membership gate", () 
       };
       const tx = {
         select: jest.fn().mockReturnValue(selectChain),
-        update: jest.fn(),
+        update: jest.fn().mockReturnValue({ set: claimSet }),
         insert: jest.fn(),
       };
-      try {
-        return await (fn as (tx: unknown) => Promise<unknown>)(tx);
-      } catch (err) {
-        throw err;
-      }
+      return (fn as (tx: unknown) => Promise<unknown>)(tx);
     });
     const svc = new PortalAuthService(makeDb(), mockTokenService);
     await expect(svc.acceptInvitation("raw-token")).rejects.toThrow(UnauthorizedException);
@@ -215,6 +328,7 @@ describe("PortalAuthService.acceptInvitation — tenant scope gate", () => {
     mockRunInTenant.mockImplementation(async (_db, fn, opts) => {
       expect((opts as { orgId: string }).orgId).toBe("org-1");
       expect((opts as { audience: string }).audience).toBe("PORTAL");
+      let invitationUpdateCount = 0;
       const tx = {
         select: jest.fn().mockReturnValue({
           from: jest.fn().mockReturnThis(),
@@ -226,10 +340,19 @@ describe("PortalAuthService.acceptInvitation — tenant scope gate", () => {
             returning: jest.fn().mockResolvedValue([{ portalMembershipId: "mem-new", sessionEpoch: 0 }]),
           }),
         }),
-        update: jest.fn().mockReturnValue({
-          set: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
-          }),
+        update: jest.fn().mockImplementation((table) => {
+          if (table === portalInvitations && invitationUpdateCount++ === 0) {
+            return {
+              set: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({
+                  returning: jest.fn().mockResolvedValue([VALID_INVITATION]),
+                }),
+              }),
+            };
+          }
+          return {
+            set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+          };
         }),
         execute: jest.fn().mockResolvedValue(undefined),
       };
