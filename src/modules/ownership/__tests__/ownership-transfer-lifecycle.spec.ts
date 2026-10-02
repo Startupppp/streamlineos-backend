@@ -4,7 +4,6 @@ import { OwnershipTransferResponseService } from "../ownership-transfer-response
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
 import { assertTransitionAllowed } from "../../organization/core/lifecycle/organization-lifecycle-transitions";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { commitAccessChange } from "../../../common/rbac/access-mutation-commit";
 import { revokeModuleOwnerRole, assertModuleOwnerRoleAssigned } from "../module-owner-role.helper";
@@ -145,7 +144,6 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
   beforeEach(async () => {
     jest.resetAllMocks();
 
-    jest.mocked(bustMembershipStatusCache).mockImplementation(() => Promise.resolve());
     jest.mocked(syncStructuralRoleAssignment).mockImplementation(() => Promise.resolve());
     jest.mocked(commitAccessChange).mockImplementation(() => Promise.resolve());
     jest.mocked(revokeModuleOwnerRole).mockImplementation(() => Promise.resolve());

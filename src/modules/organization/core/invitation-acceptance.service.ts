@@ -179,7 +179,7 @@ export class InvitationAcceptanceService {
     userId: string,
   ): Promise<unknown[]> {
     return Promise.all([
-      scheduleStandingRevocation(this.cache, [userId], { withSessions: true }),
+      scheduleStandingRevocation(this.cache, [userId]),
       this.cache.invalidateNamespaceForOrg(orgId, "org:members:list"),
       this.cache.invalidateForOrg(orgId, "rbac:members"),
       this.cache.invalidateForOrg(orgId, "module-access:candidates"),
@@ -393,7 +393,7 @@ export class InvitationAcceptanceService {
     userId: string,
     autoLoginToken: string,
   ): Promise<string> {
-    await withMembershipMutations(this.cache, (membership) =>
+    await withMembershipMutations((membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {
@@ -444,7 +444,7 @@ export class InvitationAcceptanceService {
     const lastName = input.lastName?.trim() || null;
 
     try {
-      await withMembershipMutations(this.cache, (membership) =>
+      await withMembershipMutations((membership) =>
         runInTenantTransaction(
           this.db,
           async (tx) => {

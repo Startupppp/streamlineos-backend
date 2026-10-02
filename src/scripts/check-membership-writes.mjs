@@ -1,8 +1,8 @@
 // node src/scripts/check-membership-writes.mjs [--self-test|--list] — 0 clean · 1 violation · 2 broken scan
 //
 // `organization_members` carries authorization state that JwtAuthGuard reads on every request
-// through a 15-second cache. A write that lands without the matching invalidation leaves a
-// revoked member reading as active until the TTL expires, and nothing fails. So the write and
+// through a 1-second per-instance cache. A write that lands without the matching local clear
+// leaves a revoked member reading as active on the writing instance until the TTL expires. So the write and
 // the invalidation are one operation, owned by `common/org/membership-mutations.ts`, and this
 // gate is what stops a second writer appearing beside it.
 //
@@ -101,15 +101,15 @@ export const WRITE_EXEMPT = new Map([
 export const PRIMITIVE_EXEMPT = new Map([
   [OWNER_WRITES, "the owner itself"],
   ["src/common/rbac/access-mutation-commit.ts", "the access-mutation commit module schedules every revocation"],
-  [PRIMITIVE_DECLARATION, "declares bustMembershipStatusCache and bustMembershipStatusCacheMany"],
+  [PRIMITIVE_DECLARATION, "declares membershipStandingChannel"],
 ]);
 
 const PRIMITIVES = [
   "scheduleMembershipBust",
   "scheduleMembershipBustMany",
   "bustMembershipNowAndAfterCommit",
-  "bustMembershipStatusCache",
-  "bustMembershipStatusCacheMany",
+  "membershipStandingChannel",
+  "scheduleStandingChange",
 ];
 
 const BUMP_PRIMITIVE = "bumpPermissionsVersion";
@@ -451,7 +451,7 @@ if (RUN_DIRECTLY && process.argv.includes("--self-test")) {
   check(
     "multi-name primitive import",
     findPrimitiveImports(
-      'import {\n  bustMembershipStatusCache,\n  bustMembershipStatusCacheMany,\n} from "./membership-state.service";',
+      'import {\n  membershipStandingChannel,\n  scheduleStandingChange,\n} from "../rbac/access-mutation-commit";',
     ).length,
     2,
   );

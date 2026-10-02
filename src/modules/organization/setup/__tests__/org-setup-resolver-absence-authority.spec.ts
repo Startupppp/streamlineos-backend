@@ -34,7 +34,7 @@ jest.mock("../../../../common/org/membership-mutations", () => ({
   withMembershipMutations: jest
     .fn()
     .mockImplementation(
-      (_cache: unknown, fn: (membership: unknown) => Promise<unknown>) =>
+      (fn: (membership: unknown) => Promise<unknown>) =>
         fn({ deleteMembershipsById }),
     ),
 }));

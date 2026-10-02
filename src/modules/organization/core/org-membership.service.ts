@@ -151,7 +151,7 @@ export class OrgMembershipService {
 
     await assertMayGrantRole(this.access, orgId, actor, role);
 
-    await withMembershipMutations(this.cache, (membership) =>
+    await withMembershipMutations((membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {

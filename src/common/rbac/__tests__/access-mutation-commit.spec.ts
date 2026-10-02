@@ -1,15 +1,13 @@
 import {
   commitAccessChange,
+  scheduleStandingChange,
   scheduleStandingRevocation,
   REVOCATION_PAGE_SIZE,
   type CommitAccessAudit,
   type DbOrTx,
 } from "../access-mutation-commit";
 import { bumpPermissionsVersion } from "../access-invalidate";
-import {
-  bustMembershipStatusCache,
-  bustMembershipStatusCacheMany,
-} from "../../auth/membership-state.service";
+import { membershipStandingChannel } from "../../auth/membership-state.service";
 import { getObservabilityContext } from "../../observability/observability-context";
 import { getImpersonationContext } from "../../impersonation/impersonation-context";
 import { runWithTenantContext, type AfterCommitHook } from "../../tenant/tenant-context";
@@ -25,8 +23,7 @@ jest.mock("../access-invalidate", () => ({
 }));
 
 jest.mock("../../auth/membership-state.service", () => ({
-  bustMembershipStatusCache: jest.fn(),
-  bustMembershipStatusCacheMany: jest.fn(),
+  membershipStandingChannel: { publish: jest.fn() },
 }));
 
 jest.mock("../../observability/observability-context", () => ({
@@ -108,6 +105,10 @@ async function inRequest<T>(work: () => Promise<T>): Promise<{ hooks: AfterCommi
   return { hooks, result };
 }
 
+function published(): string[] {
+  return jest.mocked(membershipStandingChannel.publish).mock.calls.map(([userId]) => userId);
+}
+
 async function drain(hooks: readonly AfterCommitHook[]): Promise<void> {
   for (const hook of hooks) await hook();
 }
@@ -121,8 +122,6 @@ const memberRows = (from: number, count: number) =>
 beforeEach(() => {
   jest.resetAllMocks();
   jest.mocked(bumpPermissionsVersion).mockResolvedValue(undefined);
-  jest.mocked(bustMembershipStatusCache).mockResolvedValue(undefined);
-  jest.mocked(bustMembershipStatusCacheMany).mockResolvedValue(undefined);
   jest.mocked(getObservabilityContext).mockReturnValue(undefined);
   jest.mocked(getImpersonationContext).mockReturnValue(undefined);
 });
@@ -204,7 +203,7 @@ describe("commitAccessChange — grant intent (permissions loss)", () => {
     await drain(hooks);
 
     expect(cache.invalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("target"));
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
   });
 
   it("runs the session bust inline when registerAfterCommit has no context, never dropping it", async () => {
@@ -324,7 +323,7 @@ describe("commitAccessChange — ownership intent (standing loss)", () => {
     expect(inserted[0]?.row).toMatchObject({ action: "ownership.transfer_accepted" });
     expect(notifier.emitInTx).toHaveBeenCalledTimes(1);
     expect(notifier.emitInTx).toHaveBeenCalledWith(tx, [event]);
-    expect(bustMembershipStatusCacheMany).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
 
     await drain(hooks);
 
@@ -332,7 +331,7 @@ describe("commitAccessChange — ownership intent (standing loss)", () => {
       CACHE_KEYS.userSession("to"),
       CACHE_KEYS.userSession("from"),
     ]);
-    expect(bustMembershipStatusCacheMany).toHaveBeenCalledWith(cache, ["to", "from"]);
+    expect(published()).toEqual(["to", "from"]);
   });
 
   it("emits nothing when the notification carries no events", async () => {
@@ -357,12 +356,12 @@ describe("commitAccessChange — identity intent (session revocation)", () => {
 
     expect(updates).toHaveBeenCalledWith(userSessions);
     expect(sessions.publishRevocations).not.toHaveBeenCalled();
-    expect(bustMembershipStatusCache).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
 
     await drain(hooks);
 
     expect(sessions.publishRevocations).toHaveBeenCalledWith(["s-1", "s-2"]);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "subject");
+    expect(published()).toEqual(["subject"]);
     expect(cache.invalidate).not.toHaveBeenCalled();
   });
 
@@ -380,7 +379,7 @@ describe("commitAccessChange — identity intent (session revocation)", () => {
     expect(updates).toHaveBeenCalledWith(userSessions);
     const results = await Promise.allSettled(hooks.map((hook) => hook()));
     expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "subject");
+    expect(published()).toEqual(["subject"]);
   });
 
   it("publishes inline when there is no after-commit context, never dropping the tombstone", async () => {
@@ -409,35 +408,37 @@ describe("commitAccessChange — identity intent (session revocation)", () => {
 });
 
 describe("standing revocation outside a commit", () => {
-  it("busts membership status and, when asked, the session keys after commit for an org teardown", async () => {
+  it("clears membership standing and busts the session keys after commit for an org teardown", async () => {
     const cache = makeCache();
-    const { hooks } = await inRequest(() =>
-      scheduleStandingRevocation(asCache(cache), ["u-1", "u-2"], { withSessions: true }),
-    );
+    const { hooks } = await inRequest(() => scheduleStandingRevocation(asCache(cache), ["u-1", "u-2"]));
     expect(cache.invalidateMany).not.toHaveBeenCalled();
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
     await drain(hooks);
     expect(cache.invalidateMany).toHaveBeenCalledWith([
       CACHE_KEYS.userSession("u-1"),
       CACHE_KEYS.userSession("u-2"),
     ]);
-    expect(bustMembershipStatusCacheMany).toHaveBeenCalledWith(cache, ["u-1", "u-2"]);
+    expect(published()).toEqual(["u-1", "u-2"]);
   });
 
-  it("leaves session keys alone by default so a membership drain busts only status", async () => {
+  it("clears the local standing even when the shared session bust fails", async () => {
     const cache = makeCache();
-    await scheduleStandingRevocation(asCache(cache), ["u-1"]);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "u-1");
-    expect(cache.invalidate).not.toHaveBeenCalled();
+    cache.invalidate.mockRejectedValue(new Error("redis down"));
+    await expect(scheduleStandingRevocation(asCache(cache), ["u-1"])).rejects.toThrow("redis down");
+    expect(published()).toEqual(["u-1"]);
   });
 
-  it("defers a membership revocation's status and session bust to after commit, never busting before it", async () => {
-    const cache = makeCache();
-    const { hooks } = await inRequest(() => scheduleStandingRevocation(asCache(cache), ["u-1"], { withSessions: true }));
-    expect(cache.invalidate).not.toHaveBeenCalled();
+  it("defers a membership drain's standing clear to after commit and touches no shared cache", async () => {
+    const { hooks } = await inRequest(() => scheduleStandingChange(["u-1", "u-1"]));
+    expect(membershipStandingChannel.publish).not.toHaveBeenCalled();
     expect(hooks).toHaveLength(1);
     await drain(hooks);
-    expect(cache.invalidate).toHaveBeenCalledTimes(1);
-    expect(bustMembershipStatusCache).toHaveBeenCalledWith(cache, "u-1");
+    expect(published()).toEqual(["u-1"]);
+  });
+
+  it("schedules nothing for an empty drain", async () => {
+    const { hooks } = await inRequest(() => scheduleStandingChange([]));
+    expect(hooks).toHaveLength(0);
   });
 });
 

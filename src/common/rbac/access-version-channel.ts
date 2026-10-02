@@ -1,17 +1,17 @@
-export type AccessVersionListener = (orgId: string) => void;
+export type InProcessListener = (key: string) => void;
 
-export class AccessVersionChannel {
-  private readonly listeners = new Set<AccessVersionListener>();
+export class InProcessChannel {
+  private readonly listeners = new Set<InProcessListener>();
 
-  subscribe(listener: AccessVersionListener): () => void {
+  subscribe(listener: InProcessListener): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
   }
 
-  publish(orgId: string): void {
-    for (const listener of this.listeners) listener(orgId);
+  publish(key: string): void {
+    for (const listener of this.listeners) listener(key);
   }
 
   reset(): void {
@@ -19,4 +19,4 @@ export class AccessVersionChannel {
   }
 }
 
-export const accessVersionChannel = new AccessVersionChannel();
+export const accessVersionChannel = new InProcessChannel();

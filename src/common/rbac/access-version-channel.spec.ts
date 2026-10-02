@@ -1,8 +1,8 @@
-import { AccessVersionChannel } from "./access-version-channel";
+import { InProcessChannel } from "./access-version-channel";
 
-describe("AccessVersionChannel", () => {
+describe("InProcessChannel", () => {
   it("notifies every local listener synchronously on publish", () => {
-    const channel = new AccessVersionChannel();
+    const channel = new InProcessChannel();
     const seen: string[] = [];
     channel.subscribe((orgId) => seen.push(`a:${orgId}`));
     channel.subscribe((orgId) => seen.push(`b:${orgId}`));
@@ -13,8 +13,8 @@ describe("AccessVersionChannel", () => {
   });
 
   it("does not cross instances; another instance learns of a bump only from the durable row", () => {
-    const instanceA = new AccessVersionChannel();
-    const instanceB = new AccessVersionChannel();
+    const instanceA = new InProcessChannel();
+    const instanceB = new InProcessChannel();
     const seenOnA: string[] = [];
     const seenOnB: string[] = [];
     instanceA.subscribe((orgId) => seenOnA.push(orgId));
@@ -27,7 +27,7 @@ describe("AccessVersionChannel", () => {
   });
 
   it("stops notifying a listener once it unsubscribes", () => {
-    const channel = new AccessVersionChannel();
+    const channel = new InProcessChannel();
     const seen: string[] = [];
     const unsubscribe = channel.subscribe((orgId) => seen.push(orgId));
 
@@ -39,7 +39,7 @@ describe("AccessVersionChannel", () => {
   });
 
   it("drops every listener on reset", () => {
-    const channel = new AccessVersionChannel();
+    const channel = new InProcessChannel();
     const seen: string[] = [];
     channel.subscribe((orgId) => seen.push(orgId));
 

@@ -133,7 +133,7 @@ export class OrgMembershipStatusService {
       status,
     );
 
-    await withMembershipMutations(this.cache, (membership) =>
+    await withMembershipMutations((membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {

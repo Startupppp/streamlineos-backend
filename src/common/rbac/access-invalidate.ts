@@ -3,14 +3,14 @@ import { accessVersions } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
 import {
   accessVersionChannel,
-  type AccessVersionListener,
+  type InProcessListener,
 } from "./access-version-channel";
 import { registerAfterCommit } from "../tenant/tenant-context";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type DbOrTx = Db | Tx;
 
-export function subscribeVersionBump(fn: AccessVersionListener): () => void {
+export function subscribeVersionBump(fn: InProcessListener): () => void {
   return accessVersionChannel.subscribe(fn);
 }
 

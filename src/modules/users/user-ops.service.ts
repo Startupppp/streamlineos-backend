@@ -152,7 +152,7 @@ export class UserOpsService {
 
     if (role) await this.assertMayGrantRole(orgId, actor, role);
 
-    const scopedIds = await withMembershipMutations(this.cache, (membership) => this.db.transaction(async (tx) => {
+    const scopedIds = await withMembershipMutations((membership) => this.db.transaction(async (tx) => {
       const memberRows = await tx
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)

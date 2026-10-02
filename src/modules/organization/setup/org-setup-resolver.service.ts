@@ -5,7 +5,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { SetupInput } from "./dto/org.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
-import { CacheService } from "../../../common/cache/cache.service";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -39,7 +38,6 @@ export type OrganizationAbsenceVerdict =
 export class OrgSetupResolverService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly creation: OrganizationCreationService,
   ) {}
@@ -203,7 +201,7 @@ export class OrgSetupResolverService {
       }
 
       try {
-        await withMembershipMutations(this.cache, (membership) =>
+        await withMembershipMutations((membership) =>
           runInTenantTransaction(
             this.db,
             async (tx) => {

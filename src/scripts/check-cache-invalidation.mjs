@@ -205,7 +205,6 @@ const KEY_MISMATCH_CHECKS = [];
 const KEY_TO_NAMESPACE_PREFIX = {
   dashboardStats: "dashboard:stats:",
   userSession: "user:session:",
-  membershipAccount: "membership:account:",
   rolesList: "org:roles:",
   mfaOrgPolicy: "mfa:org-policy:",
   mfaUserTotp: "mfa:user-totp:",

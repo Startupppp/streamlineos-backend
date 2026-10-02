@@ -54,7 +54,7 @@ const mockMfa: MfaPolicyService = {
   isMfaRequired: () => never("mfa.isMfaRequired"),
 } as unknown as MfaPolicyService;
 
-const mockMembershipState = new MembershipStateService(mockDb, mockCache);
+const mockMembershipState = new MembershipStateService(mockDb);
 
 async function run() {
   if (SELF_TEST) {

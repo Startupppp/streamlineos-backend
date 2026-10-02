@@ -10,10 +10,7 @@ import {
 import { getObservabilityContext } from "../observability/observability-context";
 import { getImpersonationContext } from "../impersonation/impersonation-context";
 import { registerAfterCommit } from "../tenant/tenant-context";
-import {
-  bustMembershipStatusCache,
-  bustMembershipStatusCacheMany,
-} from "../auth/membership-state.service";
+import { membershipStandingChannel } from "../auth/membership-state.service";
 import type { CacheService } from "../cache/cache.service";
 import { CACHE_KEYS, type ExactCacheKey } from "../cache/cache-keys";
 import { bumpPermissionsVersion, type DbOrTx } from "./access-invalidate";
@@ -206,13 +203,14 @@ async function resolveLosers(
 
 type RevocationPlan = { standing: readonly string[]; sessions: readonly string[]; listKeys: readonly ExactCacheKey[] };
 
-async function bust(cache: CacheService, keys: readonly ExactCacheKey[], standing: readonly string[]) {
+function publishStanding(userIds: readonly string[]): void {
+  for (const userId of userIds) membershipStandingChannel.publish(userId);
+}
+
+async function bust(cache: CacheService, keys: readonly ExactCacheKey[]): Promise<void> {
   const [onlyKey] = keys;
   if (keys.length === 1 && onlyKey !== undefined) await cache.invalidate(onlyKey);
   else if (keys.length > 1) await cache.invalidateMany(keys);
-  const [onlyUser] = standing;
-  if (standing.length === 1 && onlyUser !== undefined) await bustMembershipStatusCache(cache, onlyUser);
-  else if (standing.length > 1) await bustMembershipStatusCacheMany(cache, standing);
 }
 
 async function scheduleRevocation(cache: CacheService, plan: RevocationPlan): Promise<void> {
@@ -221,16 +219,23 @@ async function scheduleRevocation(cache: CacheService, plan: RevocationPlan): Pr
   ];
   const standing = [...new Set(plan.standing)];
   if (keys.length === 0 && standing.length === 0) return;
-  await afterCommitOrInline(() => bust(cache, keys, standing));
+  await afterCommitOrInline(async () => {
+    publishStanding(standing);
+    await bust(cache, keys);
+  });
+}
+
+export function scheduleStandingChange(userIds: readonly string[]): Promise<void> {
+  const standing = [...new Set(userIds)];
+  if (standing.length === 0) return Promise.resolve();
+  return afterCommitOrInline(async () => publishStanding(standing));
 }
 
 export function scheduleStandingRevocation(
   cache: CacheService,
   userIds: readonly string[],
-  { withSessions = false }: { withSessions?: boolean } = {},
 ): Promise<void> {
-  const sessions = withSessions ? userIds : [];
-  return scheduleRevocation(cache, { standing: userIds, sessions, listKeys: [] });
+  return scheduleRevocation(cache, { standing: userIds, sessions: userIds, listKeys: [] });
 }
 
 async function revokeSessions(
