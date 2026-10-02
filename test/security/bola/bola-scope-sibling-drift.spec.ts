@@ -193,10 +193,11 @@ const ADMITTED_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
   ["GET /hr/templates/variables", notScopable("hr:templates:view")],
   ["GET /timesheets/billing/uninvoiced-entries", notScopable("timesheets:billing:view")],
   ["GET /timesheets/periods/:periodId/approver", "timesheets:entries:view: previewApprover reads the period through ownedPeriodEntries, which refuses any period whose userMembershipId is not the caller's"],
+  ["GET /build/releases", "build:view: ProjectsReleasesService.listOrgReleases filters every row through resolveProjectReach, the Build project-access reach rule, which this scanner does not name"],
+  ["GET /build/scope-directory/search", "build:view: ScopeDirectoryService search narrows projects and managed products through resolveProjectReach, the Build project-access reach rule, which this scanner does not name"],
 ];
 
 const OPEN_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
-  ["GET /build/releases", "build:view: ProjectsReleasesService.listOrgReleases returns every release in the org with its creator's email and never asserts project visibility, while GET /build/:projectId/releases calls assertProjectAccess; owned by the Build lane"],
 ];
 
 

@@ -352,11 +352,10 @@ describe("Revocation is enforced at token-check time, not by a database flag", (
 
 describe("Every revocation entry point writes the tombstone the guard reads", () => {
   const REVOCATION_WRITER = "src/modules/sessions/sessions.service.ts";
+  const TOMBSTONE_WRITER = "src/modules/sessions/session-revocation-helpers.ts";
   const KNOWN_WRITERS = [
+    "src/common/rbac/access-mutation-commit.ts",
     "src/modules/sessions/sessions.service.ts",
-    // The profile service's revokeSession/revokeAllSessions moved here unchanged (a5edd7228,
-    // "move the per-user account records into a lib"); user-profile.service.ts no longer writes.
-    "src/modules/users/lib/user-account-records.ts",
   ];
 
   function walk(dir: string, out: string[] = []): string[] {
@@ -436,7 +435,7 @@ describe("Every revocation entry point writes the tombstone the guard reads", ()
   });
 
   it("no expiry API is applied to a tombstone key anywhere in the writer", () => {
-    const source = readFileSync(resolve(BACKEND_ROOT, REVOCATION_WRITER), "utf8");
+    const source = readFileSync(resolve(BACKEND_ROOT, TOMBSTONE_WRITER), "utf8");
     // MSET cannot carry a TTL, which is why the property is structural rather than a
     // convention. These pin the two ways it could be reintroduced.
     expect(source).toMatch(/redis\.mset\(/);
