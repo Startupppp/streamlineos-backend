@@ -17,6 +17,8 @@ const NOT_A_PERMISSION_KEY: Readonly<Record<string, string>> = {
   "common/security/envelope-encryption.ts":
     "envelope ciphertext segments `prefix:alg:version:wrapped:body`",
   "common/security/ssrf-guard.ts": "IPv6 hextets",
+  "modules/build/scope-directory/scope-directory.service.ts":
+    "Build scope keys `product:<id>` and `project:<id>`",
   "modules/hr/time/attendance-summary.service.ts": "HH:MM shift times",
   "modules/hr/time/attendance-policy.service.ts": "HH:MM shift times",
   "modules/hr/lifecycle/hr-dashboard-attendance.ts": "HH:MM shift times",
