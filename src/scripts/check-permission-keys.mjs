@@ -114,11 +114,7 @@ function isVacuousScan(fileCount, refCount) {
 function walkedTreeIsReachable(dir) {
   return existsSync(dir);
 }
-const FRONTEND_UNION_BASENAMES = [
-  "permission-key-foundation.ts",
-  "permission-key-extended.ts",
-  "permission-key-business.ts",
-];
+const FRONTEND_UNION_FILES = [["contracts", "permission-key.generated.ts"]];
 
 // The extractors live in ./permission-key-extractors.mjs so this check and
 // check-navigation-permissions read keys through one implementation.
@@ -249,8 +245,8 @@ if (args.includes("--self-test")) {
   checks.aRealSizedScanIsNotVacuous = isVacuousScan(MIN_CONTROLLER_FILES, MIN_ROUTE_REFS) === false;
   checks.frontendUnionFilesAreReachable =
     frontendAvailable &&
-    FRONTEND_UNION_BASENAMES.every((f) =>
-      existsSync(join(FRONTEND_ROOT, "lib", "rbac", "permissions", f)),
+    FRONTEND_UNION_FILES.every((segments) =>
+      existsSync(join(FRONTEND_ROOT, ...segments)),
     );
 
   const pass = Object.values(checks).every(Boolean);
@@ -295,8 +291,8 @@ if (!frontendAvailable) {
   frontendCatalog = null;
 } else {
   try {
-    const unionSources = FRONTEND_UNION_BASENAMES.map((f) =>
-      readFileSync(join(FRONTEND_ROOT, "lib", "rbac", "permissions", f), "utf8"),
+    const unionSources = FRONTEND_UNION_FILES.map((segments) =>
+      readFileSync(join(FRONTEND_ROOT, ...segments), "utf8"),
     );
     frontendCatalog = parseUnionKeys(unionSources);
   } catch (err) {
