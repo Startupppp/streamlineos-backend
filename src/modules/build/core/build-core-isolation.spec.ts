@@ -105,7 +105,7 @@ describe("ProjectsReleasesService — cross-tenant isolation (BOLA)", () => {
     const db = makeNotFoundDb();
     const svc = new ProjectsReleasesService(db, makeNoPermAccess(), lifecycleAuditDouble());
 
-    await expect(svc.updateRelease(makeAttackerU(), 99, 999, { name: "v2", rowVersion: 1 })).rejects.toThrow(NotFoundException);
+    await expect(svc.updateRelease(makeAttackerU(), 99, 999, { name: "v2", rowVersion: 1, releaseDate: null })).rejects.toThrow(NotFoundException);
   });
 
   it("throws NotFoundException when adding ticket to a cross-org release", async () => {
@@ -135,9 +135,9 @@ describe("ProjectsLabelsService — cross-tenant isolation (BOLA)", () => {
 describe("ProjectsTicketChecklistsService — cross-tenant isolation", () => {
   it("throws NotFoundException when checklist belongs to a different org", async () => {
     const db = makeNotFoundDb();
-    const svc = new ProjectsTicketChecklistsService(db);
+    const svc = new ProjectsTicketChecklistsService(db, makeNoPermAccess());
 
-    await expect(svc.deleteChecklist("org-attacker", 5, 11, 999)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteChecklist(makeAttackerU(), 5, 11, 999)).rejects.toThrow(NotFoundException);
   });
 });
 

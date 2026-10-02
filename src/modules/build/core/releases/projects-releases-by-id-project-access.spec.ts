@@ -105,7 +105,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
     const { db, rowFindFirst, update, transaction } = makeNonMemberDb();
     const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
-    await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "hijacked", rowVersion: 1 })).rejects.toThrow(
+    await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "hijacked", rowVersion: 1, releaseDate: null })).rejects.toThrow(
       ForbiddenException,
     );
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
     } as unknown as Db;
     const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
-    await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "v2", rowVersion: 1 })).resolves.toMatchObject({
+    await expect(svc.updateRelease(makeU(), PROJECT_ID, 5, { name: "v2", rowVersion: 1, releaseDate: null })).resolves.toMatchObject({
       id: 5,
       name: "v2",
     });
@@ -260,7 +260,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
     const { db, rowFindFirst, insert } = makeNonMemberDb();
     const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
-    await expect(svc.createRelease(makeU(), PROJECT_ID, { name: "hijacked release", version: "1.0.0", status: "draft" })).rejects.toThrow(
+    await expect(svc.createRelease(makeU(), PROJECT_ID, { name: "hijacked release", version: "1.0.0", status: "draft", releaseDate: null })).rejects.toThrow(
       ForbiddenException,
     );
     expect(rowFindFirst).not.toHaveBeenCalled();
@@ -283,7 +283,7 @@ describe("ProjectsReleasesService — by-id routes gate on project membership, n
     } as unknown as Db;
     const svc = new ProjectsReleasesService(db, makeAccessWithoutBuildManage(), lifecycleAuditDouble());
 
-    await expect(svc.createRelease(makeU(), PROJECT_ID, { name: "release v1", version: "1.0.0", status: "draft" })).resolves.toMatchObject({
+    await expect(svc.createRelease(makeU(), PROJECT_ID, { name: "release v1", version: "1.0.0", status: "draft", releaseDate: null })).resolves.toMatchObject({
       id: 10,
       name: "v1",
     });

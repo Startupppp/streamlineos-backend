@@ -1,13 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
-import { projectStatuses, tickets, ticketActivityLog, ticketWatchers } from "../../db/schema";
+import { and, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
+import { projectStatuses, tickets, ticketWatchers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { computeNextRunAt } from "../build/core";
 import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
 import { forEachOrg, type TenantTx } from "../../common/tenant";
-import { reserveTicketCapacity } from "../build/core/tickets";
+import { BuildTicketCreationService } from "../build/core/tickets";
 
 const BATCH_SIZE = 50;
 
@@ -33,7 +33,10 @@ type RunnableTemplate = TemplateRow & {
 
 @Injectable()
 export class CronProjectsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly ticketCreation: BuildTicketCreationService,
+  ) {}
 
   async spawnDueRecurringTickets(): Promise<{ spawned: number; advanced: number }> {
     const now = new Date();
@@ -111,92 +114,62 @@ export class CronProjectsService {
   ): Promise<number> {
     const projectIds = [...new Set(due.map((template) => template.projectId))];
 
-    const [numberRows, statusRows] = await Promise.all([
-      tx
-        .select({
-          projectId: tickets.projectId,
-          maxNumber: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)`,
-        })
-        .from(tickets)
-        .where(and(eq(tickets.orgId, orgId), inArray(tickets.projectId, projectIds)))
-        .groupBy(tickets.projectId),
-      tx
-        .selectDistinctOn([projectStatuses.projectId], {
-          projectId: projectStatuses.projectId,
-          name: projectStatuses.name,
-        })
-        .from(projectStatuses)
-        .where(and(eq(projectStatuses.orgId, orgId), inArray(projectStatuses.projectId, projectIds)))
-        .orderBy(projectStatuses.projectId, projectStatuses.order)
-        .limit(projectIds.length),
-    ]);
-
-    const lastNumberByProject = new Map<number, number>();
-    for (const row of numberRows)
-      if (row.projectId !== null) lastNumberByProject.set(row.projectId, Number(row.maxNumber));
+    const statusRows = await tx
+      .selectDistinctOn([projectStatuses.projectId], {
+        projectId: projectStatuses.projectId,
+        name: projectStatuses.name,
+      })
+      .from(projectStatuses)
+      .where(and(eq(projectStatuses.orgId, orgId), inArray(projectStatuses.projectId, projectIds)))
+      .orderBy(projectStatuses.projectId, projectStatuses.order)
+      .limit(projectIds.length);
 
     const firstStatusByProject = new Map<number, string>();
     for (const row of statusRows)
       if (!firstStatusByProject.has(row.projectId))
         firstStatusByProject.set(row.projectId, row.name);
 
-    const children: (typeof tickets.$inferInsert)[] = [];
-    const advances: BulkUpdateRow[] = [];
-
+    const byProject = new Map<number, RunnableTemplate[]>();
     for (const template of due) {
-      const nextNumber = (lastNumberByProject.get(template.projectId) ?? 0) + 1;
-      lastNumberByProject.set(template.projectId, nextNumber);
-
-      children.push({
-        orgId,
-        projectId: template.projectId,
-        ticketNumber: nextNumber,
-        title: template.title,
-        description: template.description ?? undefined,
-        type: template.type,
-        priority: template.priority,
-        points: template.points ?? undefined,
-        assigneeMembershipId: template.assigneeMembershipId ?? undefined,
-        status: firstStatusByProject.get(template.projectId) ?? "TODO",
-        recurrenceParentId: template.id,
-        isRecurring: false,
-      });
-
-      advances.push({
-        key: template.id,
-        values: [
-          computeNextRunAt(template.recurrenceRule, template.recurrenceNextRunAt).toISOString(),
-        ],
-      });
+      const list = byProject.get(template.projectId) ?? [];
+      list.push(template);
+      byProject.set(template.projectId, list);
     }
+
+    const advances: BulkUpdateRow[] = due.map((template) => ({
+      key: template.id,
+      values: [
+        computeNextRunAt(template.recurrenceRule, template.recurrenceNextRunAt).toISOString(),
+      ],
+    }));
 
     try {
       await tx.transaction(async (innerTx) => {
-        for (const projectId of [...projectIds].sort((a, b) => a - b))
-          await reserveTicketCapacity(innerTx, orgId, projectId, children
-            .filter(child => child.projectId === projectId)
-            .map(child => ({ status: child.status ?? "TODO", count: 1 })));
-        const inserted = await innerTx
-          .insert(tickets)
-          .values(children)
-          .returning({ id: tickets.id, projectId: tickets.projectId, assigneeMembershipId: tickets.assigneeMembershipId });
+        for (const [projectId, templates] of [...byProject].sort(([a], [b]) => a - b)) {
+          const created = await this.ticketCreation.createInTransaction(innerTx, {
+            orgId,
+            projectId,
+            actor: { userId: null, membershipId: null, systemActor: "recurring-spawn" },
+            drafts: templates.map((template) => ({
+              title: template.title,
+              description: template.description ?? undefined,
+              type: template.type,
+              priority: template.priority,
+              points: template.points ?? undefined,
+              assigneeMembershipId: template.assigneeMembershipId ?? undefined,
+              status: firstStatusByProject.get(template.projectId) ?? "TODO",
+              recurrenceParentId: template.id,
+              isRecurring: false,
+            })),
+          });
 
-        const watchers: (typeof ticketWatchers.$inferInsert)[] = [];
-        const activity: (typeof ticketActivityLog.$inferInsert)[] = [];
-        for (const child of inserted) {
-          activity.push({ orgId, ticketId: child.id, projectId: child.projectId ?? undefined, userMembershipId: null, action: "created" });
-          if (child.assigneeMembershipId !== null)
-            watchers.push({
-              orgId,
-              ticketId: child.id,
-              membershipId: child.assigneeMembershipId,
-            });
+          const watchers: (typeof ticketWatchers.$inferInsert)[] = [];
+          for (const child of created.tickets)
+            if (child.assigneeMembershipId !== null)
+              watchers.push({ orgId, ticketId: child.id, membershipId: child.assigneeMembershipId });
+          if (watchers.length > 0)
+            await innerTx.insert(ticketWatchers).values(watchers).onConflictDoNothing();
         }
-
-        if (watchers.length > 0)
-          await innerTx.insert(ticketWatchers).values(watchers).onConflictDoNothing();
-
-        await innerTx.insert(ticketActivityLog).values(activity);
 
         await bulkUpdateFromValues(innerTx, {
           table: tickets,
@@ -215,6 +188,6 @@ export class CronProjectsService {
       return 0;
     }
 
-    return children.length;
+    return due.length;
   }
 }

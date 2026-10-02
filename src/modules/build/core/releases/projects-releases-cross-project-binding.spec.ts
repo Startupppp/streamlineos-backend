@@ -267,7 +267,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc, transaction } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { name: "hijacked", rowVersion: 1 }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { name: "hijacked", rowVersion: 1, releaseDate: null }),
     ).rejects.toThrow(NotFoundException);
     expect(store.releases.find((row) => row.id === RELEASE_B)?.name).toBe("release-b");
   });
@@ -277,7 +277,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { name: "release-a-v2", rowVersion: 1 }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { name: "release-a-v2", rowVersion: 1, releaseDate: null }),
     ).resolves.toMatchObject({ id: RELEASE_A, name: "release-a-v2", ticketCount: 1 });
     expect(store.releases.find((row) => row.id === RELEASE_A)?.name).toBe("release-a-v2");
   });
@@ -288,7 +288,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { name: "release-a-v2", rowVersion: 1 }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { name: "release-a-v2", rowVersion: 1, releaseDate: null }),
     ).resolves.toMatchObject({ ticketCount: 1 });
   });
 
@@ -297,7 +297,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc, outbox } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { status: "released", rowVersion: 1 }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_A, { status: "released", rowVersion: 1, releaseDate: null }),
     ).resolves.toMatchObject({ id: RELEASE_A });
     expect(outbox).toHaveLength(1);
     expect(outbox[0]).toMatchObject({
@@ -312,7 +312,7 @@ describe("ProjectsReleasesService — nested release and ticket lookups bind to 
     const { svc, outbox } = makeService(store);
 
     await expect(
-      svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { status: "released", rowVersion: 1 }),
+      svc.updateRelease(makeU(), PROJECT_A, RELEASE_B, { status: "released", rowVersion: 1, releaseDate: null }),
     ).rejects.toThrow(NotFoundException);
     expect(outbox).toHaveLength(0);
   });

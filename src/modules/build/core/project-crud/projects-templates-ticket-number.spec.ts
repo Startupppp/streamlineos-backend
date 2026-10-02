@@ -1,6 +1,7 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import type { PlanLimitsService } from "../../../billing/core/plan-limits.service";
+import type { BuildTicketCreationService } from "../tickets";
 import { resolveOrganizationActorsByUserIds } from "../../../../common/organization/organization-actor";
 
 jest.mock("../../../../common/organization/organization-actor", () => ({
@@ -88,7 +89,7 @@ function harness(highestTicketNumber: number) {
   );
 
   return {
-    service: new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never),
+    service: new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never, {} as unknown as BuildTicketCreationService),
     selectProjections,
     selectWheres,
     insertedTickets,

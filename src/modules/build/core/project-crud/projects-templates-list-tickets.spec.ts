@@ -59,7 +59,7 @@ describe("ProjectsTemplatesService.listTemplates — BUG-054: tickets are includ
     const result = await svc.listTemplates("org-1", {});
 
     expect(result.data[0]).toHaveProperty("tickets");
-    expect(Array.isArray(result.data[0].tickets)).toBe(true);
+    expect(result.data[0]).toMatchObject({ tickets: expect.any(Array) });
   });
 
   it("attaches the correct tickets to their template so a page with two templates does not mix up tasks", async () => {
@@ -73,8 +73,7 @@ describe("ProjectsTemplatesService.listTemplates — BUG-054: tickets are includ
 
     const result = await svc.listTemplates("org-1", {});
 
-    expect(result.data[0].tickets).toHaveLength(1);
-    expect(result.data[0].tickets?.[0]).toMatchObject({ id: 11, title: "Set up repo" });
+    expect(result.data[0]).toMatchObject({ tickets: [expect.objectContaining({ id: 11, title: "Set up repo" })] });
   });
 
   it("returns an empty tickets array for a template that has no tasks rather than omitting the field", async () => {
@@ -88,7 +87,7 @@ describe("ProjectsTemplatesService.listTemplates — BUG-054: tickets are includ
 
     const result = await svc.listTemplates("org-1", {});
 
-    expect(result.data[0].tickets).toEqual([]);
+    expect(result.data[0]).toMatchObject({ tickets: [] });
   });
 
   it("returns an empty data array without issuing the ticket batch query when the template page is empty", async () => {

@@ -3,7 +3,7 @@ import { NotFoundException } from "@nestjs/common";
 import { EpicsService } from "./epics.service";
 import { CyclesService } from "./cycles.service";
 import { epicRowSchema } from "./dto/execution-response.schemas";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
@@ -71,6 +71,7 @@ async function epicsService(db: Db, ticketCreation: object = {}): Promise<EpicsS
       { provide: DRIZZLE, useValue: gated(db) },
       { provide: BuildTicketCreationService, useValue: ticketCreation },
       { provide: ProjectsTicketsUpdateService, useValue: {} },
+      { provide: ProjectsTicketsDeleteService, useValue: {} },
       { provide: AccessService, useValue: principalAccess() },
     ],
   }).compile();

@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS "integration_git_connection_credentials" (
 --> statement-breakpoint
 
 ALTER TABLE "integration_git_connection_credentials"
+  DROP CONSTRAINT IF EXISTS "fk_int_git_conn_cred_org_conn";
+--> statement-breakpoint
+
+ALTER TABLE "integration_git_connection_credentials"
   ADD CONSTRAINT "fk_int_git_conn_cred_org_conn"
   FOREIGN KEY ("org_id", "git_connection_id")
   REFERENCES "build"."git_connections"("org_id", "id")

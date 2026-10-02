@@ -130,7 +130,17 @@ export async function loadChannelMemberPreview(
     // buys nothing while the state is unreachable and puts a column the client contract forbids one
     // spread away from the wire.
     .leftJoin(users, and(eq(users.id, organizationMembers.userId), isNull(users.deletedAt)))
-    .where(and(eq(chatChannelMembers.orgId, orgId), inArray(chatChannelMembers.channelId, channelIds), isNull(chatChannelMembers.archivedAt)))
+    // No `archivedAt IS NULL` here. `chat_channel_members.archived_at` is the
+    // CALLER'S OWN inbox state, not a membership lifecycle — archiving a chat sets it
+    // on your row and leaves you a member. Filtering on it dropped the caller's row
+    // out of the preview of every channel they had archived, so `GET
+    // /chat/channels/archived` answered rows whose `members` was short by exactly the
+    // reader. On a self-DM, where the caller is the only member, `members` came back
+    // empty and the row rendered "??" / "Unknown" with `memberCount: 0`, while the
+    // same conversation opened under its correct name (CHAT-004). It also meant an
+    // archived row's favourite, mute, role and notification controls read defaults,
+    // because every one of those is on the caller's own member row.
+    .where(and(eq(chatChannelMembers.orgId, orgId), inArray(chatChannelMembers.channelId, channelIds)))
     .as("ranked_channel_members");
 
   const rows = await db.select().from(ranked).where(lte(ranked.memberRank, CHANNEL_LIST_MEMBER_PREVIEW));

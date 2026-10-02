@@ -24,7 +24,7 @@ import {
   readMutationTickets,
 } from "../core";
 import { assertProjectVisible } from "../core/project-crud/project-access";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { AccessService } from "../../access/access.service";
 
 @Injectable()
@@ -33,6 +33,7 @@ export class EpicsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ticketCreation: BuildTicketCreationService,
     private readonly ticketChange: ProjectsTicketsUpdateService,
+    private readonly ticketDelete: ProjectsTicketsDeleteService,
     private readonly access: AccessService,
   ) {}
 
@@ -171,13 +172,12 @@ export class EpicsService {
     return updated;
   }
 
-  async deleteEpic(actor: CurrentUserContext, projectId: number, epicId: number) {
-    await this.authorizeEpicMutation(actor, projectId, epicId);
-    const { orgId } = actor;
+  async deleteEpic(u: CurrentUserContext, projectId: number, epicId: number) {
+    await this.authorizeEpicMutation(u, projectId, epicId);
     const epic = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, epicId),
-        eq(tickets.orgId, orgId),
+        eq(tickets.orgId, u.orgId),
         eq(tickets.projectId, projectId),
         eq(tickets.type, "EPIC"),
         isNull(tickets.deletedAt),
@@ -185,10 +185,7 @@ export class EpicsService {
       columns: { id: true },
     });
     if (!epic) throw new NotFoundException("Epic not found");
-    await this.db.transaction(async (tx) => {
-      await tx.update(tickets).set({ epicId: null }).where(and(eq(tickets.epicId, epicId), eq(tickets.orgId, orgId)));
-      await tx.delete(tickets).where(and(eq(tickets.id, epicId), eq(tickets.orgId, orgId)));
-    });
+    await this.ticketDelete.deleteTicket(u, projectId, epicId, false);
     return { success: true };
   }
 

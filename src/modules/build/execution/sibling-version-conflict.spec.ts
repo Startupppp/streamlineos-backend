@@ -1,6 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService, TicketVersionConflictException } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService, TicketVersionConflictException } from "../core/tickets";
 import { CyclesService } from "./cycles.service";
 import { ModulesService } from "./modules.service";
 import { EpicsService } from "./epics.service";
@@ -96,6 +96,7 @@ async function epicsService(storedVersion: number) {
       { provide: DRIZZLE, useValue: db },
       { provide: BuildTicketCreationService, useValue: { createInTransaction: jest.fn(), publish: jest.fn() } },
       { provide: ProjectsTicketsUpdateService, useValue: { updateTicket } },
+      { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
       { provide: AccessService, useValue: {} },
     ],
   }).compile();

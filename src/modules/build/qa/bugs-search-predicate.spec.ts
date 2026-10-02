@@ -2,6 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { BugsService } from "./bugs.service";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
+import type { BuildTicketCreationService, ProjectsTicketsUpdateService, ProjectsTicketsDeleteService } from "../core/tickets";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.module";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -48,7 +49,7 @@ const mockAudit = {} as AuditService;
 describe("BugsService.listBugs — search predicate shape (BE-49)", () => {
   it("uses a trailing-wildcard pattern, not a leading wildcard, so the ticket title column can use a prefix index rather than a full scan over the project's bug rows", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new BugsService(buildDb(captured), mockAccess, mockAudit);
+    const svc = new BugsService(buildDb(captured), mockAccess, mockAudit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await svc.listBugs(makeOwner("org-1"), 1, { q: "crash" });
     const { sql, params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).toContain("ilike");
@@ -59,7 +60,7 @@ describe("BugsService.listBugs — search predicate shape (BE-49)", () => {
 
   it("appends a trailing % so a search for 'crash' finds 'Crash on login' — the title begins with the typed term", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new BugsService(buildDb(captured), mockAccess, mockAudit);
+    const svc = new BugsService(buildDb(captured), mockAccess, mockAudit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await svc.listBugs(makeOwner("org-1"), 1, { q: "crash" });
     const { params } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     const likeParam = params.find((p): p is string => typeof p === "string" && p.endsWith("%"));
@@ -68,7 +69,7 @@ describe("BugsService.listBugs — search predicate shape (BE-49)", () => {
 
   it("omits the ilike predicate when no q is given so all bugs in the project are returned", async () => {
     const captured: Captured = { where: undefined };
-    const svc = new BugsService(buildDb(captured), mockAccess, mockAudit);
+    const svc = new BugsService(buildDb(captured), mockAccess, mockAudit, {} as unknown as BuildTicketCreationService, {} as unknown as ProjectsTicketsUpdateService, {} as unknown as ProjectsTicketsDeleteService);
     await svc.listBugs(makeOwner("org-1"), 1, {});
     const { sql } = dialect.sqlToQuery(captured.where as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(sql.toLowerCase()).not.toContain("ilike");

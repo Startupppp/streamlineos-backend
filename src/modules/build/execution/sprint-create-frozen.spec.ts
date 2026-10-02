@@ -6,7 +6,7 @@ const ORG = "org-1";
 const PROJECT_ID = 42;
 const SPRINT_ID = 7;
 const CREATE_INPUT = { name: "Sprint Q4", startDate: "2026-10-01", endDate: "2026-10-14" };
-const UPDATE_INPUT = { name: "Changed" };
+const UPDATE_INPUT = { name: "Changed", startDate: undefined, endDate: undefined };
 
 function trackingDb() {
   const calls = {
@@ -107,7 +107,7 @@ describe("SprintsService — the whole legacy Sprints surface is frozen", () => 
     const dispatch = { enqueue: jest.fn() };
     const svc = new SprintsService(db, dispatch as never);
 
-    await expect(svc.updateSprint(ORG, PROJECT_ID, SPRINT_ID, { status: "COMPLETED" })).rejects.toThrow(
+    await expect(svc.updateSprint(ORG, PROJECT_ID, SPRINT_ID, { status: "COMPLETED", startDate: undefined, endDate: undefined })).rejects.toThrow(
       GoneException,
     );
 

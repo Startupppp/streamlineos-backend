@@ -4,27 +4,30 @@ import type { EntityReferenceService } from "../../entity-reference/entity-refer
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 /**
- * `listChannelFiles` must project `fileUrl` from `chat_attachments`.
+ * `listChannelFiles` must project exactly the columns `chatChannelFilesContract` reads.
  *
- * `chatChannelFilesContract` on the frontend requires `fileUrl: z.string()`.
- * The backend projection selected only id/messageId/fileName/fileKey/fileSize/
- * mimeType/createdAt — `fileUrl` was missing. Every call to the shared-files panel
- * returned a Zod parse failure, which rendered as a "server error" overlay.
+ * Twice now the projection and the contract have disagreed and the shared-files panel
+ * rendered an error overlay over attachments that had uploaded fine. First the
+ * projection was missing columns the contract required; then `fileUrl` was added to
+ * satisfy a contract that should never have required it — the column is written empty
+ * on every insert (`chat-messages.service.ts`) and a chat attachment is read through
+ * `GET /chat/channels/:id/attachments/:attachmentId/url`, so no client renders it.
+ * `fileUrl` is now off both sides (CHAT-001).
  *
- * The fix is one added field in the `.select({})` call. This test captures the
- * projection object passed to `db.select()` and verifies the key is present BEFORE
- * any DB row arrives, so the assertion binds to the query, not to test data.
+ * This test captures the projection object passed to `db.select()` and compares its
+ * keys BEFORE any DB row arrives, so the assertion binds to the query, not to test
+ * data. It fails in both directions: a dropped column the panel needs, and a column
+ * put back on the wire that the contract does not declare.
  */
 
 const ORG = "org-1";
 const CHANNEL = 5;
 
-const REQUIRED_FILE_COLUMNS = [
+const CONTRACT_FILE_COLUMNS = [
   "createdAt",
   "fileKey",
   "fileName",
   "fileSize",
-  "fileUrl",
   "id",
   "messageId",
   "mimeType",
@@ -76,23 +79,23 @@ function makeEntities(): EntityReferenceService {
 }
 
 describe("listChannelFiles projection", () => {
-  it("projects fileUrl so the shared-files panel contract passes", async () => {
+  it("projects every column the chatChannelFilesContract requires, and nothing more", async () => {
     const captured = { keys: [] as string[] };
     const db = makeDb(captured);
     const service = new ChatChannelMembersImplementation(db, makeEntities());
 
     await service.listChannelFiles(CHANNEL, actor());
 
-    expect(captured.keys).toContain("fileUrl");
+    expect(captured.keys).toEqual(CONTRACT_FILE_COLUMNS);
   });
 
-  it("projects every column the chatChannelFilesContract requires", async () => {
+  it("does not project fileUrl, which is always empty and which no client reads", async () => {
     const captured = { keys: [] as string[] };
     const db = makeDb(captured);
     const service = new ChatChannelMembersImplementation(db, makeEntities());
 
     await service.listChannelFiles(CHANNEL, actor());
 
-    expect(captured.keys).toEqual(REQUIRED_FILE_COLUMNS);
+    expect(captured.keys).not.toContain("fileUrl");
   });
 });

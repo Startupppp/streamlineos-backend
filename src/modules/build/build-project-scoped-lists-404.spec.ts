@@ -12,7 +12,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { lifecycleAuditDouble } from "./lifecycle/audit-double";
 import { WebhookEndpointService } from "../integrations/core/webhook-endpoint.service";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "./core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "./core/tickets";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { MANAGER_STANDING, projectAccessRow, standingAccess } from "./core/project-crud/__tests__/project-access-doubles";
@@ -55,6 +55,7 @@ async function epicsService(db: Db, access: AccessService): Promise<EpicsService
       { provide: DRIZZLE, useValue: db },
       { provide: BuildTicketCreationService, useValue: {} },
       { provide: ProjectsTicketsUpdateService, useValue: {} },
+      { provide: ProjectsTicketsDeleteService, useValue: {} },
       { provide: AccessService, useValue: access },
     ],
   }).compile();

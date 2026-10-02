@@ -17,6 +17,7 @@ import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketsTransferService } from "./tickets/projects-tickets-transfer.service";
+import type { BuildTicketCreationService } from "./tickets";
 import { ProjectsTicketsQueryService } from "./tickets/projects-tickets-query.service";
 import { ProjectsWebhooksDispatchService } from "./webhooks/projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "./automation/build-automation-runner.service";
@@ -74,6 +75,7 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
       {} as unknown as NotificationsService,
       {} as unknown as NotificationDispatchService,
       { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
+      {} as unknown as BuildTicketCreationService,
     );
   }
 

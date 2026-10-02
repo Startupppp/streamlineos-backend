@@ -3,7 +3,7 @@ import { is, SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { EpicsService } from "./epics.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { BuildTicketCreationService, ProjectsTicketsUpdateService } from "../core/tickets";
+import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "../core/tickets";
 import { Test } from "@nestjs/testing";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -42,6 +42,7 @@ async function createService(beforeRow: unknown, afterRow: unknown = beforeRow) 
       { provide: DRIZZLE, useValue: { query: { tickets: { findFirst } } } },
       { provide: BuildTicketCreationService, useValue: { createInTransaction: jest.fn(), publish: jest.fn() } },
       { provide: ProjectsTicketsUpdateService, useValue: { updateTicket } },
+      { provide: ProjectsTicketsDeleteService, useValue: { deleteTicket: jest.fn() } },
       { provide: AccessService, useValue: {} },
     ],
   }).compile();

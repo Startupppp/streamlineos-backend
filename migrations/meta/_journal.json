@@ -7302,6 +7302,20 @@
       "when": 1803093658725,
       "tag": "1238_hr_leave_policy_template_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 1171,
+      "version": "7",
+      "when": 1803093659725,
+      "tag": "1726_git_connection_credentials_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 1172,
+      "version": "7",
+      "when": 1803093660725,
+      "tag": "1727_git_connection_credentials_contract",
+      "breakpoints": true
     }
   ]
 }

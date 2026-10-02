@@ -8,6 +8,7 @@ import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automati
 import { BillingModule } from "../billing/core/billing.module";
 import { AiModule } from "../ai/core/ai.module";
 import { PartyModule } from "../party/party.module";
+import { ProjectsModule } from "../build/core";
 import { LeadsController } from "./leads.controller";
 import { LeadsIngestController } from "./leads.ingest.controller";
 import { LeadsReportsController } from "./leads-reports.controller";
@@ -27,7 +28,7 @@ import { LeadsOpsService } from "./leads-ops.service";
 import { LeadNotificationAiService } from "./lead-notification-ai.service";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmModule, CrmAutomationStudioModule, BillingModule, AiModule, PartyModule],
+  imports: [NotificationsModule, AutomationModule, WebhooksModule, CrmMetadataModule, CrmModule, CrmAutomationStudioModule, BillingModule, AiModule, PartyModule, ProjectsModule],
   controllers: [
     LeadsReportsController,
     LeadsOpsController,
