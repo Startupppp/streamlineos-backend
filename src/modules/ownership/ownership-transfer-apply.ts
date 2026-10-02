@@ -22,6 +22,7 @@ import {
   assertModuleOwnerRoleAssigned,
   revokeModuleOwnerRole,
 } from "./module-owner-role.helper";
+import { writeUserModuleAccessOverride } from "../access/user-module-access.writer";
 
 export type TransferCommit = (moved: {
   fromUserId: string;
@@ -215,6 +216,14 @@ export async function applyModuleTransfer(
         "Transfer is no longer pending; a concurrent response committed first",
       );
 
+    await writeUserModuleAccessOverride(
+      tx,
+      orgId,
+      toMember.id,
+      moduleKey,
+      true,
+      toMember.userId,
+    );
     await commitAccessChange(
       tx,
       orgId,

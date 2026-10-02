@@ -10,6 +10,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
+import { userModuleAccess } from "../../../db/schema";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction");
 jest.mock("../../../common/auth/membership-state.service");
@@ -196,6 +197,47 @@ describe("applyModuleTransfer — stale-owner detection", () => {
     await expect(
       service.acceptTransfer(ORG, TO_USER, TRANSFER_ID),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("clears the recipient's prior module deny on an accepted ownership transfer", async () => {
+    const fromMember = { id: FROM_MEMBER_ID, userId: FROM_USER, status: "ACTIVE" };
+    const toMember = { id: TO_MEMBER_ID, userId: TO_USER, status: "ACTIVE" };
+    const mockDb = {
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([pendingModuleTransfer]))
+        .mockReturnValueOnce(makeSelectChain([recipient])),
+      update: jest.fn(),
+      insert: jest.fn(),
+      transaction: jest.fn(),
+    };
+    const values = jest.fn().mockReturnValue({
+      onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+    });
+    const tx = {
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([{ ownerMembershipId: FROM_MEMBER_ID }]))
+        .mockReturnValueOnce(makeSelectChain([fromMember, toMember])),
+      insert: jest.fn().mockReturnValue({ values }),
+      update: jest.fn().mockReturnValue(makeUpdateChain([{ id: TRANSFER_ID }])),
+    };
+    mockDb.transaction.mockImplementation(
+      async (fn: (handle: typeof tx) => Promise<unknown>) => fn(tx),
+    );
+
+    const service = await buildService(mockDb);
+
+    await expect(service.acceptTransfer(ORG, TO_USER, TRANSFER_ID))
+      .resolves.toEqual({ success: true });
+    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+    expect(tx.insert).toHaveBeenCalledWith(userModuleAccess);
+    expect(values).toHaveBeenCalledWith({
+      orgId: ORG,
+      organizationMembershipId: TO_MEMBER_ID,
+      moduleKey: MODULE_KEY,
+      enabled: true,
+      updatedBy: TO_USER,
+    });
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, expect.anything());
   });
 });
 

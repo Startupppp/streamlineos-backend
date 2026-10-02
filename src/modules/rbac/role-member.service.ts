@@ -30,6 +30,7 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import type { DispatchEventInput } from "../notifications/notification.types";
 import type { RoleMemberInput } from "./dto/rbac.schemas";
 import { assertMayAssignRole } from "./assert-role-assignment";
+import { writeUserModuleAccessOverride } from "../access/user-module-access.writer";
 
 @Injectable()
 export class RoleMemberService {
@@ -254,6 +255,16 @@ export class RoleMemberService {
             assignedByMembershipId: null,
           })
           .onConflictDoNothing();
+        if (role.moduleKey) {
+          await writeUserModuleAccessOverride(
+            tx,
+            actor.orgId,
+            member.id,
+            role.moduleKey,
+            true,
+            actor.userId,
+          );
+        }
         await commitAccessChange(
           tx,
           actor.orgId,

@@ -9,6 +9,7 @@ import { AccessService } from "../access/access.service";
 import { RoleMemberService } from "./role-member.service";
 import { commitAccessChange } from "../../common/rbac/access-mutation-commit";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { roleAssignments, userModuleAccess } from "../../db/schema";
 
 jest.mock("../../common/rbac/access-mutation-commit", () => ({
   commitAccessChange: jest.fn().mockResolvedValue(undefined),
@@ -85,14 +86,17 @@ describe("RoleMemberService — the version bump shares the writer's transaction
   const ROLE_ID = 7;
 
   function makeTx() {
+    const values = jest.fn().mockReturnValue({
+      onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+      onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+    });
     return {
       execute: jest.fn().mockResolvedValue([{}]),
       insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockReturnValue({
-          onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
-        }),
+        values,
       }),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      values,
     };
   }
 
@@ -109,7 +113,7 @@ describe("RoleMemberService — the version bump shares the writer's transaction
     return chain;
   }
 
-  async function buildService(tx: ReturnType<typeof makeTx>) {
+  async function buildService(tx: ReturnType<typeof makeTx>, moduleKey: string | null = null) {
     const transaction = jest.fn().mockImplementation(
       async (fn: (handle: typeof tx) => Promise<unknown>) => fn(tx),
     );
@@ -127,7 +131,7 @@ describe("RoleMemberService — the version bump shares the writer's transaction
                   name: "Manager",
                   slug: "MANAGER",
                   isSystem: false,
-                  moduleKey: null,
+                  moduleKey,
                   rank: 40,
                 }),
               },
@@ -186,6 +190,28 @@ describe("RoleMemberService — the version bump shares the writer's transaction
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.insert).toHaveBeenCalledTimes(1);
+    expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, expect.anything());
+  });
+
+  it("directly assigning a Build role clears a prior member deny in the same transaction", async () => {
+    const tx = makeTx();
+    const { service, transaction } = await buildService(tx, "build");
+
+    await service.addRoleMember(orgOwner, ROLE_ID, {
+      principalType: "user",
+      principalId: "member",
+    });
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(tx.insert).toHaveBeenCalledWith(roleAssignments);
+    expect(tx.insert).toHaveBeenCalledWith(userModuleAccess);
+    expect(tx.values).toHaveBeenCalledWith({
+      orgId: ORG,
+      organizationMembershipId: 42,
+      moduleKey: "build",
+      enabled: true,
+      updatedBy: orgOwner.userId,
+    });
     expect(commitAccessChange).toHaveBeenCalledWith(tx, ORG, expect.anything());
   });
 

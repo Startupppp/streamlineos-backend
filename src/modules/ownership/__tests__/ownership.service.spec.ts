@@ -12,7 +12,7 @@ import { OwnershipTransferResponseService } from "../ownership-transfer-response
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { auditLogs } from "../../../db/schema";
+import { auditLogs, userModuleAccess } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -604,7 +604,8 @@ describe("OwnershipService — access / business-rule logic", () => {
 
       expect(result).toMatchObject({ success: true });
       expect(mockDb.delete).toHaveBeenCalledTimes(1);
-      expect(mockDb.insert).toHaveBeenCalledTimes(4);
+      expect(mockDb.insert).toHaveBeenCalledTimes(5);
+      expect(mockDb.insert).toHaveBeenCalledWith(userModuleAccess);
       expect(mockDb.insert).toHaveBeenCalledWith(auditLogs);
     });
 

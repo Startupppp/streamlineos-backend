@@ -12,6 +12,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
+import { userModuleAccess } from "../../../db/schema";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction");
 jest.mock("../../../common/auth/membership-state.service");
@@ -352,7 +353,8 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
 
       await service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID);
 
-      expect(txMock.insert).toHaveBeenCalledTimes(1);
+      expect(txMock.insert).toHaveBeenCalledTimes(2);
+      expect(txMock.insert).toHaveBeenCalledWith(userModuleAccess);
       expect(revokeModuleOwnerRole).toHaveBeenCalledWith(txMock, ORG, "hr", 1);
       expect(assertModuleOwnerRoleAssigned).toHaveBeenCalledWith(txMock, ORG, "hr", 2);
       expect(commitAccessChange).toHaveBeenCalledWith(
