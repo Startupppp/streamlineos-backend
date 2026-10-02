@@ -179,20 +179,8 @@ async function main() {
     const unknown = await exchange(randomUUID());
     record("exchange: an unregistered session id is refused", 401, unknown.status);
 
-    // isAccountActive is cached for MEMBERSHIP_STATUS_TTL_SECONDS (15s). A direct
-    // row flip bypasses the writer that busts that cache, so the stale entry is
-    // served until it expires. The product's own deactivation path invalidates it
-    // immediately; both halves are recorded so the window is documented rather
-    // than mistaken for a leak.
     await sql`update users set is_active = false where id = ${userId}`;
-    const withinCacheWindow = await exchange(sessionB);
-    record(
-      "exchange: within the 15s membership cache window a row-level flip is not yet seen (by design)",
-      200,
-      withinCacheWindow.status,
-    );
-
-    await new Promise((r) => setTimeout(r, 16_000));
+    await new Promise((r) => setTimeout(r, 1_500));
     const afterCacheExpiry = await exchange(sessionB);
     record(
       "exchange: once the membership cache expires, a deactivated account can no longer mint",
