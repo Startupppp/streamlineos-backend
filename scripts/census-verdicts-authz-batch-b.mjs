@@ -336,12 +336,12 @@ export default [
     key: "modules/build/qa/bugs.controller.ts#deleteBug",
     verdict: "VERIFIED",
     finding: "parent-binding-verified",
-    summary: "DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before the soft-delete UPDATE, which targets the row by primary key id + orgId.",
+    summary: "DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectWriteAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before deleting through the canonical ProjectsTicketsDeleteService.deleteTicket(u, projectId, bugId).",
     blastRadius: "None beyond the caller's own org/project: a foreign bugId 404s before the soft-delete runs.",
     evidence: [
       { file: "src/modules/build/qa/bugs.controller.ts", line: 107, anchor: /return this\.svc\.deleteBug\(u, projectId, bugId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 341, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before deleting" },
-      { file: "src/modules/build/qa/bugs.service.ts", line: 351, anchor: /\.where\(and\(eq\(tickets\.id, bugId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\)\);/, note: "soft-delete UPDATE targets the already-verified row by primary key id + orgId" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 332, anchor: /eq\(tickets\.projectId, projectId\),/, note: "existence check binds bugId to projectId and orgId before deleting" },
+      { file: "src/modules/build/qa/bugs.service.ts", line: 339, anchor: /await this\.ticketDelete\.deleteTicket\(u, projectId, bugId, false\);/, note: "the delete runs through the canonical ticket delete path" },
     ],
   },
   {

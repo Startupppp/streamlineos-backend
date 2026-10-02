@@ -10395,7 +10395,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/epics.service.ts:39",
+      "orgEvidence": "src/modules/build/execution/epics.service.ts:40",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (projectRelationship)",
@@ -10440,11 +10440,11 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/execution/epics.service.ts:117",
+      "orgEvidence": "src/modules/build/execution/epics.service.ts:118",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/execution/epics.service.ts:118",
+      "projectEvidence": "src/modules/build/execution/epics.service.ts:119",
       "leads": [
         "org scoping: PASSED-UNBOUND"
       ],
@@ -10462,12 +10462,12 @@
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 117,
+          "line": 118,
           "note": "the service takes orgId and projectId, never a client-supplied tenant"
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 121,
+          "line": 122,
           "note": "the INSERT writes the tenant as a value, which constrains nothing on its own"
         },
         {
@@ -10517,9 +10517,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/epics.service.ts:140",
+      "orgEvidence": "src/modules/build/execution/epics.service.ts:141",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/epics.service.ts:140",
+      "parentEvidence": "src/modules/build/execution/epics.service.ts:141",
       "projectRelationship": "ENFORCED (resolveProjectAccess)",
       "projectEvidence": "src/modules/build/core/project-crud/project-access.ts:317",
       "leads": [],
@@ -10537,12 +10537,12 @@
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 140,
+          "line": 141,
           "note": "signature takes projectId"
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 142,
+          "line": 143,
           "note": "UPDATE's own WHERE binds id+orgId+projectId+type"
         }
       ]
@@ -10582,17 +10582,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/epics.service.ts:174",
+      "orgEvidence": "src/modules/build/execution/epics.service.ts:175",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/epics.service.ts:174",
+      "parentEvidence": "src/modules/build/execution/epics.service.ts:175",
       "projectRelationship": "ENFORCED (authorizeTicketMutation)",
-      "projectEvidence": "src/modules/build/execution/epics.service.ts:196",
+      "projectEvidence": "src/modules/build/execution/epics.service.ts:193",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).",
+      "verdictReason": "DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(u, projectId, epicId) first authorizes through authorizeTicketMutation + readMutationTickets (project relationship and ticket data scope; 404 for a foreign project or ticket, 403 in-tenant), then looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes through the canonical ProjectsTicketsDeleteService.deleteTicket(u, projectId, epicId).",
       "evidence": "src/modules/build/execution/iterations.controller.ts:313",
       "reviewedEvidence": [
         {
@@ -10602,13 +10602,23 @@
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 174,
-          "note": "signature takes projectId"
+          "line": 175,
+          "note": "signature takes the actor and projectId"
         },
         {
           "file": "src/modules/build/execution/epics.service.ts",
-          "line": 142,
+          "line": 176,
+          "note": "project relationship and ticket scope are decided before any lookup or write"
+        },
+        {
+          "file": "src/modules/build/execution/epics.service.ts",
+          "line": 179,
           "note": "existence check binds id+orgId+projectId+type; 404 on mismatch"
+        },
+        {
+          "file": "src/modules/build/execution/epics.service.ts",
+          "line": 188,
+          "note": "the delete runs through the canonical ticket delete path"
         }
       ]
     },
@@ -16701,11 +16711,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/bugs.service.ts:24",
+      "orgEvidence": "src/modules/build/qa/bugs.service.ts:25",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:25",
+      "projectEvidence": "src/modules/build/qa/bugs.service.ts:26",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)"
@@ -16750,11 +16760,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/bugs.service.ts:81",
+      "orgEvidence": "src/modules/build/qa/bugs.service.ts:82",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/bugs.service.ts:81",
+      "parentEvidence": "src/modules/build/qa/bugs.service.ts:82",
       "projectRelationship": "ENFORCED (assertProjectAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:82",
+      "projectEvidence": "src/modules/build/qa/bugs.service.ts:83",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -16768,7 +16778,7 @@
         },
         {
           "file": "src/modules/build/qa/bugs.service.ts",
-          "line": 123,
+          "line": 124,
           "note": "SELECT WHERE clause binds bugId to projectId and orgId together"
         }
       ]
@@ -16804,11 +16814,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/bugs.service.ts:133",
+      "orgEvidence": "src/modules/build/qa/bugs.service.ts:134",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:134",
+      "projectEvidence": "src/modules/build/qa/bugs.service.ts:135",
       "leads": [],
       "notes": [
         "route params unvalidated (@Validate has no params key)",
@@ -16854,11 +16864,11 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/bugs.service.ts:216",
+      "orgEvidence": "src/modules/build/qa/bugs.service.ts:217",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/bugs.service.ts:216",
+      "parentEvidence": "src/modules/build/qa/bugs.service.ts:217",
       "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:222",
+      "projectEvidence": "src/modules/build/qa/bugs.service.ts:223",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -16874,12 +16884,12 @@
         },
         {
           "file": "src/modules/build/qa/bugs.service.ts",
-          "line": 227,
+          "line": 228,
           "note": "existence check binds bugId to projectId and orgId before patching"
         },
         {
           "file": "src/modules/build/qa/bugs.service.ts",
-          "line": 341,
+          "line": 304,
           "note": "tickets UPDATE targets the already-verified row by primary key id + orgId"
         }
       ]
@@ -16919,17 +16929,17 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/bugs.service.ts:325",
+      "orgEvidence": "src/modules/build/qa/bugs.service.ts:326",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/bugs.service.ts:325",
+      "parentEvidence": "src/modules/build/qa/bugs.service.ts:326",
       "projectRelationship": "ENFORCED (assertProjectWriteAccess)",
-      "projectEvidence": "src/modules/build/qa/bugs.service.ts:326",
+      "projectEvidence": "src/modules/build/qa/bugs.service.ts:327",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
-      "verdictReason": "DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before the soft-delete UPDATE, which targets the row by primary key id + orgId.",
+      "verdictReason": "DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectWriteAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before deleting through the canonical ProjectsTicketsDeleteService.deleteTicket(u, projectId, bugId).",
       "evidence": "src/modules/build/qa/bugs.controller.ts:97",
       "reviewedEvidence": [
         {
@@ -16939,13 +16949,13 @@
         },
         {
           "file": "src/modules/build/qa/bugs.service.ts",
-          "line": 331,
+          "line": 332,
           "note": "existence check binds bugId to projectId and orgId before deleting"
         },
         {
           "file": "src/modules/build/qa/bugs.service.ts",
-          "line": 341,
-          "note": "soft-delete UPDATE targets the already-verified row by primary key id + orgId"
+          "line": 339,
+          "note": "the delete runs through the canonical ticket delete path"
         }
       ]
     },

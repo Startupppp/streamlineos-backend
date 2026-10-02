@@ -1193,8 +1193,8 @@ DELETE /build/:projectId/cycles/:cycleId. Same shape as updateCycle: CyclesServi
 POST /build/:projectId/epics. Assert-enforced with the weaker assert. The INSERT stamps orgId as a value; the predicate form lives in assertProjectInOrg, which binds project id AND org id on one row and 404s a soft-deleted or foreign project before any write. reporterId is taken from the authenticated actor, so authorship cannot be forged. Tenant isolation holds. What does NOT hold is intra-org project scope: assertProjectInOrg checks that the project belongs to the caller's org, not that the caller belongs to the project, so any holder of build:tickets:create in the org can create an epic in any project in that org.
 
 - `src/modules/build/execution/iterations.controller.ts:297` — the tenant and actor come from the authenticated context
-- `src/modules/build/execution/epics.service.ts:117` — the service takes orgId and projectId, never a client-supplied tenant
-- `src/modules/build/execution/epics.service.ts:121` — the INSERT writes the tenant as a value, which constrains nothing on its own
+- `src/modules/build/execution/epics.service.ts:118` — the service takes orgId and projectId, never a client-supplied tenant
+- `src/modules/build/execution/epics.service.ts:122` — the INSERT writes the tenant as a value, which constrains nothing on its own
 - `src/modules/build/core/project-crud/project-access.ts:30` — assertProjectInOrg binds the project id
 - `src/modules/build/core/project-crud/project-access.ts:31` — and the tenant, in the same conjunction — this is the decisive predicate
 
@@ -1205,18 +1205,20 @@ POST /build/:projectId/epics. Assert-enforced with the weaker assert. The INSERT
 PATCH /build/:projectId/epics/:epicId. EpicsService.updateEpic(orgId, projectId, epicId, input) runs the UPDATE directly with WHERE `eq(tickets.id, epicId), eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.type, "EPIC")` — the mutation itself binds the epic to the named project, no separate pre-check needed.
 
 - `src/modules/build/execution/iterations.controller.ts:304` — handler binds both projectId and epicId and forwards both
-- `src/modules/build/execution/epics.service.ts:140` — signature takes projectId
-- `src/modules/build/execution/epics.service.ts:142` — UPDATE's own WHERE binds id+orgId+projectId+type
+- `src/modules/build/execution/epics.service.ts:141` — signature takes projectId
+- `src/modules/build/execution/epics.service.ts:143` — UPDATE's own WHERE binds id+orgId+projectId+type
 
 ### VERIFIED — `DELETE /build/:projectId/epics/:epicId`
 
 `EpicsController.deleteEpic` — `src/modules/build/execution/iterations.controller.ts:313`
 
-DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).
+DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(u, projectId, epicId) first authorizes through authorizeTicketMutation + readMutationTickets (project relationship and ticket data scope; 404 for a foreign project or ticket, 403 in-tenant), then looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes through the canonical ProjectsTicketsDeleteService.deleteTicket(u, projectId, epicId).
 
 - `src/modules/build/execution/iterations.controller.ts:318` — handler binds both projectId and epicId and forwards both
-- `src/modules/build/execution/epics.service.ts:174` — signature takes projectId
-- `src/modules/build/execution/epics.service.ts:142` — existence check binds id+orgId+projectId+type; 404 on mismatch
+- `src/modules/build/execution/epics.service.ts:175` — signature takes the actor and projectId
+- `src/modules/build/execution/epics.service.ts:176` — project relationship and ticket scope are decided before any lookup or write
+- `src/modules/build/execution/epics.service.ts:179` — existence check binds id+orgId+projectId+type; 404 on mismatch
+- `src/modules/build/execution/epics.service.ts:188` — the delete runs through the canonical ticket delete path
 
 ### VERIFIED — `GET /build/:projectId/tickets/:ticketId/time-entries`
 
@@ -1763,7 +1765,7 @@ DELETE /build/programs/:programId/projects/:projectId. Structurally identical to
 GET /build/:projectId/bugs/:bugId. getBug calls assertProjectAccess(projectId) then selects the ticket WHERE id=bugId AND orgId AND projectId AND type='BUG' (not deleted), throwing NotFoundException on zero rows. A bugId belonging to another project 404s.
 
 - `src/modules/build/qa/bugs.controller.ts:68` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/bugs.service.ts:123` — SELECT WHERE clause binds bugId to projectId and orgId together
+- `src/modules/build/qa/bugs.service.ts:124` — SELECT WHERE clause binds bugId to projectId and orgId together
 
 ### VERIFIED — `PATCH /build/:projectId/bugs/:bugId`
 
@@ -1772,18 +1774,18 @@ GET /build/:projectId/bugs/:bugId. getBug calls assertProjectAccess(projectId) t
 PATCH /build/:projectId/bugs/:bugId. updateBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before touching anything. The subsequent tickets UPDATE and workItemQaDetails UPDATE both target the row by primary key (bugId/workItemId) + orgId — safe because bugId was already proven bound to this project.
 
 - `src/modules/build/qa/bugs.controller.ts:94` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/bugs.service.ts:227` — existence check binds bugId to projectId and orgId before patching
-- `src/modules/build/qa/bugs.service.ts:341` — tickets UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/qa/bugs.service.ts:228` — existence check binds bugId to projectId and orgId before patching
+- `src/modules/build/qa/bugs.service.ts:304` — tickets UPDATE targets the already-verified row by primary key id + orgId
 
 ### VERIFIED — `DELETE /build/:projectId/bugs/:bugId`
 
 `BugsController.deleteBug` — `src/modules/build/qa/bugs.controller.ts:97`
 
-DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before the soft-delete UPDATE, which targets the row by primary key id + orgId.
+DELETE /build/:projectId/bugs/:bugId (soft delete). deleteBug calls assertProjectWriteAccess(projectId) then an existence check WHERE id=bugId AND orgId AND projectId AND type='BUG' (404 otherwise) before deleting through the canonical ProjectsTicketsDeleteService.deleteTicket(u, projectId, bugId).
 
 - `src/modules/build/qa/bugs.controller.ts:107` — route handler passes raw path params straight to the service
-- `src/modules/build/qa/bugs.service.ts:331` — existence check binds bugId to projectId and orgId before deleting
-- `src/modules/build/qa/bugs.service.ts:341` — soft-delete UPDATE targets the already-verified row by primary key id + orgId
+- `src/modules/build/qa/bugs.service.ts:332` — existence check binds bugId to projectId and orgId before deleting
+- `src/modules/build/qa/bugs.service.ts:339` — the delete runs through the canonical ticket delete path
 
 ### VERIFIED — `GET /build/:projectId/test-cases/:caseId`
 

@@ -607,13 +607,15 @@ export default [
     verdict: "VERIFIED",
     finding: "parent-binding-verified",
     summary:
-      "DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(orgId, projectId, epicId) first looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes it by id+orgId — epicId is a global PK already proven by the preceding lookup to belong to this exact project, so the narrower delete key is still safe (verify-then-act-by-PK).",
+      "DELETE /build/:projectId/epics/:epicId. EpicsService.deleteEpic(u, projectId, epicId) first authorizes through authorizeTicketMutation + readMutationTickets (project relationship and ticket data scope; 404 for a foreign project or ticket, 403 in-tenant), then looks up the epic bound to id+orgId+projectId+type=EPIC (404 if absent), then deletes through the canonical ProjectsTicketsDeleteService.deleteTicket(u, projectId, epicId).",
     blastRadius:
-      "None: an epicId belonging to a different project 404s at the existence check before the DELETE runs.",
+      "None: an epicId belonging to a different project or outside the caller's ticket scope is refused before the canonical delete runs.",
     evidence: [
       { file: "src/modules/build/execution/iterations.controller.ts", line: 318, anchor: /deleteEpic\(/, note: "handler binds both projectId and epicId and forwards both" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 159, anchor: /async deleteEpic\(actor: CurrentUserContext, projectId: number, epicId: number\) \{/, note: "signature takes projectId" },
-      { file: "src/modules/build/execution/epics.service.ts", line: 131, anchor: /eq\(tickets\.id, epicId\),/, note: "existence check binds id+orgId+projectId+type; 404 on mismatch" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 175, anchor: /async deleteEpic\(u: CurrentUserContext, projectId: number, epicId: number\) \{/, note: "signature takes the actor and projectId" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 176, anchor: /await this\.authorizeEpicMutation\(u, projectId, epicId\);/, note: "project relationship and ticket scope are decided before any lookup or write" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 179, anchor: /eq\(tickets\.id, epicId\),/, note: "existence check binds id+orgId+projectId+type; 404 on mismatch" },
+      { file: "src/modules/build/execution/epics.service.ts", line: 188, anchor: /await this\.ticketDelete\.deleteTicket\(u, projectId, epicId, false\);/, note: "the delete runs through the canonical ticket delete path" },
     ],
   },
 
