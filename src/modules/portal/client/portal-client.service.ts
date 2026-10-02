@@ -4,7 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm";
+import type { SQLWrapper } from "drizzle-orm";
 import {
   changeRequests,
   organizationMembers,
@@ -34,7 +35,34 @@ export class PortalClientService {
       eq(projectClientGrants.projectId, projectId),
       eq(projectClientGrants.status, "ACTIVE"),
       or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, new Date())),
+      sql`EXISTS (
+        SELECT 1
+        FROM ${projects}
+        WHERE ${projects.orgId} = ${orgId}
+          AND ${projects.id} = ${projectId}
+          AND ${projects.deletedAt} IS NULL
+          AND ${projects.portalPublishedAt} IS NOT NULL
+      )`,
     );
+  }
+
+  private activeGrantExists(
+    orgId: string,
+    membershipId: string,
+    projectId: number | SQLWrapper,
+  ) {
+    return sql`EXISTS (
+      SELECT 1
+      FROM ${projectClientGrants}
+      WHERE ${projectClientGrants.organizationId} = ${orgId}
+        AND ${projectClientGrants.portalMembershipId} = ${membershipId}
+        AND ${projectClientGrants.projectId} = ${projectId}
+        AND ${projectClientGrants.status} = 'ACTIVE'
+        AND (
+          ${projectClientGrants.expiresAt} IS NULL
+          OR ${projectClientGrants.expiresAt} > ${new Date()}
+        )
+    )`;
   }
 
   private async loadActiveGrant(
@@ -70,24 +98,6 @@ export class PortalClientService {
   }
 
   async listGrantedProjects(orgId: string, membershipId: string) {
-    const now = new Date();
-    const grants = await this.db
-      .select({ projectId: projectClientGrants.projectId })
-      .from(projectClientGrants)
-      .where(
-        and(
-          eq(projectClientGrants.organizationId, orgId),
-          eq(projectClientGrants.portalMembershipId, membershipId),
-          eq(projectClientGrants.status, "ACTIVE"),
-          or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
-        ),
-      )
-      .limit(100);
-
-    if (grants.length === 0) return [];
-
-    const projectIds = grants.map((g) => g.projectId);
-
     return this.db
       .select({
         id: projects.id,
@@ -98,7 +108,15 @@ export class PortalClientService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.orgId, orgId), inArray(projects.id, projectIds), isNull(projects.deletedAt)))
+      .where(
+        and(
+          eq(projects.orgId, orgId),
+          isNull(projects.deletedAt),
+          isNotNull(projects.portalPublishedAt),
+          this.activeGrantExists(orgId, membershipId, projects.id),
+        ),
+      )
+      .orderBy(asc(projects.id))
       .limit(100);
   }
 
@@ -115,7 +133,14 @@ export class PortalClientService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
+      .where(
+        and(
+          eq(projects.id, projectId),
+          eq(projects.orgId, orgId),
+          isNull(projects.deletedAt),
+          isNotNull(projects.portalPublishedAt),
+        ),
+      )
       .limit(1);
 
     if (!project) throw new NotFoundException("Project not found");

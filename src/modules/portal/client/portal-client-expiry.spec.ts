@@ -38,7 +38,9 @@ describe("PortalClientService — expiresAt enforced at query level (Requirement
     let capturedPredicate: unknown;
     const where = jest.fn().mockImplementation((pred: unknown) => {
       capturedPredicate = pred;
-      return { limit: jest.fn().mockResolvedValue([]) };
+      return {
+        orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+      };
     });
     const db = {
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
@@ -54,7 +56,11 @@ describe("PortalClientService — expiresAt enforced at query level (Requirement
   it("listGrantedProjects returns empty when no active non-expired grants exist for the membership (correct exclusion control)", async () => {
     const db = {
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }),
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        }),
       }),
     } as unknown as Db;
     const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
@@ -64,12 +70,11 @@ describe("PortalClientService — expiresAt enforced at query level (Requirement
 
   it("listGrantedProjects returns projects when a non-expired active grant exists for the membership (same-tenant control)", async () => {
     const projectRow = { id: 7, name: "Proj", key: "P7", status: "active", startDate: null, targetEndDate: null };
-    const listWhere = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ projectId: 7 }]) });
-    const projectWhere = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([projectRow]) });
+    const projectWhere = jest.fn().mockReturnValue({
+      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([projectRow]) }),
+    });
     const db = {
-      select: jest.fn()
-        .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: listWhere }) })
-        .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: projectWhere }) }),
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: projectWhere }) }),
     } as unknown as Db;
     const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     const result = await svc.listGrantedProjects("org-1", "mem-1");

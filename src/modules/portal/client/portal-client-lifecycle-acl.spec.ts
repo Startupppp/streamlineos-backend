@@ -5,6 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 import { PortalClientService } from "./portal-client.service";
 import { PortalProjectionService } from "../../build/client-portal/portal-projection.service";
+import { projectClientGrants, projects } from "../../../db/schema";
 
 const dialect = new PgDialect();
 
@@ -39,39 +40,82 @@ const MINIMAL_PROJECT = {
   targetEndDate: null,
 };
 
-describe("PortalClientService — lifecycle gate: isNull(deletedAt) on project rows (Requirement B)", () => {
-  it("listGrantedProjects project query WHERE predicate contains 'deleted_at' so soft-deleted projects are excluded at the DB, not app layer", async () => {
+describe("PortalClientService — lifecycle gate: published, non-deleted project rows (Requirement B)", () => {
+  it("listGrantedProjects project query excludes soft-deleted and unpublished projects at the DB", async () => {
     const capturedWheres: unknown[] = [];
     const db = {
-      select: jest
-        .fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockImplementation((pred: unknown) => {
-              capturedWheres.push(pred);
-              return { limit: jest.fn().mockResolvedValue([{ projectId: 42 }]) };
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockImplementation((pred: unknown) => {
-              capturedWheres.push(pred);
-              return { limit: jest.fn().mockResolvedValue([MINIMAL_PROJECT]) };
-            }),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((pred: unknown) => {
+            capturedWheres.push(pred);
+            return {
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([MINIMAL_PROJECT]),
+              }),
+            };
           }),
         }),
+      }),
     } as unknown as Db;
 
     const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await svc.listGrantedProjects("org-1", "mem-1");
 
-    expect(capturedWheres).toHaveLength(2);
-    const projectPredicate = capturedWheres[1];
-    expect(renderSql(projectPredicate)).toContain("deleted_at");
+    expect(capturedWheres).toHaveLength(1);
+    const projectPredicate = capturedWheres[0];
+    const projectSql = renderSql(projectPredicate);
+    expect(projectSql).toContain("deleted_at");
+    expect(projectSql).toContain("portal_published_at");
+    expect(projectSql).toContain("is not null");
+    expect(projectSql).toContain("portal_membership_id");
+    expect(projectSql).toContain("expires_at");
   });
 
-  it("getProjectOverview project query WHERE predicate contains 'deleted_at' so soft-deleted projects are excluded at the DB", async () => {
+  it("applies the limit after effective visibility so a published project remains visible beyond 100 hidden grants", async () => {
+    const hiddenGrants = Array.from({ length: 101 }, (_, index) => ({
+      projectId: index + 1,
+      published: false,
+    }));
+    const visibleProject = { ...MINIMAL_PROJECT, id: 1000 };
+    const grants = [...hiddenGrants, { projectId: visibleProject.id, published: true }];
+    let prelimitedProjectIds: Set<number> | null = null;
+
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockImplementation((table: unknown) => {
+          if (table === projectClientGrants) {
+            return {
+              where: jest.fn().mockReturnValue({
+                limit: jest.fn().mockImplementation((limit: number) => {
+                  prelimitedProjectIds = new Set(grants.slice(0, limit).map((grant) => grant.projectId));
+                  return grants.slice(0, limit);
+                }),
+              }),
+            };
+          }
+          expect(table).toBe(projects);
+          const rows =
+            prelimitedProjectIds === null || prelimitedProjectIds.has(visibleProject.id)
+              ? [visibleProject]
+              : [];
+          return {
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(rows),
+              orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+            }),
+          };
+        }),
+      }),
+    } as unknown as Db;
+
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
+    await expect(svc.listGrantedProjects("org-1", "mem-1")).resolves.toEqual([
+      visibleProject,
+    ]);
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("getProjectOverview requires a same-org active grant whose project exists, is not deleted, and is published", async () => {
     const capturedWheres: unknown[] = [];
     const db = {
       select: jest
@@ -98,8 +142,18 @@ describe("PortalClientService — lifecycle gate: isNull(deletedAt) on project r
     await expect(svc.getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
 
     expect(capturedWheres).toHaveLength(2);
+    const grantPredicate = capturedWheres[0];
     const projectPredicate = capturedWheres[1];
-    expect(renderSql(projectPredicate)).toContain("deleted_at");
+    const grantSql = renderSql(grantPredicate).toLowerCase();
+    const projectSql = renderSql(projectPredicate).toLowerCase();
+    expect(grantSql).toContain("exists");
+    expect(grantSql).toContain("organization_id");
+    expect(grantSql).toContain("project_id");
+    expect(grantSql).toContain("deleted_at");
+    expect(grantSql).toContain("portal_published_at");
+    expect(projectSql).toContain("deleted_at");
+    expect(projectSql).toContain("portal_published_at");
+    expect(projectSql).toContain("is not null");
   });
 
   it("getProjectOverview throws NotFoundException when project SELECT returns empty — mirrors the DB excluding a soft-deleted record", async () => {
@@ -121,61 +175,24 @@ describe("PortalClientService — lifecycle gate: isNull(deletedAt) on project r
     const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
     await expect(svc.getProjectOverview("org-1", "mem-1", 42)).rejects.toThrow(NotFoundException);
   });
+
+  it("getProjectOverview returns the same safe NotFoundException after a project is unpublished", async () => {
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+        }),
+      }),
+    } as unknown as Db;
+
+    const svc = new PortalClientService(db, makeAudit(), makeProjection(db));
+    await expect(svc.getProjectOverview("org-1", "mem-1", 42)).rejects.toMatchObject({
+      message: "Project not found",
+    });
+  });
 });
 
 describe("PortalClientService — source ACL gate: clientVisible=true on sub-resource rows (Requirement E)", () => {
-  function buildDb(itemRows: { milestones?: unknown[]; tasks?: unknown[]; attachments?: unknown[]; comments?: unknown[] }) {
-    let selectCallCount = 0;
-    return {
-      select: jest.fn().mockImplementation(() => {
-        selectCallCount++;
-        const callIndex = selectCallCount;
-        return {
-          from: jest.fn().mockImplementation(() => ({
-            where: jest.fn().mockImplementation((pred: unknown) => {
-              const inner: Record<string, unknown> = { __pred: pred };
-              return {
-                limit: jest.fn().mockImplementation(() => {
-                  // Call 1 = grant, call 2 = project, call 3+ = milestones/tasks etc
-                  if (callIndex === 1) return Promise.resolve([ALL_CAPS_GRANT]);
-                  if (callIndex === 2) return Promise.resolve([MINIMAL_PROJECT]);
-                  if (callIndex === 3) return Promise.resolve(itemRows.milestones ?? []);
-                  if (callIndex === 4) return Promise.resolve(itemRows.tasks ?? []);
-                  return Promise.resolve([]);
-                }),
-                innerJoin: jest.fn().mockReturnValue({
-                  where: jest.fn().mockImplementation((pred: unknown) => ({
-                    __pred: pred,
-                    limit: jest.fn().mockResolvedValue(itemRows.attachments ?? []),
-                    leftJoin: jest.fn().mockReturnValue({
-                      where: jest.fn().mockImplementation((pred2: unknown) => ({
-                        __pred: pred2,
-                        limit: jest.fn().mockResolvedValue(itemRows.comments ?? []),
-                      })),
-                    }),
-                  })),
-                }),
-                ...inner,
-              };
-            }),
-            innerJoin: jest.fn().mockImplementation(() => ({
-              where: jest.fn().mockImplementation((pred: unknown) => ({
-                __pred: pred,
-                limit: jest.fn().mockResolvedValue(itemRows.attachments ?? []),
-                leftJoin: jest.fn().mockReturnValue({
-                  where: jest.fn().mockImplementation((pred2: unknown) => ({
-                    __pred: pred2,
-                    limit: jest.fn().mockResolvedValue(itemRows.comments ?? []),
-                  })),
-                }),
-              })),
-            })),
-          })),
-        };
-      }),
-    } as unknown as Db;
-  }
-
   it("milestones WHERE predicate contains 'client_visible' so internal milestones not flagged for portal are excluded at the DB", async () => {
     const capturedPredicates: Array<{ callIndex: number; pred: unknown }> = [];
     let selectCallCount = 0;

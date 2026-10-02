@@ -1,7 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { Test } from "@nestjs/testing";
-import { SQL, is } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { submitChangeRequestSchema } from "./dto/portal-client.schemas";
 import { PortalClientController } from "./portal-client.controller";
@@ -13,6 +12,7 @@ import { IDEMPOTENCY_COMMAND } from "../../../common/idempotency/idempotency.con
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { effectiveRateLimit } from "../../../common/ratelimit/rate-limit.service";
 import { RATE_LIMIT_TIER } from "../../../common/ratelimit/use-rate-limit.decorator";
+import { PortalProjectionService } from "../../build/client-portal/portal-projection.service";
 
 type PortalAudit = jest.Mocked<Pick<AuditService, "log" | "logCritical">>;
 
@@ -24,6 +24,17 @@ async function makeService(db: object, audit: PortalAudit = makeAudit()): Promis
       PortalClientService,
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: audit },
+      {
+        provide: PortalProjectionService,
+        useValue: {
+          build: jest.fn().mockResolvedValue({
+            milestones: [],
+            tasks: [],
+            attachments: [],
+            comments: [],
+          }),
+        },
+      },
     ],
   }).compile();
   return moduleRef.get(PortalClientService);
@@ -46,10 +57,11 @@ const ACTIVE_GRANT = {
 function makeTransactionalSubmitDb(
   grantWhereCalls: unknown[] = [],
   grantLockCalls: string[] = [],
+  grantRows: unknown[] = [ACTIVE_GRANT],
 ) {
   const grantFor = jest.fn().mockImplementation((lock: string) => {
     grantLockCalls.push(lock);
-    return Promise.resolve([ACTIVE_GRANT]);
+    return Promise.resolve(grantRows);
   });
   const grantLimit = jest.fn().mockReturnValue({ for: grantFor });
   const grantWhere = jest.fn().mockImplementation((condition: unknown) => {
@@ -79,6 +91,7 @@ function makeTransactionalSubmitDb(
       throw new Error("grant lookup escaped the write transaction");
     }),
     transaction: jest.fn().mockImplementation(async (fn: (value: typeof tx) => Promise<unknown>) => fn(tx)),
+    testTx: tx,
   };
 }
 
@@ -265,10 +278,29 @@ describe("PortalClientService.submitChangeRequest — transaction and tenant bou
     await svc.submitChangeRequest("org-1", "mem-1", null, 5, { title: "CR title" });
 
     const query = new PgDialect().sqlToQuery(whereCalls[0] as Parameters<PgDialect["sqlToQuery"]>[0]);
-    expect(query.sql).toContain("organization_id");
-    expect(query.sql).toContain("portal_membership_id");
-    expect(query.sql).toContain("project_id");
+    const querySql = query.sql.toLowerCase();
+    expect(querySql).toContain("organization_id");
+    expect(querySql).toContain("portal_membership_id");
+    expect(querySql).toContain("project_id");
+    expect(querySql).toContain("deleted_at");
+    expect(querySql).toContain("portal_published_at");
+    expect(querySql).toContain("is not null");
     expect(query.params).toEqual(expect.arrayContaining(["org-1", "mem-1", 5]));
+  });
+
+  it("returns the safe project denial and writes nothing when the portal is unpublished", async () => {
+    const whereCalls: unknown[] = [];
+    const db = makeTransactionalSubmitDb(whereCalls, [], []);
+    const svc = await makeService(db);
+
+    await expect(
+      svc.submitChangeRequest("org-1", "mem-1", null, 5, { title: "CR title" }),
+    ).rejects.toMatchObject({ message: "Project not found" });
+
+    const query = new PgDialect().sqlToQuery(whereCalls[0] as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(query.sql.toLowerCase()).toContain("portal_published_at");
+    expect(db.testTx.execute).not.toHaveBeenCalled();
+    expect(db.testTx.insert).not.toHaveBeenCalled();
   });
 
   it("aborts submission when critical audit persistence fails", async () => {

@@ -9,7 +9,8 @@ const makeProjection = (db: Db) => new PortalProjectionService(db as never);
 
 function makeChainableDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   const limit = jest.fn().mockResolvedValue(rows);
-  const where = jest.fn().mockReturnValue({ limit });
+  const orderBy = jest.fn().mockReturnValue({ limit });
+  const where = jest.fn().mockReturnValue({ limit, orderBy });
   const from = jest.fn().mockReturnValue({ where });
   const select = jest.fn().mockReturnValue({ from });
   const db = { select } as unknown as Db;
