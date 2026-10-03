@@ -148,6 +148,7 @@ const ACCEPTED = [
   { site: "modules/build/core/tickets/projects-tickets-read.query.ts::tickets", reason: "shared helper whose `where` is supplied by the caller; it cannot carry a predicate without breaking its contract, and every caller passes isNull(deletedAt). Structurally invisible to this gate (Build lifecycle sweep)" },
   { site: "modules/build/core/project-crud/projects-restore.service.ts::projectTemplates", reason: "restore path: the row it reads is by definition the soft-deleted one, and filtering deleted_at would make every restore 404 (Build lifecycle completeness, lane H1)" },
   { site: "modules/build/core/tickets/projects-tickets-restore.service.ts::projects", reason: "restore path: reads the parent project WITH its deleted_at so a child restore can refuse and name a still-deleted parent per BE-54 (Build lifecycle completeness, lane H1)" },
+  { site: "modules/payroll/sample-data/sample-data.service.ts::organizationPeople", reason: "payroll sample-data status gates the hard-delete remove path: an archived or soft-deleted sample person must still count as present, or remove short-circuits and leaves the sample rows behind forever (HRMS+Payroll wave 1)" },
 ];
 
 function snakeToCamel(name) {

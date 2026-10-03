@@ -1,6 +1,3 @@
-export type BonusRow = { id: number; userId: string; amount: string; type: string; taxable: boolean };
-export type IncentiveRow = { id: number; salesRepId: string; approvedAmount: string | null; calculatedAmount: string };
-export type ReimbursementRow = { id: number; userId: string; amount: string; category: string };
 export type TaxDeclarationRow = {
   userId: string;
   section80c: string;

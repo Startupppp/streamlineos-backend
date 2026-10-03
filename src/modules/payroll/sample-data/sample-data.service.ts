@@ -1,6 +1,5 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { and, eq, sql, type SQLWrapper } from "drizzle-orm";
 import { AuditService } from "../../../common/audit/audit.service";
 import { isForeignKeyViolation } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -23,8 +22,6 @@ export const SAMPLE_PEOPLE: ReadonlyArray<{ first: string; last: string; annualC
 
 export type SampleActor = { userId: string; membershipId: number | null };
 
-const qb = new QueryBuilder();
-
 function firstOfMonth(now: Date): string {
   return `${now.toISOString().slice(0, 7)}-01`;
 }
@@ -45,26 +42,20 @@ export class PayrollSampleDataService {
     );
   }
 
-  private samplePeople(orgId: string) {
-    return qb
-      .select({ id: organizationPeople.organizationPersonId })
-      .from(organizationPeople)
-      .where(this.samplePersonFilter(orgId));
+  private isSamplePerson(orgId: string, personId: SQLWrapper) {
+    return sql`exists (select 1 from ${organizationPeople} where ${organizationPeople.organizationPersonId} = ${personId} and ${this.samplePersonFilter(orgId)})`;
   }
 
-  private sampleWorkers(orgId: string) {
-    return qb
-      .select({ id: workers.workerId })
-      .from(workers)
-      .where(and(eq(workers.organizationId, orgId), inArray(workers.organizationPersonId, this.samplePeople(orgId))));
+  private isSampleWorker(orgId: string, workerId: SQLWrapper) {
+    return sql`exists (select 1 from ${workers} where ${workers.workerId} = ${workerId} and ${workers.organizationId} = ${orgId} and ${this.isSamplePerson(orgId, workers.organizationPersonId)})`;
   }
 
   async status(orgId: string): Promise<SampleDataStatus> {
     const [row] = await this.db
       .select({
         people: sql<number>`count(*)::int`,
-        payees: sql<number>`(select count(*) from ${workers} where ${workers.organizationId} = ${orgId} and ${workers.isPayee} and ${workers.workerId} in (${this.sampleWorkers(orgId)}))::int`,
-        salaryProfiles: sql<number>`(select count(*) from ${employeeSalaryProfiles} where ${employeeSalaryProfiles.orgId} = ${orgId} and ${employeeSalaryProfiles.costCenter} = ${SAMPLE_TAG} and ${employeeSalaryProfiles.workerId} in (${this.sampleWorkers(orgId)}))::int`,
+        payees: sql<number>`(select count(*) from ${workers} where ${workers.organizationId} = ${orgId} and ${workers.isPayee} and ${this.isSamplePerson(orgId, workers.organizationPersonId)})::int`,
+        salaryProfiles: sql<number>`(select count(*) from ${employeeSalaryProfiles} where ${employeeSalaryProfiles.orgId} = ${orgId} and ${employeeSalaryProfiles.costCenter} = ${SAMPLE_TAG} and ${this.isSampleWorker(orgId, employeeSalaryProfiles.workerId)})::int`,
       })
       .from(organizationPeople)
       .where(this.samplePersonFilter(orgId));
@@ -135,17 +126,17 @@ export class PayrollSampleDataService {
           and(
             eq(employeeSalaryProfiles.orgId, orgId),
             eq(employeeSalaryProfiles.costCenter, SAMPLE_TAG),
-            inArray(employeeSalaryProfiles.workerId, this.sampleWorkers(orgId)),
+            this.isSampleWorker(orgId, employeeSalaryProfiles.workerId),
           ),
         );
       await this.db
         .delete(workerEngagements)
         .where(
-          and(eq(workerEngagements.organizationId, orgId), inArray(workerEngagements.workerId, this.sampleWorkers(orgId))),
+          and(eq(workerEngagements.organizationId, orgId), this.isSampleWorker(orgId, workerEngagements.workerId)),
         );
       await this.db
         .delete(workers)
-        .where(and(eq(workers.organizationId, orgId), inArray(workers.organizationPersonId, this.samplePeople(orgId))));
+        .where(and(eq(workers.organizationId, orgId), this.isSamplePerson(orgId, workers.organizationPersonId)));
       await this.db.delete(organizationPeople).where(this.samplePersonFilter(orgId));
     } catch (error) {
       if (isForeignKeyViolation(error)) {

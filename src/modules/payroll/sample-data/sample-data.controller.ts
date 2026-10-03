@@ -8,7 +8,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { PayrollSampleDataService } from "./sample-data.service";
 import { sampleDataStatusSchema } from "./dto/sample-data.schemas";
 
@@ -26,6 +26,7 @@ export class PayrollSampleDataController {
   }
 
   @Post()
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:settings:manage")
   @Idempotent("payroll.sample_data.seed")

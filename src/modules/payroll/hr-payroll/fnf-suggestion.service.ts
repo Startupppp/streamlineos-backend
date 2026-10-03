@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, sum } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -111,10 +111,7 @@ export class FnfSuggestionService {
   }
 
   private async encashableLeaveDays(orgId: string, userId: string, year: number) {
-    const encashableTypes = this.db
-      .select({ leaveTypeId: leavePolicies.leaveTypeId })
-      .from(leavePolicies)
-      .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.encashable, true), eq(leavePolicies.isActive, true)));
+    const encashable = sql`exists (select 1 from ${leavePolicies} where ${leavePolicies.orgId} = ${orgId} and ${leavePolicies.leaveTypeId} = ${leaveBalances.leaveTypeId} and ${leavePolicies.encashable} and ${leavePolicies.isActive})`;
     const [row] = await this.db
       .select({ days: sum(leaveBalances.balance) })
       .from(leaveBalances)
@@ -123,7 +120,7 @@ export class FnfSuggestionService {
           eq(leaveBalances.orgId, orgId),
           eq(leaveBalances.userId, userId),
           eq(leaveBalances.year, year),
-          inArray(leaveBalances.leaveTypeId, encashableTypes),
+          encashable,
         ),
       );
     return Number(row?.days ?? 0);

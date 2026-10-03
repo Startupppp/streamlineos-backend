@@ -10,7 +10,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { FORM16_MAX_UPLOAD_BYTES, Form16DocumentsService } from "./form16-documents.service";
 import {
   form16FyParamsSchema,
@@ -37,6 +37,7 @@ export class PayrollForm16DocumentsController {
   }
 
   @Post(":financialYear/release-all")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:tax:manage")
   @Validate({ params: form16FyParamsSchema })
@@ -62,6 +63,7 @@ export class PayrollForm16DocumentsController {
   }
 
   @Post(":financialYear/members/:membershipId/release")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:tax:manage")
   @Validate({ params: form16MemberParamsSchema })
