@@ -1,6 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import {
   payrollRuns,
@@ -8,7 +8,9 @@ import {
   payrollBankBatches,
   payrollBankBatchItems,
   payrollRunEvents,
+  payrollRunAllocations,
   organizationMembers,
+  reimbursements,
 } from "../../../../db/schema";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { JournalOutboxService } from "../../insights/journal-outbox.service";
@@ -154,6 +156,38 @@ export async function checkRunCompletion(
             eq(payrollRunEmployees.runId, runId),
             eq(payrollRunEmployees.orgId, orgId),
             inArray(payrollRunEmployees.id, paidRunEmployeeIds),
+          ),
+        );
+
+      await tx
+        .update(reimbursements)
+        .set({ paidAt: now })
+        .where(
+          and(
+            eq(reimbursements.orgId, orgId),
+            isNull(reimbursements.paidAt),
+            inArray(
+              sql`${reimbursements.id}::text`,
+              tx
+                .select({ sourceId: payrollRunAllocations.sourceId })
+                .from(payrollRunAllocations)
+                .innerJoin(
+                  payrollRunEmployees,
+                  and(
+                    eq(payrollRunEmployees.orgId, payrollRunAllocations.orgId),
+                    eq(payrollRunEmployees.runId, payrollRunAllocations.runId),
+                    eq(payrollRunEmployees.userId, payrollRunAllocations.userId),
+                  ),
+                )
+                .where(
+                  and(
+                    eq(payrollRunAllocations.orgId, orgId),
+                    eq(payrollRunAllocations.runId, runId),
+                    eq(payrollRunAllocations.sourceType, "REIMBURSEMENT"),
+                    inArray(payrollRunEmployees.id, paidRunEmployeeIds),
+                  ),
+                ),
+            ),
           ),
         );
     }

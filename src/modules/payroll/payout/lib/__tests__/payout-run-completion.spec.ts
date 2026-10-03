@@ -21,6 +21,7 @@ function mkWhere(data: unknown[]) {
 
 interface TxRecorder {
   inserted: unknown[];
+  updates: { table: unknown; values: Record<string, unknown> }[];
 }
 
 interface DbOverrides {
@@ -48,7 +49,7 @@ function makeDb(overrides?: DbOverrides) {
     paidNetPaise = "100000000",
   } = overrides ?? {};
   let outerSelectCall = 0;
-  const recorder: TxRecorder = { inserted: [] };
+  const recorder: TxRecorder = { inserted: [], updates: [] };
 
   const tx = {
     select: jest.fn().mockReturnValue({
@@ -60,11 +61,15 @@ function makeDb(overrides?: DbOverrides) {
               { status: runStatus, month: "2026-08", netTotal: "1000000" },
             ]),
         }),
+        innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({}) }),
       }),
     }),
-    update: jest.fn().mockReturnValue({
-      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
-    }),
+    update: jest.fn().mockImplementation((table: unknown) => ({
+      set: jest.fn().mockImplementation((values: Record<string, unknown>) => {
+        recorder.updates.push({ table, values });
+        return { where: jest.fn().mockResolvedValue([]) };
+      }),
+    })),
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockImplementation((v: unknown) => {
         recorder.inserted.push(v);
@@ -293,5 +298,26 @@ describe("checkRunCompletion — the paid posting intent commits on the run tran
     await checkRunCompletion(deps, "org-1", 1, "actor-1");
 
     expect(postingIntents(recorder)).toHaveLength(0);
+  });
+});
+
+describe("checkRunCompletion — reimbursements are stamped paid at payout", () => {
+  it("stamps the run's reimbursements paidAt in the transaction that marks the run PAID", async () => {
+    const { reimbursements } = jest.requireActual("../../../../../db/schema");
+    const { deps, recorder } = makeDeps();
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    const stamp = recorder.updates.find((u) => u.table === reimbursements);
+    expect(stamp?.values.paidAt).toBeInstanceOf(Date);
+  });
+
+  it("stamps nothing when the run does not reach PAID", async () => {
+    const { reimbursements } = jest.requireActual("../../../../../db/schema");
+    const { deps, recorder } = makeDeps({ runStatus: "PAID" });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(recorder.updates.find((u) => u.table === reimbursements)).toBeUndefined();
   });
 });

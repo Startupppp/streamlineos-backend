@@ -40,6 +40,7 @@ describe("POST /payroll/runs/:runId/payslips/retry-failed — an unknown run is 
     await expect(svc.retryFailed("org-owner", 1, "u-1")).resolves.toEqual({
       published: 0,
       total: 0,
+      heldCount: 0,
       runStatus: null,
       retried: 0,
     });

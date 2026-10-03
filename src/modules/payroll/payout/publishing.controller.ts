@@ -30,6 +30,10 @@ import {
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runEmployeeParams = z.object({
+  runId: z.coerce.number().int().positive(),
+  runEmployeeId: z.coerce.number().int().positive(),
+}).strict();
 const publicationIdParams = z.object({ publicationId: z.coerce.number().int().positive() }).strict();
 
 @Controller("payroll")
@@ -50,6 +54,21 @@ export class PublishingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.publishing.publish(u.orgId, runId, u.userId, body.userIds, body.runEmployeeIds);
+  }
+
+  @Post("runs/:runId/employees/:runEmployeeId/release")
+  @BodylessAction()
+  @HttpCode(200)
+  @RequireModule("payroll")
+  @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runEmployeeParams })
+  @ResponseSchema(publishResponseSchema)
+  releaseHold(
+    @Param("runId", ParseIntPipe) runId: number,
+    @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.publishing.releaseHold(u.orgId, runId, runEmployeeId, u.userId);
   }
 
   @Post("runs/:runId/payslips/retry-failed")

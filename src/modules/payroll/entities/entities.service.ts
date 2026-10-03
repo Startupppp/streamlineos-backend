@@ -12,6 +12,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { payrollEntities, payrollPeriods } from "../../../db/schema";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
+import type { UpdateEntityInput } from "./dto/entities.schemas";
 import { getCountryPack } from "../../hr/global/country-packs";
 import {
   assertEntityCountryIsolation,
@@ -123,6 +124,21 @@ export class PayrollEntitiesService {
       .returning();
     if (!row) throw new InternalServerErrorException("Failed to create payroll period");
     return row;
+  }
+
+  async update(orgId: string, entityId: number, body: UpdateEntityInput) {
+    try {
+      const [row] = await this.db
+        .update(payrollEntities)
+        .set(body)
+        .where(and(eq(payrollEntities.id, entityId), eq(payrollEntities.orgId, orgId)))
+        .returning();
+      if (!row) throw new NotFoundException("Payroll entity not found");
+      return row;
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      throw new ConflictException("A payroll entity with this legal name already exists");
+    }
   }
 
   async getEntity(orgId: string, entityId: number) {

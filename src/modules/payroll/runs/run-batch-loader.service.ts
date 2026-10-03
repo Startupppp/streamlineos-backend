@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, inArray, isNull, gte, lte, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, gte, lte, ne, notExists, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -8,6 +8,7 @@ import {
   salaryComponents,
   bonuses,
   reimbursements,
+  payrollRunAllocations,
   salaryLoans,
   payrollLoanAdjustments,
   incentives,
@@ -137,6 +138,19 @@ export class RunBatchLoaderService {
                 inArray(reimbursements.userMembershipId, membershipIds),
                 eq(reimbursements.status, "APPROVED"),
                 isNull(reimbursements.paidAt),
+                notExists(
+                  this.db
+                    .select({ id: payrollRunAllocations.id })
+                    .from(payrollRunAllocations)
+                    .where(
+                      and(
+                        eq(payrollRunAllocations.orgId, orgId),
+                        eq(payrollRunAllocations.sourceType, "REIMBURSEMENT"),
+                        eq(payrollRunAllocations.sourceId, sql`${reimbursements.id}::text`),
+                        ne(payrollRunAllocations.runId, runId),
+                      ),
+                    ),
+                ),
                 or(
                   isNull(reimbursements.payrollMonth),
                   eq(reimbursements.payrollMonth, month),

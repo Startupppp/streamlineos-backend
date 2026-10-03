@@ -222,12 +222,14 @@ export const publicationListSchema = z.object({
 export const publishResponseSchema = z.object({
   published: z.number().int(),
   total: z.number().int(),
+  heldCount: z.number().int(),
   runStatus: z.string().nullable(),
 });
 
 export const retryPublishResponseSchema = z.object({
   published: z.number().int(),
   total: z.number().int(),
+  heldCount: z.number().int(),
   runStatus: z.string().nullable(),
   retried: z.number().int(),
 });
