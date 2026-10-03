@@ -5,6 +5,7 @@ import {
   clearRegionRegistry,
   getRegionRegistry,
   hasRegionRegistry,
+  OrganizationNotPlacedError,
   setRegionRegistry,
   type RegionBinding,
 } from "./region-registry";
@@ -74,6 +75,17 @@ describe("RegionRegistry", () => {
   it("refuses an unknown organisation outright", async () => {
     const { registry } = registryWith({});
     await expect(registry.regionForOrg("ghost")).rejects.toThrow(/has no region/);
+  });
+
+  it("answers an unknown organisation as a 404 that does not echo internals", async () => {
+    const { registry } = registryWith({});
+    const error = await registry.regionForOrg("ghost").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(OrganizationNotPlacedError);
+    expect((error as OrganizationNotPlacedError).getStatus()).toBe(404);
+    expect((error as OrganizationNotPlacedError).getResponse()).toEqual({
+      code: "NOT_FOUND",
+      message: "Organization not found",
+    });
   });
 
   it("rejects an empty orgId instead of resolving something arbitrary", async () => {
