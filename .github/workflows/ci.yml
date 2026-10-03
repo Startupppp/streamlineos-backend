@@ -70,7 +70,7 @@ jobs:
       # the ONLY gate that sees an arity change in a spec, and until this step the
       # test-inclusive program was never run in CI at all.
       #
-      # The heap is raised to 10240 (backend/CLAUDE.md §8); at 8192 tsc exits 134
+      # The heap is raised to 12288 (backend/CLAUDE.md §8); at 10240 tsc exits 134
       # after printing zero errors — a silent false-pass, not a typecheck.
       - name: Typecheck (test-inclusive)
         run: pnpm typecheck:test
@@ -132,11 +132,23 @@ jobs:
 
       # Includes the eval acceptance gates. The heap is raised because the
       # project's own typecheck needs it and jest transpiles the same tree.
+      - name: Check out the frontend repository
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/Startupppp/streamlineos-frontend.git "$BRANCH" >/dev/null; then
+            git clone --depth 1 --branch "$BRANCH" https://github.com/Startupppp/streamlineos-frontend.git streamlineos-frontend
+          else
+            git clone --depth 1 https://github.com/Startupppp/streamlineos-frontend.git streamlineos-frontend
+          fi
+
       - name: Test
         run: pnpm test
         env:
           TZ: UTC
           NODE_OPTIONS: --max-old-space-size=8192
+          STREAMLINE_FRONTEND_ROOT: ${{ github.workspace }}/streamlineos-frontend/frontend
+          STREAMLINE_WORKSPACE_ROOT: ${{ github.workspace }}/streamlineos-frontend
 
   # The same unfiltered suite, at zones that are NOT UTC.
   #
@@ -191,11 +203,23 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check out the frontend repository
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/Startupppp/streamlineos-frontend.git "$BRANCH" >/dev/null; then
+            git clone --depth 1 --branch "$BRANCH" https://github.com/Startupppp/streamlineos-frontend.git streamlineos-frontend
+          else
+            git clone --depth 1 https://github.com/Startupppp/streamlineos-frontend.git streamlineos-frontend
+          fi
+
       - name: Test at ${{ matrix.tz }}
         run: pnpm test
         env:
           TZ: ${{ matrix.tz }}
           NODE_OPTIONS: --max-old-space-size=8192
+          STREAMLINE_FRONTEND_ROOT: ${{ github.workspace }}/streamlineos-frontend/frontend
+          STREAMLINE_WORKSPACE_ROOT: ${{ github.workspace }}/streamlineos-frontend
 
   # Every static gate in the repository. Hermetic: no database, no network
   # beyond the registry, no secrets. A step marked `continue-on-error` names the
@@ -227,30 +251,22 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Five gates compare this backend against the frontend — the PermissionKey
-      # union, the sidebar's nav gates, the file-size registry — and exit 2
-      # without one beside this checkout, which is why their steps have carried
-      # "CANNOT RUN IN CI" for months. A second checkout needs a token with read
-      # access to the other repository; `GITHUB_TOKEN` is scoped to this one.
-      #
-      # Guarded on the secret so nothing changes until somebody adds it: with no
-      # FRONTEND_REPO_TOKEN both steps skip, no environment variable is set, and
-      # those gates keep exiting 2 exactly as they do today. With it, they run
-      # against the frontend's default branch. A fork PR cannot read the secret
-      # and therefore keeps the current behaviour too.
       - name: Check out the frontend repository
-        if: ${{ !cancelled() && secrets.FRONTEND_REPO_TOKEN != '' }}
-        uses: actions/checkout@v4
-        with:
-          repository: Startupppp/streamlineos-frontend
-          path: streamlineos-frontend
-          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
+        if: ${{ !cancelled() }}
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/Startupppp/streamlineos-frontend.git "$BRANCH" >/dev/null; then
+            git clone --depth 1 --branch "$BRANCH" https://github.com/Startupppp/streamlineos-frontend.git "$GITHUB_WORKSPACE/../streamlineos-frontend"
+          else
+            git clone --depth 1 https://github.com/Startupppp/streamlineos-frontend.git "$GITHUB_WORKSPACE/../streamlineos-frontend"
+          fi
 
       - name: Point the cross-repo gates at it
-        if: ${{ !cancelled() && secrets.FRONTEND_REPO_TOKEN != '' }}
+        if: ${{ !cancelled() }}
         run: |
-          echo "STREAMLINE_FRONTEND_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend/frontend" >> "$GITHUB_ENV"
-          echo "STREAMLINE_WORKSPACE_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend" >> "$GITHUB_ENV"
+          echo "STREAMLINE_FRONTEND_ROOT=$GITHUB_WORKSPACE/../streamlineos-frontend/frontend" >> "$GITHUB_ENV"
+          echo "STREAMLINE_WORKSPACE_ROOT=$GITHUB_WORKSPACE/../streamlineos-frontend" >> "$GITHUB_ENV"
 
       - name: Inventory contract shape-drift gate (INV-22)
         if: ${{ !cancelled() }}
@@ -346,6 +362,38 @@ jobs:
       - name: Every check:* script is wired into a workflow and can fail
         if: ${{ !cancelled() }}
         run: pnpm check:gate-wiring:self-test && pnpm check:gate-wiring
+
+      - name: Rate limits are mounted once
+        if: ${{ !cancelled() }}
+        run: pnpm check:rate-limit-guards
+
+      - name: Build core is reached through its barrels
+        if: ${{ !cancelled() }}
+        run: pnpm check:build-core-surface
+
+      - name: Every data-losing migration is registered
+        if: ${{ !cancelled() }}
+        run: pnpm check:data-loss-snapshot
+
+      - name: Generated database enums match the schema
+        if: ${{ !cancelled() }}
+        run: pnpm check:db-enums
+
+      - name: Knowledge-base pages are read through the KB module
+        if: ${{ !cancelled() }}
+        run: pnpm check:kb-pages-direct-readers
+
+      - name: Build writes are not swallowed
+        if: ${{ !cancelled() }}
+        run: pnpm check:build-swallowed-writes
+
+      - name: Build SQL literals name real tables
+        if: ${{ !cancelled() }}
+        run: pnpm check:build-sql-table-literals
+
+      - name: The RBAC matrix is proven and the Build authorization census matches it
+        if: ${{ !cancelled() }}
+        run: pnpm check:rbac-matrix-ledger && pnpm check:build-authz-census:check
 
       # Hard zero for `as any` / `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`
       # in application code, and a zero-GROWTH ledger for `as unknown as` where

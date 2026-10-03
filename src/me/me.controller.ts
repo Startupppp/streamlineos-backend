@@ -13,8 +13,10 @@ import { MeService } from "./me.service";
 import type { OrgDisplay } from "./org-display";
 import {
   loginHistoryQuerySchema,
+  updateMyPreferencesSchema,
   updateProfileSchema,
   type LoginHistoryQuery,
+  type UpdateMyPreferencesInput,
   type UpdateProfileInput,
 } from "./dto/me.schemas";
 import {
@@ -25,6 +27,7 @@ import {
   updateProfileResponseSchema,
   loginHistoryResponseSchema,
   authAnalyticsSchema,
+  myPreferencesResponseSchema,
 } from "./dto/me-response.schemas";
 
 @Controller("me")
@@ -77,6 +80,26 @@ export class MeController {
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ success: true }> {
     return this.meService.updateProfile(user.userId, body);
+  }
+
+  @Get("preferences")
+  @Universal()
+  @ResponseSchema(myPreferencesResponseSchema)
+  getMyPreferences(
+    @CurrentUser() user: CurrentUserContext,
+  ): ReturnType<MeService["getMyPreferences"]> {
+    return this.meService.getMyPreferences(user.userId);
+  }
+
+  @Patch("preferences")
+  @Universal()
+  @Validate({ body: updateMyPreferencesSchema })
+  @ResponseSchema(updateProfileResponseSchema)
+  updateMyPreferences(
+    @Body() body: UpdateMyPreferencesInput,
+    @CurrentUser() user: CurrentUserContext,
+  ): Promise<{ success: true }> {
+    return this.meService.updateMyPreferences(user.userId, body);
   }
 
   @Get("login-history")

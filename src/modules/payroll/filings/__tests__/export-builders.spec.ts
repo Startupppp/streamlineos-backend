@@ -1,6 +1,7 @@
 import {
   buildFilingExport,
   buildPfEcrExport,
+  buildPfEcrTxtExport,
   buildEsiExport,
   buildForm16SummaryExport,
   type EmployeeStatutorySourceRow,
@@ -119,7 +120,7 @@ describe("statutory export builders", () => {
   });
 
   it("dispatches all supported filing types", () => {
-    for (const t of ["PF_ECR", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"] as const) {
+    for (const t of ["PF_ECR", "PF_ECR_TXT", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"] as const) {
       const art = buildFilingExport(t, employees, {
         periodMonth: "2026-07",
         runId: 1,
@@ -129,5 +130,17 @@ describe("statutory export builders", () => {
       expect(art.automaticRemittance).toBe(false);
       expect(art.csv.length).toBeGreaterThan(0);
     }
+  });
+
+  it("writes one EPFO ECR 2.0 line per member and leaves out a member with no UAN", () => {
+    const art = buildPfEcrTxtExport(
+      [{ ...employees[0], ncpDays: "2.0" }, employees[1]],
+      { periodMonth: "2026-07", runId: 1, bundle },
+    );
+    expect(art.format).toBe("txt");
+    expect(art.csv).toBe("100123456789#~#Ada Lovelace#~#50000#~#15000#~#15000#~#15000#~#1800#~#1250#~#550#~#2#~#0");
+    expect(art.rowCount).toBe(1);
+    expect(art.missingIdentifiers).toEqual(["u2:uan"]);
+    expect(art.notes.join(" ")).toContain("excluded because no UAN");
   });
 });

@@ -30,7 +30,7 @@ class ResolutionProbeController {
 @Module({ controllers: [ResolutionProbeController] })
 class ConsumerModule {}
 
-const accessStub = { hasPermission: (): boolean => true };
+const accessStub = {};
 
 function globalAccessModule(exportDiscovery: boolean): Type<unknown> {
   @Global()

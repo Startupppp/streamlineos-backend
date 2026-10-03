@@ -18,9 +18,6 @@ const meetingsSvc = {
 };
 
 const actionItemsSvc = {
-  createActionItem: jest.fn(),
-  updateActionItem: jest.fn(),
-  deleteActionItem: jest.fn(),
   convertToTask: jest.fn(),
 };
 

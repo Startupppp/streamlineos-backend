@@ -102,6 +102,10 @@ export class AuditService {
     await this.write(this.withAmbientRequestMeta(entry));
   }
 
+  async logCriticalMany(entries: readonly AuditEntry[]): Promise<void> {
+    await this.writeMany(entries.map((entry) => this.withAmbientRequestMeta(entry)));
+  }
+
   /**
    * Awaited, and committed on a transaction of its own.
    *

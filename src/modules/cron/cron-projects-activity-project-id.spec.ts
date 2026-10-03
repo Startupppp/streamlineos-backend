@@ -1,4 +1,5 @@
 jest.mock("../../common/tenant", () => ({
+  ...jest.requireActual("../../common/tenant"),
   forEachOrg: jest.fn(),
 }));
 
@@ -7,6 +8,9 @@ import { forEachOrg } from "../../common/tenant";
 import type { TenantTx } from "../../common/tenant";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CronProjectsService } from "./cron-projects.service";
+import { BuildTicketCreationService } from "../build/core/tickets";
+import { ProjectsWebhooksDispatchService, BuildAutomationRunnerService } from "../build/core";
+import { CacheService } from "../../common/cache/cache.service";
 
 const mockForEachOrg = jest.mocked(forEachOrg);
 
@@ -57,7 +61,7 @@ function makeInnerTxWithCapture(): {
         }),
       };
     }),
-    execute: jest.fn().mockResolvedValue([]),
+    execute: jest.fn().mockResolvedValue([{ start: SPAWNED_TICKET_ID }]),
     transaction: jest.fn().mockImplementation(
       async (cb: (tx: TenantTx) => Promise<unknown>) => cb(innerTx as unknown as TenantTx),
     ),
@@ -97,7 +101,11 @@ describe("CronProjectsService — project_id set on spawned activity log (ticket
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CronProjectsService,
+        BuildTicketCreationService,
         { provide: DRIZZLE, useValue: {} },
+        { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
+        { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     service = module.get(CronProjectsService);

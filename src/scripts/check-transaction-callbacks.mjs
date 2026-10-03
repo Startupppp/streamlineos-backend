@@ -100,7 +100,7 @@ const MIN_DOUBLES = 100;
  * describe-block, those six re-classified as VOID. 8 is the first honest
  * measurement. It may only go down.
  */
-const VOID_FILE_BASELINE = 8;
+const VOID_FILE_BASELINE = 5;
 
 const UNREACHED_RE = /transaction\s*\)?[^\n]{0,40}\.not\s*\.\s*toHaveBeenCalled|not\s*\.\s*toHaveBeenCalled[^\n]{0,40}transaction/;
 

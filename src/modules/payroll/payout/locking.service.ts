@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   assertOrganizationActor,
@@ -404,6 +404,21 @@ export class LockingService {
 
     if (!canTransitionRun(run.status, "CLOSED")) {
       throw new ConflictException(`Cannot close run in status ${run.status}`);
+    }
+
+    const held = await this.db.query.payrollRunEmployees.findMany({
+      where: and(
+        eq(payrollRunEmployees.runId, runId),
+        eq(payrollRunEmployees.orgId, orgId),
+        isNotNull(payrollRunEmployees.holdReason),
+      ),
+      columns: { id: true },
+      limit: PAYROLL_READ_CAP,
+    });
+    if (held.length > 0) {
+      throw new ConflictException(
+        `${held.length} payslips are on hold — release or keep holding before closing`,
+      );
     }
 
     const closeActor = await assertOrganizationActor(this.db, orgId, {

@@ -175,6 +175,7 @@ const ADMITTED_SINCE_BASELINE: ReadonlyArray<readonly [string, string]> = [
   ["KbPageTrashService.bulkPurge", "per-id outcome: an id outside the caller's org is reported notFound"],
   ["KbPageTrashService.bulkRestore", "per-id outcome: an id missing from the org-scoped lookup is reported notFound"],
   ["ManagedProductsService.bulkUpdateManagedProducts", "per-id outcome: an unowned id is reported skipped and counted"],
+  ["Form16DocumentsService.loadPeople", "guarded by caller: list passes ids from org-scoped payslip and Form 16 reads, requireMember passes one id and 404s when it is absent"],
   ["KbCandidateService.pageKeywordCandidates", "search filter: pageIds narrows a retrieval pool, the same shape as articleKeywordCandidates already inside the baseline"],
   ["KbCandidateService.pageVectorCandidates", "search filter: pageIds narrows a retrieval pool, the same shape as articleVectorCandidates already inside the baseline"],
   ["ProjectsTicketsReadService.getColumnCounts", "search filter: status, priority and assignee lists narrow a count, no id is acted on"],
@@ -331,7 +332,7 @@ describe("BOLA sweep — bulk endpoints refuse a mixed-tenant id list", () => {
     expect(reference).toContain("rows.some((row) => !row.allowed)");
   });
 
-  it("RATCHET: no bulk site beyond the 2026-09-12 baseline appears without a count check, excusing only the sixteen admitted since with a recorded reason, so the two open Build export silent-subset sites keep it red until they are fixed", () => {
+  it("RATCHET: no bulk site beyond the 2026-09-12 baseline appears without a count check, excusing only the seventeen admitted since with a recorded reason, so the two open Build export silent-subset sites keep it red until they are fixed", () => {
     const admitted = new Set(ADMITTED_SINCE_BASELINE.map(([site]) => site));
     const counted = noCountCheck.filter((s) => !admitted.has(name(s)));
     expect(sites.length).toBeGreaterThanOrEqual(BULK_SITE_FLOOR);

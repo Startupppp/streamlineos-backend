@@ -181,4 +181,14 @@ export const CRM_AND_SALES_ARTIFACTS = [
     reason:
       "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
   },
+  {
+    id: "client_onboarding_items_actors",
+    mechanism: "database-cascade",
+    table: "client_onboarding_items",
+    keyedBy: "assigned_to_membership_id / completed_by_membership_id / archived_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The assignee, completer and archiver pointers are composite tenant foreign keys (fk_cob_items_assigned_to_mbr, fk_cob_items_completed_by_mbr, fk_client_onboarding_items_org_archiver_membership), each ON DELETE SET NULL over a nullable column, so the onboarding item survives the departure without the member pointer. A suspension is reversible, so nothing is written.",
+  },
 ] as const satisfies readonly MembershipArtifact[];

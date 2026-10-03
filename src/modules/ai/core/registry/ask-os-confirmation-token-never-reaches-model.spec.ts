@@ -50,10 +50,20 @@ async function runTool(
     definitions: [definition],
     ...(onDirective === undefined ? {} : { onDirective }),
   });
-  const entry = toolset[definition.key];
-  if (entry === undefined) throw new Error(`tool ${definition.key} was filtered out`);
-  const { execute } = entry as { execute: (input: unknown) => Promise<unknown> };
-  return execute({});
+  const entry: unknown = toolset[definition.key];
+  if (!isExecutableTool(entry)) throw new Error(`tool ${definition.key} was filtered out`);
+  return entry.execute({});
+}
+
+function isExecutableTool(
+  value: unknown,
+): value is { execute: (input: unknown) => Promise<unknown> } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "execute" in value &&
+    typeof value.execute === "function"
+  );
 }
 
 describe("a confirmation token is withheld from the model whether or not a directive sink exists", () => {

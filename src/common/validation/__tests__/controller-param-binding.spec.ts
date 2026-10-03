@@ -64,7 +64,7 @@ function controllerFiles(directory = "src"): string[] {
  */
 function handlerWindow(lines: string[], index: number): string {
   let start = index;
-  while (start > 0 && !/^ {2}\}/.test(lines[start - 1] ?? "")) start--;
+  while (start > 0 && !/^ {2}\}\s*$/.test(lines[start - 1] ?? "")) start--;
   return lines.slice(start, index + 1).join("\n");
 }
 
@@ -188,6 +188,24 @@ describe("PRD-C048 — path parameters cross a validation boundary", () => {
     ];
     const window = handlerWindow(lines, 2);
     expect(/@Validate\(/.test(window)).toBe(false);
+  });
+
+  it("reads a multi-line @Validate as part of the handler it decorates", () => {
+    const lines = [
+      "  }",
+      "",
+      "  @Post(\"thing/:slug\")",
+      "  @Validate({",
+      "    params: slugParams,",
+      "    body: thingSchema,",
+      "  })",
+      "  postThing(",
+      "    @Param(\"slug\") slug: string,",
+      "  ) {",
+    ];
+    const window = handlerWindow(lines, 8);
+    expect(window).toContain("params: slugParams");
+    expect(/@Validate\(\{[\s\S]*?\}\)/.exec(window)?.[0]).toMatch(/\bparams\s*:/);
   });
 });
 

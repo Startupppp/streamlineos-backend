@@ -15,6 +15,7 @@ import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-o
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { BoardApplyIngressService } from "./board-apply-ingress.service";
+import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 
 export const boardApplyResponseSchema = z.object({
   platform: z.string(),
@@ -52,8 +53,8 @@ export class BoardApplyIngressController {
   @UseRateLimit("public:board-apply")
   @ResponseSchema(boardApplyResponseSchema)
   async receive(
-    @Param("orgSlug") orgSlug: string,
-    @Param("platform") platform: string,
+    @Param("orgSlug", new ZodValidationPipe(z.string().min(1).max(128))) orgSlug: string,
+    @Param("platform", new ZodValidationPipe(z.string().min(1).max(64))) platform: string,
     @Req() req: RawBodyRequest<Request>,
     @Headers("x-streamline-signature") signature: string | undefined,
   ) {

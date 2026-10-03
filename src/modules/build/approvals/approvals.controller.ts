@@ -71,7 +71,7 @@ export class ApprovalsInboxController {
   @Validate({ query: inboxQuerySchema })
   getInbox(@CurrentUser() u: CurrentUserContext, @Query() query: InboxQuery) {
     const mid = actingMembershipId(u.principal);
-    if (mid === null) return Promise.resolve({ data: [], pagination: { limit: 100, hasMore: false, nextCursor: null } });
+    if (mid === null) return Promise.resolve({ data: [], pagination: { limit: query.limit ?? 100, hasMore: false, nextCursor: null } });
     return this.reads.getInbox(u.orgId, mid, query);
   }
 }

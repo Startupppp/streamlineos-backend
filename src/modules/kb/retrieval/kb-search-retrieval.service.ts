@@ -38,13 +38,8 @@ import {
   KB_ASK_MAX_CONTEXT_DOCUMENTS,
   type KbContextPassage,
 } from "./kb-ask-context";
-import {
-  KbEmbeddingCache,
-  normalizeEmbeddableQuery,
-} from "./kb-embedding-cache";
+import { KbEmbeddingCache } from "./kb-embedding-cache";
 import type { KbPageStatus } from "../core/collection/knowledge-collection.types";
-
-export { normalizeEmbeddableQuery };
 
 export type RetrievalChannelKind =
   | "ok"
@@ -301,7 +296,8 @@ export class KbSearchRetrievalService {
             aclRevision: kbPages.aclRevision,
           })
           .from(kbPages)
-          .where(and(...articleConditions));
+          .where(and(...articleConditions))
+          .limit(articleIds.length);
         for (const row of articleRows) {
           results.push({
             kind: "article",
@@ -334,7 +330,8 @@ export class KbSearchRetrievalService {
             aclRevision: kbPages.aclRevision,
           })
           .from(kbPages)
-          .where(and(...pageConditions));
+          .where(and(...pageConditions))
+          .limit(fusedPageIds.length);
         for (const row of pageRows) {
           results.push({
             kind: "page",

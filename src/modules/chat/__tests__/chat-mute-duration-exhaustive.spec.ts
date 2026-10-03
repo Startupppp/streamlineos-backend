@@ -69,6 +69,6 @@ describe("ChatChannelMemberState.muteChannel — exhaustive duration handling", 
     const state = new ChatChannelMemberState(makeDb() as unknown as Db);
     await expect(
       Reflect.apply(state.muteChannel, state, [CHANNEL, USER, "UNKNOWN_DURATION", ORG]) as Promise<unknown>,
-    ).rejects.toThrow();
+    ).rejects.toThrow(TypeError);
   });
 });

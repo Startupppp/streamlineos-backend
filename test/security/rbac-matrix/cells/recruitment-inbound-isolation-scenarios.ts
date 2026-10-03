@@ -139,7 +139,7 @@ function resumeUpload(): Scenario[] {
       },
     });
     const service = new CareersService(world.db, storage);
-    const vault = (): Row[] => world.rows.get(candidateDocumentsVault) ?? [];
+    const vault = (): readonly Row[] => world.rows.get(candidateDocumentsVault) ?? [];
     return reached(
       () => service.uploadResume(ORG_A, candidateId, "user-a", Buffer.from("%PDF"), "cv.pdf", "application/pdf"),
       () => vault().some((row) => row.candidateId === candidateId && row.orgId === ORG_A),

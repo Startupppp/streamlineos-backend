@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, uuid, index } from "drizzle-orm/pg-core";
 
 export const impersonationSessions = pgTable("impersonation_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -11,4 +11,6 @@ export const impersonationSessions = pgTable("impersonation_sessions", {
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
-});
+}, (table) => [
+  index("idx_impersonation_sessions_org_actor").on(table.orgId, table.actorUserId),
+]);

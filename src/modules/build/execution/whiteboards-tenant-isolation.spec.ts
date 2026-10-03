@@ -1,7 +1,7 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { WhiteboardsService } from "./whiteboards.service";
-import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double.spec-fixtures";
 import { stubService } from "../../../test/service-stub.spec-fixtures";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";

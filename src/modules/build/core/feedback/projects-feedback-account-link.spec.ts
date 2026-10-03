@@ -5,7 +5,7 @@ import {
   createFeedbackSchema,
   updateFeedbackSchema,
 } from "../dto/roadmap.schemas";
-import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double.spec-fixtures";
 
 const ORG = "org-feedback";
 const OTHER_ORG = "org-intruder";

@@ -27,6 +27,8 @@ const STATUS_BREACHED = "BREACHED";
 /** Stages whose clock is meaningful. A hired or rejected candidate is not waiting. */
 const CLOCKED_STAGES = ["NEW", "SCREENING", "INTERVIEW", "OFFER"] as const;
 
+export const RECRUITMENT_SLA_RUN_BUDGET = 5_000;
+
 export interface SlaSweepOutcome {
   breached: number;
   atRisk: number;
@@ -35,12 +37,17 @@ export interface SlaSweepOutcome {
 
 @Injectable()
 export class CronRecruitmentSlaService {
+  private resumeAfterOrgId: string | null = null;
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async sweepStageSlas(): Promise<SlaSweepOutcome> {
     const outcome: SlaSweepOutcome = { breached: 0, atRisk: 0, organizationsWithConfig: 0 };
+    const budgetSpent = () => outcome.breached + outcome.atRisk >= RECRUITMENT_SLA_RUN_BUDGET;
+    let lastVisitedOrgId: string | null = null;
 
     await forEachOrg(this.db, "recruitment-sla-sweep", async (tx, orgId) => {
+      lastVisitedOrgId = orgId;
       const configured = await tx
         .select({
           stage: interviewSlas.stage,
@@ -89,8 +96,9 @@ export class CronRecruitmentSlaService {
           .returning({ id: candidateSlaTracking.id });
         outcome.atRisk += atRisk.length;
       }
-    });
+    }, "write", { startAfterOrgId: this.resumeAfterOrgId, stopWhen: budgetSpent });
 
+    this.resumeAfterOrgId = budgetSpent() ? lastVisitedOrgId : null;
     return outcome;
   }
 }

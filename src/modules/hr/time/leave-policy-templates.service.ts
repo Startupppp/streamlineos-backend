@@ -148,51 +148,54 @@ export class LeavePolicyTemplatesService {
           ).map((row) => row.leaveTypeId),
     );
 
-    const skipped: LeavePolicyTemplateKey[] = [];
-    let created = 0;
+    for (const item of items) templateByKey(item.key);
 
+    const missingByName = new Map<string, LeavePolicyTemplateImportItem>();
     for (const item of items) {
-      // Refuses an unknown key before anything is written.
-      templateByKey(item.key);
       const normalized = normalizeLeaveTypeName(item.leaveTypeName);
-      let leaveTypeId = typeIdByName.get(normalized);
-
-      if (leaveTypeId === undefined) {
-        const [inserted] = await this.db
-          .insert(leaveTypes)
-          .values({
+      if (!typeIdByName.has(normalized) && !missingByName.has(normalized))
+        missingByName.set(normalized, item);
+    }
+    if (missingByName.size > 0) {
+      const missing = [...missingByName.values()];
+      const inserted = await this.db
+        .insert(leaveTypes)
+        .values(
+          missing.map((item) => ({
             orgId,
             name: item.leaveTypeName,
             daysPerYear: item.daysPerYear,
             carryForward: item.carryForward,
-          })
-          .onConflictDoNothing({
-            target: [leaveTypes.orgId, leaveTypes.name],
-          })
-          .returning({ id: leaveTypes.id });
+          })),
+        )
+        .onConflictDoNothing({
+          target: [leaveTypes.orgId, leaveTypes.name],
+        })
+        .returning({ id: leaveTypes.id, name: leaveTypes.name });
+      for (const row of inserted) typeIdByName.set(normalizeLeaveTypeName(row.name), row.id);
 
-        if (inserted) {
-          leaveTypeId = inserted.id;
-        } else {
-          // Another request created it between the read and this insert.
-          const [raced] = await this.db
-            .select({ id: leaveTypes.id })
-            .from(leaveTypes)
-            .where(
-              and(eq(leaveTypes.orgId, orgId), eq(leaveTypes.name, item.leaveTypeName)),
-            )
-            .limit(1);
-          leaveTypeId = raced?.id;
-        }
-        if (leaveTypeId !== undefined) typeIdByName.set(normalized, leaveTypeId);
+      const racedNames = missing
+        .map((item) => item.leaveTypeName)
+        .filter((name) => !typeIdByName.has(normalizeLeaveTypeName(name)));
+      if (racedNames.length > 0) {
+        const raced = await this.db
+          .select({ id: leaveTypes.id, name: leaveTypes.name })
+          .from(leaveTypes)
+          .where(and(eq(leaveTypes.orgId, orgId), inArray(leaveTypes.name, racedNames)))
+          .limit(racedNames.length);
+        for (const row of raced) typeIdByName.set(normalizeLeaveTypeName(row.name), row.id);
       }
+    }
 
+    const skipped: LeavePolicyTemplateKey[] = [];
+    const policies: (typeof leavePolicies.$inferInsert)[] = [];
+    for (const item of items) {
+      const leaveTypeId = typeIdByName.get(normalizeLeaveTypeName(item.leaveTypeName));
       if (leaveTypeId === undefined || policiedTypeIds.has(leaveTypeId)) {
         skipped.push(item.key);
         continue;
       }
-
-      await this.db.insert(leavePolicies).values({
+      policies.push({
         orgId,
         leaveTypeId,
         name: item.policyName,
@@ -207,8 +210,9 @@ export class LeavePolicyTemplatesService {
         isActive: true,
       });
       policiedTypeIds.add(leaveTypeId);
-      created += 1;
     }
+    if (policies.length > 0) await this.db.insert(leavePolicies).values(policies);
+    const created = policies.length;
 
     return { created, skipped };
   }

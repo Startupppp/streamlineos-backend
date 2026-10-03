@@ -23,8 +23,6 @@ import { channelHighWaterMark } from "./chat-channel-member-state";
 
 export { entityChannelFallbackName } from "./chat-channel-list.service";
 
-const CHAT_CHANNEL_LIMIT_KEY = "chatChannels" as const;
-
 @Injectable()
 export class ChatChannelsService {
   constructor(
@@ -199,8 +197,8 @@ export class ChatChannelsService {
     const isPrivate = channelType !== "PUBLIC";
 
     const channel = await this.db.transaction(async (tx) => {
-      await tx.execute(lockQuota(orgId, CHAT_CHANNEL_LIMIT_KEY));
-      await this.planLimits.assertWithinLimit(orgId, CHAT_CHANNEL_LIMIT_KEY, 1, tx);
+      await tx.execute(lockQuota(orgId, "chatChannels"));
+      await this.planLimits.assertWithinLimit(orgId, "chatChannels", 1, tx);
       const [created] = await tx
         .insert(chatChannels)
         .values({
@@ -303,8 +301,8 @@ export class ChatChannelsService {
     // the race gets no row back; both callers then read the one committed channel through
     // `loadEntityChannel`, so they see the same channel in the same shape and neither 500s.
     const won = await this.db.transaction(async (tx) => {
-      await tx.execute(lockQuota(actor.orgId, CHAT_CHANNEL_LIMIT_KEY));
-      await this.planLimits.assertWithinLimit(actor.orgId, CHAT_CHANNEL_LIMIT_KEY, 1, tx);
+      await tx.execute(lockQuota(actor.orgId, "chatChannels"));
+      await this.planLimits.assertWithinLimit(actor.orgId, "chatChannels", 1, tx);
       const [created] = await tx
         .insert(chatChannels)
         .values({

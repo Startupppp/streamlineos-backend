@@ -72,6 +72,7 @@ const MIN_REGISTERED_PROVIDERS = 200;
 
 const CONST_RE = /\bconst\s+([A-Z][A-Z0-9_]+)\s*=\s*(["'][^"']+["'])/gm;
 const CONST_OBJECT_RE = /\bconst\s+([A-Z][A-Z0-9_]*)\s*(?::[^=]{0,200})?=\s*\{/g;
+const CONST_ARRAY_RE = /\bconst\s+([A-Z][A-Z0-9_]*)\s*(?::[^=]{0,200})?=\s*\[/g;
 const EMIT_RE = /OutboxWriter\.emit\s*\(/g;
 const CLASS_EVENT_TYPE_RE = /\breadonly\s+eventType\s*=\s*([^;\n]+)/g;
 const INLINE_RE = /\bregistry\s*\.\s*register\s*\(/g;
@@ -87,6 +88,8 @@ const SHORTHAND_EVENT_TYPE_RE = /\beventType\s*[,}]/;
 const EVENT_TYPE_SHAPE = /^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$/;
 const CLASS_DECL_RE = /\bclass\s+([A-Za-z_$][\w$]*)/g;
 const IMPORT_RE = /\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+const REEXPORT_RE = /\bexport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+const ARRAY_FOR_OF_RE = /for\s*\(\s*const\s+[A-Za-z_$][\w$]*\s+of\s+([A-Za-z_$][\w$]*)\s*\)/g;
 const MODULE_DECORATOR_RE = /@Module\s*\(/g;
 const IDENTIFIER_RE = /[A-Za-z_$][\w$]*/g;
 
@@ -331,6 +334,16 @@ function collectConstants(sources) {
 
       objectMaps.set(name, { props, keys });
     }
+
+    for (const m of src.matchAll(CONST_ARRAY_RE)) {
+      const name = m[1];
+      if (objectMaps.has(name)) continue;
+      const slice = balancedSlice(src, m.index + m[0].length - 1, "[", "]");
+      if (slice === null) continue;
+      const keys = new Set();
+      for (const k of stripComments(slice).matchAll(/(["'])([^"']+)\1/g)) keys.add(k[2]);
+      objectMaps.set(name, { props: new Map(), keys });
+    }
   }
 
   return { constMap, objectMaps };
@@ -428,7 +441,11 @@ function scanSource(src, constMap, objectMaps) {
     // leaves the emitted types orphaned rather than silently absolved.
     const lookback = src.slice(Math.max(0, match.index - 500), match.index);
     let table = null;
-    for (const entries of lookback.matchAll(OBJECT_ENTRIES_RE)) table = entries[1];
+    let tableAt = -1;
+    for (const entries of lookback.matchAll(OBJECT_ENTRIES_RE))
+      if (entries.index > tableAt) [table, tableAt] = [entries[1], entries.index];
+    for (const loop of lookback.matchAll(ARRAY_FOR_OF_RE))
+      if (loop.index > tableAt) [table, tableAt] = [loop[1], loop.index];
     if (!table) continue;
     const keys = objectMaps.get(table)?.keys;
     if (!keys) continue;
@@ -507,9 +524,9 @@ function referencedClasses(section, arrayConsts = new Map(), seen = new Set()) {
 }
 
 /** Symbol → absolute file path, from a file's own import statements. */
-function importedSymbolPaths(filePath, src, fileSet) {
+function importedSymbolPaths(filePath, src, fileSet, pattern = IMPORT_RE) {
   const map = new Map();
-  for (const m of src.matchAll(IMPORT_RE)) {
+  for (const m of src.matchAll(pattern)) {
     const spec = m[2];
     if (!spec.startsWith(".")) continue;
     const isPosixStyle = filePath.startsWith("/");
@@ -610,6 +627,15 @@ export function analyseSources(sourceByFile, options = {}) {
 
   // Walk the module graph from AppModule, resolving each `imports` entry through the importing
   // file's own import statements so same-named modules in different folders stay distinct.
+  const resolveModuleFile = (file, name, hops) => {
+    if (!file || hops > 8) return file;
+    if ((modulesByFile.get(file) ?? []).some((m) => m.className === name)) return file;
+    const src = sourceByFile.get(file);
+    if (src === undefined) return file;
+    const next = importedSymbolPaths(file, src, fileSet, REEXPORT_RE).get(name);
+    return next ? resolveModuleFile(next, name, hops + 1) : file;
+  };
+
   const registeredProviders = new Set();
   const reachableModules = new Set();
   const rootModules = modulesByFile.get(rootFile) ?? [];
@@ -626,7 +652,7 @@ export function analyseSources(sourceByFile, options = {}) {
 
     const importPaths = importPathsByFile.get(file) ?? new Map();
     for (const imported of mod.imports) {
-      const targetFile = importPaths.get(imported);
+      const targetFile = resolveModuleFile(importPaths.get(imported), imported, 0);
       const candidates = targetFile
         ? (modulesByFile.get(targetFile) ?? []).map((m) => ({ file: targetFile, mod: m }))
         : [...modulesByFile.entries()].flatMap(([f, ms]) =>
@@ -1068,6 +1094,54 @@ function runSelfTest() {
   assert(
     "the same table registration in a class no module provides clears nothing",
     analyseSources(unwiredTableSources, opts).orphans.includes("test.table.routed"),
+  );
+
+  const arrayConsumer = `
+    const TEST_EVENTS = ["test.array.first", "test.array.second"] as const;
+    export class ArrayConsumer {
+      onModuleInit() {
+        for (const eventType of TEST_EVENTS) {
+          this.registry.register({ eventType, handle: (e) => this.deliver(e) });
+        }
+      }
+    }
+  `;
+  const arraySources = new Map(sources);
+  arraySources.set(`${base}/b/array.consumer.ts`, arrayConsumer);
+  arraySources.set(
+    `${base}/a/array.emitter.ts`,
+    'OutboxWriter.emit(tx, { eventType: "test.array.second", payload: {} });',
+  );
+  arraySources.set(
+    `${base}/b/feature.module.ts`,
+    'import { ReminderConsumer } from "./consumer";\nimport { InlineConsumer } from "./inline";\nimport { ArrayConsumer } from "./array.consumer";\n@Module({ providers: [ReminderConsumer, InlineConsumer, ArrayConsumer] })\nexport class FeatureModule {}',
+  );
+  assert(
+    "a registered provider's for-of over an array const clears every listed event",
+    !analyseSources(arraySources, opts).orphans.includes("test.array.second"),
+  );
+  const unwiredArraySources = new Map(arraySources);
+  unwiredArraySources.set(`${base}/b/feature.module.ts`, featureModule);
+  assert(
+    "the same array registration in a class no module provides clears nothing",
+    analyseSources(unwiredArraySources, opts).orphans.includes("test.array.second"),
+  );
+
+  const barrelSources = new Map(sources);
+  barrelSources.set(`${base}/b/index.ts`, 'export { FeatureModule } from "./feature.module";');
+  barrelSources.set(
+    `${base}/app.module.ts`,
+    'import { FeatureModule } from "./b";\n@Module({ imports: [FeatureModule] })\nexport class AppModule {}',
+  );
+  assert(
+    "a module imported through a barrel re-export is still followed",
+    !analyseSources(barrelSources, opts).orphans.includes("accounting.invoice.reminder.due"),
+  );
+  const brokenBarrelSources = new Map(barrelSources);
+  brokenBarrelSources.set(`${base}/b/index.ts`, "export {};");
+  assert(
+    "a barrel that does not re-export the module registers nothing",
+    analyseSources(brokenBarrelSources, opts).orphans.includes("accounting.invoice.reminder.due"),
   );
 
   const empty = analyseSources(new Map(), opts);

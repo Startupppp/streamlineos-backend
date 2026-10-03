@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ProjectsFeedbackService } from "../feedback/projects-feedback.service";
 import type { Db } from "../../../../db/drizzle.module";
-import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double.spec-fixtures";
 
 const ORG_ID = "org-1";
 

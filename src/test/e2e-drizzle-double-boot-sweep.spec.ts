@@ -28,11 +28,13 @@ describe("a DRIZZLE double in the controller e2e tier", () => {
     await expect(end({ timeout: 1 })).resolves.toBeUndefined();
   });
 
-  it("leaves a double that already answers both untouched, so a spec asserting its own rows keeps them", () => {
+  it("leaves a double that already answers execute, __client, select and transaction untouched, so a spec asserting its own rows keeps them", () => {
     const rows = [{ role_name: "streamline_app" }];
     const double = {
       execute: () => Promise.resolve(rows),
       __client: { end: () => Promise.resolve() },
+      select: () => ({ from: () => Promise.resolve(rows) }),
+      transaction: (work: (tx: unknown) => Promise<unknown>) => work({}),
     };
 
     expect(withBootSweepExecute(double)).toBe(double);

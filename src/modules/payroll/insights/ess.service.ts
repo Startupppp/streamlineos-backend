@@ -25,6 +25,7 @@ import { TaxService } from "../hr-payroll/tax.service";
 import { DEFAULT_PAYROLL_TOGGLES, PayrollToggles } from "../payroll.types";
 import { normalizePayrollToggles } from "../dto/payroll.schemas";
 import { buildTotalRewardsStatement } from "./lib/total-rewards";
+import { essPayStatus } from "./lib/ess-pay-status";
 
 @Injectable()
 export class EssService {
@@ -71,7 +72,7 @@ export class EssService {
     const fyEnd = mo >= 4 ? `${yr + 1}-03` : `${yr}-03`;
     const today = now.toISOString().slice(0, 10);
 
-    const [toggles, [latestPub], fyPubs, [activeLoanRow], [pendingRow], window, [nextPayEvent]] = await Promise.all([
+    const [toggles, [latestPub], fyPubs, [activeLoanRow], [pendingRow], window, [nextPayEvent], activeProfile] = await Promise.all([
       this.getActiveToggles(orgId),
       this.db
         .select({ id: payslipPublications.id, publishedAt: payslipPublications.publishedAt, month: payrollRuns.month, net: payrollRunEmployees.net })
@@ -109,6 +110,17 @@ export class EssService {
         )
         .orderBy(asc(payrollCalendarEvents.date))
         .limit(1),
+      this.db.query.employeeSalaryProfiles.findFirst({
+        where: and(
+          eq(employeeSalaryProfiles.orgId, orgId),
+          eq(employeeSalaryProfiles.status, "ACTIVE"),
+          or(
+            eq(employeeSalaryProfiles.userMembershipId, membershipId),
+            eq(employeeSalaryProfiles.userId, userId),
+          ),
+        ),
+        columns: { id: true },
+      }),
     ]);
 
     const [ytdRows, declarations] = await Promise.all([
@@ -166,8 +178,11 @@ export class EssService {
       });
     }
 
+    const payStatus = essPayStatus(Boolean(latestPub), Boolean(activeProfile));
+
     return {
       toggles,
+      payStatus,
       capabilities: {
         mode: "employee_self_service" as const,
         honestyNote:
@@ -287,6 +302,7 @@ export class EssService {
         id: fnfSettlements.id,
         basicDues: fnfSettlements.basicDues,
         leaveEncashment: fnfSettlements.leaveEncashment,
+        gratuity: fnfSettlements.gratuity,
         bonusDue: fnfSettlements.bonusDue,
         deductions: fnfSettlements.deductions,
         loanRecovery: fnfSettlements.loanRecovery,

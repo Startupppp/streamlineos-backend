@@ -164,7 +164,7 @@ interface CloseCapture {
 
 function makeCloseDb(
   run: Record<string, unknown> | null,
-  options: { closeReturns?: { id: number }[] } = {},
+  options: { closeReturns?: { id: number }[]; heldRows?: { id: number }[] } = {},
 ) {
   const capture: CloseCapture = { updates: [], events: [] };
   const closeReturns = options.closeReturns ?? [{ id: RUN_ID }];
@@ -186,7 +186,10 @@ function makeCloseDb(
   };
 
   const db = {
-    query: { payrollRuns: { findFirst: jest.fn().mockResolvedValue(run) } },
+    query: {
+      payrollRuns: { findFirst: jest.fn().mockResolvedValue(run) },
+      payrollRunEmployees: { findMany: jest.fn().mockResolvedValue(options.heldRows ?? []) },
+    },
     transaction: (fn: (t: typeof tx) => Promise<void>) => fn(tx),
     select: () => {
       const idx = outerSelectIdx++;
@@ -273,6 +276,18 @@ describe("LockingService.close — the terminal transition", () => {
     });
 
     await expect(service.close(ORG_ID, USER_ID, RUN_ID)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("refuses to close while any payslip is on hold, naming how many", async () => {
+    const { service, capture } = makeCloseDb(
+      { id: RUN_ID, orgId: ORG_ID, status: "PAYSLIPS_PUBLISHED", month: "2026-08" },
+      { heldRows: [{ id: 1 }, { id: 2 }] },
+    );
+
+    await expect(service.close(ORG_ID, USER_ID, RUN_ID)).rejects.toThrow(
+      "2 payslips are on hold — release or keep holding before closing",
+    );
+    expect(capture.updates).toHaveLength(0);
   });
 
   it("aborts when the run drifts out of its read status before the close commits", async () => {

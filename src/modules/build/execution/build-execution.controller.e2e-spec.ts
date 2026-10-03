@@ -7,7 +7,6 @@ import { CyclesService } from "./cycles.service";
 
 const cyclesSvc = {
   listCycles: jest.fn(),
-  getCycle: jest.fn(),
   createCycle: jest.fn(),
   updateCycle: jest.fn(),
   deleteCycle: jest.fn(),

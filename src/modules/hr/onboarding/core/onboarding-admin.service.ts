@@ -74,8 +74,8 @@ export class OnboardingAdminService {
 
       if (reminderRecipients.length === 0) break;
 
-      for (const recipient of reminderRecipients) {
-        await this.dispatch.emit({
+      await this.dispatch.emitMany(
+        reminderRecipients.map((recipient) => ({
           eventKey: "hr.onboarding.task_reminder",
           orgId: organizationId,
           targetUserIds: [recipient.userId],
@@ -88,8 +88,8 @@ export class OnboardingAdminService {
             pendingTasks: recipient.pendingTasks,
             totalTasks: recipient.totalTasks,
           },
-        });
-      }
+        })),
+      );
 
       queuedEmailCount += await this.emailOutbox.enqueueForDelivery(
         reminderRecipients.flatMap((recipient) =>

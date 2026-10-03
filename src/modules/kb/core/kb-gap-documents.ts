@@ -23,7 +23,8 @@ export async function resolveProposedDocumentTitles(
         inArray(kbPages.id, documentIds),
         proposedDocumentScopePredicate(),
       ),
-    );
+    )
+    .limit(documentIds.length);
 
   const result = new Map<number, string>();
   for (const row of rows) {

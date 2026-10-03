@@ -39,6 +39,7 @@ export class FnfInsightsService {
         userId: fnfSettlements.userId,
         basicDues: fnfSettlements.basicDues,
         leaveEncashment: fnfSettlements.leaveEncashment,
+        gratuity: fnfSettlements.gratuity,
         bonusDue: fnfSettlements.bonusDue,
         deductions: fnfSettlements.deductions,
         loanRecovery: fnfSettlements.loanRecovery,
@@ -81,6 +82,7 @@ export class FnfInsightsService {
     const components: StatementComponent[] = [
       { label: "Basic Dues", amount: row.basicDues },
       { label: "Leave Encashment", amount: row.leaveEncashment },
+      { label: "Gratuity", amount: row.gratuity },
       { label: "Bonus Due", amount: row.bonusDue },
       { label: "Reimbursements Due", amount: row.reimbursementsDue },
       { label: "Deductions", amount: row.deductions, type: "deduction" },

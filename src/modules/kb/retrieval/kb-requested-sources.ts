@@ -25,7 +25,8 @@ export async function assertRequestedSourcesVisible(
         isNull(kbSources.deletedAt),
         sourceSpaceFilter(accessibleSpaceIds),
       ),
-    );
+    )
+    .limit(sourceIds.length);
   const visible = new Set(rows.map((row) => row.id));
   if (sourceIds.some((id) => !visible.has(id)))
     throw new NotFoundException("One or more sources not found");

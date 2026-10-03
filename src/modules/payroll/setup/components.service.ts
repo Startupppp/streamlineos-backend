@@ -11,6 +11,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { validateFormula } from "./lib/template-preview";
+import { FORMULA_VARIABLES } from "../payroll.types";
 import type { ListComponentsInput, CreateComponentInput, UpdateComponentInput } from "./dto/setup.schemas";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import {
@@ -19,6 +20,8 @@ import {
 } from "../payroll-cursor";
 
 type ComponentRow = typeof salaryComponents.$inferSelect;
+
+const MAX_FORMULA_REFERENCE_CODES = 500;
 
 @Injectable()
 export class PayrollComponentsService {
@@ -74,7 +77,7 @@ export class PayrollComponentsService {
   }
 
   async create(u: CurrentUserContext, input: CreateComponentInput): Promise<ComponentRow> {
-    this.validateComponentInput(input);
+    await this.validateComponentInput(u.orgId, input);
 
     const existing = await this.db.query.salaryComponents.findFirst({
       where: and(eq(salaryComponents.orgId, u.orgId), eq(salaryComponents.code, input.code)),
@@ -108,8 +111,8 @@ export class PayrollComponentsService {
   async update(u: CurrentUserContext, componentId: number, input: UpdateComponentInput): Promise<ComponentRow> {
     const component = await this.assertBelongsToOrg(u.orgId, componentId);
 
-    if (input.formula !== undefined) {
-      this.validateFormulaString(input.formula);
+    if (input.formula) {
+      await this.validateFormulaString(u.orgId, input.formula, component.code);
     }
 
     const values: Partial<typeof salaryComponents.$inferInsert> = {};
@@ -165,9 +168,12 @@ export class PayrollComponentsService {
     return { success: true, softDeleted: false };
   }
 
-  private validateComponentInput(input: Pick<CreateComponentInput, "calcMethod" | "formula" | "amount" | "percent">) {
+  private async validateComponentInput(
+    orgId: string,
+    input: Pick<CreateComponentInput, "code" | "calcMethod" | "formula" | "amount" | "percent">,
+  ) {
     if (input.calcMethod === "FORMULA" && input.formula) {
-      this.validateFormulaString(input.formula);
+      await this.validateFormulaString(orgId, input.formula, input.code);
     }
     if (input.calcMethod === "FIXED" && !input.amount) {
       throw new BadRequestException("amount is required for FIXED calc method");
@@ -177,11 +183,17 @@ export class PayrollComponentsService {
     }
   }
 
-  private validateFormulaString(formula: string) {
-    const result = validateFormula(formula);
+  private async validateFormulaString(orgId: string, formula: string, ownCode: string) {
+    const rows = await this.db
+      .select({ code: salaryComponents.code })
+      .from(salaryComponents)
+      .where(and(eq(salaryComponents.orgId, orgId), eq(salaryComponents.isActive, true)))
+      .limit(MAX_FORMULA_REFERENCE_CODES);
+    const codes = new Set(rows.map((r) => r.code).filter((code) => code !== ownCode));
+    const result = validateFormula(formula, codes);
     if (!result.valid) {
       throw new BadRequestException(
-        `Formula contains unknown identifiers: ${result.unknownIdentifiers.join(", ")}. Allowed: ${["basic", "gross", "ctc", "days_in_month", "paid_days", "lop_days", "overtime_hours", "incentive_amount", "reimbursement_amount"].join(", ")}`,
+        `Formula contains unknown identifiers: ${result.unknownIdentifiers.join(", ")}. Allowed: ${[...FORMULA_VARIABLES].join(", ")} or another active component code`,
       );
     }
   }

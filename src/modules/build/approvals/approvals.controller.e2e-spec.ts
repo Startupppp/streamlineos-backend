@@ -17,7 +17,6 @@ const approvalsWriteSvc = {
   createApproval: jest.fn(),
   decideApproval: jest.fn(),
   updateApproval: jest.fn(),
-  deleteApproval: jest.fn(),
 };
 
 const inboxCountSvc = {

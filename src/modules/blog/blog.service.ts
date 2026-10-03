@@ -26,7 +26,14 @@ export class BlogService {
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
-      this.selectCards(where, [desc(blogPosts.publishedAt), desc(blogPosts.id)], query.limit)
+      this.db
+        .select(cardColumns)
+        .from(blogPosts)
+        .leftJoin(blogCategories, eq(blogCategories.id, blogPosts.categoryId))
+        .leftJoin(blogAuthors, eq(blogAuthors.id, blogPosts.authorId))
+        .where(where)
+        .orderBy(desc(blogPosts.publishedAt), desc(blogPosts.id))
+        .limit(query.limit)
         .offset((query.page - 1) * query.limit),
       this.db
         .select({ value: count() })

@@ -3,10 +3,9 @@ import { join, resolve } from "node:path";
 
 const BACKEND_ROOT = resolve(__dirname, "../../../..");
 const MIGRATIONS_DIR = join(BACKEND_ROOT, "migrations");
-const SQL_DIR = join(MIGRATIONS_DIR, "sql");
 
-const REPAIR = "c-confdelsetcols-05-bare-key-repair.sql";
-const ROLLBACK = "c-confdelsetcols-05-bare-key-repair-rollback.sql";
+const REPAIR = "1144_repair_inventory_composite_set_null.sql";
+const ROLLBACK = "rollback/1144_repair_inventory_composite_set_null.down.sql";
 
 const KEYS = [
   {
@@ -26,7 +25,7 @@ const KEYS = [
 ];
 
 function read(name: string): string {
-  return readFileSync(join(SQL_DIR, name), "utf8").replace(/\r\n/g, "\n");
+  return readFileSync(join(MIGRATIONS_DIR, name), "utf8").replace(/\r\n/g, "\n");
 }
 
 function statementsOf(name: string): string[] {
@@ -43,7 +42,7 @@ function addConstraintStatement(name: string, constraint: string): string {
 
 describe("the two surviving bare composite SET NULL keys have an authored repair", () => {
   it.each([REPAIR, ROLLBACK])("%s exists", (name) => {
-    expect(existsSync(join(SQL_DIR, name))).toBe(true);
+    expect(existsSync(join(MIGRATIONS_DIR, name))).toBe(true);
   });
 
   it.each([REPAIR, ROLLBACK])("%s sets lock_timeout so it fails fast instead of queueing", (name) => {
@@ -90,7 +89,7 @@ describe.each(KEYS)("$constraint", ({ constraint, table, nullableColumn, parent,
     expect(stmt).toMatch(
       new RegExp(`FOREIGN\\s+KEY\\s*\\(\\s*"org_id"\\s*,\\s*"${nullableColumn}"\\s*\\)`, "i"),
     );
-    expect(stmt).toMatch(new RegExp(`REFERENCES\\s+"${parent}"\\s*\\(\\s*"org_id"\\s*,\\s*"id"\\s*\\)`, "i"));
+    expect(stmt).toMatch(new RegExp(`REFERENCES\\s+(?:"public"\\.)?"${parent}"\\s*\\(\\s*"org_id"\\s*,\\s*"id"\\s*\\)`, "i"));
   });
 
   it("drops the old constraint before re-adding it, so the repair is re-runnable", () => {
@@ -99,7 +98,7 @@ describe.each(KEYS)("$constraint", ({ constraint, table, nullableColumn, parent,
 
   it("alters the table the constraint actually lives on", () => {
     expect(addConstraintStatement(REPAIR, constraint)).toMatch(
-      new RegExp(`ALTER\\s+TABLE\\s+"${table}"`, "i"),
+      new RegExp(`ALTER\\s+TABLE\\s+(?:"public"\\.)?"${table}"`, "i"),
     );
   });
 

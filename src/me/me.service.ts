@@ -6,8 +6,12 @@ import {
 import { eq, desc, count, gt, gte, and, isNull, or, SQL } from "drizzle-orm";
 import { DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
-import { users, loginHistory, userSessions } from "../db/schema";
-import type { UpdateProfileInput } from "./dto/me.schemas";
+import { users, loginHistory, userSessions, userPreferences } from "../db/schema";
+import {
+  ESS_LANGUAGES,
+  type UpdateMyPreferencesInput,
+  type UpdateProfileInput,
+} from "./dto/me.schemas";
 import { withClientInfo } from "../common/http/parse-user-agent";
 import { readOrgDisplay, type OrgDisplay } from "./org-display";
 import { EmploymentFactsService } from "../modules/directory/employment-facts.service";
@@ -89,6 +93,31 @@ export class MeService {
     );
     if (touchesSession) await this.invalidateSessionProfile(userId);
 
+    return { success: true };
+  }
+
+  async getMyPreferences(
+    userId: string,
+  ): Promise<{ language: (typeof ESS_LANGUAGES)[number] }> {
+    const row = await this.db.query.userPreferences.findFirst({
+      columns: { language: true },
+      where: eq(userPreferences.userId, userId),
+    });
+    const language = ESS_LANGUAGES.find((code) => code === row?.language);
+    return { language: language ?? "en" };
+  }
+
+  async updateMyPreferences(
+    userId: string,
+    input: UpdateMyPreferencesInput,
+  ): Promise<{ success: true }> {
+    await this.db
+      .insert(userPreferences)
+      .values({ userId, language: input.language })
+      .onConflictDoUpdate({
+        target: userPreferences.userId,
+        set: { language: input.language },
+      });
     return { success: true };
   }
 

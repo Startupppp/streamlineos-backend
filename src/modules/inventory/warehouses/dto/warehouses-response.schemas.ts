@@ -37,7 +37,7 @@ export const invWarehouseSchema = z.object({
 });
 
 // A bare array: the warehouse picker reads the list whole.
-export const listWarehousesResponseSchema = z.array(invWarehouseSchema.extend({
+export const listWarehousesResponseSchema = itemsPagedSchema(invWarehouseSchema.extend({
   _count: z.object({ locations: z.number().int() }),
 }));
 

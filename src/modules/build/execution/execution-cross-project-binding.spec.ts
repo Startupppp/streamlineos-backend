@@ -14,7 +14,7 @@ import { SprintsService } from "./sprints.service";
 import { ModulesService } from "./modules.service";
 import { IntakeService, MilestonesService, ViewsService } from "./workspace.service";
 import { BuildTicketCreationService } from "../core/tickets";
-import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double.spec-fixtures";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { stubService } from "../../../test/service-stub.spec-fixtures";

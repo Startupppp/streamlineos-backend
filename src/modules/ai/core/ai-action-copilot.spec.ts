@@ -48,7 +48,7 @@ function makeCtx(scope: DataScope = "all"): AskOsToolRunContext {
 
 function buildMocks() {
   const db = { select: jest.fn(), update: jest.fn(), insert: jest.fn() } as unknown as import("../../../db/drizzle.module").Db;
-  const confirmation = { propose: jest.fn(), confirm: jest.fn(), markExecuted: jest.fn(), cancel: jest.fn() } as unknown as AiConfirmationService;
+  const confirmation = { propose: jest.fn(), confirm: jest.fn(), markExecuted: jest.fn() } as unknown as AiConfirmationService;
   return { db, confirmation };
 }
 

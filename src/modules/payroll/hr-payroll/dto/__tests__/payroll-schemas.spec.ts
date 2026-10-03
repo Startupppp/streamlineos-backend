@@ -75,6 +75,11 @@ describe("createFnfSchema", () => {
   it("rejects negative values for new decimal fields", () => {
     expect(() => createFnfSchema.parse({ ...validBase, reimbursementsDue: -1 })).toThrow();
   });
+
+  it("accepts gratuity as a non-negative amount", () => {
+    expect(createFnfSchema.parse({ ...validBase, gratuity: 75000 }).gratuity).toBe(75000);
+    expect(() => createFnfSchema.parse({ ...validBase, gratuity: -1 })).toThrow();
+  });
 });
 
 describe("patchFnfSchema", () => {

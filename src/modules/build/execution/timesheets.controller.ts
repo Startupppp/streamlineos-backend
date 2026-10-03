@@ -42,7 +42,6 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
-  timesheetEntrySchema,
   timesheetRowSchema,
   timesheetPageSchema,
   billingSummaryItemSchema,
@@ -157,7 +156,7 @@ export class TicketTimeEntriesController {
 
   @Get()
   @RequirePermission("build:timesheets:view")
-  @ResponseSchema(z.array(timesheetEntrySchema))
+  @ResponseSchema(timesheetPageSchema)
   @ApiOkResponse({ headers: {
     "Link": { description: "Relative next-page link when more entries exist", schema: { type: "string" } },
     "X-Next-Cursor": { description: "Opaque next-page cursor, empty on the final page", schema: { type: "string" } },
@@ -177,7 +176,7 @@ export class TicketTimeEntriesController {
     response.setHeader("X-Next-Cursor", page.nextCursor ?? "");
     if (page.nextCursor)
       response.setHeader("Link", `</build/${projectId}/tickets/${ticketId}/time-entries?limit=${query.limit}&cursor=${encodeURIComponent(page.nextCursor)}>; rel="next"`);
-    return page.items;
+    return page;
   }
 
   @Post()

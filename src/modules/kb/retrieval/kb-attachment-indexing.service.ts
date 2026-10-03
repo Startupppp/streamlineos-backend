@@ -33,6 +33,7 @@ import {
   sourceChunks,
   updateDerivedChunkAcl,
 } from "./kb-derived-chunk-state";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 @Injectable()
 export class KbAttachmentIndexingService {
@@ -141,7 +142,7 @@ export class KbAttachmentIndexingService {
   ): Promise<{ chunks: number; warning: string | null }> {
     const dbRole = "primary";
     const queueLane = KB_INDEXING_QUEUE_LANE;
-    const [attachment] = await this.db
+    const [attachment] = await runInTenantTransaction(this.db, async () => this.db
       .select({
         pageId: kbPageAttachments.pageId,
         fileKey: kbPageAttachments.fileKey,
@@ -165,7 +166,7 @@ export class KbAttachmentIndexingService {
           eq(kbPageAttachments.orgId, orgId),
         ),
       )
-      .limit(1);
+      .limit(1), { orgId });
 
     if (!attachment || attachment.deletedAt !== null || attachment.pageDeletedAt !== null) {
       await this.removeAttachmentChunks(orgId, attachmentId);
@@ -224,7 +225,7 @@ export class KbAttachmentIndexingService {
     const aclRevision = attachment.pageAclRevision ?? 1;
     const contentHash = sha256(text);
     const family = attachmentChunks(orgId, attachmentId);
-    const stored = await loadDerivedChunkState(this.db, family);
+    const stored = await runInTenantTransaction(this.db, async () => loadDerivedChunkState(this.db, family), { orgId });
     if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
       if (stored.aclRevision !== aclRevision) {
         this.logger.log("KB attachment ACL updated (text unchanged)", {
@@ -232,7 +233,7 @@ export class KbAttachmentIndexingService {
           attachmentId,
           aclRevision,
         });
-        await updateDerivedChunkAcl(this.db, family, aclRevision);
+        await runInTenantTransaction(this.db, async () => updateDerivedChunkAcl(this.db, family, aclRevision), { orgId });
         metrics.finish("acl_only", { reused: true, dbRole, queueLane });
       } else {
         metrics.finish("reused", { reused: true, dbRole, queueLane });
@@ -242,7 +243,7 @@ export class KbAttachmentIndexingService {
 
     const embeddings = await this.embed(orgId, "attachment", attachmentId, contentHash, chunks, metrics);
 
-    await replaceAttachmentChunks(
+    await runInTenantTransaction(this.db, async () => replaceAttachmentChunks(
       this.db,
       orgId,
       attachmentId,
@@ -250,7 +251,7 @@ export class KbAttachmentIndexingService {
       chunks,
       embeddings,
       { contentHash, aclRevision },
-    );
+    ), { orgId });
 
     metrics.finish("indexed", { chunks: chunks.length, reused: false, dbRole, queueLane });
     return { chunks: chunks.length, warning: null };
@@ -260,14 +261,14 @@ export class KbAttachmentIndexingService {
     orgId: string,
     attachmentId: number,
   ): Promise<void> {
-    await this.db
+    await runInTenantTransaction(this.db, async () => this.db
       .delete(kbArticleChunks)
       .where(
         and(
           eq(kbArticleChunks.attachmentId, attachmentId),
           eq(kbArticleChunks.orgId, orgId),
         ),
-      );
+      ), { orgId });
   }
 
   async indexPageDocument(

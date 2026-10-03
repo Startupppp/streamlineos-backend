@@ -173,6 +173,16 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
   });
 
   describe("resolveOrCreateOrg cleanup", () => {
+    const stubSetupMemberships = (resolver: OrgSetupResolverService, memberships: SetupMembership[]) =>
+      jest
+        .spyOn(
+          resolver as unknown as {
+            findSetupContext: (userId: string) => Promise<{ activeTarget: null; memberships: SetupMembership[] }>;
+          },
+          "findSetupContext",
+        )
+        .mockResolvedValue({ activeTarget: null, memberships });
+
     it("genuine orphan (no placement anywhere) — deletes exactly that org's membership ids", async () => {
       placementLookup().mockResolvedValue(null);
       const creation = {
@@ -181,7 +191,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
           .mockResolvedValue({ id: "org-new", name: "New", slug: "new" }),
       };
       const resolver = await buildResolver(makeDb({}), creation);
-      jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue([
+      stubSetupMemberships(resolver, [
         membership({ id: 7, orgId: "org-gone", existingOrgId: null, orgStatus: null }),
         membership({ id: 8, orgId: "org-gone", existingOrgId: null, orgStatus: null }),
       ]);
@@ -200,9 +210,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
     it("wrong-cell / RLS-hidden row (placement exists) — NOTHING is deleted", async () => {
       placementLookup().mockResolvedValue({ region: "eu", cellId: "cell-eu-1" });
       const resolver = await buildResolver(makeDb({}));
-      jest
-        .spyOn(resolver, "listSetupMemberships")
-        .mockResolvedValue([
+      stubSetupMemberships(resolver, [
           membership({ id: 9, orgId: "org-elsewhere", existingOrgId: null, orgStatus: null }),
         ]);
 
@@ -214,9 +222,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
     it("an unverifiable placement lookup — NOTHING is deleted", async () => {
       placementLookup().mockRejectedValue(new Error("control plane unreachable"));
       const resolver = await buildResolver(makeDb({}));
-      jest
-        .spyOn(resolver, "listSetupMemberships")
-        .mockResolvedValue([
+      stubSetupMemberships(resolver, [
           membership({ id: 10, orgId: "org-unknown", existingOrgId: null, orgStatus: null }),
         ]);
 
@@ -232,7 +238,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
         ),
       );
       const resolver = await buildResolver(makeDb({}));
-      jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue([
+      stubSetupMemberships(resolver, [
         membership({ id: 11, orgId: "org-placed", existingOrgId: null, orgStatus: null }),
         membership({ id: 12, orgId: "org-absent", existingOrgId: null, orgStatus: null }),
       ]);
@@ -254,7 +260,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
           .mockResolvedValue({ id: "org-new", name: "New", slug: "new" }),
       };
       const resolver = await buildResolver(makeDb({}), creation);
-      jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue([]);
+      stubSetupMemberships(resolver, []);
 
       const result = await resolver.resolveOrCreateOrg(actor({ orgId: "" }), {});
 
@@ -271,9 +277,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
           .mockResolvedValue({ id: "org-new", name: "New", slug: "new" }),
       };
       const resolver = await buildResolver(makeDb({}), creation);
-      jest
-        .spyOn(resolver, "listSetupMemberships")
-        .mockResolvedValue([
+      stubSetupMemberships(resolver, [
           membership({ id: 13, orgId: "org-invited", existingOrgId: "org-invited", status: "INVITED" }),
         ]);
 
@@ -287,9 +291,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
     it("SUSPENDED membership — throws before any cleanup and creates nothing", async () => {
       const creation = { createFromSetup: jest.fn() };
       const resolver = await buildResolver(makeDb({}), creation);
-      jest
-        .spyOn(resolver, "listSetupMemberships")
-        .mockResolvedValue([membership({ id: 14, status: "SUSPENDED", isOwner: false })]);
+      stubSetupMemberships(resolver, [membership({ id: 14, status: "SUSPENDED", isOwner: false })]);
 
       await expect(
         resolver.resolveOrCreateOrg(actor({ orgId: "" }), {}),
@@ -301,9 +303,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
 
     it("LEFT membership on a live org — never deleted", async () => {
       const resolver = await buildResolver(makeDb({}));
-      jest
-        .spyOn(resolver, "listSetupMemberships")
-        .mockResolvedValue([membership({ id: 15, status: "LEFT" })]);
+      stubSetupMemberships(resolver, [membership({ id: 15, status: "LEFT" })]);
 
       await resolver.resolveOrCreateOrg(actor({ orgId: "" }), {});
 
@@ -312,7 +312,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
 
     it("soft-deleted organization — the membership row survives; deletion is not cleanup", async () => {
       const resolver = await buildResolver(makeDb({}));
-      jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue([
+      stubSetupMemberships(resolver, [
         membership({ id: 16, status: "ACTIVE", orgDeletedAt: new Date("2020-01-01") }),
       ]);
 
@@ -363,9 +363,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
     it("an already-completed organization is reused — no second organization is created without explicit intent", async () => {
       const creation = { createFromSetup: jest.fn() };
       const resolver = await buildResolver(makeDb({}), creation);
-      jest
-        .spyOn(resolver, "listSetupMemberships")
-        .mockResolvedValue([
+      stubSetupMemberships(resolver, [
           membership({ id: 17, orgId: "org-done", existingOrgId: "org-done", isOwner: true }),
         ]);
 
@@ -393,7 +391,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
         }),
       );
       const resolver = await buildResolver(makeDb({}));
-      jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue(rows);
+      stubSetupMemberships(resolver, rows);
 
       await resolver.resolveOrCreateOrg(actor({ orgId: "" }), {});
 
@@ -415,9 +413,7 @@ describe("OrgSetupResolverService — organization absence is proved by placemen
           .mockResolvedValue({ id: "org-new", name: "New", slug: "new" }),
       };
       const resolver = await buildResolver(makeDb({}), creation);
-      jest
-        .spyOn(resolver, "listSetupMemberships")
-        .mockResolvedValue([
+      stubSetupMemberships(resolver, [
           membership({ id: 18, orgId: "org-gone", existingOrgId: null, orgStatus: null }),
         ]);
 

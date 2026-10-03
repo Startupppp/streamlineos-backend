@@ -13,6 +13,10 @@ jest.mock("ai", () => ({
   stepCountIs: jest.fn(),
 }));
 
+jest.mock("../ai-stream-model", () => ({
+  resolveAiStreamModel: () => ({ model: "model-handle", modelId: "gemini-1.5-pro-latest" }),
+}));
+
 jest.mock("../../services/chat-assistant-model", () => ({
   resolveChatModel: () => "model-handle",
   resolveChatModelId: () => "gemini-1.5-pro-latest",

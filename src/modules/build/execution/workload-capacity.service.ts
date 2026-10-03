@@ -133,9 +133,9 @@ export class WorkloadCapacityService {
       .limit(500);
 
     const loggedHoursByMembershipId = new Map<number, number>(
-      timesheetRows
-        .filter((r) => r.userMembershipId !== null)
-        .map((r) => [r.userMembershipId!, Number(r.totalHours)]),
+      timesheetRows.flatMap((r): [number, number][] =>
+        r.userMembershipId === null ? [] : [[r.userMembershipId, Number(r.totalHours)]],
+      ),
     );
 
     const estimateRows = await this.db
@@ -167,12 +167,11 @@ export class WorkloadCapacityService {
       .limit(500);
 
     const estimateHoursByMembershipId = new Map<number, number | null>(
-      estimateRows
-        .filter((r) => r.assigneeMembershipId !== null)
-        .map((r) => [
-          r.assigneeMembershipId!,
-          Number(r.estimatedTicketCount) > 0 ? Number(r.estimateHours) : null,
-        ]),
+      estimateRows.flatMap((r): [number, number | null][] =>
+        r.assigneeMembershipId === null
+          ? []
+          : [[r.assigneeMembershipId, Number(r.estimatedTicketCount) > 0 ? Number(r.estimateHours) : null]],
+      ),
     );
 
     const teamRows = await this.db

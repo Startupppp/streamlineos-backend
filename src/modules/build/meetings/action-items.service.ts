@@ -147,8 +147,7 @@ export class ActionItemsService {
     if (!(await this.access.holds(actor, "build:tickets:create")))
       throw new ForbiddenException("Not authorized to create tickets");
     const { orgId, userId } = actor;
-    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
-    const result = await this.db.transaction(async (tx) => {
+    const { result, createdResult } = await this.db.transaction(async (tx) => {
       const meeting = await tx.query.projectMeetings.findFirst({
         where: and(
           eq(projectMeetings.id, meetingId),
@@ -171,7 +170,7 @@ export class ActionItemsService {
       if (!item) throw new NotFoundException("Action item not found");
       if (item.convertedTicketId !== null) throw new ConflictException("Action item already converted to a task");
 
-      createdResult = await this.ticketCreation.createInTransaction(tx, {
+      const createdResult = await this.ticketCreation.createInTransaction(tx, {
         orgId,
         projectId,
         actor: { userId, membershipId: null },
@@ -201,9 +200,9 @@ export class ActionItemsService {
         .returning();
 
       if (!updatedItem) throw new ConflictException("Action item was already converted by a concurrent request");
-      return { actionItem: updatedItem, ticketId: ticket.id };
+      return { result: { actionItem: updatedItem, ticketId: ticket.id }, createdResult };
     });
-    this.ticketCreation.publish(createdResult!);
+    this.ticketCreation.publish(createdResult);
 
     this.audit.log({
       action: "action_item.converted",

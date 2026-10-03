@@ -10,7 +10,7 @@ import {
   loadRoadmapDemandSignals,
   DELIVERY_PROGRESS_PERCENT_SCALE,
 } from "./roadmap-delivery";
-import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double.spec-fixtures";
 
 const ORG = "org-signals";
 const OTHER_ORG = "org-intruder";

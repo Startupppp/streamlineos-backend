@@ -57,7 +57,7 @@ describe("KbAnalyticsService — cross-tenant isolation", () => {
     const { db, allWhereArgs } = makeDb();
     const svc = new KbAnalyticsService(db, auth as never);
 
-    await svc.overview(ATTACKER_ORG, {}).catch(() => {});
+    await svc.overview(ATTACKER_ORG, { scope: "support" }).catch(() => {});
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -69,7 +69,7 @@ describe("KbAnalyticsService — cross-tenant isolation", () => {
     const { db, allWhereArgs } = makeDb();
     const svc = new KbAnalyticsService(db, auth as never);
 
-    await svc.overview(OWNER_ORG, {}).catch(() => {});
+    await svc.overview(OWNER_ORG, { scope: "support" }).catch(() => {});
 
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
     expect(allVals).toContain(OWNER_ORG);

@@ -141,8 +141,8 @@ export class RisksService {
         ),
       )
       .orderBy(desc(projectRisks.id))
-      .limit(RisksService.PAGE_LIMIT + 1);
-    return buildIdCursorPage(rows, RisksService.PAGE_LIMIT, (r) => r.id);
+      .limit((query.limit ?? RisksService.PAGE_LIMIT) + 1);
+    return buildIdCursorPage(rows, query.limit ?? RisksService.PAGE_LIMIT, (r) => r.id);
   }
 
   async getRisk(u: CurrentUserContext, projectId: number, riskId: number) {

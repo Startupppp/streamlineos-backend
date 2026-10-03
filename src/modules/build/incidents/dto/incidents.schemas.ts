@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { incidentSeverityEnum, incidentStatusEnum, incidentFollowUpStatusEnum } from "../../../../db/schema";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
-import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { optionalPageSizeField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const incidentSeveritySchema = z.enum(incidentSeverityEnum.enumValues);
 export const incidentStatusSchema = z.enum(incidentStatusEnum.enumValues);
@@ -11,6 +11,7 @@ export const listIncidentsQuerySchema = z.object({
   status: incidentStatusSchema.optional(),
   severity: incidentSeveritySchema.optional(),
   cursor: z.string().min(1).optional(),
+  limit: optionalPageSizeField(),
   q: z.string().max(200).optional(),
 }).strict();
 

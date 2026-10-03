@@ -50,6 +50,7 @@ export interface RunBatchData {
   bonusesByUser: Map<string, { id: number; userId: string; amount: string; type: string; taxable: boolean }[]>;
   incentivesByUser: Map<string, { id: number; salesRepId: string; approvedAmount: string | null; calculatedAmount: string }[]>;
   reimbursementsByUser: Map<string, { id: number; userId: string; amount: string; category: string }[]>;
+  expensesByUser: Map<string, { id: number; userId: string; amount: string; category: string; expenseDate: string }[]>;
   loansByUser: Map<string, CalcInputPulls["activeLoans"]>;
   taxDeclarationByUser: Map<string, {
     userId: string;

@@ -448,6 +448,10 @@ const CALLROUTE_VARIABLE_RE = new RegExp(
   `\\(\\s*["'\`](${HTTP_VERBS.join("|")})["'\`]\\s*,\\s*[A-Za-z_$]`,
   "gi",
 );
+const TUPLE_PAIR_RE = new RegExp(
+  `\\[\\s*["'\`](${HTTP_VERBS.join("|")})["'\`]\\s*,\\s*["'\`](/[^"'\`]*)["'\`]`,
+  "gi",
+);
 const TITLE_PAIR_RE = new RegExp(`\\b(${HTTP_VERBS.join("|")})\\s+(/[A-Za-z0-9_\\-./:*\${}]+)`, "gi");
 
 export function scanSpec(text, relPath) {
@@ -464,6 +468,11 @@ export function scanSpec(text, relPath) {
   }
   CALLROUTE_LITERAL_RE.lastIndex = 0;
   while ((m = CALLROUTE_LITERAL_RE.exec(text)) !== null) {
+    const p = normalisePath(m[2]);
+    if (p && p.startsWith("/")) pairs.add(`${m[1].toLowerCase()} ${p}`);
+  }
+  TUPLE_PAIR_RE.lastIndex = 0;
+  while ((m = TUPLE_PAIR_RE.exec(text)) !== null) {
     const p = normalisePath(m[2]);
     if (p && p.startsWith("/")) pairs.add(`${m[1].toLowerCase()} ${p}`);
   }
@@ -676,6 +685,22 @@ function runSelfTest() {
       scanSpec("await expect(guard.canActivate(ctx)).rejects.toThrow(ModuleDisabledException);\nit(\"GET /x is blocked\", () => {});", "a.spec.ts"),
       new Map(),
     ) !== null,
+  );
+  assert(
+    "a [verb, path] row of a route table in a 403 spec links that route",
+    coverageLink(
+      { verb: "get", route: "/x/*/items", controller: "XController", method: "list", gateKinds: ["permission"], delegates: [] },
+      scanSpec('const routes = [["get", `/x/${ID}/items`], ["post", "/y"]];\nit.each(routes)("403 on %s %s", async (method, path) => { expect((await callRoute(method, path, token)).status).toBe(403); });', "a.e2e-spec.ts"),
+      new Map(),
+    ) !== null,
+  );
+  assert(
+    "a [verb, path] row with a hard-coded id does not link the parameterised route",
+    coverageLink(
+      { verb: "get", route: "/x/*/items", controller: "XController", method: "list", gateKinds: ["permission"], delegates: [] },
+      scanSpec('const routes = [["get", "/x/1/items"]];\nexpect(res.status).toBe(403);', "a.e2e-spec.ts"),
+      new Map(),
+    ) === null,
   );
   assert(
     "a map.get() is not an HTTP GET",

@@ -5,6 +5,7 @@ import {
   HttpCode,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -16,7 +17,12 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollEntitiesService } from "./entities.service";
-import { createEntitySchema, type CreateEntityInput } from "./dto/entities.schemas";
+import {
+  createEntitySchema,
+  updateEntitySchema,
+  type CreateEntityInput,
+  type UpdateEntityInput,
+} from "./dto/entities.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { payrollEntitySchema, payrollEntityListResponseSchema, countryPacksResponseSchema, entityContextResponseSchema } from "./dto/entities-response.schemas";
@@ -76,5 +82,17 @@ export class PayrollEntitiesController {
     @Body() body: CreateEntityInput,
   ) {
     return this.service.create(u.orgId, u.userId, body);
+  }
+
+  @Patch(":entityId")
+  @RequirePermission("payroll:policies:manage")
+  @Validate({ params: entityIdParams, body: updateEntitySchema })
+  @ResponseSchema(payrollEntitySchema)
+  update(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("entityId", ParseIntPipe) entityId: number,
+    @Body() body: UpdateEntityInput,
+  ) {
+    return this.service.update(u.orgId, entityId, body);
   }
 }

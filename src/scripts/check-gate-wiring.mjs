@@ -158,6 +158,16 @@ const UNWIRED_BY_DESIGN = Object.freeze({
     "INTERNAL_API_SECRET and NEXTAUTH_SECRET; drives real HTTP POST requests against the running " +
     "app and sleeps 16 seconds for the membership-status cache window to expire. No hermetic CI " +
     "job boots the application. Owner: gate-wiring.",
+
+  "verify:qa-bug-contraction":
+    "runs migrations/sql/b-qa-bug-03-verify.sql against the database named by a required --url and " +
+    "refuses to run without one (exit 2), never reading .env because it resolves to the production " +
+    "host. The hermetic gates job has no disposable database to point it at. Owner: gate-wiring.",
+
+  "check:build-authz-census":
+    "regenerates the committed Build authorization census reports in place, so running it in CI " +
+    "would rewrite the tree rather than judge it. Its --check form, check:build-authz-census:check, " +
+    "is the gate and runs in ci.yml after check:rbac-matrix-ledger. Owner: gate-wiring.",
 });
 
 /**

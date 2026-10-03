@@ -83,6 +83,13 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     channel: "outbox",
   },
   {
+    id: "job-board-outbox",
+    sourceFile: "src/modules/hr/recruitment/boards/job-board-outbox.consumer.ts",
+    drains: "outbox_events",
+    owner: "people-team",
+    channel: "outbox",
+  },
+  {
     id: "sign-bulk-send",
     sourceFile: "src/modules/e-sign/sign-bulk-send.consumer.ts",
     drains: "outbox_events",

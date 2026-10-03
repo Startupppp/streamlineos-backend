@@ -34,3 +34,29 @@ export const componentListResponseSchema = z.object({
   items: z.array(salaryComponentSchema),
   pagination: componentListPaginationSchema,
 });
+
+const salaryPreviewTotalsSchema = z.object({
+  gross: z.string(),
+  deductions: z.string(),
+  employerContributions: z.string(),
+  net: z.string(),
+});
+
+export const salaryPreviewResponseSchema = z.object({
+  annualCtc: z.string(),
+  month: z.string(),
+  regime: z.enum(["OLD", "NEW"]),
+  stateCode: z.string().nullable(),
+  lines: z.array(z.object({
+    code: z.string(),
+    name: z.string(),
+    category: z.enum(["EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION", "REIMBURSEMENT", "TAX", "ADJUSTMENT"]),
+    taxable: z.boolean(),
+    monthly: z.string(),
+    annual: z.string(),
+    note: z.string().nullable(),
+  })),
+  monthly: salaryPreviewTotalsSchema,
+  annual: salaryPreviewTotalsSchema,
+  warnings: z.array(z.string()),
+});

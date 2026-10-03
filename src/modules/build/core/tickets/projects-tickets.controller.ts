@@ -35,6 +35,7 @@ import {
   rankTicketSchema,
   searchTicketsQuerySchema,
   ticketActivityQuerySchema,
+  ticketColumnCountsQuerySchema,
   ticketsListQuerySchema,
   updateTicketSchema,
   type AllWorkQuery,
@@ -45,6 +46,7 @@ import {
   type RankTicketInput,
   type SearchTicketsQuery,
   type TicketActivityQuery,
+  type TicketColumnCountsQuery,
   type TicketsListQuery,
   type UpdateTicketInput,
 } from "../dto/projects.schemas";
@@ -116,10 +118,10 @@ export class ProjectsTicketsController {
   @Get(":projectId/tickets/column-counts")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(columnCountsSchema)
-  @Validate({ params: projectIdParams, query: ticketsListQuerySchema })
+  @Validate({ params: projectIdParams, query: ticketColumnCountsQuerySchema })
   getColumnCounts(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query() query: TicketsListQuery,
+    @Query() query: TicketColumnCountsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.read.getColumnCounts(u, projectId, query);

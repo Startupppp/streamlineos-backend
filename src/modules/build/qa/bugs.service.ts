@@ -133,8 +133,7 @@ export class BugsService {
 
   async createBug(u: CurrentUserContext, projectId: number, input: CreateBugInput) {
     await assertProjectWriteAccess(this.db, this.access, u, projectId);
-    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
-    const result = await this.db.transaction(async (tx) => {
+    const { result, createdResult } = await this.db.transaction(async (tx) => {
       const assigneeMembershipId = input.assigneeId
         ? (await tx.query.organizationMembers.findFirst({
             where: and(
@@ -151,7 +150,7 @@ export class BugsService {
         .where(and(eq(projectStatuses.orgId, u.orgId), eq(projectStatuses.projectId, projectId)));
       const ticketStatus = resolveWorkItemStatus("new", availableStatuses);
       const ticketPriority = resolveTicketPriority(input.priority);
-      createdResult = await this.ticketCreation.createInTransaction(tx, {
+      const createdResult = await this.ticketCreation.createInTransaction(tx, {
         orgId: u.orgId,
         projectId,
         actor: { userId: u.userId, membershipId: null },
@@ -166,10 +165,11 @@ export class BugsService {
           automationAssigneeUserId: input.assigneeId ?? null,
         }],
       });
-      const ticket = createdResult.tickets[0]!;
+      const ticket = createdResult.tickets[0];
+      if (!ticket) throw new Error("Ticket creation returned no ticket");
       await tx.insert(workItemQaDetails).values({
         orgId: u.orgId,
-        workItemId: ticket!.id,
+        workItemId: ticket.id,
         projectId,
         qaState: "new",
         severity: input.severity ?? "major",
@@ -184,8 +184,8 @@ export class BugsService {
         qaOwnerUserId: input.qaOwnerId ?? null,
         createdByUserId: u.userId,
       });
-      return {
-        ...ticket!,
+      const result = {
+        ...ticket,
         qaState: "new" as const,
         severity: input.severity ?? ("major" as const),
         stepsToReproduce: input.stepsToReproduce ?? null,
@@ -201,8 +201,9 @@ export class BugsService {
         reopenCount: 0,
         createdByUserId: u.userId,
       };
+      return { result, createdResult };
     });
-    this.ticketCreation.publish(createdResult!);
+    this.ticketCreation.publish(createdResult);
     this.audit.log({
       action: "bug.created",
       userId: u.userId,

@@ -185,7 +185,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 **BE-136.** Make a `db.transaction` mock invoke its callback. *Why:* a bare `jest.fn()` voids every assertion inside it. (gate: check:transaction-callbacks)
 **BE-137.** `*e2e-spec.ts` runs only under `pnpm test:e2e`.
 **BE-138.** Run `pnpm typecheck:test` after any signature change. *Why:* typecheck is the only gate that sees arity.
-**BE-139.** Give tsc 10240 MB. *Why:* at 8192 it dies exit 134 printing no type errors.
+**BE-139.** Give the test-inclusive tsc 12288 MB. *Why:* at 10240 it dies exit 134 printing no type errors.
 **BE-140.** Boot the API and exercise the real request for notifications, sweeps, RLS and post-commit work. *Why:* a swallowed 42501 passes every static check.
 **BE-141.** Pair every negative assertion with a positive one. *Why:* a status-only negative passes on a 500.
 **BE-142.** There is no Prettier and no coverage threshold in this repo. Do not assume formatting or coverage is enforced.

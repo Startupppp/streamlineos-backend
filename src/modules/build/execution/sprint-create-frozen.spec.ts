@@ -14,7 +14,7 @@ function trackingDb() {
     insert: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
-    transaction: jest.fn(),
+    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     sprintsFindFirst: jest.fn(),
     sprintsFindMany: jest.fn(),
     ticketsFindMany: jest.fn(),

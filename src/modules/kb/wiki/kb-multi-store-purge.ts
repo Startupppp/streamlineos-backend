@@ -76,7 +76,8 @@ export async function incompleteStorePages(
         eq(kbPagePurgeLedger.store, store),
         eq(kbPagePurgeLedger.status, "completed"),
       ),
-    );
+    )
+    .limit(pageIds.length);
   const done = new Set(completed.map((row) => row.pageId));
   return pageIds.filter((pageId) => !done.has(pageId));
 }
@@ -94,7 +95,8 @@ export async function areAllStoresComplete(
         eq(kbPagePurgeLedger.orgId, orgId),
         eq(kbPagePurgeLedger.pageId, pageId),
       ),
-    );
+    )
+    .limit(KB_PURGE_STORES.length);
   return rows.length > 0 && rows.every((r) => r.status === "completed");
 }
 

@@ -14,7 +14,7 @@ function makeDb(overrides: Partial<{
       projects: { findFirst: jest.fn().mockResolvedValue(overrides.findFirstProject ?? null) },
       tickets: { findFirst: jest.fn().mockResolvedValue(overrides.findFirstTicket ?? null) },
     },
-    transaction: jest.fn(),
+    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     select: jest.fn(),
     insert: jest.fn(),
     update: jest.fn(),
@@ -31,7 +31,7 @@ function makeTicketCreation() {
 
 const mockAccess = { membersWithPermission: jest.fn().mockResolvedValue([]) } as unknown as AccessService;
 const mockDispatch = { emit: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationDispatchService;
-const mockPartyMerge = { mergeParties: jest.fn().mockResolvedValue(undefined) } as unknown as PartyMergeService;
+const mockPartyMerge = { merge: jest.fn() } as unknown as PartyMergeService;
 
 const LEAD = {
   id: 1,

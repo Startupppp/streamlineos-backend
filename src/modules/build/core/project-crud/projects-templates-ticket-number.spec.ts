@@ -1,11 +1,15 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import type { PlanLimitsService } from "../../../billing/core/plan-limits.service";
-import type { BuildTicketCreationService } from "../tickets";
+import { BuildTicketCreationService } from "../tickets/build-ticket-creation.service";
 import { resolveOrganizationActorsByUserIds } from "../../../../common/organization/organization-actor";
 
 jest.mock("../../../../common/organization/organization-actor", () => ({
   resolveOrganizationActorsByUserIds: jest.fn(),
+}));
+
+jest.mock("../lib/build-ticket-capacity", () => ({
+  reserveTicketCapacity: jest.fn().mockResolvedValue(undefined),
 }));
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -44,18 +48,10 @@ const TEMPLATE_TICKETS = [
 ];
 
 function harness(highestTicketNumber: number) {
-  const selectProjections: unknown[] = [];
-  const selectWheres: unknown[] = [];
+  const allocationQueries: unknown[] = [];
   const insertedTickets: { ticketNumber: number }[] = [];
 
-  const selectBuilder: Record<string, unknown> = {};
-  selectBuilder.from = () => selectBuilder;
-  selectBuilder.where = (condition: unknown) => {
-    selectWheres.push(condition);
-    return Promise.resolve([{ value: highestTicketNumber }]);
-  };
-
-  const db = {
+  const db: Record<string, unknown> = {
     query: {
       projectTemplates: {
         findFirst: jest.fn().mockResolvedValue({
@@ -65,10 +61,12 @@ function harness(highestTicketNumber: number) {
         }),
       },
     },
-    select: (projection: unknown) => {
-      selectProjections.push(projection);
-      return selectBuilder;
+    execute: (query: unknown) => {
+      if (!sqlText(query).includes("project_ticket_counters")) return Promise.resolve([]);
+      allocationQueries.push(query);
+      return Promise.resolve([{ start: highestTicketNumber + 1 }]);
     },
+    transaction: (run: (tx: unknown) => unknown) => Promise.resolve(run(db)),
     insert: (table: unknown) => ({
       values: (rows: unknown) => {
         const list = Array.isArray(rows) ? rows : [rows];
@@ -80,7 +78,7 @@ function harness(highestTicketNumber: number) {
         };
       },
     }),
-  } as unknown as Db;
+  };
 
   const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as unknown as PlanLimitsService;
 
@@ -89,9 +87,18 @@ function harness(highestTicketNumber: number) {
   );
 
   return {
-    service: new ProjectsTemplatesService(db, planLimits, { log: jest.fn(), logCritical: jest.fn() } as never, {} as unknown as BuildTicketCreationService),
-    selectProjections,
-    selectWheres,
+    service: new ProjectsTemplatesService(
+      db as unknown as Db,
+      planLimits,
+      { log: jest.fn(), logCritical: jest.fn() } as never,
+      new BuildTicketCreationService(
+        db as unknown as Db,
+        { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
+        { runForTicketEvent: jest.fn() } as never,
+        { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
+      ),
+    ),
+    allocationQueries,
     insertedTickets,
   };
 }
@@ -102,9 +109,9 @@ describe("applyTemplate allocates ticket numbers from the highest issued, not th
 
     await h.service.applyTemplate(OWNER_ORG, "user-1", 5, { name: "Alpha" } as never);
 
-    expect(h.selectWheres).toHaveLength(1);
-    expect(sqlValues(h.selectWheres[0])).toContain(OWNER_ORG);
-    expect(sqlValues(h.selectWheres[0])).not.toContain(OTHER_ORG);
+    expect(h.allocationQueries).toHaveLength(1);
+    expect(sqlValues(h.allocationQueries[0])).toContain(OWNER_ORG);
+    expect(sqlValues(h.allocationQueries[0])).not.toContain(OTHER_ORG);
   });
 
   it("reads MAX(ticket_number) rather than counting rows, so a gap in the sequence cannot reissue a live number", async () => {
@@ -112,10 +119,10 @@ describe("applyTemplate allocates ticket numbers from the highest issued, not th
 
     await h.service.applyTemplate(OWNER_ORG, "user-1", 5, { name: "Alpha" } as never);
 
-    const projection = sqlText(h.selectProjections[0]).toUpperCase();
+    const projection = sqlText(h.allocationQueries[0]).toUpperCase();
     expect(projection).toContain("MAX");
     expect(projection).toContain("COALESCE");
-    expect(projection).not.toContain("COUNT");
+    expect(projection).not.toMatch(/\bCOUNT\s*\(/);
   });
 
   it("continues from the highest existing number when the project already holds tickets, instead of restarting inside the live range", async () => {

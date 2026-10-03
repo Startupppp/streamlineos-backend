@@ -3,8 +3,9 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { NotFoundException } from "@nestjs/common";
 import { KbPublicPagesController } from "./kb-public-pages.controller";
-import { KbPagesService } from "./kb-pages.service";
+import { KbPagePublicService } from "./kb-page-public.service";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
+import { StorageService } from "../../storage/storage.service";
 
 describe("KbPublicPagesController (e2e)", () => {
   let app: INestApplication;
@@ -34,8 +35,9 @@ describe("KbPublicPagesController (e2e)", () => {
     const ref = await Test.createTestingModule({
       controllers: [KbPublicPagesController],
       providers: [
-        { provide: KbPagesService, useValue: mockPagesService },
+        { provide: KbPagePublicService, useValue: mockPagesService },
         { provide: RateLimitService, useValue: mockRateLimit },
+        { provide: StorageService, useValue: {} },
       ],
     }).compile();
 

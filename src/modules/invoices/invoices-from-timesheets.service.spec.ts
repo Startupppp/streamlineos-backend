@@ -81,7 +81,11 @@ describe("InvoicesFromTimesheetsService", () => {
       execute: jest.fn().mockResolvedValue(undefined),
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockResolvedValue([{ count: 0 }]),
+        where: jest.fn(() =>
+          Object.assign(Promise.resolve([{ count: 0 }]), {
+            limit: jest.fn().mockResolvedValue([{ count: 0 }]),
+          }),
+        ),
       }),
       insert: txInsert,
     };

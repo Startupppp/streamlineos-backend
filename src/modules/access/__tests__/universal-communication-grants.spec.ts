@@ -29,6 +29,8 @@ import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { isCoreModuleKey } from "../../../common/rbac/module-registry";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 const UNIVERSAL_MEMBER_KEYS: ReadonlyArray<[string, string]> = [
   ["inbox",    "mail:inbox:view"],
@@ -229,6 +231,9 @@ describe("platform promotion authority: org owner with billing:* is REFUSED blog
 
   it("Note: INTERNAL_API_SECRET requirement for /platform/* routes is a separate guard layer. " +
      "This spec proves the PERMISSION-CATALOG layer only.", () => {
-    expect(true).toBe(true); // documented; live HTTP evidence required to close the INTERNAL_API_SECRET path
+    const text = readFileSync(join(__dirname, "../../billing/core/platform-promotions.controller.ts"), "utf8");
+    const routes = text.match(/^\s*@(?:Get|Post|Put|Patch|Delete)\(/gm) ?? [];
+    expect(routes.length).toBeGreaterThan(0);
+    expect(text.match(/assertInternalSecret\(secret, this\.config\?\.INTERNAL_API_SECRET\)/g) ?? []).toHaveLength(routes.length);
   });
 });

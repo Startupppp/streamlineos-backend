@@ -10,8 +10,6 @@ const workflowSvc = {
   createTransition: jest.fn(),
   updateTransition: jest.fn(),
   deleteTransition: jest.fn(),
-  listAllowedTransitions: jest.fn(),
-  setWipLimit: jest.fn(),
 };
 
 describe("ProjectsWorkflow auth/RBAC (e2e)", () => {

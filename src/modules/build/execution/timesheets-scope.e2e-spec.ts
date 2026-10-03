@@ -150,7 +150,7 @@ describeWithDb(
       const path = kind === "ticket" ? `/build/${target.projectId}/tickets/${target.ticketId}/time-entries` : `/build/time-entries${kind === "team" ? "/team" : ""}`;
       const first = await request(app.getHttpServer()).get(path).query({ limit: 1 }).set("Authorization", `Bearer ${token}`);
       expect(first.status).toBe(200);
-      const firstIds = kind === "ticket" ? z.array(timesheetEntrySchema.pick({ id: true })).parse(first.body).map((row) => row.id) : scopePageSchema.parse(first.body).items.map((row) => row.id);
+      const firstIds = scopePageSchema.parse(first.body).items.map((row) => row.id);
       expect(firstIds).toEqual([entryIds.member]);
       const cursor = kind === "ticket" ? first.headers["x-next-cursor"] : scopePageSchema.parse(first.body).nextCursor;
       expect(cursor).toBeTruthy();
@@ -166,7 +166,7 @@ describeWithDb(
       try {
         const second = await request(app.getHttpServer()).get(path).query({ limit: 1, cursor }).set("Authorization", `Bearer ${token}`);
         expect(second.status).toBe(200);
-        const secondIds = kind === "ticket" ? z.array(timesheetEntrySchema.pick({ id: true })).parse(second.body).map((row) => row.id) : scopePageSchema.parse(second.body).items.map((row) => row.id);
+        const secondIds = scopePageSchema.parse(second.body).items.map((row) => row.id);
         expect(secondIds).toEqual([entryIds.admin]);
         expect(kind === "ticket" ? second.headers["x-has-more"] : String(scopePageSchema.parse(second.body).hasMore)).toBe("false");
       } finally {

@@ -185,6 +185,8 @@ describe("client ip cannot be forged by the caller", () => {
    */
   describe("the source backstop, over all of src/", () => {
     const SPOOFABLE_ADDRESS_HEADERS = /x-forwarded-for|x-real-ip|x-client-ip/i;
+    const withoutComments = (source: string): string =>
+      source.replace(/^\s*\/\*[\s\S]*?\*\//gm, "").replace(/^\s*\/\/.*$/gm, "");
 
     function walk(dir: string, out: string[] = []): string[] {
       for (const entry of readdirSync(dir)) {
@@ -208,10 +210,19 @@ describe("client ip cannot be forged by the caller", () => {
     });
 
     it("no file in src derives a caller address from a header the caller can write", () => {
-      const offenders = SOURCES.filter((file) => SPOOFABLE_ADDRESS_HEADERS.test(file.content)).map(
+      const offenders = SOURCES.filter((file) => SPOOFABLE_ADDRESS_HEADERS.test(withoutComments(file.content))).map(
         (file) => file.path,
       );
       expect(offenders).toEqual(["src/modules/auth/auth.controller.ts"]);
+    });
+
+    it("SELF-TEST: a header named only in prose is not an offender, and the same header read in code still is", () => {
+      const prose = "/**\n * `x-client-ip` is set by the Next server.\n */\n// x-forwarded-for is never read\nexport const a = 1;\n";
+      const read = 'const ip = req.headers["x-forwarded-for"]; // x-real-ip\n';
+      const trailing = "/** doc */ const ip = req.headers[\"x-real-ip\"];\n";
+      expect(SPOOFABLE_ADDRESS_HEADERS.test(withoutComments(prose))).toBe(false);
+      expect(SPOOFABLE_ADDRESS_HEADERS.test(withoutComments(read))).toBe(true);
+      expect(SPOOFABLE_ADDRESS_HEADERS.test(withoutComments(trailing))).toBe(true);
     });
 
     /**

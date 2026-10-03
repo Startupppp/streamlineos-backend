@@ -545,6 +545,7 @@ describe("AiGatewayService", () => {
   describe("embedBatchWithCredit — one reservation for the whole batch (ticket 10)", () => {
     const INDEX_FEATURE = "kb.indexing";
     const RESERVE_CEILING_MILLI = 1000;
+    const PER_CHUNK_RESERVE_MILLI = 5;
 
     it("reserves ONCE for the whole batch, not once per text", async () => {
       const { svc, ledger, mockEmbeddings } = await buildModule();
@@ -564,7 +565,7 @@ describe("AiGatewayService", () => {
       expect(ledger.settle).toHaveBeenCalledTimes(1);
       expect(mockEmbeddings.embedBatchRaw).toHaveBeenCalledTimes(1);
       expect(ledger.reserve).toHaveBeenCalledWith(
-        expect.objectContaining({ feature: INDEX_FEATURE, credits: RESERVE_CEILING_MILLI }),
+        expect.objectContaining({ feature: INDEX_FEATURE, credits: PER_CHUNK_RESERVE_MILLI * texts.length }),
       );
     });
 

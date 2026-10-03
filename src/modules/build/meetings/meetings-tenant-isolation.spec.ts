@@ -28,7 +28,8 @@ describe("MeetingsService — cross-tenant isolation", () => {
   function makeDb(meetingRow: unknown | null) {
     const limit = jest.fn().mockResolvedValueOnce([projectAccessRow()]).mockResolvedValue([]);
     const where = jest.fn().mockReturnValue({ limit });
-    const from = jest.fn().mockReturnValue({ where });
+    const innerJoin = jest.fn().mockReturnValue({ where });
+    const from = jest.fn().mockReturnValue({ innerJoin, where });
     const select = jest.fn().mockReturnValue({ from });
     return {
       query: {

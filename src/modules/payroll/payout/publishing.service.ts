@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
   payrollRuns,
+  payrollRunEmployees,
   payslipPublications,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -49,6 +51,42 @@ export class PublishingService {
     return this.publisher.publish(orgId, runId, actorId, subjectKeys, runEmployeeIds);
   }
 
+  async releaseHold(orgId: string, runId: number, runEmployeeId: number, actorId: string) {
+    const run = await this.db.query.payrollRuns.findFirst({
+      where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
+      columns: { id: true, status: true },
+    });
+    if (!run) throw new NotFoundException("Payroll run not found");
+    if (run.status === "CLOSED") {
+      throw new ConflictException("Cannot release a payslip on a CLOSED payroll run");
+    }
+
+    const released = await this.db
+      .update(payrollRunEmployees)
+      .set({ holdReason: null })
+      .where(and(
+        eq(payrollRunEmployees.id, runEmployeeId),
+        eq(payrollRunEmployees.runId, runId),
+        eq(payrollRunEmployees.orgId, orgId),
+      ))
+      .returning({ id: payrollRunEmployees.id });
+    if (!released[0]) throw new NotFoundException("Employee record not found in this run");
+
+    this.audit.log({
+      action: "payroll.employee_unheld",
+      userId: actorId,
+      orgId,
+      targetId: String(runEmployeeId),
+      targetType: "payroll_run_employee",
+      metadata: { runId, reason: null },
+    });
+
+    if (run.status === "PAID" || run.status === "PAYSLIPS_PUBLISHED") {
+      return this.publisher.publish(orgId, runId, actorId, undefined, [runEmployeeId]);
+    }
+    return { published: 0, total: 0, heldCount: 0, runStatus: run.status };
+  }
+
   async listPublications(orgId: string, runId: number) {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
@@ -81,7 +119,7 @@ export class PublishingService {
     orgId: string,
     runId: number,
     actorId: string,
-  ): Promise<{ published: number; total: number; runStatus: string | null; retried: number }> {
+  ): Promise<{ published: number; total: number; heldCount: number; runStatus: string | null; retried: number }> {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
       columns: { id: true },
@@ -97,7 +135,7 @@ export class PublishingService {
       limit: PAYROLL_READ_CAP + 1,
     });
     if (failed.length === 0) {
-      return { published: 0, total: 0, runStatus: null, retried: 0 };
+      return { published: 0, total: 0, heldCount: 0, runStatus: null, retried: 0 };
     }
     const runEmployeeIds = failed.map((f) => f.runEmployeeId);
     const result = await this.publisher.publish(orgId, runId, actorId, undefined, runEmployeeIds);

@@ -4,7 +4,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService } from "./workspace.service";
-import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double.spec-fixtures";
 import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 const ORG = "org-1";

@@ -63,6 +63,40 @@ function moduleMembers(key: string): Ctor[] {
   return (Reflect.getMetadata(key, BuildQaModule) as Ctor[] | undefined) ?? [];
 }
 
+function unwrapModuleRef(entry: unknown): { module: unknown; exports: unknown[] } | null {
+  if (typeof entry === "function") return { module: entry, exports: [] };
+  if (typeof entry !== "object" || entry === null) return null;
+  if ("forwardRef" in entry && typeof entry.forwardRef === "function")
+    return unwrapModuleRef(entry.forwardRef());
+  if ("module" in entry)
+    return { module: entry.module, exports: "exports" in entry && Array.isArray(entry.exports) ? entry.exports : [] };
+  return null;
+}
+
+function isModuleClass(candidate: unknown): boolean {
+  return typeof candidate === "function" && Reflect.getMetadata("providers", candidate) !== undefined;
+}
+
+function exportedProviders(entry: unknown, seen: Set<unknown>, out: Set<Ctor>): void {
+  const ref = unwrapModuleRef(entry);
+  if (!ref || seen.has(ref.module)) return;
+  seen.add(ref.module);
+  const declared = (Reflect.getMetadata("exports", ref.module as object) as unknown[] | undefined) ?? [];
+  for (const exported of [...declared, ...ref.exports]) {
+    const inner = unwrapModuleRef(exported);
+    if (inner && (isModuleClass(inner.module) || inner.exports.length > 0)) exportedProviders(exported, seen, out);
+    else if (typeof exported === "function") out.add(exported as Ctor);
+  }
+}
+
+function injectableProviders(): Ctor[] {
+  const out = new Set<Ctor>(moduleMembers("providers"));
+  const seen = new Set<unknown>([BuildQaModule]);
+  for (const imported of (Reflect.getMetadata("imports", BuildQaModule) as unknown[] | undefined) ?? [])
+    exportedProviders(imported, seen, out);
+  return [...out];
+}
+
 function routeHandlerNames(controller: Ctor): string[] {
   const proto = controller.prototype;
   return Object.getOwnPropertyNames(proto).filter((name) => {
@@ -74,7 +108,7 @@ function routeHandlerNames(controller: Ctor): string[] {
 }
 
 function reachableProviderMethods(): Map<string, string> {
-  const providers = moduleMembers("providers");
+  const providers = injectableProviders();
   const bodies = new Map<string, string>();
   const queue: string[] = [];
 
@@ -118,6 +152,9 @@ describe("no route the QA module registers can reach a write of the legacy build
   it("resolves the bug-from-result route through to the consolidated work-item writer, proving the call graph is followed and not merely named", () => {
     expect([...reachable.keys()]).toContain("TestRunsService.createBugFromResultConsolidated");
     expect(reachable.get("TestRunsService.createBugFromResultConsolidated")).toMatch(
+      /this\.ticketCreation\.createInTransaction\(/,
+    );
+    expect(reachable.get("BuildTicketCreationService.createInTransaction")).toMatch(
       /\.insert\(\s*(?:[A-Za-z_$][\w$]*\.)?tickets\b/,
     );
   });

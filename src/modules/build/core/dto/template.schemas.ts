@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 import { refineEndAfterStart } from "./project-core.schemas";
 import { ticketTypeEnum } from "../../../../db/schema";
@@ -6,6 +7,7 @@ import { ticketTypeEnum } from "../../../../db/schema";
 export const listTemplatesQuerySchema = z.object({
   cursor: z.string().optional(),
   q: z.string().min(1).max(200).optional(),
+  limit: optionalPageSizeField(),
   category: z.string().min(1).max(50).optional(),
   sort: z.enum(["name", "newest"]).optional(),
 }).strict();

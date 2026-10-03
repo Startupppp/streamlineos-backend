@@ -90,7 +90,7 @@ export class NotificationRetentionService {
     try {
       const [row] = await this.db.execute(
         sql`SELECT EXISTS (
-          SELECT 1 FROM ${sql.raw(partition)} p
+          SELECT 1 FROM ${sql.identifier(partition)} p
           WHERE p.org_id IN (
             SELECT org_id FROM hr_legal_holds
             WHERE status = 'active' AND deleted_at IS NULL

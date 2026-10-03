@@ -448,6 +448,18 @@ describe("OrgSetupService stale-session membership guards", () => {
     chain.orderBy = jest
       .fn()
       .mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) });
+    const activeRows = rows.filter(
+      (row) =>
+        row.status === "ACTIVE" &&
+        row.orgStatus === "ACTIVE" &&
+        row.orgDeletedAt === null,
+    );
+    const activeChain: Record<string, jest.Mock> = {};
+    activeChain.where = jest.fn().mockReturnValue(activeChain);
+    activeChain.orderBy = jest
+      .fn()
+      .mockReturnValue({ limit: jest.fn().mockResolvedValue(activeRows) });
+    chain.innerJoin = jest.fn().mockReturnValue(activeChain);
 
     const tx = {
       execute: jest.fn().mockResolvedValue([]),

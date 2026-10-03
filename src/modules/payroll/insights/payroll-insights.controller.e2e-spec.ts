@@ -54,6 +54,7 @@ const mockFnfRow = {
   resignationId: null,
   basicDues: "0.00",
   leaveEncashment: "0.00",
+  gratuity: "0.00",
   bonusDue: "0.00",
   deductions: "0.00",
   loanRecovery: "0.00",
@@ -78,6 +79,7 @@ const mockFnfItem = {
   userId: "u1",
   basicDues: "0.00",
   leaveEncashment: "0.00",
+  gratuity: "0.00",
   bonusDue: "0.00",
   deductions: "0.00",
   loanRecovery: "0.00",
@@ -149,6 +151,7 @@ const mockTaxWindowsService = {
 
 const mockEssOverview = {
   toggles: {},
+  payStatus: "not-set-up" as const,
   capabilities: {
     mode: "employee_self_service" as const,
     honestyNote: "Illustrative only.",

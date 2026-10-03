@@ -21,6 +21,8 @@ import { SignFinalizationService } from "./sign-finalization.service";
 import { OutboxConsumerRegistry } from "../../common/outbox/outbox-consumer.registry";
 import type { OutboxEventRow } from "../../common/outbox/outbox-consumer.registry";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { QuotesLifecycleService } from "../quotes/quotes-lifecycle.service";
+import { ProjectsProvisionService } from "../build/core";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 
 const ATTACKER_ORG = "org-attacker";
@@ -131,6 +133,8 @@ describe("SignEnvelopeCompletedConsumerService — tenant isolation", () => {
         { provide: OutboxConsumerRegistry, useValue: registry },
         { provide: NotificationDispatchService, useValue: dispatch },
         { provide: SignFinalizationService, useValue: { finalize: jest.fn().mockResolvedValue({}) } },
+        { provide: QuotesLifecycleService, useValue: { markSigned: jest.fn().mockResolvedValue(undefined) } },
+        { provide: ProjectsProvisionService, useValue: { createFromDeal: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
     return module.get(SignEnvelopeCompletedConsumerService);

@@ -22,13 +22,6 @@ export function isKbReadFault(outcome: KbReadOutcome): boolean {
   return !NON_FAULT_READ_OUTCOMES.has(outcome);
 }
 
-export function kbReadOutcomeForStatus(status: number): KbReadOutcome {
-  if (status === 200) return "found";
-  if (status === 404) return "not_found";
-  if (status === 403) return "denied";
-  return "error";
-}
-
 export interface KbReadFacts {
   contentType?: string;
   cacheOutcome?: string;

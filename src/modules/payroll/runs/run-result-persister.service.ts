@@ -9,7 +9,6 @@ import {
   payrollLineItems,
   payrollRunEvents,
   payrollRunEmployees,
-  reimbursements,
   incentives,
   payrollRunAllocations,
 } from "../../../db/schema";
@@ -288,14 +287,12 @@ export class RunResultPersisterService {
     runId: number,
     calcResults: EmployeeCalcResult[],
   ): Promise<void> {
-    const allReimbIds: number[] = [];
     const allIncentiveIds: number[] = [];
     const allAllocationRows: (typeof payrollRunAllocations.$inferInsert)[] = [];
 
     for (const { profile, pulls } of calcResults) {
       if (!profile.userId) continue;
       for (const [i, reimbId] of (pulls.consumedReimbursementIds ?? []).entries()) {
-        allReimbIds.push(reimbId);
         allAllocationRows.push({
           orgId,
           runId,
@@ -303,6 +300,19 @@ export class RunResultPersisterService {
           sourceType: "REIMBURSEMENT",
           sourceId: String(reimbId),
           amount: pulls.approvedReimbursements[i]?.amount ?? "0",
+        });
+      }
+
+      for (const r of pulls.approvedReimbursements) {
+        if (r.expenseId === undefined) continue;
+        allAllocationRows.push({
+          orgId,
+          runId,
+          userId: profile.userId,
+          sourceType: "EXPENSE",
+          sourceId: String(r.expenseId),
+          amount: r.amount,
+          metadata: { category: r.category },
         });
       }
 
@@ -341,9 +351,6 @@ export class RunResultPersisterService {
       }
     }
 
-    const paidAt = new Date();
-    if (allReimbIds.length > 0)
-      await tx.update(reimbursements).set({ paidAt }).where(inArray(reimbursements.id, allReimbIds));
     if (allIncentiveIds.length > 0)
       await tx.update(incentives).set({ status: "ADDED_TO_PAYROLL" }).where(inArray(incentives.id, allIncentiveIds));
     if (allAllocationRows.length > 0)

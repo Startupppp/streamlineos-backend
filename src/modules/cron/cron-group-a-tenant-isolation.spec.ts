@@ -1,4 +1,5 @@
 jest.mock("../../common/tenant", () => ({
+  ...jest.requireActual<object>("../../common/tenant"),
   forEachOrg: jest.fn(),
 }));
 

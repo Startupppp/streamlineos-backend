@@ -43,7 +43,7 @@ export class PayrollRunEmployeesService {
       .limit(1);
 
     if (!runCheck[0]) return { ok: false };
-    if (PAYROLL_LOCKED_STATUSES.includes(runCheck[0].status)) {
+    if (runCheck[0].status === "CLOSED") {
       throw new ConflictException(
         `Cannot modify employee hold on a ${runCheck[0].status} payroll run`,
       );

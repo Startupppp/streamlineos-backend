@@ -1,3 +1,4 @@
+import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import {
   BadRequestException,
   Body,
@@ -270,6 +271,7 @@ export class ChatAssistantController {
   @Post("proposals/:proposalId/decline")
   @HttpCode(200)
   @RequirePermission("ai:chat:use")
+  @Idempotent("ai.chat.proposal.decline")
   @NoTenantTransaction()
   @ResponseSchema(declineActionResponseSchema)
   @Validate({ params: declineProposalParamsSchema })

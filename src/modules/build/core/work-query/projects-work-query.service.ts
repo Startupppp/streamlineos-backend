@@ -648,9 +648,9 @@ export class ProjectsWorkQueryService {
         ) t`;
 
       const [rawIds, unionCountRows] = await Promise.all([
-        this.db.execute<{ id: number }>(unionIdSql),
+        this.db.execute(unionIdSql),
         includeTotal
-          ? this.db.execute<{ total: string }>(unionCountSql)
+          ? this.db.execute(unionCountSql)
           : Promise.resolve(null),
       ]);
 

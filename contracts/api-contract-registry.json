@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-27T15:53:00.896Z",
+  "generatedAt": "2026-10-03T11:48:53.307Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -2673,6 +2673,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /auth/mfa/challenge": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MfaController_challenge",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /auth/mfa/disable": {
       "classification": "internal",
       "classificationOverride": null,
@@ -3190,122 +3201,33 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /blog/admin/categories": {
-      "classification": "internal",
+    "GET /blog/authors/{authorSlug}": {
+      "classification": "published",
       "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_listCategories",
+      "xExposure": "public",
+      "operationId": "BlogController_getAuthor",
       "owner": null,
       "version": "1",
       "consumers": [
         "the public marketing site and any feed reader"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /blog/admin/categories": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_createCategory",
-      "owner": null,
-      "version": "1",
-      "consumers": [
-        "the public marketing site and any feed reader"
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "authorSlug",
+          "in": "path",
+          "required": true
+        }
       ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /blog/admin/categories/{categoryId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_updateCategory",
-      "owner": null,
-      "version": "1",
-      "consumers": [
-        "the public marketing site and any feed reader"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "DELETE /blog/admin/categories/{categoryId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_deleteCategory",
-      "owner": null,
-      "version": "1",
-      "consumers": [
-        "the public marketing site and any feed reader"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /blog/admin/posts": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_listPosts",
-      "owner": null,
-      "version": "1",
-      "consumers": [
-        "the public marketing site and any feed reader"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /blog/admin/posts": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_createPost",
-      "owner": null,
-      "version": "1",
-      "consumers": [
-        "the public marketing site and any feed reader"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /blog/admin/posts/{postId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_getPost",
-      "owner": null,
-      "version": "1",
-      "consumers": [
-        "the public marketing site and any feed reader"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /blog/admin/posts/{postId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_updatePost",
-      "owner": null,
-      "version": "1",
-      "consumers": [
-        "the public marketing site and any feed reader"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "DELETE /blog/admin/posts/{postId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "BlogAdminController_deletePost",
-      "owner": null,
-      "version": "1",
-      "consumers": [
-        "the public marketing site and any feed reader"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /blog/by-slug/{slug}": {
       "classification": "published",
@@ -3335,11 +3257,11 @@
       },
       "contractEvidence": null
     },
-    "GET /blog/by-slug/{slug}/adjacent": {
+    "GET /blog/by-slug/{slug}/related": {
       "classification": "published",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "BlogController_getAdjacentPosts",
+      "operationId": "BlogController_getRelatedPosts",
       "owner": null,
       "version": "1",
       "consumers": [
@@ -3385,11 +3307,11 @@
       },
       "contractEvidence": null
     },
-    "GET /blog/feed": {
+    "GET /blog/categories/{categorySlug}": {
       "classification": "published",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "BlogController_feed",
+      "operationId": "BlogController_getCategory",
       "owner": null,
       "version": "1",
       "consumers": [
@@ -3400,12 +3322,62 @@
       "deprecation": null,
       "knownParameters": [
         {
-          "name": "category",
+          "name": "categorySlug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
+    "POST /blog/internal/invalidate": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogInternalController_invalidate",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "x-blog-event-id",
+        "replay": "BlogInvalidationSignatureGuard verifies the HMAC over timestamp, event id and raw body before the body is trusted, then the event id is inserted into blog_invalidation_receipts with ON CONFLICT (event_id) DO NOTHING. A redelivery is acknowledged with duplicate: true and nothing is re-applied.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/blog/blog-invalidation.service.ts (receive)"
+    },
+    "GET /blog/posts": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogController_listPosts",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "author",
           "in": "query",
           "required": false
         },
         {
-          "name": "cursor",
+          "name": "category",
           "in": "query",
           "required": false
         },
@@ -3420,7 +3392,7 @@
           "required": false
         },
         {
-          "name": "search",
+          "name": "page",
           "in": "query",
           "required": false
         },
@@ -3430,6 +3402,144 @@
           "required": false
         }
       ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
+    "GET /blog/redirects/resolve": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogController_resolveRedirect",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "path",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
+    "GET /blog/rss.xml": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogController_rss",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
+    "GET /blog/search": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogController_search",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "q",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
+    "GET /blog/sitemap/posts": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogController_sitemapPosts",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "cursor",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
+    "GET /blog/sitemap/taxonomy": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogController_sitemapTaxonomy",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
       "idempotency": {
         "mode": "safe",
         "key": null,
@@ -4802,6 +4912,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /build/{projectId}/milestones/{milestoneId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "MilestonesController_restoreMilestone",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/{projectId}/modules": {
       "classification": "internal",
       "classificationOverride": null,
@@ -4884,6 +5005,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ProjectsReleasesController_deleteRelease",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/releases/{releaseId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsReleasesController_restoreRelease",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -4983,6 +5115,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ProjectsReportsController_velocity",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsByIdController_restoreProject",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -5231,6 +5374,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /build/{projectId}/test-cases/{caseId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TestCasesController_restoreCase",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/{projectId}/test-runs": {
       "classification": "internal",
       "classificationOverride": null,
@@ -5280,6 +5434,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "TestRunsController_deleteRun",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/test-runs/{runId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TestRunsController_restoreRun",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -5357,6 +5522,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "TestSuitesController_deleteSuite",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/test-suites/{suiteId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TestSuitesController_restoreSuite",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -5583,6 +5759,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /build/{projectId}/tickets/{ticketId}/comments/{commentId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsTicketCommentsController_restoreComment",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/{projectId}/tickets/{ticketId}/custom-field-values": {
       "classification": "internal",
       "classificationOverride": null,
@@ -5720,6 +5907,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ProjectsTicketAssociationsController_removeRelation",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/tickets/{ticketId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsTicketsController_restoreTicket",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -6050,6 +6248,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "WhiteboardsController_deleteWhiteboard",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/whiteboards/{whiteboardId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "WhiteboardsController_restoreWhiteboard",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -6435,6 +6644,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ProjectsRoadmapController_mergeFeedback",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/feedback/{postId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsRoadmapController_restoreFeedback",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -6925,6 +7145,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /build/roadmap/{itemId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsRoadmapController_restoreRoadmap",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/roadmap/{itemId}/signals": {
       "classification": "internal",
       "classificationOverride": null,
@@ -7139,6 +7370,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ProjectsTemplatesController_applyTemplate",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/templates/{templateId}/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsTemplatesController_restoreTemplate",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -8371,6 +8613,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ClientsController_listAccounts",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /clients": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ClientsController_createClient",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12291,6 +12544,28 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /cron/build-project-retention-purge": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronBuildProjectRetentionController_getBuildProjectRetentionPurge",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/build-project-retention-purge": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronBuildProjectRetentionController_postBuildProjectRetentionPurge",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /cron/build-retention-prune": {
       "classification": "internal",
       "classificationOverride": null,
@@ -15511,6 +15786,17 @@
       "classificationOverride": null,
       "xExposure": "public",
       "operationId": "HealthController_ready",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /health/version": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "HealthController_version",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -19570,6 +19856,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "HrPayrollFnfController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/fnf/suggestion": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "HrPayrollFnfController_suggestion",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -33563,6 +33860,28 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /me/document-acknowledgements": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "SelfDocumentAcknowledgementsController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /me/document-acknowledgements/{ackId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "SelfDocumentAcknowledgementsController_acknowledge",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /me/expenses": {
       "classification": "internal",
       "classificationOverride": null,
@@ -33656,6 +33975,28 @@
       "classificationOverride": null,
       "xExposure": "universal",
       "operationId": "MeController_getOrgDisplay",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /me/preferences": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MeController_getMyPreferences",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /me/preferences": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "MeController_updateMyPreferences",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -35775,6 +36116,28 @@
       },
       "contractEvidence": "src/modules/organization/core/invitation-acceptance.service.ts"
     },
+    "POST /organization/invitations/request-otp": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "OrganizationController_requestInvitationOtp",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "invitees following an emailed invitation link"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Each call marks every unused code for the invitation as used, inserts a fresh code and emails it. A retry is not deduplicated: it sends a second email and invalidates the code from the first. Bounded by the invite:request-otp per-IP rate limit; no business data is duplicated.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/organization/core/invitation-acceptance.service.ts (requestInvitationEmailOtp)"
+    },
     "GET /organization/invitations/validate": {
       "classification": "published",
       "classificationOverride": null,
@@ -37013,6 +37376,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "PATCH /payroll/entities/{entityId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollEntitiesController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /payroll/entities/{entityId}/context": {
       "classification": "internal",
       "classificationOverride": null,
@@ -37189,6 +37563,61 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /payroll/form16": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollForm16DocumentsController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /payroll/form16/{financialYear}/members/{membershipId}/download": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollForm16DocumentsController_download",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /payroll/form16/{financialYear}/members/{membershipId}/release": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollForm16DocumentsController_release",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /payroll/form16/{financialYear}/members/{membershipId}/upload": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollForm16DocumentsController_upload",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /payroll/form16/{financialYear}/release-all": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollForm16DocumentsController_releaseAll",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /payroll/jobs": {
       "classification": "internal",
       "classificationOverride": null,
@@ -37337,6 +37766,28 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "EssController_getOwnFnf",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /payroll/me/form16": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EssForm16Controller_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /payroll/me/form16/{financialYear}/download": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EssForm16Controller_download",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -37656,6 +38107,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "PublishingController_retryOne",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /payroll/people": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayeeEligibilityController_listPeople",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -38014,6 +38476,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /payroll/runs/{runId}/employees/{runEmployeeId}/release": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PublishingController_releaseHold",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /payroll/runs/{runId}/exceptions": {
       "classification": "internal",
       "classificationOverride": null,
@@ -38250,6 +38723,50 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "PayrollExportController_downloadExportJob",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /payroll/salary-preview": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "SalaryPreviewController_preview",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /payroll/sample-data": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollSampleDataController_status",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /payroll/sample-data": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollSampleDataController_seed",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /payroll/sample-data": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollSampleDataController_remove",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -38657,6 +39174,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "PortalAccessController_revokeGrant",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /portal-access/invite-client": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PortalAccessController_inviteClient",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -39466,8 +39994,13 @@
           "required": true
         }
       ],
-      "idempotency": null,
-      "contractEvidence": null
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Resolves the project by intake token, then inserts one intake_items row inside a tenant transaction. There is no unique key or Idempotency-Key fence, so a client retry after a timeout creates a second intake item. Bounded only by the public intake rate limit.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/intake.service.ts (submitIntakeByToken)"
     },
     "GET /public/interview-booking/{token}": {
       "classification": "published",
@@ -46815,6 +47348,204 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /blog/admin/categories": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_listCategories",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /blog/admin/categories": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_createCategory",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /blog/admin/categories/{categoryId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_updateCategory",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /blog/admin/categories/{categoryId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_deleteCategory",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /blog/admin/posts": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_listPosts",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /blog/admin/posts": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_createPost",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /blog/admin/posts/{postId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_getPost",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /blog/admin/posts/{postId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_updatePost",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /blog/admin/posts/{postId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_deletePost",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /blog/by-slug/{slug}/adjacent": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogController_getAdjacentPosts",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": "2026-10-01",
+      "sunsetEvidence": "REMOVED in 8a573e9f4 (#83), replaced by GET /blog/by-slug/{slug}/related. No caller remains in the frontend or in streamlineos-blog-admin.",
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
+    "GET /blog/feed": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "BlogController_feed",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
+      "sunsetAt": "2026-10-01",
+      "sunsetEvidence": "REMOVED in 8a573e9f4 (blog: shared publication contract for the standalone blog admin, #83), replaced by the public listing, RSS and sitemap reads that apply one publication predicate. No caller remains in the frontend or in streamlineos-blog-admin.",
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "category",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "featured",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "search",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "tag",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
+    },
     "GET /build/resource-allocation": {
       "classification": "internal",
       "classificationOverride": null,
@@ -47144,8 +47875,8 @@
       "consumers": [
         "the public careers page"
       ],
-      "sunsetAt": null,
-      "sunsetEvidence": null,
+      "sunsetAt": "2026-09-23",
+      "sunsetEvidence": "REMOVED in faf27ad3e alongside POST /careers/apply: with no org slug it listed every organisation's open jobs to one unauthenticated request. The org-scoped public careers routes replace it. No caller remains: the frontend has no reference to GET /careers.",
       "deprecation": null,
       "knownParameters": [],
       "idempotency": {
@@ -47166,8 +47897,8 @@
       "consumers": [
         "external applicants"
       ],
-      "sunsetAt": null,
-      "sunsetEvidence": null,
+      "sunsetAt": "2026-09-23",
+      "sunsetEvidence": "REMOVED in faf27ad3e (ats ATS-CORE-005) and replaced by POST /public/careers/{orgSlug}/jobs/{jobId}/apply. It took a bare jobPostingId and inferred the tenant from the id; the org-scoped apply now carries consent, screening answers and candidate.applied. No caller remains: the frontend has no reference to /careers/apply and src/modules/careers/careers.controller.ts declares only POST /careers/resumes/upload.",
       "deprecation": null,
       "knownParameters": [],
       "idempotency": {
@@ -47310,7 +48041,16 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "build.project-webhook.delivery.requested": {
+    "build.approval.requested": {
+      "classification": "internal",
+      "owner": null,
+      "consumers": [
+        "outbox-relay"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "build.blocker.created": {
       "classification": "internal",
       "owner": null,
       "consumers": [
@@ -47738,7 +48478,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-members.service.ts"
+        "src/modules/build/core/members/projects-members.service.ts"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -47754,7 +48494,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-members.service.ts"
+        "src/modules/build/core/members/projects-members.service.ts"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -47770,7 +48510,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-members.service.ts"
+        "src/modules/build/core/members/projects-members.service.ts"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -47912,7 +48652,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/tickets/apply-ticket-change.ts"
+        "src/modules/build/core/tickets/ticket-change-effects.ts"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -47928,7 +48668,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/tickets/projects-tickets-create.service.ts"
+        "src/modules/build/core/tickets/build-ticket-creation.service.ts"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -47951,6 +48691,22 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "ticket.status_changed": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/tickets/ticket-change-effects.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "ticket.updated": {
       "classification": "published",
       "scope": "project",
@@ -47960,7 +48716,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/tickets/apply-ticket-change.ts"
+        "src/modules/build/core/tickets/ticket-change-effects.ts"
       ],
       "declaredIn": null,
       "subscribable": true,

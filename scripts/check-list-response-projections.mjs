@@ -332,6 +332,33 @@ function collectSpreadObjectKeys(cbBody, out) {
 
 // Given a method body node, collect all keys added by .map(r => ({ ...r, k1, k2 }))
 // patterns (spread map with additional named properties).
+function collectMapRemovedKeys(methodBody) {
+  const removed = new Set();
+  function visit(node) {
+    if (ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === "map" &&
+        node.arguments.length >= 1) {
+      const cb = node.arguments[0];
+      const param = (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb)) ? cb.parameters[0]?.name : null;
+      if (param && ts.isObjectBindingPattern(param)) {
+        const rest = param.elements.find(e => e.dotDotDotToken && ts.isIdentifier(e.name));
+        const body = unwrapParens(cb.body);
+        if (rest && ts.isIdentifier(body) && body.text === rest.name.text)
+          for (const e of param.elements) {
+            if (e === rest) continue;
+            const key = e.propertyName && ts.isIdentifier(e.propertyName) ? e.propertyName :
+                        ts.isIdentifier(e.name) ? e.name : null;
+            if (key) removed.add(key.text);
+          }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(methodBody);
+  return removed;
+}
+
 function collectMapAddedKeys(methodBody) {
   const added = new Set();
   function visit(node) {
@@ -354,6 +381,7 @@ function collectMapAddedKeys(methodBody) {
 // but NO SpreadAssignment (i.e. the service reconstructs a new shape from scratch).
 function callbackBodyHasNonSpreadObject(cbBody) {
   const expr = unwrapParens(cbBody);
+  if (ts.isCallExpression(expr)) return true;
   if (ts.isObjectLiteralExpression(expr)) {
     const hasSpread = expr.properties.some(p => ts.isSpreadAssignment(p));
     return !hasSpread && expr.properties.length >= 2;
@@ -436,7 +464,8 @@ function buildServiceTable(dir, srcRoot) {
                 } else if (ts.isObjectLiteralExpression(node2.arguments[0])) {
                   const keys = new Set();
                   for (const p of node2.arguments[0].properties)
-                    if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) keys.add(p.name.text);
+                    if ((ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) || ts.isShorthandPropertyAssignment(p))
+                      keys.add(p.name.text);
                   selects.push(keys);
                   if (!firstSelectSeen) firstSelectSeen = true;
                 }
@@ -451,6 +480,7 @@ function buildServiceTable(dir, srcRoot) {
               hasBareSel,
               selectCount: selects.length,
               mapAddedKeys: collectMapAddedKeys(m.body),
+              mapRemovedKeys: collectMapRemovedKeys(m.body),
               hasNonSpreadMap: methodHasNonSpreadMap(m.body),
             });
           }
@@ -624,9 +654,10 @@ function analyzeDir(buildDir, srcRoot) {
         ...svcInfo.firstSelectKeys,
         ...svcInfo.mapAddedKeys,
       ]);
+      for (const k of svcInfo.mapRemovedKeys) effectiveProjection.delete(k);
 
       const missingReq = [...schemaKeys.required].filter(k => !effectiveProjection.has(k));
-      const extraProj  = [...svcInfo.firstSelectKeys].filter(k => !schemaKeys.all.has(k));
+      const extraProj  = [...svcInfo.firstSelectKeys].filter(k => !schemaKeys.all.has(k) && !svcInfo.mapRemovedKeys.has(k));
       if (missingReq.length > 0 || extraProj.length > 0)
         violations.push({ id, svcMethod: `${typeName}.${method}`, svcFile: svcInfo.file, missingReq, extraProj });
     }
@@ -734,6 +765,22 @@ class FakeService {
   async listGood(orgId) {
     return this.db.select({ id: t.id, name: t.name, computedCount: sql\`(SELECT 1)\` }).from(t).limit(20);
   }
+  async listShorthand(orgId) {
+    const computedCount = sql\`(SELECT 1)\`;
+    return this.db.select({ id: t.id, name: t.name, computedCount }).from(t).limit(20);
+  }
+  async listOmitted(orgId) {
+    const rows = await this.db.select({ id: t.id, title: t.title, cursorKey: t.cursorKey }).from(t).limit(20);
+    return rows.map(({ cursorKey: _c, ...row }) => row);
+  }
+  async listOmittedRequired(orgId) {
+    const rows = await this.db.select({ id: t.id, title: t.title }).from(t).limit(20);
+    return rows.map(({ title, ...row }) => row);
+  }
+  async listViaHelper(orgId) {
+    const rows = await this.db.select({ id: t.id, other: t.other }).from(t).limit(20);
+    return rows.map((row) => this.toRow(row));
+  }
   async listGhost(orgId) {
     return this.db.select({ id: t.id, title: t.title, ghost: t.ghost }).from(t).limit(20);
   }
@@ -762,6 +809,14 @@ class FakeController {
   listBad(u) { return this.svc.listBad(u.orgId); }
   @ResponseSchema(goodListSchema)
   listGood(u) { return this.svc.listGood(u.orgId); }
+  @ResponseSchema(goodListSchema)
+  listShorthand(u) { return this.svc.listShorthand(u.orgId); }
+  @ResponseSchema(ghostListSchema)
+  listOmitted(u) { return this.svc.listOmitted(u.orgId); }
+  @ResponseSchema(ghostListSchema)
+  listOmittedRequired(u) { return this.svc.listOmittedRequired(u.orgId); }
+  @ResponseSchema(ghostListSchema)
+  listViaHelper(u) { return this.svc.listViaHelper(u.orgId); }
   @ResponseSchema(ghostListSchema)
   listGhost(u) { return this.svc.listGhost(u.orgId); }
   @ResponseSchema(spreadListSchema)
@@ -773,7 +828,7 @@ class FakeController {
 
     check("files walked > 0", result.filesWalked > 0, `got ${result.filesWalked}`);
     check("analysed >= 3", result.analysed.length >= 3, `got ${result.analysed.length}`);
-    check("exactly 2 violations found", result.violations.length === 2,
+    check("exactly 3 violations found", result.violations.length === 3,
       `got ${result.violations.length}: ${JSON.stringify(result.violations.map(v => ({ id: v.id, missingReq: v.missingReq, extraProj: v.extraProj })))}`);
 
     const badViol = result.violations.find(v => v.id.includes("listBad"));
@@ -796,6 +851,23 @@ class FakeController {
 
     check("listGood: no violation", !result.violations.some(v => v.id.includes("listGood")), "");
 
+    check("listOmitted: a key a rest-destructuring map drops is neither projected nor stripped",
+      !result.violations.some(v => v.id.includes("listOmitted]")),
+      JSON.stringify(result.violations.filter(v => v.id.includes("listOmitted]"))));
+
+    check("listOmittedRequired: a required key the map drops is required-not-projected",
+      result.violations.find(v => v.id.includes("listOmittedRequired"))?.missingReq?.includes("title") === true,
+      JSON.stringify(result.violations.filter(v => v.id.includes("listOmittedRequired"))));
+
+    check("listViaHelper: a map through a helper call is unresolved, not a violation",
+      !result.violations.some(v => v.id.includes("listViaHelper")) &&
+        result.unresolved.some(u => u.id.includes("listViaHelper") && u.reason === "map-reconstruction"),
+      JSON.stringify(result.unresolved.filter(u => u.id.includes("listViaHelper"))));
+
+    check("listShorthand: a shorthand select key counts as projected",
+      !result.violations.some(v => v.id.includes("listShorthand")),
+      JSON.stringify(result.violations.filter(v => v.id.includes("listShorthand"))));
+
     check("listWithSpread: no violation (spread-map addition recognised)",
       !result.violations.some(v => v.id.includes("listWithSpread")),
       JSON.stringify(result.violations.filter(v => v.id.includes("listWithSpread"))));
@@ -804,7 +876,7 @@ class FakeController {
     try { rmSync(tmpBase, { recursive: true }); } catch { /* ignore */ }
   }
 
-  console.log(`\ncheck-list-response-projections self-test: ${passed} passed, ${failed} failed (9 assertions)`);
+  console.log(`\ncheck-list-response-projections self-test: ${passed} passed, ${failed} failed (13 assertions)`);
   return failed === 0 ? 0 : 1;
 }
 

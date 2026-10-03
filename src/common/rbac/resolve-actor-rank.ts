@@ -6,7 +6,7 @@ import {
   drainByKeyset,
   GRANT_PAGE_SIZE,
   UUID_ZERO,
-} from "../../modules/access/access-grant-drains";
+} from "../pagination/keyset-drain";
 
 export interface ActorRankContext {
   bestRank: number;

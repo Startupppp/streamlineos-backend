@@ -188,7 +188,8 @@ export class EmailOutboxService {
       const deliverable = itemRecipients.filter(
         (recipient) => !suppressed.has(canonicalEmail(recipient)),
       );
-      if (deliverable.length === 0) {
+      const [firstDeliverable] = deliverable;
+      if (firstDeliverable === undefined) {
         outcomes.push({ queued: false, reason: SUPPRESSED_RECIPIENT_REASON });
         withheld.push({
           options: { ...item, to: itemRecipients },
@@ -200,7 +201,7 @@ export class EmailOutboxService {
 
       const filtered: DurableEmailOptions = {
         ...item,
-        to: Array.isArray(item.to) ? deliverable : deliverable[0]!,
+        to: Array.isArray(item.to) ? deliverable : firstDeliverable,
       };
       if (providerMissing) {
         outcomes.push({ queued: false, reason: NO_EMAIL_PROVIDER_REASON });

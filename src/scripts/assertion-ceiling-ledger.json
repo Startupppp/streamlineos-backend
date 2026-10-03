@@ -321,17 +321,13 @@
       "as": 0,
       "nonNull": 3
     },
-    "src/modules/build/core/tickets/build-ticket-bulk-mutation.ts": {
+    "src/modules/build/core/activity/projects-changelog.service.ts": {
       "as": 0,
       "nonNull": 1
     },
     "src/modules/build/core/dto/project-retention-settings.schemas.ts": {
       "as": 1,
       "nonNull": 0
-    },
-    "src/modules/build/core/activity/projects-changelog.service.ts": {
-      "as": 0,
-      "nonNull": 1
     },
     "src/modules/build/core/feedback/projects-feedback.service.ts": {
       "as": 0,
@@ -341,13 +337,13 @@
       "as": 0,
       "nonNull": 1
     },
+    "src/modules/build/core/tickets/build-ticket-bulk-mutation.ts": {
+      "as": 0,
+      "nonNull": 1
+    },
     "src/modules/build/core/tickets/projects-tickets-create.service.ts": {
       "as": 0,
       "nonNull": 3
-    },
-    "src/modules/build/execution/workload-capacity.service.ts": {
-      "as": 0,
-      "nonNull": 1
     },
     "src/modules/build/import-export/dto/ticket-import.schemas.ts": {
       "as": 1,
@@ -369,19 +365,11 @@
       "as": 4,
       "nonNull": 0
     },
-    "src/modules/build/managed-products/managed-products.service.ts": {
-      "as": 3,
-      "nonNull": 0
-    },
-    "src/modules/build/qa/bugs.service.ts": {
-      "as": 0,
-      "nonNull": 3
-    },
     "src/modules/build/qa/bug-consolidation/bug-consolidation-mapping.ts": {
       "as": 3,
       "nonNull": 1
     },
-    "src/modules/build/qa/test-runs.service.ts": {
+    "src/modules/build/qa/bugs.service.ts": {
       "as": 0,
       "nonNull": 1
     },
@@ -1222,8 +1210,8 @@
       "nonNull": 1
     },
     "src/modules/inventory/stock-engine/stock-engine.service.ts": {
-      "as": 1,
-      "nonNull": 1
+      "as": 0,
+      "nonNull": 2
     },
     "src/modules/inventory/stock-types/ownership.service.ts": {
       "as": 1,
@@ -1288,22 +1276,6 @@
     "src/modules/kb/content-health/kb-content-health.service.ts": {
       "as": 0,
       "nonNull": 4
-    },
-    "src/modules/kb/core/collection/knowledge-collection.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
-    "src/modules/kb/help-centre/kb-analytics.service.ts": {
-      "as": 0,
-      "nonNull": 4
-    },
-    "src/modules/kb/retrieval/kb-ask.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
-    "src/modules/kb/wiki/kb-import-export.service.ts": {
-      "as": 1,
-      "nonNull": 0
     },
     "src/modules/kb/wiki/kb-pages.service.ts": {
       "as": 0,
@@ -1377,19 +1349,11 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/notifications/unified-inbox.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/offer-fulfillment/deal-closed-consumer.service.ts": {
       "as": 4,
       "nonNull": 1
     },
     "src/modules/organization/core/lifecycle/organization-lifecycle-transitions.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
-    "src/modules/organization/core/org-membership-status.service.ts": {
       "as": 1,
       "nonNull": 0
     },

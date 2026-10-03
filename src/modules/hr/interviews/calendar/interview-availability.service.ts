@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lt, lte, ne, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, lt, lte, ne, or } from "drizzle-orm";
 import {
   calendarEvents,
   eventAttendees,
@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { ProviderCredentialsService } from "../../recruitment/integrations/provider-credentials.service";
 import { isBlocked } from "../../recruitment/integrations/provider-blocked";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../../hr-read-limits";
 import { CALENDAR_PLATFORMS, resolveCalendar, type CalendarPlatform } from "./calendar-provider";
 import {
   overlapsAny,
@@ -321,16 +322,25 @@ export class InterviewAvailabilityService {
     ];
     if (ignoreInterviewId !== undefined) filters.push(ne(interviews.id, ignoreInterviewId));
 
-    return this.db
-      .select({
-        id: interviews.id,
-        membershipId: interviews.interviewerMembershipId,
-        scheduledAt: interviews.scheduledAt,
-        duration: interviews.duration,
-      })
-      .from(interviews)
-      .where(and(...filters))
-      .limit(500);
+    const rows = [];
+    let afterId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const batch = await this.db
+        .select({
+          id: interviews.id,
+          membershipId: interviews.interviewerMembershipId,
+          scheduledAt: interviews.scheduledAt,
+          duration: interviews.duration,
+        })
+        .from(interviews)
+        .where(and(...filters, gt(interviews.id, afterId)))
+        .orderBy(asc(interviews.id))
+        .limit(HR_SCAN_PAGE);
+      rows.push(...batch);
+      if (batch.length < HR_SCAN_PAGE) break;
+      afterId = batch[batch.length - 1].id;
+    }
+    return rows;
   }
 
   /**

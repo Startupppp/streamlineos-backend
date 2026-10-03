@@ -60,6 +60,7 @@ async function milestonesService(milestoneRow: Record<string, unknown> | undefin
       MilestonesService,
       { provide: DRIZZLE, useValue: db },
       { provide: AccessService, useValue: accessWithBuildManage },
+      { provide: AuditService, useValue: { log: jest.fn() } },
     ],
   }).compile();
   return { service: module.get(MilestonesService), module, update };
@@ -83,6 +84,7 @@ async function releasesService(releaseRow: Record<string, unknown> | undefined, 
       ProjectsReleasesService,
       { provide: DRIZZLE, useValue: db },
       { provide: AccessService, useValue: accessWithBuildManage },
+      { provide: AuditService, useValue: { log: jest.fn() } },
     ],
   }).compile();
   return { service: module.get(ProjectsReleasesService), module, transaction };

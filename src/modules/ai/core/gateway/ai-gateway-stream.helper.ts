@@ -207,7 +207,10 @@ export class AiGatewayStreamHelper {
     let streamCompleted = false;
 
     try {
-      const selection = resolveAiStreamModel(resolveGatewayTier(opts.feature, opts.tier));
+      const selection =
+        opts.model !== undefined && opts.modelId !== undefined
+          ? { model: opts.model, modelId: opts.modelId }
+          : resolveAiStreamModel(resolveGatewayTier(opts.feature, opts.tier));
       const model = opts.model ?? selection.model;
       const modelId = opts.modelId ?? selection.modelId;
 

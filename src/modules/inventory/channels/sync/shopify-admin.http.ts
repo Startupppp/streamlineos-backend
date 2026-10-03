@@ -8,6 +8,7 @@ import {
   type ShopifyProductsPage,
 } from "./shopify-admin.contract";
 import type { ChannelCallFailure, ChannelTarget } from "./channel-commerce.port";
+import { decryptSecret } from "../../../../common/security/secret-encryption.util";
 
 /**
  * The one host suffix a credentialled call may be sent to.
@@ -44,6 +45,19 @@ export type CredentialState =
   | { readonly ok: true; readonly credentials: ShopifyCredentials }
   | { readonly ok: false; readonly problem: string };
 
+function orgCredential(target: ChannelTarget): string | null | undefined {
+  const plain = target.settings?.apiCredential;
+  if (typeof plain === "string" && plain.trim() !== "") return plain.trim();
+  const encrypted = target.settings?.apiCredentialEncrypted;
+  if (typeof encrypted !== "string" || encrypted.trim() === "") return null;
+  try {
+    const decrypted = decryptSecret(encrypted.trim()).trim();
+    return decrypted === "" ? undefined : decrypted;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The credential set for one channel, or the reason there is not one.
  *
@@ -61,7 +75,11 @@ export function credentialsFor(
   target: ChannelTarget,
   options: { requireLocation: boolean },
 ): CredentialState {
-  if (token === null) return { ok: false, problem: "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set" };
+  const orgToken = orgCredential(target);
+  if (orgToken === undefined)
+    return { ok: false, problem: "the channel's stored Shopify credential could not be decrypted" };
+  const effectiveToken = orgToken ?? token;
+  if (effectiveToken === null) return { ok: false, problem: "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set" };
   if (!target.storeUrl) return { ok: false, problem: "the channel's settings.storeUrl is not set" };
 
   let parsed: URL;
@@ -97,7 +115,7 @@ export function credentialsFor(
     ok: true,
     credentials: {
       base: parsed.origin,
-      token,
+      token: effectiveToken,
       apiVersion,
       locationId,
       timeoutMs,

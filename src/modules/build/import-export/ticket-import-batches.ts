@@ -1,4 +1,4 @@
-import type { DbOrTx } from "../../../common/rbac/access-invalidate";
+import type { TenantTx } from "../../../db/drizzle.types";
 import { IMPORT_BATCH_SIZE } from "./import-export.constants";
 import type { ImportPreviewRow } from "./ticket-import-preview";
 import {
@@ -31,7 +31,7 @@ export function chunkRows<T>(rows: readonly T[], size: number = IMPORT_BATCH_SIZ
 }
 
 export async function insertTicketBatch(
-  tx: DbOrTx,
+  tx: TenantTx,
   ticketCreation: BuildTicketCreationService,
   actor: ImportActor,
   projectId: number,
@@ -40,7 +40,7 @@ export async function insertTicketBatch(
 ): Promise<InsertedTicketBatch> {
   void startNumber;
   if (batch.length === 0) {
-    const creation = await ticketCreation.createInTransaction(tx as never, {
+    const creation = await ticketCreation.createInTransaction(tx, {
       orgId: actor.orgId,
       projectId,
       actor: { userId: actor.userId, membershipId: actor.membershipId },
@@ -68,7 +68,7 @@ export async function insertTicketBatch(
     reporterMembershipId: actor.membershipId,
   }));
 
-  const creation = await ticketCreation.createInTransaction(tx as never, {
+  const creation = await ticketCreation.createInTransaction(tx, {
     orgId: actor.orgId,
     projectId,
     actor: { userId: actor.userId, membershipId: actor.membershipId },

@@ -25,6 +25,7 @@ import { AuthEmailOtpService } from "../../../src/modules/auth/auth-email-otp.se
 import { AuthAnalyticsService } from "../../../src/modules/auth/auth-analytics.service";
 import { internalSecretMatches } from "../../../src/modules/auth/internal-secret";
 import type { Db } from "../../../src/db/drizzle.module";
+import { DRIZZLE } from "../../../src/db/drizzle.constants";
 
 const BACKEND_ROOT = resolve(__dirname, "../../..");
 const PRIVATE_JWK_MEMBERS = ["d", "p", "q", "dp", "dq", "qi", "k"] as const;
@@ -367,6 +368,18 @@ describe("CSRF — the API carries no ambient credential a cross-site request co
             },
           },
           { provide: REDIS, useValue: moduleRedis },
+          {
+            provide: DRIZZLE,
+            useValue: {
+              select: () => ({
+                from: () => ({
+                  where: () => ({
+                    limit: async () => [{ isRevoked: false, expiresAt: null }],
+                  }),
+                }),
+              }),
+            },
+          },
         ],
       })
         .overrideGuard(JwtAuthGuard)
@@ -520,7 +533,11 @@ describe("Secret redaction", () => {
   });
 
   it("deployment secrets have no defaults and a length floor, so an unset one cannot pass as configured", () => {
-    const env = readFileSync(resolve(BACKEND_ROOT, "src/config/env.validation.ts"), "utf8");
+    const configDir = resolve(BACKEND_ROOT, "src/config");
+    const env = readdirSync(configDir)
+      .filter((file) => /^env[\w.-]*\.ts$/.test(file) && !file.endsWith(".spec.ts"))
+      .map((file) => readFileSync(join(configDir, file), "utf8"))
+      .join("\n");
     expect(env).toMatch(/const deploymentSecret = z\.string\(\)\.min\(32\)/);
     for (const name of ["CRON_SECRET", "INTERNAL_API_SECRET", "NEXTAUTH_SECRET"]) {
       expect({ name, declared: env.includes(name) }).toEqual({ name, declared: true });

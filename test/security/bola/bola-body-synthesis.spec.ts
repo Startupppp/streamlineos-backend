@@ -319,8 +319,9 @@ const MUTATING_BODY_DELTA_SINCE_916712D47: {
     hr: 35,
     build: 16,
     kb: 15,
-    me: 4,
+    me: 6,
     feedbucket: 3,
+    payroll: 3,
     platform: 2,
     public: 2,
     auth: 1,
@@ -381,17 +382,17 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
    * reader, and `{}` is rejected where the synthesised body is accepted. Those all hold at 1,475
    * on the merged surface — the 86 new bodies are equipped, not excused.
    */
-  it("ANTI-VACUITY: the contract really does carry the 1,540 mutating bodies the gate counts, 1,475 at 916712d47 moved by module rather than absorbed", () => {
+  it("ANTI-VACUITY: the contract really does carry the 1,545 mutating bodies the gate counts, 1,475 at 916712d47 moved by module rather than absorbed", () => {
     const total = (byModule: Readonly<Record<string, number>>): number =>
       Object.values(byModule).reduce((sum, n) => sum + n, 0);
-    expect(total(MUTATING_BODY_DELTA_SINCE_916712D47.added)).toBe(88);
+    expect(total(MUTATING_BODY_DELTA_SINCE_916712D47.added)).toBe(93);
     expect(total(MUTATING_BODY_DELTA_SINCE_916712D47.removed)).toBe(23);
     expect(mutating.length).toBe(
       MUTATING_BODIES_AT_916712D47 +
         total(MUTATING_BODY_DELTA_SINCE_916712D47.added) -
         total(MUTATING_BODY_DELTA_SINCE_916712D47.removed),
     );
-    expect(mutating.length).toBe(1540);
+    expect(mutating.length).toBe(1545);
   });
 
   it("derives a body for every operation that declares a JSON one", () => {
@@ -427,6 +428,7 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
       "POST /kb/media",
       "POST /kb/sources",
       "POST /onboarding/documents",
+      "POST /payroll/form16/{financialYear}/members/{membershipId}/upload",
       "POST /public/careers/{orgSlug}/jobs/{jobId}/apply",
       "POST /public/feedbucket/{publicKey}",
       "POST /public/feedbucket/{publicKey}/ai-assist",

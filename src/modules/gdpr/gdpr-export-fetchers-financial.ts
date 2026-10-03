@@ -151,6 +151,7 @@ export async function fetchFnfSettlements(
       id: fnfSettlements.id,
       basicDues: fnfSettlements.basicDues,
       leaveEncashment: fnfSettlements.leaveEncashment,
+      gratuity: fnfSettlements.gratuity,
       bonusDue: fnfSettlements.bonusDue,
       deductions: fnfSettlements.deductions,
       loanRecovery: fnfSettlements.loanRecovery,

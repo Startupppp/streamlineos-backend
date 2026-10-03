@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
+import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
@@ -13,6 +14,7 @@ import {
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { RecruitmentIntegrationsService } from "./recruitment-integrations.service";
 import { INTEGRATION_FAMILIES } from "./integration-catalog";
+import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 
 export const integrationStatusSchema = z.object({
   platform: z.string(),
@@ -55,6 +57,7 @@ export type ConnectIntegrationInput = z.infer<typeof connectIntegrationSchema>;
  * held is administrative, and the list is the screen from which they are
  * changed.
  */
+@RequireModule("hr")
 @Controller("hr/recruitment/integrations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentIntegrationsController {
@@ -72,7 +75,7 @@ export class RecruitmentIntegrationsController {
   @Validate({ body: connectIntegrationSchema })
   @ResponseSchema(integrationStatusSchema)
   connect(
-    @Param("platform") platform: string,
+    @Param("platform", new ZodValidationPipe(z.string().min(1).max(64))) platform: string,
     @Body() body: ConnectIntegrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -82,7 +85,10 @@ export class RecruitmentIntegrationsController {
   @Delete(":platform")
   @RequirePermission("hr:requisitions:manage")
   @ResponseSchema(z.object({ platform: z.string() }))
-  disconnect(@Param("platform") platform: string, @CurrentUser() u: CurrentUserContext) {
+  disconnect(
+    @Param("platform", new ZodValidationPipe(z.string().min(1).max(64))) platform: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     return this.integrations.disconnect(u.orgId, u.userId, platform.toUpperCase());
   }
 
@@ -91,7 +97,10 @@ export class RecruitmentIntegrationsController {
   @Idempotent("hr.recruitment.rotate-inbound-secret")
   @BodylessAction()
   @ResponseSchema(rotateSecretResponseSchema)
-  rotateInboundSecret(@Param("platform") platform: string, @CurrentUser() u: CurrentUserContext) {
+  rotateInboundSecret(
+    @Param("platform", new ZodValidationPipe(z.string().min(1).max(64))) platform: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     return this.integrations.rotateInboundSecret(u.orgId, u.userId, platform.toUpperCase());
   }
 }

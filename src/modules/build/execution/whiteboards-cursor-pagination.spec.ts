@@ -1,7 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { WhiteboardsService } from "./whiteboards.service";
-import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double.spec-fixtures";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { MEMBER_STANDING, principalAccess, projectAccessRow } from "../__tests__/project-access-doubles";

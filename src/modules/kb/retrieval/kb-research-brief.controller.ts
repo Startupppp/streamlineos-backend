@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -109,6 +110,7 @@ export class KbResearchBriefController {
   @Post("research-briefs/:briefId/approve")
   @BodylessAction()
   @RequirePermission("kb:pages:manage")
+  @Idempotent("kb.research-brief.approve")
   @HttpCode(200)
   @Validate({ params: briefIdParams })
   @ResponseSchema(kbResearchBriefApproveSchema)

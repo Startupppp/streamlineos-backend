@@ -98,13 +98,19 @@ describe("migration 1141/1142 staging preflight", () => {
       expect(later.every((entry) => entry.when > entry1142.when)).toBe(true);
     });
 
-    it("when is strictly increasing across the whole journal once sorted by idx", () => {
+    it("when is strictly increasing across the whole journal once sorted by idx, except 1154a, journalled with a new idx and a when that runs it before 1155", () => {
       const byIdx = [...journal.entries].sort((a, b) => a.idx - b.idx);
       const regressions = byIdx
         .slice(1)
         .filter((entry, i) => entry.when <= byIdx[i].when)
         .map((entry) => entry.tag);
-      expect(regressions).toEqual([]);
+      expect(regressions).toEqual(["1154a_build_cycle_columns_before_1155"]);
+      expect(entryFor("1154a_build_cycle_columns_before_1155").when).toBeGreaterThan(
+        entryFor("1154_build_ticket_related_links_org_index").when,
+      );
+      expect(entryFor("1154a_build_cycle_columns_before_1155").when).toBeLessThan(
+        entryFor("1155_build_cycles_drift_reconcile").when,
+      );
     });
 
     it("the only array-order when regression is the adjudicated 0619/0271a pair", () => {
@@ -244,8 +250,8 @@ describe("migration 1141/1142 staging preflight", () => {
 
     it("records the current bytes of both migrations so an out-of-band edit fails this spec", () => {
       const digest = (tag: string) => createHash("sha256").update(readFileSync(join(MIGRATIONS_DIR, `${tag}.sql`))).digest("hex");
-      expect(digest(TAG_1141)).toBe("a65318a8013ed2c733be1c6af0f8529fe43b7d09d7667e71a0e6ce0aa3951042");
-      expect(digest(TAG_1142)).toBe("96f76c745ff077deafac70f5e5960cefc38f2c136f709b8890a904ca07e26ba3");
+      expect(digest(TAG_1141)).toBe("53b644551349754f412d8fc67fec57a994e105f363a81139b53b50235001e059");
+      expect(digest(TAG_1142)).toBe("358a1c3441012c500bf48859ed00813db29fd340427f9a609e58da9f45a0d69a");
     });
   });
 });

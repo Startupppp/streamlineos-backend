@@ -159,3 +159,78 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
     expect(events.length).toBeGreaterThan(0);
   });
 });
+
+describe("KbPageTreeService.restoreMany — one transaction for a whole bulk restore", () => {
+  const deleted = new Date("2026-01-01");
+
+  function makeBatchDb(
+    pages: Array<{ id: number; parentPageId: number | null; deletedAt: Date | null; title: string }>,
+    subtreeIds: number[],
+  ) {
+    const updateSets: unknown[] = [];
+    const tx = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn()
+            .mockResolvedValueOnce(pages)
+            .mockResolvedValueOnce(pages)
+            .mockResolvedValueOnce([]),
+        }),
+      }),
+      execute: jest.fn().mockResolvedValue(subtreeIds.map((id) => ({ id }))),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockImplementation((values: unknown) => {
+          updateSets.push(values);
+          return { where: jest.fn().mockResolvedValue([]) };
+        }),
+      }),
+    };
+    const db = {
+      transaction: jest.fn().mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx)),
+    };
+    const audit = { logCriticalMany: jest.fn().mockResolvedValue(undefined) };
+    const writer = { commitManyPageChanges: jest.fn().mockResolvedValue(undefined) };
+    const svc = new KbPageTreeService(
+      db as never,
+      audit as never,
+      makeAuth() as never,
+      {} as never,
+      writer as never,
+    );
+    return { svc, db, tx, audit, updateSets };
+  }
+
+  const parent = { id: 10, parentPageId: null, deletedAt: deleted, title: "Parent" };
+  const child = { id: 11, parentPageId: 10, deletedAt: deleted, title: "Child" };
+
+  it("restores parent and child in one transaction; a child listed after its parent is covered, not re-restored", async () => {
+    const { svc, db, audit, updateSets } = makeBatchDb([parent, child], [10, 11]);
+
+    await svc.restoreMany(makeUser(), [10, 11]);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(updateSets).toEqual([{ deletedAt: null, deletedById: null }]);
+    const entries = audit.logCriticalMany.mock.calls[0]?.[0] ?? [];
+    expect(entries.map((e: { resourceId: string }) => e.resourceId)).toEqual(["10"]);
+  });
+
+  it("a child listed before its deleted parent is detached to the root, as the per-page loop did", async () => {
+    const { svc, audit, updateSets } = makeBatchDb([parent, child], [11, 10]);
+
+    await svc.restoreMany(makeUser(), [11, 10]);
+
+    expect(updateSets).toEqual([{ deletedAt: null, deletedById: null }, { parentPageId: null }]);
+    const entries = audit.logCriticalMany.mock.calls[0]?.[0] ?? [];
+    expect(entries.map((e: { resourceId: string }) => e.resourceId)).toEqual(["11", "10"]);
+  });
+
+  it("a page restored concurrently is skipped: no subtree walk, no update, no audit", async () => {
+    const { svc, tx, audit } = makeBatchDb([{ id: 7, parentPageId: null, deletedAt: null, title: "Live" }], []);
+
+    await svc.restoreMany(makeUser(), [7]);
+
+    expect(tx.execute).not.toHaveBeenCalled();
+    expect(tx.update).not.toHaveBeenCalled();
+    expect(audit.logCriticalMany).not.toHaveBeenCalled();
+  });
+});

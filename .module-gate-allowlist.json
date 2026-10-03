@@ -1,0 +1,20 @@
+{
+  "modules/surveys/survey-public.controller.ts": "all handlers carry @Public(); respondent has no session, module gate is inapplicable",
+  "modules/hr/forms/hr-forms-public.controller.ts": "all handlers carry @Public(); public form endpoints require no session",
+  "modules/hr/cases/hr-disciplinary.controller.ts": "hr:cases:* handlers carry per-method @RequireModule('hr'); the self:cases handlers are employee self-service, platform-core per CLAUDE.md §8, and never carry @RequireModule",
+  "modules/hr/time/employee-attendance.controller.ts": "uses only self:attendance; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/hr/time/employee-time-off.controller.ts": "uses only self:leaves and self:attendance; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/hr/core/hr-org-structure-compat.controller.ts": "all handlers use settings:* permissions (settings:view, settings:organization:manage); a backward-compat shim for org structure that is global to all modules; @RequireModule('hr') would block org structure management on non-HR subscriptions",
+  "modules/hr/interviews/employee-recruitment.controller.ts": "all handlers use self:recruitment; a member keeps their own assigned interviews and hiring feedback whatever their org's enabled products, per CLAUDE.md §8",
+  "modules/hr/recruitment/recruitment-self.controller.ts": "uses only self:job-openings and self:referrals, both member defaults; a module gate would deny a member their own data in an org without HR enabled, per CLAUDE.md §8",
+  "modules/hr/lifecycle/onboarding-views.controller.ts": "all handlers use self:onboarding-docs; employee employment documents are platform-core per CLAUDE.md §8",
+  "modules/hr/config/hr-document-types.controller.ts": "GET handlers use @AuthorizedInService with dual access (hr:documents:view or self:onboarding-docs); employees need the document type catalog during onboarding; mutation handlers live in hr-document-types-admin.controller.ts",
+  "modules/hr/onboarding/core/onboarding.controller.ts": "universal employee self-service (session, personal/bank details, submit, status, requirements, self:onboarding-tasks) and cross-module setup (onboarding:module-checklists:*, onboarding:tours:*) that every product uses; HR admin handlers live in hr-onboarding-admin.controller.ts",
+  "modules/hr/helpdesk/employee-support.controller.ts": "uses only self:support; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/hr/hub/manager-home.controller.ts": "single @Universal() handler serving the caller's own team view; universal surfaces are not product-gated",
+  "modules/hr/performance/self-document-acknowledgements.controller.ts": "uses only self:document-acknowledgements; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/payroll/insights/ess.controller.ts": "uses only self:payroll and self:payslips; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/payroll/insights/ess-form16.controller.ts": "uses only self:payslips; an employee's own Form 16 is self-service, platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/payroll/insights/payroll-ai-explain.controller.ts": "uses only self:payslips; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/payroll/payout/publishing.controller.ts": "payroll:payslips:* handlers carry per-method @RequireModule('payroll') with class-level ModuleGuard; the self:payslips download is employee self-service, platform-core per CLAUDE.md §8, and never carries @RequireModule"
+}

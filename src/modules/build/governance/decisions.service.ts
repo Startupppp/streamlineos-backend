@@ -67,8 +67,8 @@ export class DecisionsService {
         ),
       )
       .orderBy(desc(projectDecisions.id))
-      .limit(DecisionsService.PAGE_LIMIT + 1);
-    return buildIdCursorPage(rows, DecisionsService.PAGE_LIMIT, (r) => r.id);
+      .limit((query.limit ?? DecisionsService.PAGE_LIMIT) + 1);
+    return buildIdCursorPage(rows, query.limit ?? DecisionsService.PAGE_LIMIT, (r) => r.id);
   }
 
   async getDecision(u: CurrentUserContext, projectId: number, decisionId: number) {

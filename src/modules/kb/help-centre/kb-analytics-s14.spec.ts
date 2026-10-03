@@ -111,7 +111,7 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
     const { db, wheres } = overviewHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    await svc.overview("org-1", { spaceId: 42 });
+    await svc.overview("org-1", { scope: "support", spaceId: 42 });
 
     const pageWheres = wheres.filter((w) => w.sql.includes(`"kb_pages"`) && !w.sql.includes(`"kb_events"`));
     expect(pageWheres).toHaveLength(1);
@@ -125,7 +125,7 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
     const { db, wheres } = overviewHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    await svc.overview("org-1", {});
+    await svc.overview("org-1", { scope: "support" });
 
     const eventWheres = wheres.filter((w) => w.sql.includes(`"kb_events"`));
     expect(eventWheres).toHaveLength(1);
@@ -136,7 +136,7 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
     const { db, wheres } = overviewHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    await svc.overview("org-1", { spaceId: 42 });
+    await svc.overview("org-1", { scope: "support", spaceId: 42 });
 
     const eventWheres = wheres.filter((w) => w.sql.includes(`"kb_events"`));
     expect(eventWheres).toHaveLength(1);
@@ -148,7 +148,7 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
     const { db, wheres } = overviewHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    await svc.overview("org-1", {});
+    await svc.overview("org-1", { scope: "support" });
 
     const eventWheres = wheres.filter((w) => w.sql.includes(`"kb_events"`));
     expect(eventWheres).toHaveLength(1);
@@ -159,7 +159,7 @@ describe("KbAnalyticsService.overview — space filter and public deflection", (
     const { db, projections } = overviewHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    await svc.overview("org-1", {});
+    await svc.overview("org-1", { scope: "support" });
 
     const eventProjection = projections.find((p) => "ticketsDeflected" in p);
     expect(eventProjection).toBeDefined();
@@ -173,7 +173,7 @@ describe("KbAnalyticsService.overview — an aggregate must not label a page the
     const { db, projections } = overviewHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    await svc.overview("org-1", {});
+    await svc.overview("org-1", { scope: "support" });
 
     for (const projection of projections) {
       expect(Object.keys(projection)).not.toContain("title");
@@ -185,7 +185,7 @@ describe("KbAnalyticsService.overview — an aggregate must not label a page the
     const { db } = overviewHarness();
     const svc = new KbAnalyticsService(db, auth);
 
-    const result = await svc.overview("org-1", {});
+    const result = await svc.overview("org-1", { scope: "support" });
 
     expect(result).not.toHaveProperty("topArticles");
   });

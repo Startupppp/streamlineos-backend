@@ -147,4 +147,8 @@ export const authAnalyticsSchema = z.object({
   activeSessions: z.number().int(),
 });
 
+export const myPreferencesResponseSchema = z.object({
+  language: z.enum(["en", "hi", "te"]),
+});
+
 export { successSchema as updateProfileResponseSchema };

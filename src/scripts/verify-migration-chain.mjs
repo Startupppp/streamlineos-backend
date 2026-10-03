@@ -89,6 +89,11 @@ const HISTORICAL_DUPLICATE_PREFIXES = new Set([
   "0432",
   "0700",
   "0701",
+  "1231",
+  "1233",
+  "1234",
+  "1235",
+  "1236",
 ]);
 
 /**

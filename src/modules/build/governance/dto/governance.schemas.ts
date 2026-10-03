@@ -6,6 +6,7 @@ import {
   decisionStatusEnum,
 } from "../../../../db/schema";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
+import { optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createRiskSchema = z.object({
   title: z.string().trim().min(1, "Title cannot be blank").max(500),
@@ -35,6 +36,7 @@ export const listRisksQuerySchema = z.object({
   impact: z.enum(riskImpactEnum.enumValues).optional(),
   ownerId: z.string().min(1).optional(),
   cursor: idCursorSchema,
+  limit: optionalPageSizeField(),
   search: z.string().max(200).optional(),
 }).strict();
 
@@ -82,6 +84,7 @@ export const listDecisionsQuerySchema = z.object({
   status: z.enum(decisionStatusEnum.enumValues).optional(),
   ownerId: z.string().min(1).optional(),
   cursor: idCursorSchema,
+  limit: optionalPageSizeField(),
   search: z.string().max(200).optional(),
 }).strict();
 

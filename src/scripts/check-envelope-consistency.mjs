@@ -236,6 +236,28 @@ function isJsonMediaType(name) {
   return /^application\/(?:[\w.+-]+\+)?json$/i.test(String(name).split(";")[0].trim());
 }
 
+function unionBranches(schema) {
+  if (typeof schema !== "object" || schema === null) return null;
+  const branches = Array.isArray(schema.anyOf) ? schema.anyOf : Array.isArray(schema.oneOf) ? schema.oneOf : null;
+  if (!branches) return null;
+  return branches.filter((b) => typeof b === "object" && b !== null && b.type !== "null");
+}
+
+function carriesCollection(schema) {
+  const props = schema.properties;
+  if (typeof props !== "object" || props === null) return false;
+  return Object.values(props).some((v) => typeof v === "object" && v !== null && v.type === "array");
+}
+
+export function judgeUnionPayload(branches) {
+  if (branches.some((b) => b.type === "array"))
+    return "paginated endpoint returns a bare array — expected a pagination envelope with cursor/total/meta";
+  const signalled = (b) => schemaHasPaginationSignal(b) || typeof b["$ref"] === "string";
+  if (!branches.some(signalled) || branches.some((b) => !signalled(b) && carriesCollection(b)))
+    return "paginated endpoint 200 schema has no recognizable pagination signal (nextCursor, total, meta, etc.)";
+  return null;
+}
+
 export function findUnpaginatedCollections(document) {
   const violations = [];
   for (const [pathTemplate, pathItem] of Object.entries(document.paths ?? {})) {
@@ -261,6 +283,15 @@ export function findUnpaginatedCollections(document) {
         if (typeof schema !== "object" || schema === null) continue;
         // The pagination signal lives on the payload, inside the { success, data } envelope.
         const payload = unwrapSuccessEnvelope(schema);
+        const branches = unionBranches(payload);
+        if (branches) {
+          const verdict = judgeUnionPayload(branches);
+          if (verdict) {
+            violations.push({ method: "GET", path: pathTemplate, issue: verdict });
+            break;
+          }
+          continue;
+        }
         if (payload.type === "array") {
           violations.push({ method: "GET", path: pathTemplate, issue: "paginated endpoint returns a bare array — expected a pagination envelope with cursor/total/meta" });
           break;
@@ -1103,6 +1134,29 @@ if (SELF_TEST) {
   if (findUnpaginatedCollections(paginatedBad).length !== 1)
     fail("bare-array-bites", "expected 1 violation for paginated endpoint with bare array schema");
   else pass("bare-array-bites — bare array schema on a paginated endpoint is flagged");
+
+  const unionOf = (...branches) => ({ paths: { "/x/u": { get: {
+    parameters: [{ name: "page", in: "query" }],
+    responses: { "200": { content: { "application/json": { schema: { type: "object", properties: {
+      success: { type: "boolean" }, data: { anyOf: branches },
+    } } } } } },
+  }}}});
+  const disabledNotice = { type: "object", properties: { enabled: { type: "boolean" }, reason: { type: "string" } } };
+  const pagedBranch = { type: "object", properties: { items: { type: "array" }, pagination: { type: "object" } } };
+  const unpagedBranch = { type: "object", properties: { items: { type: "array" } } };
+  if (findUnpaginatedCollections(unionOf(disabledNotice, pagedBranch)).length !== 0)
+    fail("union-paged-branch-passes", "a feature-off notice beside a paginated branch carries no collection and must pass");
+  else pass("union-paged-branch-passes — a union whose only collection branch is paginated passes");
+  if (findUnpaginatedCollections(unionOf(disabledNotice, unpagedBranch)).length !== 1)
+    fail("union-unpaged-branch-bites", "a collection branch without a signal must still be flagged inside a union");
+  else pass("union-unpaged-branch-bites — an unpaginated collection branch inside a union is flagged");
+  const unionBare = findUnpaginatedCollections(unionOf(pagedBranch, { type: "array" }));
+  if (unionBare.length !== 1 || !unionBare[0].issue.includes("bare array"))
+    fail("union-bare-array-bites", `a bare array branch must be flagged even beside a paginated one; got ${JSON.stringify(unionBare)}`);
+  else pass("union-bare-array-bites — a bare array branch inside a union is flagged");
+  if (findUnpaginatedCollections(unionOf(disabledNotice, { type: "object", properties: { reason: { type: "string" } } })).length !== 1)
+    fail("union-no-signal-bites", "a union with no paginated branch at all must be flagged");
+  else pass("union-no-signal-bites — a union with no signal anywhere is flagged");
 
   // --- non-JSON downloads: the carve-out the rule already claims, and its limit ---
   const csvDownload = { paths: { "/x/export": { get: {

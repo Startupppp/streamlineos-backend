@@ -7,6 +7,7 @@ import {
 } from "../../../../db/schema/payroll/input-capture";
 import { daysInMonth } from "./money";
 import { asRecord } from "../../../../common/openapi/zod-operation-contracts";
+import type { PayrollSourceRef } from "../../payroll.types";
 
 export interface PulledInputs {
   userId: string;
@@ -128,6 +129,7 @@ export async function loadLockedSectionsByUser(
       userId: hrPayrollInputSnapshots.userId,
       section: hrPayrollInputSnapshots.section,
       payload: hrPayrollInputSnapshots.payload,
+      sourceRefs: hrPayrollInputSnapshots.sourceRefs,
     })
     .from(hrPayrollInputSnapshots)
     .where(
@@ -143,7 +145,7 @@ export async function loadLockedSectionsByUser(
     const payload = asRecord(snap.payload);
     if (!payload) continue;
     const sections = byUser.get(snap.userId) ?? new Map<string, SnapshotPayload>();
-    sections.set(snap.section, payload);
+    sections.set(snap.section, snap.sourceRefs == null ? payload : { ...payload, sourceRefs: snap.sourceRefs });
     byUser.set(snap.userId, sections);
   }
   return byUser;
@@ -206,9 +208,16 @@ export async function pullFromLockedSnapshots(
   return buildPulledInputsFromSections(userId, month, byUser.get(userId));
 }
 
+export type PulledReimbursement = {
+  amount: string;
+  category: string;
+  expenseId?: number;
+  source?: PayrollSourceRef;
+};
+
 export type LockedCalcPulls = {
   fromLockedSnapshot: true;
-  approvedReimbursements: { amount: string; category: string }[];
+  approvedReimbursements: PulledReimbursement[];
   consumedReimbursementIds: number[];
   activeLoans: {
     id: number;
@@ -219,7 +228,66 @@ export type LockedCalcPulls = {
     adjustment: { type: string; amount: string | null } | null;
   }[];
   overtimeHours: string;
+  lopSources: PayrollSourceRef[];
+  overtimeSources: PayrollSourceRef[];
 };
+
+export function parseSourceRefs(value: unknown): PayrollSourceRef[] {
+  if (!Array.isArray(value)) return [];
+  const refs: PayrollSourceRef[] = [];
+  for (const raw of value) {
+    const ref = asRecord(raw);
+    if (!ref || typeof ref.table !== "string" || typeof ref.label !== "string") continue;
+    const id = typeof ref.id === "number" || typeof ref.id === "string" ? ref.id : null;
+    refs.push({
+      table: ref.table,
+      id,
+      label: ref.label,
+      date: typeof ref.date === "string" ? ref.date : null,
+      endDate: typeof ref.endDate === "string" ? ref.endDate : null,
+    });
+  }
+  return refs;
+}
+
+function dayCount(n: number): string {
+  return `${n} day${n === 1 ? "" : "s"}`;
+}
+
+export function lopSourcesFromSections(bySection: SectionMap | undefined): PayrollSourceRef[] {
+  if (!bySection) return [];
+  const attendanceSection = bySection.get("attendance") ?? {};
+  const leave = bySection.get("leave") ?? {};
+  const refs: PayrollSourceRef[] = [];
+  const absentDays = num(attendanceSection.absentDays);
+  if (absentDays > 0) refs.push({ table: "attendance", id: null, label: `Absent · ${dayCount(absentDays)}` });
+  const latePenaltyDays = num(attendanceSection.latePenaltyDays);
+  if (latePenaltyDays > 0) refs.push({ table: "attendance", id: null, label: `Late penalty · ${dayCount(latePenaltyDays)}` });
+  refs.push(...parseSourceRefs(leave.sourceRefs));
+  const halfDayCount = num(leave.halfDayCount);
+  if (halfDayCount > 0) refs.push({ table: "leave_requests", id: null, label: `Half day · ${halfDayCount} × 0.5` });
+  return refs;
+}
+
+const REIMBURSEMENT_SOURCE_TABLE: Record<string, string> = {
+  reimbursement: "reimbursements",
+  benefits_claim: "hr_insurance_claims",
+  expense: "expenses",
+};
+
+function itemSourceRef(item: Record<string, unknown>, category: string): PayrollSourceRef | undefined {
+  if (typeof item.id !== "number") return undefined;
+  const source = typeof item.source === "string" ? item.source : "reimbursement";
+  const table = REIMBURSEMENT_SOURCE_TABLE[source] ?? "reimbursements";
+  const label =
+    source === "expense"
+      ? `Expense claim #${item.id} · ${category}`
+      : source === "benefits_claim" && typeof item.description === "string"
+        ? item.description
+        : `Reimbursement #${item.id} · ${category}`;
+  const rawDate = typeof item.date === "string" ? item.date : typeof item.approvedAt === "string" ? item.approvedAt : null;
+  return { table, id: item.id, label, date: rawDate ? rawDate.slice(0, 10) : null };
+}
 
 export function buildCalcPullsFromSections(
   bySection: SectionMap | undefined,
@@ -232,7 +300,7 @@ export function buildCalcPullsFromSections(
   const attendanceSection = bySection.get("attendance") ?? {};
 
   const items = Array.isArray(reimb.items) ? reimb.items : [];
-  const approvedReimbursements: { amount: string; category: string }[] = [];
+  const approvedReimbursements: PulledReimbursement[] = [];
   const consumedReimbursementIds: number[] = [];
 
   for (const raw of items) {
@@ -246,8 +314,15 @@ export function buildCalcPullsFromSections(
         : typeof amount === "string"
           ? amount
           : "0";
-    approvedReimbursements.push({ amount: amountStr, category });
-    if (typeof item.id === "number" && item.source !== "benefits_claim") {
+    const source = itemSourceRef(item, category);
+    const expenseId = item.source === "expense" && typeof item.id === "number" ? item.id : undefined;
+    approvedReimbursements.push({
+      amount: amountStr,
+      category,
+      ...(expenseId !== undefined ? { expenseId } : {}),
+      ...(source ? { source } : {}),
+    });
+    if (typeof item.id === "number" && item.source !== "benefits_claim" && expenseId === undefined) {
       consumedReimbursementIds.push(item.id);
     }
   }
@@ -275,6 +350,8 @@ export function buildCalcPullsFromSections(
     consumedReimbursementIds,
     activeLoans,
     overtimeHours,
+    lopSources: lopSourcesFromSections(bySection),
+    overtimeSources: parseSourceRefs(overtime.sourceRefs),
   };
 }
 

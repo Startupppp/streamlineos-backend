@@ -3,10 +3,6 @@
   "classifiedAt": "2026-09-12",
   "note": "Verdicts: N+1-FIXED|BATCHED|FALSE-POSITIVE|EXCLUDED-MODULE|ACTIONABLE",
   "files": {
-    "/access/access-grant-drains.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Classified by reading from ticket 21 (access is not that ticket's territory; the service was not edited). Both `for(;;)` bodies are keyset drains over role_permission_grants / user_permission_grants â€” the loop's query IS the next page, one round trip per page and not per row. Same shape as /access/access-permission.resolver.ts, already FALSE-POSITIVE. Split out of access-permission.resolver.ts, which is why the baseline had never seen the path."
-    },
     "/access/access.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "deleteOrgEntries(cache: Map<string, T>, orgId) sweeps an IN-PROCESS Map â€” the parameter is literally named `cache`, so the widened this.cache pattern matches Map.prototype.delete. No round trip. This is one of the two false positives the cache widening costs, and it buys 188 previously-invisible real cache call sites."
@@ -51,10 +47,6 @@
       "verdict": "FIXED-SET",
       "note": "`for (const seed of engine.seedCodes())` — the tax pack's own code list, a constant of the pack implementation. The statement count is a property of the pack, not of the tenant, and `seedPack` runs once per (org, book, pack)."
     },
-    "/ai/core/ops-copilot-tools.ts": {
-      "verdict": "N+1-FIXED",
-      "note": "variant and stock reads hoisted above the loop into two inArray queries grouped by Map; the Promise.all is gone"
-    },
     "/ai/core/services/crm-tasks.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "Entity ids are grouped by entityType and read once each: leads via leadIdIn(leadIds) keeping LEAD_PARTY_JOIN + leadPartyScope(orgId, INCLUDE_DELETED), deals via inArray(crmDeals.id, dealIds) + eq(crmDeals.orgId, orgId). Enrichment is an in-memory map and both reads are skipped when their id list is empty. N<=30 pending tasks: up to N selects -> at most 2, and 0 when no task carries a LEAD/DEAL entity."
@@ -62,10 +54,6 @@
     "/ai/jobs/ai-jobs-worker.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "the batch is claim-bounded by `limit` and each iteration runs a different job's handler; the update is that job's own terminal state, not a repeated lookup"
-    },
-    "/audit-log/audit-log.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "for(;;) keyset export page loop bounded by EXPORT_ROW_CAP â€” one query per page of EXPORT_PAGE_SIZE rows"
     },
     "/autonomy/lib/hold-in-flight.ts": {
       "verdict": "BATCHED",
@@ -86,10 +74,6 @@
     "/billing/core/lib/credit-reservation-close.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "MOVED 2026-09-12 from /billing/core/ai-credits-reservation.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. ticket 21 removed the N+1: sweepExpiredReservations opened runInNewTenantTransaction per expired row (up to 500 nested pooled borrows per org) and released each via a read-modify-write wallet update. It is now a bounded keyset drain inside forEachOrg's own transaction â€” one page select, one compare-and-set claim, one atomic `balance + refunded`. What the detector still sees is the for(;;) page stepper, which is the correct shape. Proved by src/db/__tests__/db-call-count-contract.spec.ts: statement count identical at 1 and 50 expired rows"
-    },
-    "/billing/core/lib/plan-quota-alerts.ts": {
-      "verdict": "FIXED-SET",
-      "note": "Split out of /billing/core/plan-limits.service.ts, which carries the same verdict: the loop is over `crossedThresholds()`, which returns at most [100, 80], so the dedup `cache.get`/`cache.set` pair runs at most twice."
     },
     "/billing/core/plan-limits.service.ts": {
       "verdict": "FIXED-SET",
@@ -114,10 +98,6 @@
     "/build/core/tickets/projects-tickets-rank-utils.ts": {
       "verdict": "N+1-FIXED",
       "note": "First seen 2026-09-03, reclassified FALSE-POSITIVE -> N+1-FIXED on 2026-09-09 because the detector no longer matches this file and a still-detected verdict would read as stale. The substance is unchanged and still true: `rows.map((r, i) => sql`WHEN ... THEN ...`)` builds CASE branches joined into ONE `tx.update(tickets).set({ rank: sql`(CASE ... END)` })`, and `rebalanceProjectRanks` (:13-24) is a single `UPDATE ... FROM (SELECT row_number() OVER (...))`. Zero round trips inside any loop — this is the bulk rank rewrite, not an N+1."
-    },
-    "/build/core/tickets/projects-tickets-transfer.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "per-row membership lookup replaced by a Map built from the existing memberEmails join; the loop still detected is a CHUNK_SIZE=100 bounded batch insert"
     },
     "/build/core/tickets/projects-tickets-update.service.ts": {
       "verdict": "N+1-FIXED",
@@ -230,10 +210,6 @@
     "/cron/cron-billing.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "All four sites batched. The three windowed trial-reminder SELECTs became one read of the live trial_ends_at values with the day windows matched in memory. Past-due suspension is one conditional UPDATE claiming status=PAST_DUE with a jsonb || metadata patch and RETURNING id, so the claim is unchanged and the read-modify-write that could clobber a concurrent metadata write is gone; planLimits.bust and findOrgOwner now run once per org. Dunning reminders read the recorded milestones once, choose the next unsent per subscription in memory, claim by a single INSERT ... ON CONFLICT DO NOTHING RETURNING (still the authority against a racing sweep) and mark SENT in one UPDATE. The two revenue.emit sites are now one RevenueAnalyticsService.emitMany per branch, sharing the single envelope() builder with emit so a batched emit and N single emits are the same code rather than merely equal."
-    },
-    "/cron/cron-build-retention.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "for(;;) chunked batch delete â€” SELECT batch IDs + DELETE WHERE id IN batch; same pattern as kb-page-tree.service.ts; not per-row N+1"
     },
     "/cron/cron-gdpr-export-retention.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -408,8 +384,8 @@
       "note": "while(true) keyset drain over interview_scorecards; one query per page"
     },
     "/hr/onboarding/core/onboarding-admin.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "while(true) keyset drain on afterUserId â€” one bounded SELECT and one bulk INSERT per iteration"
+      "verdict": "N+1-FIXED",
+      "note": "Was FALSE-POSITIVE naming the sendReminders while(true) keyset drain. That drain is still there but no longer matches (its page read moved behind listReminderRecipients), and reading it on 2026-10-03 found a per-row N+1 the detector could never see: `for (const recipient of reminderRecipients) await this.dispatch.emit(...)`, one notification_outbox INSERT per recipient, up to ONBOARDING_REMINDER_BATCH_SIZE per page. Fixed in code: the page's inputs go to NotificationDispatchService.emitMany, which records every intent in ONE emitInTx insert inside the request transaction (each recipient keeps their own message and pendingTasks). Per page the loop now costs one recipient read, one notification outbox insert and one email outbox insert. Pinned by onboarding-admin.service.spec.ts (batchSizes [100, 1] for 101 recipients) and notification-dispatch-after-commit.spec.ts (emitMany = one insert)."
     },
     "/hr/onboarding/flow/hr-checklist-reconciliation.service.ts": {
       "verdict": "N+1-FIXED",
@@ -434,10 +410,6 @@
     "/hr/time/attendance-summary.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "chunked multi-key read â€” the loop steps by MEMBER_READ_BATCH_SIZE and each iteration reads a whole batch with inArray"
-    },
-    "/hr/time/leave-approver.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "BOUNDED 2026-09-07. The earlier 'N+1-FIXED via Promise.all' claim was withdrawn: preloading every candidate's permissions did not batch the work, it removed the loop's early exit, so a path that typically resolved ONE candidate always resolved all of them. Concurrency hid the cost in wall-clock while raising it in total. The sequential loop with its early return is restored. There is no bulk resolver to batch into - AccessService exposes only resolveUserPermissions(orgId, userId), and membersWithPermission returns PermissionMember {userId, membershipId} with no DataScope, which is the field the loop actually tests. Bounded instead by APPROVER_CANDIDATE_LIMIT = 100 on the candidate list and by returning at the first candidate whose scope covers another member. Pinned by leave-approver-query-count.spec.ts: 2 statements at 1 and at 50 candidates, and exactly 1 resolution when the first candidate covers."
     },
     "/inventory/audit-export/audit-export-rows.ts": {
       "verdict": "EXCLUDED-MODULE",
@@ -676,16 +648,16 @@
       "note": "The subtree copy is a breadth-first level walk: every node at one depth is inserted in a single INSERT ... VALUES RETURNING, and returned rows are correlated back by (parentPageId, sortOrder), a key unique by construction within a level, rather than by relying on RETURNING order. Page links are one select of all referenced ids across the subtree plus one bulk insert. The final select of the new root is gone, because the root comes back from its own level's RETURNING, and that read also had no org_id predicate. N nodes at depth D: at most 3N+1 -> D+2. BFS additionally makes unrepresentable an ordering defect the old map-order walk had, where a child visited before its parent got a null newParentId and was grafted to the space root."
     },
     "/kb/wiki/kb-page-reviews.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "One site, :315, and it is a REAL N+1. `bulkDecide` loops `for (const id of input.ids)` and issues one `update(kbPageReviews) ... returning({ id })` PER REVIEW ID, bounded only by `ids: z.array(...).max(100)` in dto/kb-page-reviews.schemas.ts:22. The visibility read above it is already batched into one inArray select, which makes the per-row write the only thing that grows. It collapses to ONE statement: the SET is identical for every id (status, reviewerId, reviewerMembershipId, decidedAt, decisionNote), the WHERE is `id = ? AND org_id = ? AND status = 'pending'`, and the per-row branch only reads `updated ? succeeded : conflict` — so one `inArray(id, ids)` UPDATE with the same `status = 'pending'` guard and RETURNING id gives the succeeded set directly, and the complement of that set against the visible ids is the conflict set. That is the compare-and-set-preserving collapse /e-sign/sign-public.service.ts already took."
+      "verdict": "N+1-FIXED",
+      "note": "Was ACTIONABLE at :315 (one UPDATE kb_page_reviews ... RETURNING per review id in bulkDecide). Re-verdicted 2026-10-03 by reading: bulkDecide now issues ONE update(kbPageReviews) with inArray(kbPageReviews.id, pendingIds) and the status = 'pending' compare-and-set guard, and RETURNING id gives the succeeded set; the complement against the visible ids is the conflict set. The detector no longer matches the file because the loop is gone."
     },
     "/kb/wiki/kb-page-trash-query.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "One site, :109, and it is the worst read-path shape in this module. `purgeImpact` resolves the visible page ids in one inArray select, then loops them and opens `this.db.transaction((tx) => collectSubtreeIds(tx, orgId, id))` ONCE PER PAGE — a transaction per row, not merely a statement per row, on a read-only impact PREVIEW endpoint, bounded only by `pageIds: z.array(...).max(PAGE_SIZE_CAP)` in dto/kb-pages.schemas.ts:135, i.e. 100. Each iteration costs a BEGIN, the tenant GUC set_config, the recursive CTE, and a COMMIT. It collapses to one statement: collectSubtreeIds (kb-page-subtree.util.ts:11) is a single WITH RECURSIVE whose anchor is `WHERE id = ${rootId} AND org_id = ${orgId}`; widening that anchor to `id = ANY(...)` over all roots walks every subtree in one pass, and the caller already discards per-root identity by unioning into one `affected` Set. Fixing it also removes the nested-transaction-per-row interaction with the request-wide tenant transaction."
+      "verdict": "N+1-FIXED",
+      "note": "Was ACTIONABLE at :109 (purgeImpact opened one transaction per visible page for collectSubtreeIds). Re-verdicted 2026-10-03 by reading: purgeImpact now calls collectSubtreeIds(tx, orgId, visibleIds) ONCE inside one transaction; the util's WITH RECURSIVE anchor is id = ANY(ARRAY[...]) over every root. No per-page loop remains."
     },
     "/kb/wiki/kb-page-trash.service.ts": {
-      "verdict": "ACTIONABLE-UNDETECTED",
-      "note": "The THREE detected sites are all acceptable and must keep matching: :262 fans out over `preDeleteStores`, a FIXED list of 13 stores, each issuing a different statement against a different table, so no single statement could replace them (the /cron/cron-hr-retention.service.ts shape); :290 (emptyTrash) and :357 (purgeExpired) are for(;;) keyset drains reading EXPIRED_PURGE_BATCH_SIZE = 500 ids then doing one batch of work, i.e. O(pages/500). The DEFECT is in two loops the detector CANNOT see, because the per-row work is a service call: :450 `bulkRestore` awaits `this.tree.restore(user, pageId)` per page, and :491 `bulkPurge` awaits `this.hardDelete(user, pageId)` per page, both bounded only by PAGE_SIZE_CAP = 100. `hardDelete` (:108) is not a statement — per single page it runs visiblePagePredicate, a findFirst, a transaction for collectSubtreeIds, assertNoLegalHoldInSubtree, openMultiStoreLedger (its own transaction plus chunked inserts), recordPageAttachmentPurge, executePreDeleteStores across all 13 stores, a delete transaction, markStoresComplete twice, and attemptPageAttachmentPurge against R2. That is roughly 50 statements and 3 transactions PER PAGE, so a 100-page bulkPurge is on the order of 5,000 statements and 300 transactions inside one synchronous HTTP request, plus one object-store delete per attachment. It is provably batchable because the batched form is IN THIS FILE: purgeExpired does the identical work for 500 pages in about 46 statements by passing an id ARRAY through the same helpers, which all already take `pageIds: number[]`. bulkRestore is the same shape against tree.restore. Classified ACTIONABLE-UNDETECTED rather than ACTIONABLE on purpose: ACTIONABLE would count the three sites above as the work to fix, which would point the next reader at the three loops that are correct and leave the two that are not uncounted. This entry raises the invisible set from 0 and the gate fails on it; that failure is the admission, and ACTIONABLE_UNDETECTED_BASELINE has NOT been raised to absorb it."
+      "verdict": "FALSE-POSITIVE",
+      "note": "Was ACTIONABLE-UNDETECTED (bulkRestore awaited this.tree.restore per page; bulkPurge awaited this.hardDelete per page). Both are fixed in code as of 2026-10-03. bulkPurge already ran the purgeExpired shape: one visibility read, one collectSubtreeIds over every visible root, one legal-hold check, one ledger/attachment/pre-delete pass and one delete transaction over the whole subtree set. bulkRestore now makes ONE call to KbPageTreeService.restoreMany(user, deletedIds): one transaction, one re-read of the roots, one collectSubtreeIds over every root, one family read, one UPDATE clearing deleted_at, at most one UPDATE detaching roots whose parent stays in trash (reproducing the old per-page order rule exactly: a root is skipped when an earlier root's subtree covers it, otherwise detached when its parent is deleted), one reindex commit and one logCriticalMany. Pinned by kb-page-trash.spec.ts (one restoreMany call for [7, 9] out of [7, 8, 9, 99]) and kb-page-tree-restore-reindex.spec.ts. The THREE sites the detector still matches are acceptable: :259 fans out over the fixed list of 13 pre-delete stores, each a different statement against a different table (the /cron/cron-hr-retention.service.ts shape); :287 (emptyTrash) and :354 (purgeExpired) are for(;;) keyset drains reading EXPIRED_PURGE_BATCH_SIZE ids then doing one batch of work per page."
     },
     "/kb/wiki/kb-page-tree.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -795,10 +767,6 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "The site the old note named is fixed: adoptLead per unadopted id became adoptLeads, about 5N statements -> 4 + G. Two sites remain and neither is the one the note described. The grouped UPDATE at the end is batched by construction. The genuine remainder is createMirroredLeads, a real per-row create loop. ACTIONABLE -> EXCLUDED-MODULE on 2026-09-09 on CALLER evidence, not on the file's own path. Every caller is CRM, which this release excludes: createMirroredLeads only at leads-import.service.ts:200, and the singular createMirroredLead only at leads.service.ts:136, leads.service.ts:368 and public/crm.service.ts:141. No in-scope module reaches any of them. The file sits under /party/ rather than /crm/, so isExcludedModule does not auto-exclude it, and /party/ was deliberately NOT added to EXCLUDED_MODULE_PREFIXES — party is the shared person/party seam that in-scope code also uses, and blanket-excluding it would blind the detector to a future in-scope N+1 there. EXCLUDED-MODULE keeps this file printed on every run while removing it from the actionable count. If an in-scope caller is ever added, this verdict is wrong and must go back to ACTIONABLE. Batching it needs the importer's chunk-bisect semantics rebuilt, which exist to attribute an import failure to the offending row rather than failing the batch."
     },
-    "/party/party-legacy-orgs.ts": {
-      "verdict": "BATCHED",
-      "note": "Both sites the old note named are fixed. adoptOrganisation per unadopted id became adoptOrganisations plus one partyIdsOfCrmOrgs preload (about 6N -> 5 + G), and parentColumnOf per derived row became one crmOrgIdsOfParties read (N -> 1). One deliberate behaviour improvement: the parent map is seeded with the parties this call is minting, so a subsidiary and its parent arriving unadopted in the same set now resolve regardless of id order, where the old loop only resolved it when the parent happened to come first. What the detector still matches is the groupByPayload UPDATE loop, which is batched by construction."
-    },
     "/party/party-legacy-seam.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "the loop walks a merge chain bounded by MAX_MERGE_HOPS with an explicit cycle guard; it is a chain walk, not a per-row fan-out"
@@ -851,10 +819,6 @@
       "verdict": "FALSE-POSITIVE",
       "note": "grants grouped by org into one transaction each with batched update and audit insert; the loop still detected iterates unique orgs, not grants"
     },
-    "/quotes/quotes-lifecycle.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "for(;;) keyset export drain — gt(quotes.id, afterId) + .orderBy(asc(quotes.id)).limit(EXPORT_PAGE) — one SELECT per page, never per row. Same shape as /audit-log/audit-log.service.ts."
-    },
     "/rbac/lib/role-permission-writes.ts": {
       "verdict": "N+1-FIXED",
       "note": "Fixed 2026-09-12: the session-cache bust after a role grant change was `Promise.all(assignees.map((a) => deps.cache.invalidate(...)))` — up to 500 Redis round trips, made concurrent so the cost showed in neither wall-clock nor this gate's old cache-blind patterns. It is now one `deps.cache.invalidateMany(keys)`, the pipelined method CacheService already exposed for exactly this."
@@ -878,10 +842,6 @@
     "/reporting/report-schedules.service.ts": {
       "verdict": "BOUNDED",
       "note": "One `UPDATE ... RETURNING` per due schedule, because `runCount` is the outbox aggregate version and `outbox_events` is unique on (org, aggregate type, aggregate id, aggregate version) — a batched increment could not hand each schedule back its own version, and emitting version 1 twice makes a report arrive once and then silently never again. Bounded by `.limit(PER_ORG_DUE_LIMIT)` = 25 per org per tick (reporting/report-schedules.service.ts:38)."
-    },
-    "/sessions/sessions.service.ts": {
-      "verdict": "BATCHED",
-      "note": "Re-verdicted 2026-09-03 (ticket 21, sixth pass). WAS FALSE-POSITIVE naming only the redis.del(...batch) prune loop. There are now two chunk loops and both are batched by construction: pruneExpiredRevocations DELs REVOCATION_PRUNE_BATCH (200) keys per variadic call, and tombstone() writes one MSET plus one variadic ZADD per REVOCATION_WRITE_CHUNK (256) ids where it previously issued two Redis commands per session id (500 sessions cost 1,000 round trips, now 4). BATCHED rather than FALSE-POSITIVE because the loop really does issue a round trip â€” one per chunk, which is the bounded form."
     },
     "/settings/settings.service.ts": {
       "verdict": "BATCHED",
@@ -1026,6 +986,110 @@
     "/build/core/tickets/ticket-change-effects.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "First seen 2026-09-29, when the effect step of the panel, rank and bulk routes became one implementation here. The detector matches the two row loops because their first argument is a `tx` handle, but neither loop reads: `enqueueTicketChangeWebhooks` enqueues one webhook row per changed ticket and `dispatchTicketChangeEffects` writes one activity row per changed ticket, which is the contract ticket 44 box 4 states — one event per changed ticket, not one per batch. Every read the loops need is hoisted above them by the caller: `readBulkTicketMeta` and `readMembershipUserIds` (build-ticket-bulk-effects.ts) each issue ONE `inArray` select bounded by `.limit(unique.length)` for the whole batch, and the rank path reads its single row once. The row count is capped at 100 by `bulkMutateTickets` (`ids.length > 100` throws) and at 1 by the rank and detail routes, so the statement count is bounded by the batch cap. The three routes each issued these same per-row writes before the consolidation; the detector had not matched them only because the loops sat in three files whose enqueue call did not name its first parameter `tx`."
+    },
+    "/sessions/session-revocation-helpers.ts": {
+      "verdict": "BATCHED",
+      "note": "MOVED 2026-10-03 from /sessions/sessions.service.ts with its verdict and its argument intact — the detected loop came here verbatim when that file was split, and re-deriving the verdict at the new path is how a split launders a finding. Original note follows. Re-verdicted 2026-09-03 (ticket 21, sixth pass). WAS FALSE-POSITIVE naming only the redis.del(...batch) prune loop. There are now two chunk loops and both are batched by construction: pruneExpiredRevocations DELs REVOCATION_PRUNE_BATCH (200) keys per variadic call, and tombstone() writes one MSET plus one variadic ZADD per REVOCATION_WRITE_CHUNK (256) ids where it previously issued two Redis commands per session id (500 sessions cost 1,000 round trips, now 4). BATCHED rather than FALSE-POSITIVE because the loop really does issue a round trip â€” one per chunk, which is the bounded form."
+    },
+    "/quotes/lib/quotes-export.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "MOVED 2026-10-03 from /quotes/quotes-lifecycle.service.ts with its verdict and its argument intact — the detected loop came here verbatim when that file was split, and re-deriving the verdict at the new path is how a split launders a finding. Original note follows. for(;;) keyset export drain — gt(quotes.id, afterId) + .orderBy(asc(quotes.id)).limit(EXPORT_PAGE) — one SELECT per page, never per row. Same shape as /audit-log/audit-log.service.ts."
+    },
+    "/integrations/core/webhook-endpoint.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "pruneDeliveries :231 — for(;;) over integration_webhook_deliveries, SELECT PRUNE_BATCH_SIZE=500 ids then one DELETE ... inArray per page, inside forEachOrg. MOVED 2026-10-03 from /cron/cron-build-retention.service.ts with its verdict and its argument intact — the detected loop came here verbatim when that file was split, and re-deriving the verdict at the new path is how a split launders a finding. Original note follows. for(;;) chunked batch delete â€” SELECT batch IDs + DELETE WHERE id IN batch; same pattern as kb-page-tree.service.ts; not per-row N+1"
+    },
+    "/ai/jobs/ai-jobs-fair-claimer.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "claim :43 — `for (const orgId of rotated)` is the per-tenant fairness rotation: each iteration is ONE UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED LIMIT perOrg) claiming a different org's due jobs, and the loop breaks once `limit` jobs are claimed. The org list is the DISTINCT org_id of due QUEUED jobs, so the statement count is bounded by the claim size, not by rows."
+    },
+    "/billing/core/billing-payment-activation.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "bustBillingMemberSessions :424 — for(;;) keyset drain over ACTIVE organization_members on gt(id, afterId) with .limit(MEMBER_BUST_PAGE=500); one SELECT and one cache.invalidateMany per page, never per member."
+    },
+    "/build/core/tickets/build-ticket-creation.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "createInTransaction :98 — `for (const ticket of created) await this.webhooks.enqueue(tx, ...)`. One webhook intent per created ticket is the event contract, but ProjectsWebhooksDispatchService.enqueue re-reads the SAME project's active project_webhooks rows on every iteration (one SELECT plus one requestDeliveries per ticket), all for one projectId. Callers pass up to CHUNK_SIZE=100 drafts (projects-tickets-transfer import) or a template's ticket list. Fix: read the project's webhooks once and hand every ticket's intents to one requestDeliveries."
+    },
+    "/cron/cron-build-project-retention.service.ts": {
+      "verdict": "BATCHED",
+      "note": "Four sites. :284 readSettings, :332 purgeClosedTickets and :373 purgeAttachments are for(;;) keyset/chunk drains: one SELECT of DELETE_BATCH_SIZE ids then one batched DELETE (and one storage_pending_purge insert) per page. :219 loops the org's project_retention_settings rows and runs those drains once per eligible project, because every project carries its own ticket and attachment cutoff and its own purge-ledger record; the per-project work is itself batched, so statements scale with projects that opted into retention times pages, never with tickets."
+    },
+    "/cron/cron-recruitment-reports.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": ":102 — `for (const schedule of due)` generates and emails each due scheduled report, then stamps that schedule's last_run_at only after its own send returned (a failed delivery must stay due). One report and one email per schedule is the work itself; bounded by .limit(SCHEDULE_BATCH=100)."
+    },
+    "/cron/cron-recruitment-sequences.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": ":107 — `for (const enrollment of due) await this.advanceOne(...)` sends each enrollment's next sequence step and advances that enrollment; each iteration is a different candidate's email and state. Bounded by .limit(ENROLLMENT_BATCH=200)."
+    },
+    "/cron/cron-recruitment-sla.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": ":63 — `for (const sla of configured)` loops the org's interview_slas rows, at most one per CLOCKED_STAGES stage (read with .limit(100)); each iteration is two set-based UPDATEs of candidate_sla_tracking for that stage's thresholds, never one per candidate."
+    },
+    "/email/email-outbox.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": ":286 — the inline flush sends each PENDING row for one recipient and stamps that row SENT or failed after its own send; rows are read with .limit(5), so the loop is at most five sends and five updates."
+    },
+    "/hr/directory/bulk-onboarding/bulk-onboarding-locations.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "loadLocationCatalog :31 — bounded keyset drain, `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` on gt(orgUnits.id, afterOrgUnitId) with .limit(HR_SCAN_PAGE), run once before any uploaded row is processed. Same shape as /hr/directory/bulk-onboarding/bulk-onboarding-departments.ts."
+    },
+    "/hr/directory/bulk-onboarding/bulk-onboarding-writes.ts": {
+      "verdict": "ACTIONABLE",
+      "note": ":203 — `for (const email of managerOrder)` calls deps.relationships.setRelationships(tx, ...) once per admitted employee. The order is load-bearing (managers first, so a manager introduced by the same file already has a user id), and HRM-15 requires every write to go through the canonical relationship service, but that service takes one subject per call, so the statements scale with the uploaded rows. Fix needs a set-based setRelationships over the ordered plan."
+    },
+    "/hr/helpdesk/hr-helpdesk-escalation.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": ":105 — per overdue ticket the loop awaits membershipIdOf(tx, orgId, targetUserId), an organization_members SELECT .limit(1), although targets come from a handful of distinct users (the queue's escalation user or the support admins); then one compare-and-set UPDATE per ticket. Bounded by ESCALATION_BATCH=200. Fix: resolve the distinct target membership ids with one inArray read before the loop."
+    },
+    "/hr/recruitment/boards/job-board-publisher.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "queue :55 — loops the requested boards, `platforms: z.array(z.enum([\"LINKEDIN\", \"NAUKRI\", \"INDEED\"]))` (dto/jobs.schemas.ts:115), so at most three iterations; each upserts that board's posting row and emits its own outbox event."
+    },
+    "/hr/recruitment/consent/candidate-erasure.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": ":133 — one purgeRetiredObject per vault document, deliberately before and outside the erasure transaction: each iteration is a different object-store delete plus its ledger write, which is the work. Bounded by the vault read's .limit(500)."
+    },
+    "/hr/recruitment/recruitment-candidates.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "markDuplicate :212 — `for (const table of moved)` over a fixed array of 10 candidate child tables; each iteration is ONE set-based UPDATE re-pointing every row of that table, a different statement per table (the /cron/cron-hr-retention.service.ts shape)."
+    },
+    "/hr/recruitment/webhooks/recruitment-webhooks.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "run :34 — bounded keyset drain over hr_webhook_subscriptions (`page < HR_SCAN_MAX_PAGES`, gt(id, afterSubscriptionId), .limit(HR_SCAN_PAGE)); one SELECT and one multi-row delivery INSERT per page."
+    },
+    "/hr/workflows/hr-workflow-instances.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "pendingRoutedToPage :407 — page stepper bounded by WORKFLOW_INBOX_MAX_BATCHES: each iteration reads the next overfetched batch of inbox candidates and filters the whole batch in one routedToMembershipIds call, never per instance."
+    },
+    "/organization/core/invitation-acceptance.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": ":559 — loops the invitation's module-access rows, one per module key (moduleAccess is z.array(...).max(10) with no duplicate moduleKey, users/dto/users.schemas.ts:75); each iteration resolves that module's standing role with one indexed .limit(1) read."
+    },
+    "/organization/core/invitation-create.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": ":703 — validates each requested module grant: one resolveModuleStandingRole .limit(1) read and one assertMayAssignRole per module key, bounded by moduleAccess .max(10) with unique moduleKey (users/dto/users.schemas.ts:75)."
+    },
+    "/organization/core/invitation-lifecycle.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": ":102 — re-validates the invitation's attached module grants on resend; the rows are read with .limit(10), one per module key, each one .limit(1) role read plus assertMayAssignRole."
+    },
+    "/party/party-legacy-contacts-update.ts": {
+      "verdict": "ACTIONABLE",
+      "note": ":67 — updateMirroredContacts assembles each moved contact with `await legacyContactRow(tx, ...)`, which awaits employerColumnOf and convertedFromColumnOf, each a one-element employerLegacyIds / leadIdsOfParties read: up to two SELECTs per contact. This is the per-row read /party/party-legacy-contacts.ts had collapsed to two preloads before the legacy UPDATE was removed. Today the only caller outside party is updateMirroredContact (one id) from contacts.service.ts:86, so N=1 in practice; the plural export is still per-row. Fix: preload employerLegacyIds and leadIdsOfParties over every moved party once, as the adopt path does."
+    },
+    "/party/party-legacy-orgs-update.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": ":59 — updateMirroredOrganizations assembles each moved company with `await legacyOrganisationRow(tx, ...)`, which awaits parentColumnOf, a one-element crmOrgIdsOfParties read: one SELECT per company with a parent. A real per-row read, and the one /party/party-legacy-orgs.ts had fixed (N -> 1) before the legacy UPDATE was removed; the old entry is deleted because its groupByPayload UPDATE loop no longer exists. EXCLUDED-MODULE on CALLER evidence, as for /party/party-legacy-contacts.ts: every caller is CRM — crm-organizations.service.ts:309 (one id) and crm-organizations-merge.service.ts:105."
+    },
+    "/timesheets/core/approval-escalation-sweep.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": ":96 — per overdue period the loop issues a timesheets SELECT (.limit(500)) for that period's project ids, a routing.resolve, and a markEscalated UPDATE; owners are already preloaded, but the per-period entry read is not. Bounded by ESCALATION_PAGE_SIZE=200. Fix: read the project ids of every overdue period in one inArray select grouped by period."
+    },
+    "@common/rbac/access-mutation-commit.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "revokeAccess :269 — `for (const loss of revocation.loses)`; every producer builds the list for ONE member with at most one standing and one identity entry (org-membership-access-revocation.ts:126-128, gdpr-subject-erasure.service.ts:251, user-account-records.ts:89/116), so revokeSessions' UPDATE runs at most once per commit."
     }
   }
 }

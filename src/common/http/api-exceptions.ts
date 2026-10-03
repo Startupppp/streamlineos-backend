@@ -132,19 +132,6 @@ export class ChatActionTicketStatusFailedException extends HttpException {
   }
 }
 
-export class ProjectsTicketConflictException extends HttpException {
-  constructor() {
-    super(
-      {
-        code: "PROJECTS_TICKET_CONFLICT",
-        message:
-          "Ticket was modified by another request. Please refresh and try again.",
-      },
-      HttpStatus.CONFLICT,
-    );
-  }
-}
-
 export class ProjectsInvalidTicketStatusException extends HttpException {
   constructor(status: string) {
     super(

@@ -71,6 +71,7 @@ export async function loadStatutorySources(
           workerId: payrollRunEmployees.workerId,
           gross: payrollRunEmployees.gross,
           net: payrollRunEmployees.net,
+          lopDays: payrollRunEmployees.lopDays,
         })
         .from(payrollRunEmployees)
         .where(and(
@@ -137,6 +138,7 @@ export async function loadStatutorySources(
       esiIpNumber: esiIpNumber || null,
       pan: pan || null,
       lines: linesByRe.get(employee.id) ?? {},
+      ncpDays: employee.lopDays ?? "0",
     };
   });
 

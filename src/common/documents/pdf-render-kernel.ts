@@ -198,7 +198,7 @@ export async function renderBoundedPdf(
   requestedLimits?: Partial<PdfRenderLimits>,
 ): Promise<Buffer> {
   return protect(async () => {
-    const session = (await createBoundedPdfSession(requestedLimits)) as BoundedPdfSession;
+    const session = new BoundedPdfSession(await PDFDocument.create(), resolveLimits(requestedLimits));
     return session.run(render);
   });
 }

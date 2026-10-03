@@ -520,7 +520,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
     it("resolveExistingSetupTarget alone cannot see a target at position 101+", () => {
       // resolveExistingSetupTarget operates on the results of listSetupMemberships,
       // which is bounded to 100 rows. An ACTIVE target at position 101+ is invisible to it.
-      // resolveOrCreateOrg handles this with findActiveSetupTarget (see test below).
+      // resolveOrCreateOrg handles this with findSetupContext (see test below).
       const rows100: SetupMembership[] = Array.from({ length: 100 }, (_, i) =>
         membership({ id: i + 1, orgId: `org-${i}`, existingOrgId: `org-${i}`, status: "LEFT" }),
       );
@@ -543,20 +543,22 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
       expect(resultWith).toEqual({ orgId: "org-active", isOwner: true });
     });
 
-    it("resolveOrCreateOrg returns an ACTIVE target via findActiveSetupTarget even when beyond the bounded scan", async () => {
+    it("resolveOrCreateOrg returns an ACTIVE target via findSetupContext even when beyond the bounded scan", async () => {
       const creation = { createFromSetup: jest.fn() };
       const db = makeDb({});
       const resolver = await buildResolver(db, creation);
 
-      jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue(
-        Array.from({ length: 100 }, (_, i) =>
+      jest.spyOn(
+        resolver as unknown as {
+          findSetupContext: (userId: string) => Promise<{ activeTarget: { orgId: string; isOwner: boolean } | null; memberships: SetupMembership[] }>;
+        },
+        "findSetupContext",
+      ).mockResolvedValue({
+        activeTarget: { orgId: "org-active", isOwner: true },
+        memberships: Array.from({ length: 100 }, (_, i) =>
           membership({ id: i + 1, orgId: `org-${i}`, existingOrgId: `org-${i}`, status: "LEFT" }),
         ),
-      );
-      jest.spyOn(
-        resolver as unknown as { findActiveSetupTarget: (userId: string) => Promise<{ orgId: string; isOwner: boolean } | null> },
-        "findActiveSetupTarget",
-      ).mockResolvedValue({ orgId: "org-active", isOwner: true });
+      });
 
       const result = await resolver.resolveOrCreateOrg(actor({ orgId: "" }), {});
 
@@ -601,9 +603,15 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
         createFromSetup: jest.fn().mockResolvedValue({ id: "org-new", name: "New", slug: "new" }),
       };
       const resolver = await buildResolver(db, creation);
-      jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue([
-        membership({ orgId: "orphan-org-1", existingOrgId: null }),
-      ]);
+      jest.spyOn(
+        resolver as unknown as {
+          findSetupContext: (userId: string) => Promise<{ activeTarget: { orgId: string; isOwner: boolean } | null; memberships: SetupMembership[] }>;
+        },
+        "findSetupContext",
+      ).mockResolvedValue({
+        activeTarget: null,
+        memberships: [membership({ orgId: "orphan-org-1", existingOrgId: null })],
+      });
 
       await resolver.resolveOrCreateOrg(actor({ orgId: "" }), {});
 

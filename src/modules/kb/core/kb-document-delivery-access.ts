@@ -16,6 +16,7 @@ export async function findPublicDeliverableDocument(
   const [row] = await tx
     .select({ id: kbPages.id })
     .from(kbPages)
-    .where(publicDeliverableDocumentPredicate(orgId, slug));
+    .where(publicDeliverableDocumentPredicate(orgId, slug))
+    .limit(1);
   return row;
 }

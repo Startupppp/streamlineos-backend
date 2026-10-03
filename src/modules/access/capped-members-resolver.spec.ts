@@ -1,5 +1,5 @@
 import { AccessPermissionMembersResolver } from "./access-permission-members.resolver";
-import { GRANT_PAGE_SIZE } from "./access-grant-drains";
+import { GRANT_PAGE_SIZE } from "../../common/pagination/keyset-drain";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 

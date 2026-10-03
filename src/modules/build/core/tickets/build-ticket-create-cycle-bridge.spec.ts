@@ -52,8 +52,8 @@ const CREATED_TICKET = {
 function makeHarness(cycleBridgeRows: { id: number }[]) {
   const insertedValues: Record<string, unknown>[] = [];
   const insertChain = {
-    values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
-      insertedValues.push(v);
+    values: jest.fn().mockImplementation((v: Record<string, unknown> | Record<string, unknown>[]) => {
+      insertedValues.push(...(Array.isArray(v) ? v : [v]));
       return insertChain;
     }),
     returning: jest.fn().mockResolvedValue([CREATED_TICKET]),

@@ -137,7 +137,8 @@ export async function findPublicDocumentBySlug(
     .from(kbPages)
     .leftJoin(kbCategories, eq(kbPages.categoryId, kbCategories.id))
     .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
-    .where(and(publicVisibleDocuments(orgId), eq(kbPages.slug, slug)));
+    .where(and(publicVisibleDocuments(orgId), eq(kbPages.slug, slug)))
+    .limit(1);
   return row ?? null;
 }
 
@@ -150,7 +151,8 @@ export async function findPublicDocumentIdBySlug(
     .select({ id: kbPages.id })
     .from(kbPages)
     .innerJoin(kbSpaces, eq(kbPages.spaceId, kbSpaces.id))
-    .where(and(publicVisibleDocuments(orgId), eq(kbPages.slug, slug)));
+    .where(and(publicVisibleDocuments(orgId), eq(kbPages.slug, slug)))
+    .limit(1);
   return row ?? null;
 }
 

@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, inArray, isNull, gte, lte, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, gte, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -8,6 +8,7 @@ import {
   salaryComponents,
   bonuses,
   reimbursements,
+  payrollRunAllocations,
   salaryLoans,
   payrollLoanAdjustments,
   incentives,
@@ -24,13 +25,11 @@ import {
   type SectionMap,
 } from "./lib/input-puller";
 import type { ResolvedComponent } from "./lib/calculation-engine";
+import { loadRunPayableExpenses } from "./lib/payable-expenses";
 import type { ProfileData, RunBatchData } from "./run-types";
 import {
   getFyString,
   groupBy,
-  type BonusRow,
-  type IncentiveRow,
-  type ReimbursementRow,
   type TaxDeclarationRow,
 } from "./run-batch-loader.helpers";
 
@@ -78,6 +77,7 @@ export class RunBatchLoaderService {
       bonusRows,
       incentiveRows,
       reimbursementRows,
+      expenseRows,
       loanRows,
       taxDeclRows,
     ] = await Promise.all([
@@ -137,6 +137,7 @@ export class RunBatchLoaderService {
                 inArray(reimbursements.userMembershipId, membershipIds),
                 eq(reimbursements.status, "APPROVED"),
                 isNull(reimbursements.paidAt),
+                sql`not exists (select 1 from ${payrollRunAllocations} where ${payrollRunAllocations.orgId} = ${orgId} and ${payrollRunAllocations.sourceType} = 'REIMBURSEMENT' and ${payrollRunAllocations.sourceId} = ${reimbursements.id}::text and ${payrollRunAllocations.runId} <> ${runId})`,
                 or(
                   isNull(reimbursements.payrollMonth),
                   eq(reimbursements.payrollMonth, month),
@@ -144,6 +145,9 @@ export class RunBatchLoaderService {
               ),
             )
             .limit(MAX_RUN_INPUT_ROWS)
+        : Promise.resolve([]),
+      toggles.reimbursements && userIds.length > 0
+        ? loadRunPayableExpenses(this.db, orgId, runId, userIds, month, MAX_RUN_INPUT_ROWS)
         : Promise.resolve([]),
       toggles.loans && membershipIds.length > 0
         ? this.db
@@ -235,6 +239,7 @@ export class RunBatchLoaderService {
       bonusesByUser: groupBy(bonusRows, (b) => b.userId),
       incentivesByUser: groupBy(incentiveRows, (i) => i.salesRepId),
       reimbursementsByUser: groupBy(reimbursementRows, (r) => r.userId),
+      expensesByUser: groupBy(expenseRows, (e) => e.userId),
       loansByUser,
       taxDeclarationByUser,
     };

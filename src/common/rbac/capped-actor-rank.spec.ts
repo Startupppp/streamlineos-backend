@@ -1,6 +1,6 @@
 import { resolveActorRankContext } from "./resolve-actor-rank";
 import { ROLE_RANK } from "./grantability";
-import { GRANT_PAGE_SIZE } from "../../modules/access/access-grant-drains";
+import { GRANT_PAGE_SIZE } from "../pagination/keyset-drain";
 import type { Db } from "../../db/drizzle.types";
 
 type Row = { id: string; rank: number; moduleKey: string | null };

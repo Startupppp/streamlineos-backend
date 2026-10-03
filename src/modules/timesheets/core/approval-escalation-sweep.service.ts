@@ -14,6 +14,7 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { membershipUserIds } from "./lib/approval-lifecycle";
 
 export const ESCALATION_PAGE_SIZE = 200;
+export const ESCALATION_RUN_BUDGET = 2_000;
 
 export interface EscalationSweepResult {
   orgsScanned: number;
@@ -28,6 +29,8 @@ function isApprovalRung(value: string | null): value is ApprovalRung {
 
 @Injectable()
 export class TimesheetApprovalEscalationSweepService {
+  private resumeAfterOrgId: string | null = null;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly routing: TimesheetApprovalRoutingService,
@@ -37,13 +40,17 @@ export class TimesheetApprovalEscalationSweepService {
 
   async escalateAllOrgs(now = new Date()): Promise<EscalationSweepResult> {
     const result: EscalationSweepResult = { orgsScanned: 0, periodsOverdue: 0, periodsEscalated: 0, periodsUnowned: 0 };
+    const budgetSpent = () => result.periodsOverdue >= ESCALATION_RUN_BUDGET;
+    let lastVisitedOrgId: string | null = null;
     await forEachOrg(this.db, "timesheets-approval-escalation", async (tx, orgId) => {
+      lastVisitedOrgId = orgId;
       const org = await this.escalateOrg(tx, orgId, now);
       result.orgsScanned += 1;
       result.periodsOverdue += org.periodsOverdue;
       result.periodsEscalated += org.periodsEscalated;
       result.periodsUnowned += org.periodsUnowned;
-    });
+    }, "write", { startAfterOrgId: this.resumeAfterOrgId, stopWhen: budgetSpent });
+    this.resumeAfterOrgId = budgetSpent() ? lastVisitedOrgId : null;
     return result;
   }
 

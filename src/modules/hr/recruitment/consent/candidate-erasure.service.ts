@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { StorageService } from "../../../storage/storage.service";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../../hr-read-limits";
 import {
   purgeRetiredObject,
   type PurgeOutcome,
@@ -105,19 +106,28 @@ export class CandidateErasureService {
     // this candidate exists in somebody else's organisation.
     if (!existing) throw new NotFoundException("Candidate not found.");
 
-    const vaultDocuments = await this.db
-      .select({
-        id: candidateDocumentsVault.id,
-        s3Key: candidateDocumentsVault.s3Key,
-      })
-      .from(candidateDocumentsVault)
-      .where(
-        and(
-          eq(candidateDocumentsVault.candidateId, candidateId),
-          eq(candidateDocumentsVault.orgId, orgId),
-        ),
-      )
-      .limit(500);
+    const vaultDocuments = [];
+    let afterVaultId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const batch = await this.db
+        .select({
+          id: candidateDocumentsVault.id,
+          s3Key: candidateDocumentsVault.s3Key,
+        })
+        .from(candidateDocumentsVault)
+        .where(
+          and(
+            eq(candidateDocumentsVault.candidateId, candidateId),
+            eq(candidateDocumentsVault.orgId, orgId),
+            gt(candidateDocumentsVault.id, afterVaultId),
+          ),
+        )
+        .orderBy(asc(candidateDocumentsVault.id))
+        .limit(HR_SCAN_PAGE);
+      vaultDocuments.push(...batch);
+      if (batch.length < HR_SCAN_PAGE) break;
+      afterVaultId = batch[batch.length - 1].id;
+    }
 
     /*
       The storage deletes run BEFORE and OUTSIDE the transaction, deliberately.

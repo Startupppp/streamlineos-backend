@@ -186,10 +186,13 @@ const FORMULA_ID_RE = /[a-zA-Z_][a-zA-Z0-9_]*/g;
 const ALLOWED_FORMULA_IDS = new Set<string>(FORMULA_VARIABLES);
 const ALLOWED_MATH_NAMES = new Set(["Math", "abs", "floor", "ceil", "round", "min", "max"]);
 
-export function validateFormula(formula: string): { valid: boolean; unknownIdentifiers: string[] } {
+export function validateFormula(
+  formula: string,
+  componentCodes: ReadonlySet<string> = new Set(),
+): { valid: boolean; unknownIdentifiers: string[] } {
   const identifiers = formula.match(FORMULA_ID_RE) ?? [];
   const unknownIdentifiers = identifiers.filter(
-    (id) => !ALLOWED_FORMULA_IDS.has(id) && !ALLOWED_MATH_NAMES.has(id),
+    (id) => !ALLOWED_FORMULA_IDS.has(id) && !ALLOWED_MATH_NAMES.has(id) && !componentCodes.has(id),
   );
   return { valid: unknownIdentifiers.length === 0, unknownIdentifiers };
 }

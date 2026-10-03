@@ -8,18 +8,6 @@ import { ProjectsQueryService } from "./project-crud/projects-query.service";
 const projectsQuerySvc = {
   listProjects: jest.fn(),
   getProject: jest.fn(),
-  getProjectLabels: jest.fn(),
-  listLabels: jest.fn(),
-  getRoadmap: jest.fn(),
-  listTemplates: jest.fn(),
-  getAnalytics: jest.fn(),
-  getBurnup: jest.fn(),
-  getCfd: jest.fn(),
-  getCriticalPath: jest.fn(),
-  getVelocity: jest.fn(),
-  getBudget: jest.fn(),
-  listFeedback: jest.fn(),
-  listChangelog: jest.fn(),
 };
 
 describe("Projects auth/RBAC (e2e)", () => {

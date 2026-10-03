@@ -115,11 +115,15 @@ function makeUser(orgId = ORG_A) {
 function makeDb(submission: unknown, updateResult?: unknown, projectFound = true): Db {
   const sub = submission as { linkedTicketId?: number | null } | undefined;
   const lockRows = sub ? [{ linkedTicketId: sub.linkedTicketId ?? null }] : [];
+  const projectRows = projectFound ? [{ state: "ACTIVE", manages: null, memberRole: null, onTeam: null }] : [];
   const selectChain = {
     from: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    for: jest.fn().mockResolvedValue(lockRows),
+    limit: jest.fn().mockReturnValue({
+      for: jest.fn().mockResolvedValue(lockRows),
+      then: (resolve: (rows: unknown[]) => unknown, reject: (e: unknown) => unknown) =>
+        Promise.resolve(projectRows).then(resolve, reject),
+    }),
   };
   const updateChain = {
     set: jest.fn().mockReturnThis(),
@@ -199,7 +203,7 @@ function buildService(opts: {
 
 function makeAccess() {
   return {
-    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
+    scopeFor: jest.fn().mockResolvedValue("all"),
   } as unknown as AccessService;
 }
 

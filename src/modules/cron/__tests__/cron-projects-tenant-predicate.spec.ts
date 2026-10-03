@@ -4,9 +4,12 @@ import type { Db } from "../../../db/drizzle.module";
 import { CronProjectsService } from "../cron-projects.service";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import type { BuildTicketCreationService } from "../../build/core/tickets";
+import { BuildTicketCreationService } from "../../build/core/tickets";
+import { ProjectsWebhooksDispatchService, BuildAutomationRunnerService } from "../../build/core";
+import { CacheService } from "../../../common/cache/cache.service";
 
 jest.mock("../../../common/tenant", () => ({
+  ...jest.requireActual("../../../common/tenant"),
   forEachOrg: (db: unknown, _label: string, fn: (tx: unknown, orgId: string) => Promise<void>) =>
     fn(db, "org-sweeping"),
 }));
@@ -77,7 +80,16 @@ describe("CronProjectsService — the recurrence advance keeps the organisation 
       transaction: jest.fn(), insert, update,
     };
     db.transaction.mockImplementation(async (work: (tx: typeof db) => Promise<unknown>) => work(db));
-    const module = await Test.createTestingModule({ providers: [CronProjectsService, { provide: DRIZZLE, useValue: db }] }).compile();
+    const module = await Test.createTestingModule({
+      providers: [
+        CronProjectsService,
+        BuildTicketCreationService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: ProjectsWebhooksDispatchService, useValue: { enqueue: jest.fn().mockResolvedValue(undefined) } },
+        { provide: BuildAutomationRunnerService, useValue: { runForTicketEvent: jest.fn() } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
     try {
       await expect(module.get(CronProjectsService).spawnDueRecurringTickets()).resolves.toEqual({ spawned: 0, advanced: 0 });
       expect(insert).not.toHaveBeenCalled();

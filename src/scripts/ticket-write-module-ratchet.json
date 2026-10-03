@@ -1,14 +1,10 @@
 [
   "src/modules/build/client-portal/client-visibility.service.ts",
-  "src/modules/build/core/automation/build-automation-actions.service.ts",
   "src/modules/build/core/custom-states/projects-custom-states.service.ts",
   "src/modules/build/core/members/projects-members.service.ts",
   "src/modules/build/core/tickets/projects-tickets-delete.service.ts",
   "src/modules/build/core/project-crud/projects-write.service.ts",
-  "src/modules/build/entity/build-entity.actions.ts",
   "src/modules/build/execution/cycles.service.ts",
-  "src/modules/build/execution/epics.service.ts",
   "src/modules/build/execution/modules.service.ts",
-  "src/modules/build/execution/timesheets.service.ts",
-  "src/modules/build/qa/bugs.service.ts"
+  "src/modules/build/execution/timesheets.service.ts"
 ]

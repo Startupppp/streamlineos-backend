@@ -41,6 +41,6 @@ export const hrLeavePolicyTemplateDismissals = pgTable("hr_leave_policy_template
     columns: [table.orgId, table.dismissedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_hr_leave_policy_template_dismissals_org_membership",
-  }),
+  }).onDelete("set null"),
   index("idx_hr_leave_policy_template_dismissals_org_membership").on(table.orgId, table.dismissedByMembershipId),
 ]);

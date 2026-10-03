@@ -105,19 +105,19 @@ export class ProjectsQueryService {
       const cursorPos = afterSortValue ? decodeIntegerCursor(afterSortValue) : null;
       if (sort === "name_asc") {
         if (cursorPos) {
-          domain.push(sql`(${projects.name}, ${projects.id}) > (${cursorPos.sortValue}, ${cursorPos.id})`);
+          domain.push(sql`(${projects.name}, ${projects.id}) > (${sql.param(cursorPos.sortValue, projects.name)}, ${sql.param(cursorPos.id, projects.id)})`);
         }
       } else if (sort === "priority_desc") {
         if (cursorPos) {
-          domain.push(sql`(${projects.priority}, ${projects.id}) < (${cursorPos.sortValue}, ${cursorPos.id})`);
+          domain.push(sql`(${projects.priority}, ${projects.id}) < (${sql.param(cursorPos.sortValue, projects.priority)}, ${sql.param(cursorPos.id, projects.id)})`);
         }
       } else if (sort === "due_asc") {
         if (cursorPos) {
-          domain.push(sql`(${projects.endDate}, ${projects.id}) > (${cursorPos.sortValue}::date, ${cursorPos.id})`);
+          domain.push(sql`(${projects.endDate}, ${projects.id}) > (${sql.param(cursorPos.sortValue)}::date, ${sql.param(cursorPos.id, projects.id)})`);
         }
       } else if (sort === "due_desc") {
         if (cursorPos) {
-          domain.push(sql`(${projects.endDate}, ${projects.id}) < (${cursorPos.sortValue}::date, ${cursorPos.id})`);
+          domain.push(sql`(${projects.endDate}, ${projects.id}) < (${sql.param(cursorPos.sortValue)}::date, ${sql.param(cursorPos.id, projects.id)})`);
         }
       }
     } else {

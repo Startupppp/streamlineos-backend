@@ -249,7 +249,7 @@ describe("the tenant a self tool runs under comes from the session actor, never 
     expect(tenantScopes).toEqual(["org-a", "org-b"]);
   });
 
-  it("ignores an orgId and userId supplied in the tool input, because a model-supplied tenant is an impersonation hole", async () => {
+  it("refuses an orgId and userId supplied in the tool input, because a model-supplied tenant is an impersonation hole", async () => {
     const result = await runProbeAs("org-a", "user-a", {
       note: "n",
       orgId: "org-victim",
@@ -257,6 +257,8 @@ describe("the tenant a self tool runs under comes from the session actor, never 
     });
 
     expect(tenantScopes).toEqual(["org-a"]);
-    expect(result).toMatchObject({ ok: true, data: { orgId: "org-a", userId: "user-a" } });
+    expect(result).toMatchObject({ ok: false });
+    expect(JSON.stringify(result)).not.toContain("org-victim");
+    expect(JSON.stringify(result)).not.toContain("user-victim");
   });
 });

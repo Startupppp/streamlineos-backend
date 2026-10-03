@@ -128,7 +128,7 @@ export class KbExportService {
     return { jobId: job.id, format: input.format, content };
   }
 
-  async listExportJobs(orgId: string, cursor?: string): Promise<ExportJobPage> {
+  async listExportJobs(orgId: string, cursor?: string, limit = PAGE_SIZE_CAP): Promise<ExportJobPage> {
     const position = decodeTimestampCursor(cursor);
     const filters: SQL[] = [eq(kbExportJobs.orgId, orgId)];
     if (position)
@@ -151,8 +151,8 @@ export class KbExportService {
       .from(kbExportJobs)
       .where(and(...filters))
       .orderBy(desc(kbExportJobs.createdAt), desc(kbExportJobs.id))
-      .limit(PAGE_SIZE_CAP + 1);
-    return buildCursorPage(rows, PAGE_SIZE_CAP, (row) => ({
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
       sortValue: row.createdAtText ?? "",
       id: String(row.id),
     }));

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const BACKEND_ROOT = resolve(__dirname, "../../../..");
@@ -17,22 +17,27 @@ const journal: { entries?: { tag?: string }[] } = JSON.parse(
   readFileSync(join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf8"),
 );
 const journalTags = new Set((journal.entries ?? []).map((e) => e.tag));
-const phase2Files = readdirSync(SQL_DIR).filter((f) => f.endsWith(".sql"));
+const nestedSqlFiles = readdirSync(MIGRATIONS_DIR, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && entry.name !== "meta")
+  .flatMap((entry) =>
+    readdirSync(join(MIGRATIONS_DIR, entry.name))
+      .filter((f) => f.endsWith(".sql"))
+      .map((f) => `${entry.name}/${f}`),
+  );
 
-describe("the Phase 2 design SQL sits inside migrations/ without being a migration", () => {
-  it("finds both a populated journal and a populated sql directory, so the exclusions below are not vacuous", () => {
+describe("SQL inside a migrations/ subdirectory is never a migration", () => {
+  it("finds both a populated journal and nested SQL files, so the exclusions below are not vacuous", () => {
     expect(journalTags.size).toBeGreaterThan(0);
-    expect(phase2Files.length).toBeGreaterThan(0);
+    expect(nestedSqlFiles.length).toBeGreaterThan(0);
   });
 
-  it.each(phase2Files)("%s has no journal entry, so db:migrate can never select it", (name) => {
+  it("keeps the retired Phase 2 sql/ directory retired", () => {
+    expect(existsSync(SQL_DIR)).toBe(false);
+  });
+
+  it.each(nestedSqlFiles)("%s has no journal entry, so db:migrate can never select it", (path) => {
+    const name = path.slice(path.lastIndexOf("/") + 1);
     expect(journalTags.has(name.replace(/\.sql$/, ""))).toBe(false);
-  });
-
-  it("holds only the four Phase 2 workstreams, so an unrelated file cannot arrive here unnoticed", () => {
-    for (const name of phase2Files) {
-      expect(name).toMatch(/^(a-sprint-cycle|b-qa-bug|c-confdelsetcols|d-1141-1142)-/);
-    }
   });
 
   it("keeps every journalled migration at the top level, so none of these files shadows one", () => {

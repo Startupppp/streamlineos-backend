@@ -77,7 +77,8 @@ export class PayslipBulkPublisherService {
       with: { policyVersion: { columns: { toggles: true } } },
     });
     if (!run) throw new NotFoundException("Payroll run not found");
-    if (run.status !== "PAID") {
+    const republishingSubset = run.status === "PAYSLIPS_PUBLISHED" && (runEmployeeIds?.length ?? 0) > 0;
+    if (run.status !== "PAID" && !republishingSubset) {
       throw new BadRequestException(`Cannot publish payslips for run in status ${run.status} — run must be PAID`);
     }
 
@@ -107,6 +108,22 @@ export class PayslipBulkPublisherService {
       payees = filterPayeesBySubjectKeys(payees, subjectKeys);
     }
 
+    const runEmployees = await this.db
+      .select({
+        id: payrollRunEmployees.id,
+        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
+        workerType: payrollRunEmployees.workerType,
+        currency: payrollRunEmployees.currency,
+        holdReason: payrollRunEmployees.holdReason,
+      })
+      .from(payrollRunEmployees)
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(PAYROLL_READ_CAP + 1);
+
+    const heldIds = new Set(runEmployees.filter((row) => row.holdReason !== null).map((row) => row.id));
+    const heldCount = payees.filter((payee) => heldIds.has(payee.runEmployeeId)).length;
+    payees = payees.filter((payee) => !heldIds.has(payee.runEmployeeId));
+
     const recipientUserIds = payees.flatMap((payee) =>
       payee.subject.userId ? [payee.subject.userId] : [],
     );
@@ -120,17 +137,6 @@ export class PayslipBulkPublisherService {
     const localeByUserId = new Map(
       localeRows.map((row) => [row.userId, row.language]),
     );
-
-    const runEmployees = await this.db
-      .select({
-        id: payrollRunEmployees.id,
-        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
-        workerType: payrollRunEmployees.workerType,
-        currency: payrollRunEmployees.currency,
-      })
-      .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
-      .limit(PAYROLL_READ_CAP + 1);
 
     const snapshotByRunEmployee = new Map(
       runEmployees.map((row) => [row.id, row] as const),
@@ -304,11 +310,15 @@ export class PayslipBulkPublisherService {
     let runStatus: (typeof payrollRuns.$inferSelect)["status"] = run.status;
     const allPublications = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
-      columns: { status: true },
+      columns: { runEmployeeId: true, status: true },
       limit: PAYROLL_READ_CAP + 1,
     });
-    const allPublished = allPublications.length >= totalRunEmployeeCount &&
-      allPublications.every(p => p.status === "PUBLISHED");
+    const releasedCount = totalRunEmployeeCount - heldIds.size;
+    const releasedPublications = allPublications.filter((p) => !heldIds.has(p.runEmployeeId));
+    const allPublished = run.status === "PAID" &&
+      releasedCount > 0 &&
+      releasedPublications.length >= releasedCount &&
+      releasedPublications.every((p) => p.status === "PUBLISHED");
 
     if (allPublished) {
       const now = new Date();
@@ -327,7 +337,7 @@ export class PayslipBulkPublisherService {
           runId,
           type: "PAYSLIPS_PUBLISHED",
           actorId,
-          metadata: { publishedCount: published, total: totalRunEmployeeCount },
+          metadata: { publishedCount: published, total: totalRunEmployeeCount, heldCount: heldIds.size },
         });
       });
 
@@ -337,12 +347,12 @@ export class PayslipBulkPublisherService {
         orgId,
         targetId: String(runId),
         targetType: "payroll_run",
-        metadata: { publishedCount: published, total: totalRunEmployeeCount },
+        metadata: { publishedCount: published, total: totalRunEmployeeCount, heldCount: heldIds.size },
       });
 
       runStatus = "PAYSLIPS_PUBLISHED";
     }
 
-    return { published, total, runStatus };
+    return { published, total, heldCount, runStatus };
   }
 }

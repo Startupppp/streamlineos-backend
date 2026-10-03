@@ -1,6 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import {
   payrollRuns,
@@ -8,7 +8,10 @@ import {
   payrollBankBatches,
   payrollBankBatchItems,
   payrollRunEvents,
+  payrollRunAllocations,
   organizationMembers,
+  reimbursements,
+  expenses,
 } from "../../../../db/schema";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { JournalOutboxService } from "../../insights/journal-outbox.service";
@@ -154,6 +157,28 @@ export async function checkRunCompletion(
             eq(payrollRunEmployees.runId, runId),
             eq(payrollRunEmployees.orgId, orgId),
             inArray(payrollRunEmployees.id, paidRunEmployeeIds),
+          ),
+        );
+
+      await tx
+        .update(reimbursements)
+        .set({ paidAt: now })
+        .where(
+          and(
+            eq(reimbursements.orgId, orgId),
+            isNull(reimbursements.paidAt),
+            sql`exists (select 1 from ${payrollRunAllocations} inner join ${payrollRunEmployees} on ${payrollRunEmployees.orgId} = ${payrollRunAllocations.orgId} and ${payrollRunEmployees.runId} = ${payrollRunAllocations.runId} and ${payrollRunEmployees.userId} = ${payrollRunAllocations.userId} where ${payrollRunAllocations.orgId} = ${orgId} and ${payrollRunAllocations.runId} = ${runId} and ${payrollRunAllocations.sourceType} = 'REIMBURSEMENT' and ${payrollRunAllocations.sourceId} = ${reimbursements.id}::text and ${inArray(payrollRunEmployees.id, paidRunEmployeeIds)})`,
+          ),
+        );
+
+      await tx
+        .update(expenses)
+        .set({ status: "REIMBURSED", paidAt: now, transactionRef: `payroll_run:${runId}`, updatedAt: now })
+        .where(
+          and(
+            eq(expenses.orgId, orgId),
+            isNull(expenses.paidAt),
+            sql`exists (select 1 from ${payrollRunAllocations} inner join ${payrollRunEmployees} on ${payrollRunEmployees.orgId} = ${payrollRunAllocations.orgId} and ${payrollRunEmployees.runId} = ${payrollRunAllocations.runId} and ${payrollRunEmployees.userId} = ${payrollRunAllocations.userId} where ${payrollRunAllocations.orgId} = ${orgId} and ${payrollRunAllocations.runId} = ${runId} and ${payrollRunAllocations.sourceType} = 'EXPENSE' and ${payrollRunAllocations.sourceId} = ${expenses.id}::text and ${inArray(payrollRunEmployees.id, paidRunEmployeeIds)})`,
           ),
         );
     }

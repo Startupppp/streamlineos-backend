@@ -15,7 +15,7 @@ describe("TimesheetInvoicingService.resolveInvoiceLineDetail", () => {
     projectRows = [];
     txSelect = jest.fn(() => ({
       from: jest.fn(() => ({
-        where: jest.fn(() => Promise.resolve(projectRows)),
+        where: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve(projectRows)) })),
       })),
     }));
     tx = { select: txSelect };

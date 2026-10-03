@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const webhookUrlField = z.string().url();
 const webhookEventsField = z.array(z.string().min(1)).min(1);
@@ -28,6 +29,7 @@ export const listWebhooksQuerySchema = z.object({
   event: z.string().optional(),
   q: z.string().optional(),
   cursor: z.coerce.number().int().positive().optional(),
+  limit: optionalPageSizeField(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
 }).strict().refine(

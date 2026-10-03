@@ -135,6 +135,16 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "recruitment workflow mail targets candidates and external recipients",
     ),
     EXEMPT(
+      "modules/cron/cron-recruitment-reports.service.ts",
+      DeliveryClass.USER_AUTHORED,
+      "scheduled recruitment report goes to the recipient list its author configured",
+    ),
+    EXEMPT(
+      "modules/cron/cron-recruitment-sequences.service.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "recruitment sequence steps target the enrolled candidate, an external recipient",
+    ),
+    EXEMPT(
       "modules/e-sign/sign-notifications.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "signature workflow mail targets external signers",
@@ -208,6 +218,11 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "modules/organization/core/invitation-create.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "invitation goes to a non-member external recipient",
+    ),
+    EXEMPT(
+      "modules/organization/core/invitation-acceptance.service.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "the acceptance one-time code goes to the invited address, a non-member external recipient",
     ),
     EXEMPT(
       "modules/organization/core/invitation-lifecycle.service.ts",

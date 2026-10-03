@@ -29,6 +29,7 @@ export interface PersistedRecipientRow {
 export class MembershipResolvingDispatchDouble {
   readonly inputs: DispatchEventInput[] = [];
   readonly rows: PersistedRecipientRow[] = [];
+  readonly batchSizes: number[] = [];
 
   constructor(private readonly members: readonly OrgMemberFixture[]) {}
 
@@ -61,6 +62,11 @@ export class MembershipResolvingDispatchDouble {
       deferred: false,
       failedRecipients: 0,
     };
+  };
+
+  emitMany = async (inputs: readonly DispatchEventInput[]): Promise<void> => {
+    this.batchSizes.push(inputs.length);
+    for (const input of inputs) await this.emit(input);
   };
 
   rowsFor(userId: string): PersistedRecipientRow[] {

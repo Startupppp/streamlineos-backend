@@ -201,4 +201,14 @@ export const HR_TIME_AND_ATTENDANCE_ARTIFACTS = [
     reason:
       "The member pointer on wfh_requests is cleared by fk_wfh_requests_user_actor, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
+  {
+    id: "hr_leave_policy_template_dismissals_dismissed_by_membership",
+    mechanism: "database-cascade",
+    table: "hr_leave_policy_template_dismissals",
+    keyedBy: "dismissed_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "fk_hr_leave_policy_template_dismissals_org_membership is ON DELETE SET NULL (dismissed_by_membership_id), so the organisation's dismissal survives the departure without naming who dismissed it. A suspension is reversible, so nothing is written.",
+  },
 ] as const satisfies readonly MembershipArtifact[];

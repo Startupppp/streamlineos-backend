@@ -28,7 +28,7 @@ function makeDb(): Db {
   return {
     execute: jest.fn().mockResolvedValue([{ org_id: ORG }]),
     query: {},
-    transaction: jest.fn(),
+    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     select: jest.fn(),
     insert: jest.fn(),
     update: jest.fn(),

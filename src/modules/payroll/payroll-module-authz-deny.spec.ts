@@ -11,6 +11,12 @@ import { PayrollJobsService } from "./jobs/payroll-jobs.service";
 import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
 import { PayrollReadinessController } from "./runs/readiness.controller";
 import { PayrollReadinessService } from "./runs/readiness.service";
+import { PayeeEligibilityController } from "./runs/payee-eligibility.controller";
+import { PayeeEligibilityService } from "./runs/payee-eligibility.service";
+import { PayrollSampleDataController } from "./sample-data/sample-data.controller";
+import { PayrollSampleDataService } from "./sample-data/sample-data.service";
+import { SalaryPreviewController } from "./setup/salary-preview.controller";
+import { SalaryPreviewService } from "./setup/salary-preview.service";
 import { AccessService } from "../access/access.service";
 import { PermissionGuard } from "../access/permission.guard";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -50,13 +56,16 @@ const denyAll = {
 async function buildApp(): Promise<INestApplication> {
   const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [DiscoveryModule],
-    controllers: [AccountingMappingsController, PayrollEntitiesController, PayrollJobsController, PayrollReadinessController],
+    controllers: [AccountingMappingsController, PayrollEntitiesController, PayrollJobsController, PayrollReadinessController, PayeeEligibilityController, PayrollSampleDataController, SalaryPreviewController],
     providers: [
       { provide: AccountingMappingsService, useValue: { list: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn() } },
-      { provide: PayrollEntitiesService, useValue: { list: jest.fn(), listCountryPacks: jest.fn(), getEntity: jest.fn(), getEntityContext: jest.fn(), create: jest.fn() } },
+      { provide: PayrollEntitiesService, useValue: { list: jest.fn(), listCountryPacks: jest.fn(), getEntity: jest.fn(), getEntityContext: jest.fn(), create: jest.fn(), update: jest.fn() } },
+      { provide: PayeeEligibilityService, useValue: { getEligibility: jest.fn(), listPeople: jest.fn() } },
       { provide: PayrollJobsService, useValue: { listFailed: jest.fn(), listForResource: jest.fn(), get: jest.fn(), enqueue: jest.fn(), retry: jest.fn() } },
       { provide: PayrollJobsWorkerService, useValue: { flush: jest.fn() } },
       { provide: PayrollReadinessService, useValue: { getReadiness: jest.fn() } },
+      { provide: PayrollSampleDataService, useValue: { status: jest.fn(), seed: jest.fn(), remove: jest.fn() } },
+      { provide: SalaryPreviewService, useValue: { preview: jest.fn() } },
       { provide: AccessService, useValue: denyAll },
       Reflector,
       PermissionGuard,
@@ -137,9 +146,54 @@ describe("Payroll module controllers — permission guard deny", () => {
     });
   });
 
+  describe("PayeeEligibilityController — payroll:salaries:view required", () => {
+    it("GET /payroll/people is denied without payroll:salaries:view (403)", async () => {
+      const res = await request(app.getHttpServer()).get("/payroll/people").set("Authorization", "Bearer token");
+      expect(res.status).toBe(403);
+    });
+
+    it("GET /payroll/people/*/eligibility is denied without payroll:salaries:view (403)", async () => {
+      const organizationPersonId = "person-1";
+      const res = await request(app.getHttpServer()).get(`/payroll/people/${organizationPersonId}/eligibility`).set("Authorization", "Bearer token");
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe("SalaryPreviewController — payroll:salaries:view required", () => {
+    it("POST /payroll/salary-preview is denied without payroll:salaries:view (403)", async () => {
+      const res = await request(app.getHttpServer()).post("/payroll/salary-preview").set("Authorization", "Bearer token").send({ annualCtc: "1200000" });
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe("PayrollEntitiesController update — payroll:policies:manage required", () => {
+    it("PATCH /payroll/entities/* is denied without payroll:policies:manage (403)", async () => {
+      const entityId = 1;
+      const res = await request(app.getHttpServer()).patch(`/payroll/entities/${entityId}`).set("Authorization", "Bearer token").send({ pan: "ABCDE1234F" });
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe("PayrollReadinessController — payroll:runs:view required", () => {
     it("GET /payroll/readiness is denied without payroll:runs:view (403)", async () => {
       const res = await request(app.getHttpServer()).get("/payroll/readiness?month=2026-09").set("Authorization", "Bearer token");
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe("PayrollSampleDataController — payroll:runs:view / payroll:settings:manage required", () => {
+    it("GET /payroll/sample-data is denied without payroll:runs:view (403)", async () => {
+      const res = await request(app.getHttpServer()).get("/payroll/sample-data").set("Authorization", "Bearer token");
+      expect(res.status).toBe(403);
+    });
+
+    it("POST /payroll/sample-data is denied without payroll:settings:manage (403)", async () => {
+      const res = await request(app.getHttpServer()).post("/payroll/sample-data").set("Authorization", "Bearer token").set("Idempotency-Key", "k1");
+      expect(res.status).toBe(403);
+    });
+
+    it("DELETE /payroll/sample-data is denied without payroll:settings:manage (403)", async () => {
+      const res = await request(app.getHttpServer()).delete("/payroll/sample-data").set("Authorization", "Bearer token").set("Idempotency-Key", "k2");
       expect(res.status).toBe(403);
     });
   });

@@ -202,8 +202,8 @@ export class ReportingLineBulkJobsService {
     return jobView(this.db, orgId, jobId);
   }
 
-  async list(actor: CurrentUserContext, cursor: string | undefined) {
-    return listJobs(this.db, actor.orgId, cursor, await this.jobAuthor(actor));
+  async list(actor: CurrentUserContext, cursor: string | undefined, limit?: number) {
+    return listJobs(this.db, actor.orgId, cursor, await this.jobAuthor(actor), limit);
   }
 
   async get(actor: CurrentUserContext, jobId: string, rowCursor: string | undefined): Promise<BulkJob> {

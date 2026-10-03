@@ -86,9 +86,9 @@ export class ProjectsWebhooksService {
       .from(projectWebhooks)
       .where(and(...conditions))
       .orderBy(desc(projectWebhooks.id))
-      .limit(PAGE_SIZE + 1);
+      .limit((filters.limit ?? PAGE_SIZE) + 1);
 
-    const page = buildIdCursorPage(rows, PAGE_SIZE, (row) => row.id);
+    const page = buildIdCursorPage(rows, filters.limit ?? PAGE_SIZE, (row) => row.id);
 
     if (page.data.length === 0) {
       return {

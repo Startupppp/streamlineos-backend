@@ -105,6 +105,7 @@ describe("OnboardingAdminService.sendReminders", () => {
       ([emailBatch]) => emailBatch.length,
     );
     expect(testContext.dispatch.inputs).toHaveLength(101);
+    expect(testContext.dispatch.batchSizes).toEqual([100, 1]);
     expect(emailBatchSizes).toEqual([100, 1]);
   });
 

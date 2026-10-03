@@ -114,6 +114,7 @@ export const createFnfSchema = z.object({
   resignationId: z.number().int().positive().optional(),
   basicDues: z.number().min(0).optional(),
   leaveEncashment: z.number().min(0).optional(),
+  gratuity: z.number().min(0).optional(),
   bonusDue: z.number().min(0).optional(),
   deductions: z.number().min(0).optional(),
   loanRecovery: z.number().min(0).optional(),

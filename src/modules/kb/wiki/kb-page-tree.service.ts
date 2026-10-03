@@ -308,6 +308,87 @@ export class KbPageTreeService {
     return restored;
   }
 
+  async restoreMany(user: CurrentUserContext, pageIds: number[]): Promise<void> {
+    const orgId = user.orgId;
+    const requested = [...new Set(pageIds)];
+    if (requested.length === 0) return;
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
+
+    await this.db.transaction(async (tx) => {
+      const pages = await tx
+        .select({ id: kbPages.id, parentPageId: kbPages.parentPageId, deletedAt: kbPages.deletedAt, title: kbPages.title })
+        .from(kbPages)
+        .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, requested), predicate));
+      const pageById = new Map(pages.map((p) => [p.id, p]));
+      const roots = requested.filter((id) => pageById.get(id)?.deletedAt);
+      if (roots.length === 0) return;
+
+      const subtreeIds = await collectSubtreeIds(tx, orgId, roots);
+      const parentIds = roots
+        .map((id) => pageById.get(id)?.parentPageId)
+        .filter((id): id is number => id !== null && id !== undefined);
+      const family = await tx
+        .select({ id: kbPages.id, parentPageId: kbPages.parentPageId, deletedAt: kbPages.deletedAt })
+        .from(kbPages)
+        .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, [...new Set([...subtreeIds, ...parentIds])])));
+      const familyById = new Map(family.map((p) => [p.id, p]));
+      const inSubtree = new Set(subtreeIds);
+      const rootOrder = new Map(roots.map((id, index) => [id, index]));
+
+      const coveredByEarlierRoot = (rootId: number): boolean => {
+        const index = rootOrder.get(rootId) ?? 0;
+        const seen = new Set<number>([rootId]);
+        let cursor = familyById.get(rootId)?.parentPageId ?? null;
+        while (cursor !== null && inSubtree.has(cursor) && !seen.has(cursor)) {
+          if ((rootOrder.get(cursor) ?? Infinity) < index) return true;
+          seen.add(cursor);
+          cursor = familyById.get(cursor)?.parentPageId ?? null;
+        }
+        return false;
+      };
+
+      const restoredRoots = roots.filter((id) => !coveredByEarlierRoot(id));
+      const detachIds = restoredRoots.filter((id) => {
+        const parentId = pageById.get(id)?.parentPageId ?? null;
+        return parentId !== null && Boolean(familyById.get(parentId)?.deletedAt);
+      });
+
+      await tx
+        .update(kbPages)
+        .set({ deletedAt: null, deletedById: null })
+        .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, subtreeIds)));
+
+      if (detachIds.length > 0) {
+        await tx
+          .update(kbPages)
+          .set({ parentPageId: null })
+          .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, detachIds)));
+      }
+
+      const pagesToIndex = await tx
+        .select({
+          id: kbPages.id,
+          contentRevision: kbPages.contentRevision,
+          aclRevision: kbPages.aclRevision,
+          contentText: kbPages.contentText,
+        })
+        .from(kbPages)
+        .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, subtreeIds)));
+      await this.writer.commitManyPageChanges(tx, { orgId, pages: pagesToIndex });
+
+      await this.audit.logCriticalMany(
+        restoredRoots.map((id) => ({
+          action: "kb.page.restored",
+          userId: user.userId,
+          orgId,
+          resourceType: "kb_page",
+          resourceId: String(id),
+          metadata: { pageTitle: pageById.get(id)?.title },
+        })),
+      );
+    });
+  }
+
   async move(
     user: CurrentUserContext,
     pageId: number,

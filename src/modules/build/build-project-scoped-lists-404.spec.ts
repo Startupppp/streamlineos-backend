@@ -10,7 +10,7 @@ import type { Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
-import { lifecycleAuditDouble } from "./lifecycle/audit-double";
+import { lifecycleAuditDouble } from "./lifecycle/audit-double.spec-fixtures";
 import { WebhookEndpointService } from "../integrations/core/webhook-endpoint.service";
 import { BuildTicketCreationService, ProjectsTicketsDeleteService, ProjectsTicketsUpdateService } from "./core/tickets";
 import { Test } from "@nestjs/testing";

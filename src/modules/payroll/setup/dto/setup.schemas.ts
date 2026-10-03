@@ -143,3 +143,12 @@ export const toggleImpactSchema = z.object({
   toggle: z.enum(PAYROLL_TOGGLE_KEYS),
 }).strict();
 export type ToggleImpactInput = z.infer<typeof toggleImpactSchema>;
+
+export const salaryPreviewSchema = z.object({
+  annualCtc: z.string().regex(/^\d{1,12}(\.\d{1,2})?$/, "annualCtc must be a decimal amount"),
+  componentIds: z.array(z.number().int().positive()).min(1).max(100).optional(),
+  regime: z.enum(["OLD", "NEW"]).optional(),
+  workerType: z.enum(["EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR"]).optional(),
+  stateCode: z.string().trim().toUpperCase().min(2).max(10).optional(),
+}).strict();
+export type SalaryPreviewInput = z.infer<typeof salaryPreviewSchema>;

@@ -403,19 +403,21 @@ export class CronBuildProjectRetentionService {
           },
         });
       const purgeIds = attachmentPurgeIds.get(orgId) ?? new Map<string, string>();
+      const purges = await tx
+        .select({ id: storagePendingPurge.id, storageKey: storagePendingPurge.storageKey })
+        .from(storagePendingPurge)
+        .where(
+          and(
+            eq(storagePendingPurge.orgId, orgId),
+            inArray(storagePendingPurge.storageKey, keys),
+          ),
+        )
+        .limit(keys.length);
+      const purgeIdByKey = new Map(purges.map((purge) => [purge.storageKey, purge.id]));
       for (const storageKey of keys) {
-        const [purge] = await tx
-          .select({ id: storagePendingPurge.id })
-          .from(storagePendingPurge)
-          .where(
-            and(
-              eq(storagePendingPurge.orgId, orgId),
-              eq(storagePendingPurge.storageKey, storageKey),
-            ),
-          )
-          .limit(1);
-        if (!purge) throw new Error(`Pending purge row not found for ${storageKey}`);
-        purgeIds.set(storageKey, purge.id);
+        const purgeId = purgeIdByKey.get(storageKey);
+        if (purgeId === undefined) throw new Error(`Pending purge row not found for ${storageKey}`);
+        purgeIds.set(storageKey, purgeId);
       }
       attachmentPurgeIds.set(orgId, purgeIds);
       await this.recordPurge(orgId, projectId, "project_attachments", cutoff, ids);

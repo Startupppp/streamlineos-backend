@@ -225,6 +225,7 @@ describe("DelegationsService normalized permission grants", () => {
           delegatorName: "Alex Admin",
           delegateeName: "Sam Lee",
           lifecycle: "EXPIRED",
+          updatedAt: row.createdAt,
         },
       ],
       pagination: {

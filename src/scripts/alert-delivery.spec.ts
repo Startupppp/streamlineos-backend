@@ -400,7 +400,7 @@ describe("alert delivery", () => {
 
 describe("alert runbook anchors", () => {
   const dispatchSource = fs.readFileSync(path.resolve(__dirname, "alert-dispatch.mjs"), "utf8");
-  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  const repoRoot = process.env.STREAMLINE_WORKSPACE_ROOT ?? path.resolve(__dirname, "..", "..", "..");
 
   const resolveConst = (name: string): string => {
     const hit = new RegExp(`const ${name} =[^;]*?"([^"]+)"`).exec(dispatchSource);

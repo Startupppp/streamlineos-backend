@@ -2,7 +2,7 @@ import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const prepareFilingSchema = z.object({
-  filingType: z.enum(["PF_ECR", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"]),
+  filingType: z.enum(["PF_ECR", "PF_ECR_TXT", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"]),
   periodId: z.number().int().positive().optional(),
   entityId: z.number().int().positive().optional(),
   fiscalYear: z.string().optional(),

@@ -55,7 +55,7 @@ export const FILING_CAPABILITY = {
   automaticRemittance: false,
   providerDependent: true,
   honestyLabel: "Export prepared — external filing required",
-  supportedTypes: ["PF_ECR", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"] as const,
+  supportedTypes: ["PF_ECR", "PF_ECR_TXT", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"] as const,
   ruleBundleVersion: IN_STATUTORY_RULE_BUNDLE_VERSION,
   artifactFormat: "csv" as const,
   form16Certificate: {
@@ -158,9 +158,10 @@ export class PayrollFilingsService {
     const month =
       typeof payload.periodMonth === "string" ? payload.periodMonth : "period";
     const type = row.filingType ?? "filing";
+    const isText = row.filingType === "PF_ECR_TXT";
     return {
-      filename: `${type}_${month}_${filingId}.csv`,
-      contentType: "text/csv; charset=utf-8",
+      filename: `${type}_${month}_${filingId}.${isText ? "txt" : "csv"}`,
+      contentType: isText ? "text/plain; charset=utf-8" : "text/csv; charset=utf-8",
       body: csv,
     };
   }
@@ -355,7 +356,7 @@ export class PayrollFilingsService {
             honestyLabel: artifact.honestyLabel,
           },
         },
-        artifactKey: `filings/${orgId}/${filingType}/${artifact.periodMonth ?? "na"}/${Date.now()}.csv`,
+        artifactKey: `filings/${orgId}/${filingType}/${artifact.periodMonth ?? "na"}/${Date.now()}.${artifact.format}`,
         externalFilingRequired: true,
         statusLabel: FILING_CAPABILITY.honestyLabel,
         createdBy: actorId,

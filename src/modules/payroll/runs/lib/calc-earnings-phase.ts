@@ -42,6 +42,7 @@ export function calcEarningsPhase(params: EarningsPhaseParams): EarningsPhaseRes
   let basicPaise = 0;
   let earningGrossSoFar = 0;
   const pendingGrossPercent: ResolvedComponent[] = [];
+  const refs: Record<string, number> = {};
 
   for (const comp of earningComps) {
     if (comp.calcMethod === "PERCENT_OF_GROSS") {
@@ -72,7 +73,7 @@ export function calcEarningsPhase(params: EarningsPhaseParams): EarningsPhaseRes
         incentive_amount: totalIncentivePaise / 100,
         reimbursement_amount: 0,
       };
-      const result = evalFormula(comp.formula, scope);
+      const result = evalFormula(comp.formula, scope, refs);
       if (result.ok) {
         rawPaise = Math.round(result.value * 100);
       } else {
@@ -99,6 +100,7 @@ export function calcEarningsPhase(params: EarningsPhaseParams): EarningsPhaseRes
       rawPaise = 0;
     }
 
+    refs[comp.code] = rawPaise / 100;
     const noProrate = comp.calcMethod === "ATTENDANCE_BASED" || comp.calcMethod === "TIMESHEET_BASED";
     const proratedPaise = noProrate ? rawPaise : applyRounding(Math.round(rawPaise * prorationFactor), rounding);
 

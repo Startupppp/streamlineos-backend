@@ -14,7 +14,7 @@ import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double.spec-fixtures";
 import { standingAccess } from "../__tests__/project-access-doubles";
 
 function makeNotFoundDb(): Db {
@@ -33,6 +33,11 @@ function makeNotFoundDb(): Db {
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
           limit: jest.fn().mockResolvedValue([]),
+        }),
+        leftJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+          }),
         }),
       }),
     }),

@@ -42,9 +42,9 @@ export const BUILD_ARTIFACTS = [
       "The assignee_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so task records are preserved but the membership reference is cleared.",
   },
   {
-    id: "sprint_scope_events_actor",
+    id: "cycle_scope_events_actor",
     mechanism: "database-cascade",
-    table: "sprint_scope_events",
+    table: "cycle_scope_events",
     keyedBy: "actor_membership_id",
     onRemoval: "set-null",
     onSuspension: "retain",
@@ -240,5 +240,25 @@ export const BUILD_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "The composite foreign key fk_project_attachments_org_uploader is ON DELETE RESTRICT and the column is NOT NULL, so removing the uploading member is blocked until the attachment rows are handled. The uploader attribution cannot be nulled without migrating the column to nullable first.",
+  },
+  {
+    id: "project_milestones_owner",
+    mechanism: "database-cascade",
+    table: "project_milestones",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_project_milestones_org_owner_membership is ON DELETE SET NULL (migration 1424), so removing the owner leaves the milestone ownerless rather than refusing the deletion.",
+  },
+  {
+    id: "roadmap_items_owner",
+    mechanism: "database-cascade",
+    table: "roadmap_items",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_roadmap_items_org_owner_membership is ON DELETE SET NULL (migration 1422), so removing the owner leaves the roadmap item ownerless rather than refusing the deletion.",
   },
 ] as const satisfies readonly MembershipArtifact[];

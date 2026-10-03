@@ -234,36 +234,3 @@ export async function assertWipLimit(
     );
   }
 }
-
-export async function enforceWipLimitForStatus(
-  db: Db,
-  orgId: string,
-  projectId: number,
-  statusName: string,
-  excludeTicketId: number,
-): Promise<void> {
-  const rows = await db
-    .select({
-      wipLimit: projectStatuses.wipLimit,
-      name: projectStatuses.name,
-    })
-    .from(projectStatuses)
-    .where(
-      and(
-        eq(projectStatuses.orgId, orgId),
-        eq(projectStatuses.projectId, projectId),
-        eq(projectStatuses.name, statusName),
-      ),
-    )
-    .limit(1);
-  const wipLimit = rows[0]?.wipLimit;
-  if (wipLimit == null) return;
-  await assertWipLimit(
-    db,
-    orgId,
-    projectId,
-    statusName,
-    wipLimit,
-    excludeTicketId,
-  );
-}

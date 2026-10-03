@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Body,
   Controller,
   Delete,
@@ -274,6 +275,9 @@ export class ExpensesController {
       if (result.error === "not_found") throw new NotFoundException("Expense not found.");
       if (result.error === "forbidden") {
         throw new ForbiddenException("Not authorized to delete this expense.");
+      }
+      if (result.error === "in_payroll") {
+        throw new ConflictException("This expense is being paid through a payroll run and cannot be deleted.");
       }
       throw new BadRequestException("Paid expenses cannot be deleted.");
     }

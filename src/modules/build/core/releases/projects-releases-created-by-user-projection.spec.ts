@@ -10,7 +10,7 @@ import {
   projectReleaseListItemSchema,
   projectReleaseRowSchema,
 } from "../dto/build-core-response.schemas";
-import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double.spec-fixtures";
 
 jest.mock("../project-crud/project-access", () => {
   const { sql } = jest.requireActual<typeof import("drizzle-orm")>("drizzle-orm");

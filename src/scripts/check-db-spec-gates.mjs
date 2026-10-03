@@ -95,7 +95,7 @@ const ENABLEMENT = [
   },
   {
     name: "requireApprovedDatabaseUrl",
-    re: /db-spec-guard|requireApprovedDatabaseUrl|loadTenantFkProbeConfig/,
+    re: /db-spec-guard|requireApprovedDatabaseUrl|loadTenantFkProbeConfig|connectProbe\(/,
     how: "src/test/db-spec-guard — throws, naming every variable it would accept, and refuses a target that is not an approved disposable database",
   },
   {
@@ -356,6 +356,14 @@ function selfTest() {
   expect(
     "a spec that uses neither the shared gate nor a variable is a violation",
     runChecks(tmp, { skipVacuity: true }).violations.some((v) => v.msg.includes(GATE_MODULE)),
+  );
+
+  fixture(
+    `import { connectProbe } from "../../../test/helpers/reporting-probe";\nconst p = connectProbe("x");\ndescribe("x", () => {});\n`,
+  );
+  expect(
+    "a spec connecting through the guard-backed reporting probe is clean",
+    runChecks(tmp, { skipVacuity: true }).violations.length === 0,
   );
 
   fixture(compliant);

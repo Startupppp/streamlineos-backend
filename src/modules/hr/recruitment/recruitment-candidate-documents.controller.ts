@@ -14,6 +14,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RecruitmentCandidateVaultService } from "./recruitment-candidate-vault.service";
@@ -33,6 +34,7 @@ import { z } from "zod";
 import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { vaultDocumentSchema } from "./dto/recruitment-candidate-records-response.schemas";
 import { addVaultDocumentSchema } from "./dto/candidate-records.schemas";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES = [
@@ -41,6 +43,7 @@ const ALLOWED_UPLOAD_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
+@RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId/documents")
 @UseGuards(JwtAuthGuard)
 export class RecruitmentCandidateDocumentsController {
@@ -74,7 +77,7 @@ export class RecruitmentCandidateDocumentsController {
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
   async upload(
     @CurrentUser() u: CurrentUserContext,
-    @Param("candidateId") candidateIdParam: string,
+    @Param("candidateId", new ZodValidationPipe(z.string().regex(/^\d+$/))) candidateIdParam: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("documentType") documentType?: string,
   ) {
@@ -88,6 +91,7 @@ export class RecruitmentCandidateDocumentsController {
       throw new BadRequestException("File type not allowed");
     if (!validateMagicBytes(file.buffer, file.mimetype))
       throw new BadRequestException("File content does not match declared type");
+    const vaultDocumentType = addVaultDocumentSchema.shape.documentType.parse(documentType);
 
     const { orgId, userId } = u;
 
@@ -155,7 +159,7 @@ export class RecruitmentCandidateDocumentsController {
       fileUrl: await this.storage.getFileUrl(orgId, key, 3600),
       fileType: file.mimetype,
       fileSize: file.size,
-      documentType: addVaultDocumentSchema.shape.documentType.parse(documentType),
+      documentType: vaultDocumentType,
     });
 
     this.audit.log({

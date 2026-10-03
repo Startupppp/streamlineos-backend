@@ -67,4 +67,5 @@ export const listLifecycleTriggersResponseSchema = z.object({
   ),
   limit: z.number().int(),
   offset: z.number().int(),
+  hasMore: z.boolean(),
 });

@@ -65,16 +65,17 @@ export class TestRunsService {
     if (query.status) conditions.push(eq(testRuns.status, query.status));
     if (query.q) conditions.push(sql`to_tsvector('english', coalesce(${testRuns.name},'')) @@ plainto_tsquery('english', ${query.q})`);
     if (query.cursor !== undefined) conditions.push(gt(testRuns.id, query.cursor));
+    const pageSize = query.limit ?? RUN_PAGE;
     const rawRuns = await this.db
       .select()
       .from(testRuns)
       .where(and(...conditions))
       .orderBy(testRuns.id)
-      .limit(RUN_PAGE + 1);
+      .limit(pageSize + 1);
 
-    const hasMore = rawRuns.length > RUN_PAGE;
-    const pageRuns = hasMore ? rawRuns.slice(0, RUN_PAGE) : rawRuns;
-    const nextCursor = hasMore && pageRuns.length > 0 ? pageRuns[pageRuns.length - 1]!.id : null;
+    const hasMore = rawRuns.length > pageSize;
+    const pageRuns = hasMore ? rawRuns.slice(0, pageSize) : rawRuns;
+    const nextCursor = hasMore ? (pageRuns.at(-1)?.id ?? null) : null;
 
     if (pageRuns.length === 0) return { data: [], hasMore: false, nextCursor: null };
 
@@ -469,9 +470,8 @@ export class TestRunsService {
         ? tc.steps.map((s, i) => `${i + 1}. ${s.action} → Expected: ${s.expected}`).join("\n")
         : undefined;
 
-    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
-    const ticket = await this.db.transaction(async (tx) => {
-      createdResult = await this.ticketCreation.createInTransaction(tx, {
+    const { ticket, createdResult } = await this.db.transaction(async (tx) => {
+      const createdResult = await this.ticketCreation.createInTransaction(tx, {
         orgId,
         projectId,
         actor: { userId, membershipId: null },
@@ -484,7 +484,8 @@ export class TestRunsService {
           reporterId: userId,
         }],
       });
-      const created = createdResult.tickets[0]!;
+      const created = createdResult.tickets[0];
+      if (!created) throw new Error("Ticket creation returned no ticket");
 
       await tx.insert(workItemQaDetails).values({
         orgId,
@@ -505,9 +506,9 @@ export class TestRunsService {
         .set({ linkedWorkItemId: created.id, updatedAt: new Date() })
         .where(and(eq(testRunResults.id, resultId), eq(testRunResults.orgId, orgId)));
 
-      return created;
+      return { ticket: created, createdResult };
     });
-    this.ticketCreation.publish(createdResult!);
+    this.ticketCreation.publish(createdResult);
 
     this.audit.log({
       action: "bug.created_from_result_consolidated",

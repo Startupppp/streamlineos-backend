@@ -53,6 +53,13 @@ function makeHarness(insertOutcome: { error?: Error; row?: unknown }): Harness {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest
+              .fn()
+              .mockResolvedValue(insertOutcome.row ? [insertOutcome.row] : []),
+          }),
+        }),
       }),
     }),
     insert: jest.fn().mockReturnValue({

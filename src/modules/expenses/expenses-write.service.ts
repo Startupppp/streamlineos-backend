@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -14,6 +15,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
+import { findExpensePayrollRunId } from "../payroll/runs/lib/payable-expenses";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
   assertOrganizationActor,
@@ -187,6 +189,9 @@ export class ExpensesWriteService {
       columns: { id: true },
     });
     if (!expense) throw new NotFoundException("Expense not found.");
+    if ((await findExpensePayrollRunId(this.db, orgId, expenseId)) !== null) {
+      throw new ConflictException("This expense is being paid through a payroll run and cannot be edited.");
+    }
 
     const d = parsed.data;
     await this.db

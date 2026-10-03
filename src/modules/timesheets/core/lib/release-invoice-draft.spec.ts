@@ -67,13 +67,18 @@ function fakeDb(table: Row[]) {
       from(t: unknown) {
         if (t !== timesheets) throw new Error("read something other than timesheets");
         return {
-          async where(w: unknown) {
+          where(w: unknown) {
             const q = render(w);
             const orgId = bound(q, "org_id");
             const ids = new Set(boundIds(q));
-            return table
+            const rows = table
               .filter((r) => r.orgId === orgId && ids.has(r.id))
               .map((r) => ({ id: r.id, invoicingStatus: r.invoicingStatus }));
+            return {
+              async limit(n: number) {
+                return rows.slice(0, n);
+              },
+            };
           },
         };
       },

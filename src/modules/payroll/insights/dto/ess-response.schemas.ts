@@ -127,6 +127,7 @@ export const ownFnfSchema = z
     id: z.number().int(),
     basicDues: z.string(),
     leaveEncashment: z.string(),
+    gratuity: z.string(),
     bonusDue: z.string(),
     deductions: z.string(),
     loanRecovery: z.string(),
@@ -189,6 +190,7 @@ const essActionItemSchema = z.object({
 
 export const essOverviewSchema = z.object({
   toggles: z.record(z.string(), z.boolean()),
+  payStatus: z.enum(["not-set-up", "awaiting-first-payslip", "paid"]),
   capabilities: z.object({
     mode: z.literal("employee_self_service"),
     honestyNote: z.string(),

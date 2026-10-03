@@ -36,7 +36,7 @@ export class ImpersonationController {
   @Validate({ body: startImpersonationSchema })
   @ResponseSchema(startImpersonationResponseSchema)
   start(
-    @Body() body: { targetUserId: string },
+    @Body() body: z.infer<typeof startImpersonationSchema>,
     @CurrentUser() actor: CurrentUserContext,
   ) {
     return this.impersonation.start(actor, body.targetUserId);

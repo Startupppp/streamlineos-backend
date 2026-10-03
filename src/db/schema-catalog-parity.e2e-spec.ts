@@ -3,6 +3,7 @@ import { requiresTls } from "./pool.config";
 import { is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
+import { dbSpecSuite } from "../test/db-spec-gate";
 
 /**
  * The Drizzle schema is the source of truth, but nothing enforced that the
@@ -25,7 +26,7 @@ function normalizeUrl(url: string): string {
   }
 }
 
-const d = process.env.DATABASE_URL ? describe : describe.skip;
+const d = dbSpecSuite();
 
 d("schema ↔ catalog parity", () => {
   let sql: ReturnType<typeof postgres>;

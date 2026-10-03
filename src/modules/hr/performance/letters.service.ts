@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -15,7 +15,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { RenderLetterInput, SaveLetterInput } from "./dto/documents.schemas";
 import { mergeLetterTemplate } from "./letter-merge";
 import { z } from "zod";
-import { liveEmployment, livePersonOfEmployment } from "../../directory/employment-query";
+import { currentPrimaryReportingLine, liveEmployment, livePersonOfEmployment } from "../../directory/employment-query";
 
 const letterTemplateContentSchema = z.object({
   bodyHtml: z.string().optional(),
@@ -231,10 +231,8 @@ export class LettersService {
       .leftJoin(users, eq(users.id, hrPeople.userId))
       .where(
         and(
-          eq(hrReportingLines.orgId, orgId),
+          currentPrimaryReportingLine(orgId),
           eq(hrReportingLines.employmentId, employmentId),
-          eq(hrReportingLines.lineType, "primary"),
-          sql`${hrReportingLines.effectiveTo} = 'infinity'::date`,
         ),
       )
       .limit(1);

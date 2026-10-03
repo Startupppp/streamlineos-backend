@@ -7,8 +7,23 @@ export function defaultFormatFromCurrency(currency: string): PayoutBatchFormat {
   return "GENERIC_CSV";
 }
 
+const BANK_BULK_IFSC_PREFIX = {
+  HDFC_BULK_CSV: "HDFC",
+  ICICI_BULK_CSV: "ICIC",
+  SBI_BULK_CSV: "SBIN",
+  AXIS_BULK_CSV: "UTIB",
+} as const;
+
+const BANK_BULK_HEADER =
+  "TransactionType,BeneficiaryName,BeneficiaryAccountNumber,IFSC,Amount,Narration,BeneficiaryEmail";
+
 export function csvHeader(format: PayoutBatchFormat): string {
   switch (format) {
+    case "HDFC_BULK_CSV":
+    case "ICICI_BULK_CSV":
+    case "SBI_BULK_CSV":
+    case "AXIS_BULK_CSV":
+      return BANK_BULK_HEADER;
     case "NEFT_CSV":
     case "RTGS_CSV":
       return "SrNo,EmployeeName,AccountNumber,IFSCCode,Amount,Narration";
@@ -47,12 +62,20 @@ export function csvRow(
   currency: string,
   amountPaise: number,
   narration: string,
+  email: string | null = null,
 ): string {
   if (!isSafeBankToken(accountNumber) || !isSafeBankToken(bankCode))
     throw new Error("Refusing to write a bank file cell outside [A-Za-z0-9 ]");
   const safeName = safePayeeName(name);
   const amt = (amountPaise / 100).toFixed(2);
   switch (format) {
+    case "HDFC_BULK_CSV":
+    case "ICICI_BULK_CSV":
+    case "SBI_BULK_CSV":
+    case "AXIS_BULK_CSV": {
+      const txnType = bankCode.toUpperCase().startsWith(BANK_BULK_IFSC_PREFIX[format]) ? "IFT" : "NEFT";
+      return `${txnType},"${safeName}","${accountNumber}","${bankCode}",${amt},"${narration}","${safePayeeName(email ?? "")}"`;
+    }
     case "NEFT_CSV":
     case "RTGS_CSV":
       return `${idx},"${safeName}","${accountNumber}","${bankCode}",${amt},"${narration}"`;

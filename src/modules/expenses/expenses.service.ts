@@ -17,6 +17,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
+import { findExpensePayrollRunId } from "../payroll/runs/lib/payable-expenses";
 import type {
   CreateCategoryInput,
   AllExpenseStatus,
@@ -105,7 +106,8 @@ export class ExpensesService {
 
     const isOwner = expense.userId === ctx.userId;
     if (!isOwner && !ctx.isAdmin) return { error: "forbidden" as const };
-    if (expense.status === "PAID") return { error: "paid" as const };
+    if (expense.status === "PAID" || expense.status === "REIMBURSED") return { error: "paid" as const };
+    if ((await findExpensePayrollRunId(this.db, orgId, expenseId)) !== null) return { error: "in_payroll" as const };
 
     await this.db.delete(expenses).where(and(eq(expenses.id, expenseId), eq(expenses.orgId, orgId)));
 

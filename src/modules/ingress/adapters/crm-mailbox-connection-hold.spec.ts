@@ -114,4 +114,29 @@ describe("the CRM mailbox sweep and the request transaction", () => {
     expect(trace.organizationIdPerTransaction).toHaveLength(trace.transactions);
     for (const orgId of trace.organizationIdPerTransaction) expect(orgId).toBe("org-1");
   });
+
+  it("lists the mailboxes to sweep inside a tenant transaction, because POST /crm-mailbox/sync carries no request transaction and crm_mailbox_sync's policy raises 42501 without the GUC", async () => {
+    let orgAtListing: unknown = "never ran";
+    const chain = {
+      select: () => chain,
+      from: () => chain,
+      where: () => chain,
+      orderBy: () => chain,
+      limit: async () => {
+        orgAtListing = getTenantContext()?.orgId;
+        return [];
+      },
+      execute: async () => [],
+      transaction: async (run: (tx: unknown) => Promise<unknown>) => run(chain),
+    };
+    const service = new CrmMailboxService(
+      chain as unknown as Db,
+      {} as unknown as InboundIngressService,
+      {} as unknown as GmailMailProvider,
+      {} as unknown as OutlookMailProvider,
+    );
+
+    await expect(service.sweepAll("org-1")).resolves.toEqual({ mailboxes: 0, swept: 0, delivered: 0 });
+    expect(orgAtListing).toBe("org-1");
+  });
 });

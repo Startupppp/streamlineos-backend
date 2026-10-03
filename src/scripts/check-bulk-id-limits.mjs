@@ -205,7 +205,50 @@ const ALLOWLIST = [
       "the local `surveyAnswerRowSchema`, reached through `surveyResponseDetailSchema`, declared at modules/surveys/survey-analytics.controller.ts:82. The write side caps it at `.max(50)` in modules/surveys/dto/survey-live-session.schemas.ts and survey-public.schemas.ts; this is the read projection of the stored answer.",
   },
 
+  {
+    file: "modules/build/agent-pulse/dto/agent-pulse.schema.ts",
+    prop: "affectedRecordIds",
+    reason:
+      "`agentPulseSignalSchema`, reached through `agentPulseResponseSchema`, declared at modules/build/agent-pulse/agent-pulse.controller.ts:41. It projects the records the server-side pulse signal names; the caller sends no id list to this GET.",
+  },
+  {
+    file: "modules/hr/directory/dto/reporting-lines-response.schemas.ts",
+    prop: "userIds",
+    reason:
+      "`managerCoverageReportSchema`'s `circular[].userIds`, reached through `managerCoverageDetailSchema`, declared at modules/hr/directory/reporting-lines.controller.ts:35. Each entry is a reporting cycle the server detected in the org's stored manager graph — a query RESULT, not a request.",
+  },
+  {
+    file: "modules/hr/directory/dto/reporting-lines-line.schemas.ts",
+    prop: "userIds",
+    reason:
+      "`managerCoverageDetailSchema`'s `circular[].userIds`, declared at modules/hr/directory/reporting-lines.controller.ts:35. The same detected-cycle projection as the report schema it extends; nothing on the wire supplies it.",
+  },
+  {
+    file: "modules/hr/interviews/hr-interview-scheduling.controller.ts",
+    prop: "unseenMembershipIds",
+    reason:
+      "the local `suggestedSlotsSchema`, declared at modules/hr/interviews/hr-interview-scheduling.controller.ts:178. It reports which requested panel members had no readable calendar; the submitted panel is validated by `suggestSlotsSchema` in the same file.",
+  },
+  {
+    file: "modules/invoices/dto/invoice-response.schemas.ts",
+    prop: "timesheetEntryIds",
+    reason:
+      "`invoiceFromTimesheetsResponseSchema`, declared at modules/invoices/invoices-write.controller.ts:72. It echoes the timesheet entries the server attached to the invoice it created.",
+  },
+  {
+    file: "modules/timesheets/core/dto/timesheets-billing-response.schemas.ts",
+    prop: "releasedEntryIds",
+    reason:
+      "`billingReleaseDraftResponseSchema`, declared at modules/timesheets/core/billing.controller.ts:112. It reports the entries the server released from a draft invoice it already holds.",
+  },
+
   // ── not an HTTP boundary at all ───────────────────────────────────────────
+  {
+    file: "modules/build/comment-drafts/dto/comment-drafts.schemas.ts",
+    prop: "affectedRecordIds",
+    reason:
+      "`generatedDraftAiOutputSchema` has no controller reference; its only consumer is modules/build/comment-drafts/comment-draft-generator.service.ts:119, which passes it to `invokeStructuredWithUsage` to parse the model's structured output. It is a provider response shape: a cap would reject a valid draft the model produced, and no caller supplies the array.",
+  },
   {
     file: "modules/payroll/dto/payroll.schemas.ts",
     prop: "consumedReimbursementIds",

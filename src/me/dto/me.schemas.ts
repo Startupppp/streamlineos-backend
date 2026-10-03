@@ -24,6 +24,14 @@ export const updateProfileSchema = z.object({
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 
+export const ESS_LANGUAGES = ["en", "hi", "te"] as const;
+
+export const updateMyPreferencesSchema = z
+  .object({ language: z.enum(ESS_LANGUAGES) })
+  .strict();
+
+export type UpdateMyPreferencesInput = z.infer<typeof updateMyPreferencesSchema>;
+
 /**
  * The query contract for `GET /me/login-history`.
  *

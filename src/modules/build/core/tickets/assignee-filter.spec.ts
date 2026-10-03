@@ -144,8 +144,6 @@ describe("ticket-14 box 2: combined filter is a top-level UNION ALL, not a corre
     const db = makeDb();
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.getColumnCounts(USER, PROJECT_ID, {
-      limit: 10,
-      orderBy: "rank",
       assigneeId: ["__unassigned__", "user-2"],
     });
     const executeSqls = (db.execute as jest.Mock).mock.calls.map(
@@ -158,8 +156,6 @@ describe("ticket-14 box 2: combined filter is a top-level UNION ALL, not a corre
     const db = makeDb();
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.getColumnCounts(USER, PROJECT_ID, {
-      limit: 10,
-      orderBy: "rank",
       assigneeId: ["__unassigned__", "user-2"],
     });
     const executeSqls = (db.execute as jest.Mock).mock.calls.map(
@@ -215,8 +211,6 @@ describe("getColumnCounts — combined filter uses top-level UNION ALL (BE-81, t
     const db = makeDb();
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.getColumnCounts(USER, PROJECT_ID, {
-      limit: 10,
-      orderBy: "rank",
       assigneeId: ["__unassigned__", "user-2"],
     });
     const executeSqls = (db.execute as jest.Mock).mock.calls.map(
@@ -235,8 +229,6 @@ describe("getColumnCounts — combined filter uses top-level UNION ALL (BE-81, t
 
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.getColumnCounts(USER, PROJECT_ID, {
-      limit: 10,
-      orderBy: "rank",
       assigneeId: ["__unassigned__"],
     });
 
@@ -333,8 +325,6 @@ describe("shared builder: listTickets and getColumnCounts use buildAssigneeFilte
     const db = makeDb();
     const svc = new ProjectsTicketsReadService(db, makeAccess());
     await svc.getColumnCounts(USER, PROJECT_ID, {
-      limit: 10,
-      orderBy: "rank",
       assigneeId: ["__unassigned__", "user-2"],
     });
 

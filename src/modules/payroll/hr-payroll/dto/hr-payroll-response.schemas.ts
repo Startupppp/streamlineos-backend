@@ -32,6 +32,7 @@ export const fnfRowSchema = z.object({
   resignationId: z.number().int().nullable(),
   basicDues: z.string(),
   leaveEncashment: z.string(),
+  gratuity: z.string(),
   bonusDue: z.string(),
   deductions: z.string(),
   loanRecovery: z.string(),

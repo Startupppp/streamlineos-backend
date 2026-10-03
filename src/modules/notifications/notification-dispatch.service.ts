@@ -83,6 +83,15 @@ export class NotificationDispatchService {
     return this.deferredResult(input);
   }
 
+  async emitMany(inputs: readonly DispatchEventInput[]): Promise<void> {
+    const ambient = getTenantContext();
+    if (ambient && inputs.every((input) => input.orgId === ambient.orgId)) {
+      await this.emitInTx(ambient.tx, inputs);
+      return;
+    }
+    for (const input of inputs) await this.emitNow(input);
+  }
+
   async emitInTx(tx: Db | TenantTx, inputs: readonly DispatchEventInput[]): Promise<void> {
     const chunkData = inputs.flatMap((input) =>
       this.chunkRecipients(input.targetUserIds).map((chunkIds, i) => {

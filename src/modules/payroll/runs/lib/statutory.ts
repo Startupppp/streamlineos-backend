@@ -386,7 +386,7 @@ function calcStatutoryIndiaFromRegistry(
       config.statutory.professionalTaxMonthly != null &&
       config.statutory.professionalTaxMonthly !== ""
         ? config.statutory.professionalTaxMonthly
-        : resolvePtMonthly(bundle, stateCode);
+        : resolvePtMonthly(bundle, stateCode, grossPaise / 100, input.month);
     const ptRounded = applyRounding(toPaise(ptMonthly), rounding);
     lines.push({
       code: "PROFESSIONAL_TAX",
