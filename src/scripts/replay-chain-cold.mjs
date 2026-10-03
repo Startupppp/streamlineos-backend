@@ -28,6 +28,7 @@ import fs from "node:fs";
 import process from "node:process";
 import postgres from "postgres";
 import { usesConcurrentIndex } from "./lib/concurrent-migration.mjs";
+import { grantAppRoleDefaultPrivileges } from "./lib/app-role-default-privileges.mjs";
 
 // See db-bootstrap.mjs: migration 0431 pins search_path on the role `neondb_owner`, so the
 // unqualified `current_org_id()` calls in 0619 and its siblings resolve only under that name.
@@ -55,6 +56,7 @@ let skipped = 0;
 const failures = [];
 
 try {
+  await grantAppRoleDefaultPrivileges(sql);
   await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS drizzle`);
   await sql.unsafe(
     `CREATE TABLE IF NOT EXISTS drizzle.__replay (tag text primary key, at timestamptz default now())`,

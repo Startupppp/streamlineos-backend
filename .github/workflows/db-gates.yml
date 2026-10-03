@@ -74,7 +74,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
@@ -122,6 +122,18 @@ jobs:
           cache: pnpm
       - if: ${{ !cancelled() }}
         run: pnpm install --frozen-lockfile
+
+      # 0431_build_events_schema runs `ALTER ROLE neondb_owner SET search_path ...`
+      # unconditionally. Production has that role; a fresh CI cluster did not, so every
+      # cold build died at 0431 with 42704. NOLOGIN: it owns nothing and runs nothing.
+      - name: Create the neondb_owner role migration 0431 configures
+        if: ${{ !cancelled() }}
+        run: >-
+          psql -h 127.0.0.1 -U ci -d ci -v ON_ERROR_STOP=1 -c
+          "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'neondb_owner')
+          THEN CREATE ROLE neondb_owner NOLOGIN; END IF; END \$\$"
+        env:
+          PGPASSWORD: ci
 
       # MUST precede db:bootstrap. 84 migrations GRANT to this role by name and
       # do not guard the grant, so on a fresh cluster the chain dies at 0423.
@@ -422,7 +434,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
@@ -447,6 +459,17 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # 0431_build_events_schema runs `ALTER ROLE neondb_owner SET search_path ...`
+      # unconditionally. Production has that role; a fresh CI cluster did not, so every
+      # cold build died at 0431 with 42704. NOLOGIN: it owns nothing and runs nothing.
+      - name: Create the neondb_owner role migration 0431 configures
+        run: >-
+          psql -h 127.0.0.1 -U ci -d ci -v ON_ERROR_STOP=1 -c
+          "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'neondb_owner')
+          THEN CREATE ROLE neondb_owner NOLOGIN; END IF; END \$\$"
+        env:
+          PGPASSWORD: ci
 
       # Roles are cluster-wide, so creating it once here covers both disposable
       # probe databases migration:proof creates on this same server.
@@ -503,7 +526,7 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
@@ -529,6 +552,17 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # 0431_build_events_schema runs `ALTER ROLE neondb_owner SET search_path ...`
+      # unconditionally. Production has that role; a fresh CI cluster did not, so every
+      # cold build died at 0431 with 42704. NOLOGIN: it owns nothing and runs nothing.
+      - name: Create the neondb_owner role migration 0431 configures
+        run: >-
+          psql -h 127.0.0.1 -U ci -d scratch_ci -v ON_ERROR_STOP=1 -c
+          "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'neondb_owner')
+          THEN CREATE ROLE neondb_owner NOLOGIN; END IF; END \$\$"
+        env:
+          PGPASSWORD: ci
 
       # First, not last. The chain grants to this role by name from migration 0423
       # onwards; creating it afterwards is 507 migrations too late.
