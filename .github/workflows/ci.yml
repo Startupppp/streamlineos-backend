@@ -227,27 +227,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Five gates compare this backend against the frontend — the PermissionKey
-      # union, the sidebar's nav gates, the file-size registry — and exit 2
-      # without one beside this checkout, which is why their steps have carried
-      # "CANNOT RUN IN CI" for months. A second checkout needs a token with read
-      # access to the other repository; `GITHUB_TOKEN` is scoped to this one.
-      #
-      # Guarded on the secret so nothing changes until somebody adds it: with no
-      # FRONTEND_REPO_TOKEN both steps skip, no environment variable is set, and
-      # those gates keep exiting 2 exactly as they do today. With it, they run
-      # against the frontend's default branch. A fork PR cannot read the secret
-      # and therefore keeps the current behaviour too.
       - name: Check out the frontend repository
-        if: ${{ !cancelled() && secrets.FRONTEND_REPO_TOKEN != '' }}
-        uses: actions/checkout@v4
-        with:
-          repository: Startupppp/streamlineos-frontend
-          path: streamlineos-frontend
-          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
+        if: ${{ !cancelled() }}
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/Startupppp/streamlineos-frontend.git "$BRANCH" >/dev/null; then
+            git clone --depth 1 --branch "$BRANCH" https://github.com/Startupppp/streamlineos-frontend.git streamlineos-frontend
+          else
+            git clone --depth 1 https://github.com/Startupppp/streamlineos-frontend.git streamlineos-frontend
+          fi
 
       - name: Point the cross-repo gates at it
-        if: ${{ !cancelled() && secrets.FRONTEND_REPO_TOKEN != '' }}
+        if: ${{ !cancelled() }}
         run: |
           echo "STREAMLINE_FRONTEND_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend/frontend" >> "$GITHUB_ENV"
           echo "STREAMLINE_WORKSPACE_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend" >> "$GITHUB_ENV"
