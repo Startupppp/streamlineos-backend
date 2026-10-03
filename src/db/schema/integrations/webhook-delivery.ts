@@ -83,8 +83,8 @@ export const integrationWebhookDeliveries = pgTable(
   (t) => [
     foreignKey({
       name: "fk_int_wh_deliveries_credential",
-      columns: [t.credentialId],
-      foreignColumns: [integrationWebhookEndpointCredentials.id],
+      columns: [t.orgId, t.credentialId],
+      foreignColumns: [integrationWebhookEndpointCredentials.orgId, integrationWebhookEndpointCredentials.id],
     }).onDelete("set null"),
     index("idx_integration_webhook_deliveries_credential").on(t.orgId, t.credentialId),
     index("idx_integration_webhook_deliveries_build_webhook").on(t.orgId, t.buildWebhookId),
