@@ -30,9 +30,12 @@ describe("a route that awaits an LLM does not hold a pooled connection across it
     expect(optedOut(InvAiExplainController, "getSupplierDelayBriefing")).toBe(true);
   });
 
+  it("narrates the reorder proposal outside it, because propose ends in invokeStructuredWithUsage", () => {
+    expect(optedOut(InvAiExplainController, "getReorderProposal")).toBe(true);
+  });
+
   it("ANTI-VACUITY: a route beside them that reaches no provider is NOT opted out", () => {
     expect(optedOut(InvAiExplainController, "getOpsBrief")).toBe(false);
     expect(optedOut(InvAiExplainController, "confirmReorderProposal")).toBe(false);
-    expect(optedOut(InvAiExplainController, "getReorderProposal")).toBe(false);
   });
 });

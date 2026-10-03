@@ -4,6 +4,7 @@ import { AccountingAdaptersModule } from "../accounting/adapters/accounting-adap
 import { EmploymentFactsModule } from "../directory/employment-facts.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
+import { AttentionModule } from "../attention/attention.module";
 import {
   ExpenseDecidedConsumer,
   ExpenseExportRequestedConsumer,
@@ -21,6 +22,7 @@ import { TravelService } from "./travel.service";
 import { EmployeeExpensesController } from "./employee-expenses.controller";
 import { ExpenseExportService } from "./expense-export.service";
 import { ExpenseExportWorkerService } from "./expense-export-worker.service";
+import { ExpenseApprovalAdapter } from "./expense-approval.adapter";
 
 /**
  * Employee expense claims and travel requests — HR self-service, not accounting.
@@ -31,7 +33,7 @@ import { ExpenseExportWorkerService } from "./expense-export-worker.service";
  * pointing at the one seam accounting exposes to other modules.
  */
 @Module({
-  imports: [AutomationModule, AccountingAdaptersModule, NotificationsModule, OutboxModule, EmploymentFactsModule],
+  imports: [AutomationModule, AccountingAdaptersModule, NotificationsModule, OutboxModule, EmploymentFactsModule, AttentionModule],
   controllers: [EmployeeExpensesController, ExpensesController, ExpenseCategoriesController, ExpensesImportController, TravelController],
   providers: [
     ExpensesService,
@@ -44,6 +46,7 @@ import { ExpenseExportWorkerService } from "./expense-export-worker.service";
     ExpenseExportRequestedConsumer,
     ExpenseExportService,
     ExpenseExportWorkerService,
+    ExpenseApprovalAdapter,
   ],
   exports: [ExpensesService],
 })

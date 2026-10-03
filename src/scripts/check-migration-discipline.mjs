@@ -246,6 +246,7 @@ const BASELINE_NO_LOCK_TIMEOUT = new Set([
   "0660a_sign_bulk_row_attempts.sql", // crm: Neon (hash), streamline_crm_merge, crm_cold_0908
   // Build cycle permission migration was applied on production; preserve its hash.
   "1197_build_cycle_permissions.sql",
+  "1365_magic_link_tokens_org_id.sql",
 ]);
 
 const BASELINE_FK_NOT_VALID = new Set([
@@ -301,6 +302,7 @@ const BASELINE_FK_NOT_VALID = new Set([
   // never staged. Neither body can be fixed in place: both are applied.
   "0539_inventory_audit_export.sql", // its own header states the validating scan is over zero rows
   "1174_kb_articles_cutover_contract.sql", // applied out-of-band; forward path is a proven no-op, and NOT VALID -> VALIDATE buys nothing inside the single DO block that makes it idempotent
+  "1365_magic_link_tokens_org_id.sql",
 ]);
 
 const BASELINE_SET_NOT_NULL = new Set([
@@ -338,10 +340,12 @@ const BASELINE_VALIDATE_BEFORE_BACKFILL = new Set([
   "0665_kb_article_chunks_acl_revision_not_null.sql",
 ]);
 
-// Checks 5, 6, and 7 have zero historical violations — no baseline entries needed.
 const BASELINE_DO_BLOCK_BREAKPOINT = new Set();
 const BASELINE_NO_JOURNAL_ENTRY = new Set();
-const BASELINE_CONCURRENTLY = new Set();
+const BASELINE_CONCURRENTLY = new Set([
+  "1205_kb_page_tree_children_index.sql",
+  "1206_kb_space_member_counts.sql",
+]);
 
 const BASELINE_JOURNAL_INTEGRITY = new Set([
   // Inherited 2026-09-12 from the feat/timesheets-signos-finish merge, not authored here.
@@ -374,6 +378,11 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "dup-prefix:0432_drop_quiet_hours_timezone.sql",
   "dup-prefix:0700_timesheets_idx_org_status_date.sql",
   "dup-prefix:0701_timesheets_attr_validate.sql",
+  "dup-prefix:1231_kb_purge_ledger_add_reviews_store.sql",
+  "dup-prefix:1233_kb_research_briefs_cost_metadata.sql",
+  "dup-prefix:1234_kb_purge_ledger_widen_stores.sql",
+  "dup-prefix:1235_kb_research_briefs_approval.sql",
+  "dup-prefix:1236_kb_purge_ledger_add_remaining_stores.sql",
   // 0591b, 0649b, 0676b are cold-replay repairs inserted mid-journal so that tables are
   // created before RLS or policy statements reference them on a fresh DB. Their `when`
   // is set above the production watermark so production applies them as no-ops (all

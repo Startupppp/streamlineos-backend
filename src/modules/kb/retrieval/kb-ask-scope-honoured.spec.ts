@@ -68,7 +68,9 @@ function makeCaptureDb(): { db: Db; getCond: () => SQL } {
     capturedCond = cond;
   });
   const ownedSources = [...SOURCE_IDS_READABLE, SOURCE_ID_READABLE].map((id) => ({ id }));
-  const ownershipRead = { from: () => ({ where: () => Promise.resolve(ownedSources) }) };
+  const ownershipRead = {
+    from: () => ({ where: () => ({ limit: () => Promise.resolve(ownedSources) }) }),
+  };
   const db = {
     select: jest.fn((projection: Record<string, unknown> = {}) =>
       projection.id === kbSources.id ? ownershipRead : chain,

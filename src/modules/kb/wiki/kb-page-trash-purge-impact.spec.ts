@@ -32,7 +32,7 @@ function makeDb(
   return {
     select: jest.fn().mockImplementation(() => ({
       from: () => ({
-        where: () => Promise.resolve(visibleRows),
+        where: () => ({ limit: () => Promise.resolve(visibleRows) }),
       }),
     })),
     transaction: jest.fn().mockImplementation(

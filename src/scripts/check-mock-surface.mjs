@@ -511,10 +511,10 @@ function extractMockPairs(src, filePath) {
 
     // Look backwards up to 600 chars for `provide: ClassName`
     const window = src.slice(Math.max(0, useValuePos - 600), useValuePos);
-    const provideMatch = /\bprovide\s*:\s*([A-Z][a-zA-Z0-9_$]*)(?:\s*,|\s*\n)/g;
+    const provideMatch = /\bprovide\s*:\s*(?:([A-Z][a-zA-Z0-9_$]*)(?:\s*,|\s*\n)|["'`])/g;
     let pm, lastPm;
     while ((pm = provideMatch.exec(window)) !== null) lastPm = pm;
-    if (!lastPm) continue;
+    if (!lastPm || !lastPm[1]) continue;
     const className = lastPm[1];
 
     if (varRef) {
@@ -744,6 +744,22 @@ Test.createTestingModule({
     failed = true;
   } else {
     console.log("  [pass] useValue-inline pattern");
+  }
+
+  const specWithStringToken = `
+Test.createTestingModule({
+  providers: [
+    { provide: CacheService, useValue: makeCache() },
+    { provide: "NotificationsService", useValue: { create: jest.fn() } },
+  ],
+});
+`;
+  const stringTokenPairs = extractMockPairs(specWithStringToken, "string-token-test.spec.ts");
+  if (stringTokenPairs.some((p) => p.className === "CacheService" && p.mockMethods.has("create"))) {
+    console.error("SELF-TEST FAILED: a string-token provider's double was attributed to the class provided before it");
+    failed = true;
+  } else {
+    console.log("  [pass] a string-token provider is not attributed to an earlier class provider");
   }
 
   // --- Test 7: vacuity — a scan that finds nothing must fail ---

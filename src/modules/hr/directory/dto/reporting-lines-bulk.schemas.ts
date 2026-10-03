@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 import { canonicalEmailSchema } from "../../../users/dto/users.schemas";
 import { effectiveDateSchema, managerRefSchema, managerResolutionSchema } from "./reporting-lines-shared.schemas";
 
@@ -62,7 +63,7 @@ export const commitBulkJobSchema = z
   .strict();
 
 export const listBulkJobsSchema = z
-  .object({ cursor: z.string().trim().min(1).max(2048).optional() })
+  .object({ cursor: z.string().trim().min(1).max(2048).optional(), limit: optionalPageSizeField() })
   .strict();
 
 export const getBulkJobSchema = z

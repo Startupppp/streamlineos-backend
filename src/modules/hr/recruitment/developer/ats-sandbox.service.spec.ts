@@ -45,13 +45,14 @@ describe("catalogue", () => {
     }
   });
 
-  it("covers exactly the five hiring events", () => {
+  it("covers exactly the six recruitment events", () => {
     expect(build(null).service.catalogue().events.map((e) => e.value)).toEqual([
       "candidate.applied",
       "candidate.moved",
       "candidate.hired",
       "candidate.rejected",
       "hire.handoff",
+      "referral.bonus_due",
     ]);
   });
 

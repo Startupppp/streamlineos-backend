@@ -134,12 +134,7 @@ export class WebhookEndpointService {
       { lastDeliveryAt: Date | null; lastDeliveryStatus: string | null; failureRate: number | null }
     >
   > {
-    const statsRows = await this.db.execute<{
-      webhookId: number;
-      lastDeliveryAt: Date | null;
-      lastDeliveryStatus: string | null;
-      failureRate: number | null;
-    }>(sql`
+    const statsRows = await this.db.execute(sql`
       WITH ranked AS (
         SELECT
           build_webhook_id,
@@ -166,10 +161,16 @@ export class WebhookEndpointService {
       { lastDeliveryAt: Date | null; lastDeliveryStatus: string | null; failureRate: number | null }
     >();
     for (const row of statsRows) {
-      result.set(row.webhookId, {
-        lastDeliveryAt: row.lastDeliveryAt,
-        lastDeliveryStatus: row.lastDeliveryStatus,
-        failureRate: row.failureRate,
+      const lastDeliveryAt = row["lastDeliveryAt"];
+      const lastDeliveryStatus = row["lastDeliveryStatus"];
+      const failureRate = row["failureRate"];
+      result.set(Number(row["webhookId"]), {
+        lastDeliveryAt:
+          lastDeliveryAt instanceof Date || lastDeliveryAt === null
+            ? lastDeliveryAt
+            : new Date(String(lastDeliveryAt)),
+        lastDeliveryStatus: typeof lastDeliveryStatus === "string" ? lastDeliveryStatus : null,
+        failureRate: failureRate === null ? null : Number(failureRate),
       });
     }
     return result;

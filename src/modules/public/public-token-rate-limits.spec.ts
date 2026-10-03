@@ -75,7 +75,7 @@ describe("public write routes — N+1 returns 429 with retry metadata", () => {
     return {
       getHandler: () => ({}),
       getClass: () => ({}),
-      switchToHttp: () => ({ getRequest: () => req, getResponse: () => res }),
+      switchToHttp: () => ({ getRequest: () => ({ ...req }), getResponse: () => res }),
     } as unknown as ExecutionContext;
   }
 
@@ -134,7 +134,7 @@ describe("public write routes — N+1 returns 429 with retry metadata", () => {
     const ctx = {
       getHandler: () => ({}),
       getClass: () => ({}),
-      switchToHttp: () => ({ getRequest: () => req, getResponse: () => res }),
+      switchToHttp: () => ({ getRequest: () => ({ ...req }), getResponse: () => res }),
     } as unknown as ExecutionContext;
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue("public:kb-feedback") } as unknown as Reflector;
     const guard = new RateLimitGuard(reflector, svc, null as never, null as never);
@@ -163,7 +163,7 @@ describe("public write routes — N+1 returns 429 with retry metadata", () => {
       return {
         getHandler: () => ({}),
         getClass: () => ({}),
-        switchToHttp: () => ({ getRequest: () => req, getResponse: () => res }),
+        switchToHttp: () => ({ getRequest: () => ({ ...req }), getResponse: () => res }),
       } as unknown as ExecutionContext;
     };
 

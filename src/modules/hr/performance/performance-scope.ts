@@ -39,3 +39,7 @@ export async function resolveDocumentsManageScope(
     resolvedPermissions ?? (await access.resolveUserPermissions(currentUser.orgId, currentUser.userId));
   return ScopedRead.of(currentUser.orgId, currentUser.userId, resolved.get(DOCUMENTS_MANAGE_PERMISSION) ?? "none");
 }
+
+export function selfDocumentAcknowledgementsRead(currentUser: CurrentUserContext): ScopedRead {
+  return ScopedRead.of(currentUser.orgId, currentUser.userId, "own");
+}

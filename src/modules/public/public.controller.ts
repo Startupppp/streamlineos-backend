@@ -325,7 +325,6 @@ export class PublicController {
 
   @Post("intake/t/:intakeToken")
   @HttpCode(201)
-  @UseGuards(RateLimitGuard)
   @UseRateLimit("public:intake")
   @ResponseSchema(intakeSubmitSchema)
   @Validate({ params: intakeTokenParams, body: intakeSchema })

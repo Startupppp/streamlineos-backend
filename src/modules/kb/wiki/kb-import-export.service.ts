@@ -389,7 +389,7 @@ export class KbImportExportService {
     return { jobId: newJob.id, status: "pending" };
   }
 
-  async listImportJobs(orgId: string, cursor?: string): Promise<ImportJobPage> {
+  async listImportJobs(orgId: string, cursor?: string, limit = PAGE_SIZE_CAP): Promise<ImportJobPage> {
     const position = decodeTimestampCursor(cursor);
     const filters: SQL[] = [eq(kbImportJobs.orgId, orgId)];
     if (position)
@@ -415,8 +415,8 @@ export class KbImportExportService {
       .from(kbImportJobs)
       .where(and(...filters))
       .orderBy(desc(kbImportJobs.createdAt), desc(kbImportJobs.id))
-      .limit(PAGE_SIZE_CAP + 1);
-    return buildCursorPage(rows, PAGE_SIZE_CAP, (row) => ({
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
       sortValue: row.createdAtText ?? "",
       id: String(row.id),
     }));

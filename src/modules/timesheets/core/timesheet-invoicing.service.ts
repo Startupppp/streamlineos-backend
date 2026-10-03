@@ -202,7 +202,8 @@ export class TimesheetInvoicingService {
           inArray(projects.id, wanted),
           isNull(projects.deletedAt),
         ),
-      );
+      )
+      .limit(wanted.length);
 
     if (rows.length !== wanted.length) return SAFE_INVOICE_LINE_DETAIL;
 

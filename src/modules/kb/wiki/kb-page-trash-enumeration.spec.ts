@@ -10,7 +10,7 @@ function makeUser(orgId = "org-1") {
 function makeDb(pageRow: unknown) {
   return {
     query: { kbPages: { findFirst: jest.fn().mockResolvedValue(pageRow) } },
-    transaction: jest.fn(),
+    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
   } as unknown as Db;
 }
 

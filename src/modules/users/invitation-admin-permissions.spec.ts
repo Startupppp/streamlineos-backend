@@ -158,14 +158,14 @@ describe("P14 — exact endpoint permission gates (verbatim backend catalog keys
 
     it("BRANCH_HR template does not include settings:organization:manage", () => {
       const branchHr = HR_ROLE_TEMPLATES.find((t) => t.slug === "BRANCH_HR");
-      if (!branchHr) return;
-      expect(branchHr.permissions).not.toContain("settings:organization:manage");
+      expect(branchHr).toBeDefined();
+      expect(branchHr?.permissions).not.toContain("settings:organization:manage");
     });
 
     it("RECRUITER template does not include settings:organization:manage", () => {
       const recruiter = HR_ROLE_TEMPLATES.find((t) => t.slug === "RECRUITER");
-      if (!recruiter) return;
-      expect(recruiter.permissions).not.toContain("settings:organization:manage");
+      expect(recruiter).toBeDefined();
+      expect(recruiter?.permissions).not.toContain("settings:organization:manage");
     });
   });
 });

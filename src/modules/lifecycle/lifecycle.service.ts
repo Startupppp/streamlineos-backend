@@ -126,11 +126,12 @@ export class LifecycleService {
           : asc(customerLifecycles.renewalOn),
         asc(customerLifecycles.customerLifecycleId),
       )
-      .limit(query.limit)
+      .limit(query.limit + 1)
       .offset(query.offset);
 
     return {
-      data: rows.map((row) => ({ ...row, band: riskBand(row.riskScore) })),
+      data: rows.slice(0, query.limit).map((row) => ({ ...row, band: riskBand(row.riskScore) })),
+      hasMore: rows.length > query.limit,
     };
   }
 

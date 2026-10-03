@@ -1,5 +1,4 @@
 export type { Permission } from "./types";
-export type { PermissionKey } from "./catalog";
 export {
   ACCESS_MANAGED_MODULES,
   MODULE_ACCESS_PERMISSIONS,
@@ -42,7 +41,6 @@ export {
   PROJECT_WORKFLOW_PERMISSIONS,
   PROJECT_UPDATES_PERMISSIONS,
   PROJECT_FILES_PERMISSIONS,
-  PROJECT_LIFECYCLE_PERMISSIONS,
 } from "./build";
 export { FEEDBUCKET_PERMISSIONS } from "./feedbucket";
 export { AI_SUMMARIES_PERMISSIONS, AI_USAGE_PERMISSIONS, EXECUTIVE_BRIEF_PERMISSIONS } from "./ai";

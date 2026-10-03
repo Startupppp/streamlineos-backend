@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Secret gate: no credential literal is committed to the tree. --self-test runs fixtures.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -176,7 +177,7 @@ function walk(dir, rel, acc) {
     const full = join(dir, entry);
     const relative = rel ? `${rel}/${entry}` : entry;
     if (statSync(full).isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) walk(full, relative, acc);
+      if (!SKIP_DIRS.has(entry) && !existsSync(join(full, ".git"))) walk(full, relative, acc);
       continue;
     }
     if (!scannableFile(entry)) continue;
@@ -360,6 +361,23 @@ function runSelfTests() {
   assert(
     "allowsFakeSecrets does NOT exempt a path merely containing the word test",
     allowsFakeSecrets("src/modules/latest/latest.service.ts") === false,
+  );
+
+  const tree = mkdtempSync(join(tmpdir(), "hardcoded-secrets-walk-"));
+  const leak = 'const JWT_SEC' + 'RET = "s3cr3t-Th1s-Is-A-Real-Value-9182";\n';
+  mkdirSync(join(tree, "src"));
+  writeFileSync(join(tree, "src", "own.ts"), leak);
+  mkdirSync(join(tree, "foreign-checkout", ".git"), { recursive: true });
+  writeFileSync(join(tree, "foreign-checkout", "theirs.ts"), leak);
+  const walked = walk(tree, "", { scanned: 0, violations: [] });
+  rmSync(tree, { recursive: true, force: true });
+  assert(
+    "a credential in this repository's own tree is a finding",
+    walked.violations.some((v) => v.path === "src/own.ts"),
+  );
+  assert(
+    "a nested checkout of another repository is not scanned as this repository's tree",
+    !walked.violations.some((v) => v.path.startsWith("foreign-checkout/")) && walked.scanned === 1,
   );
 
   if (failed > 0) {

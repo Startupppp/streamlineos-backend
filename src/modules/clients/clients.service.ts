@@ -15,6 +15,7 @@ import {
 } from "./client-party-reader";
 import { createMirroredClient } from "../party/party-legacy-clients";
 import { ClientOnboardingService, type ClientOnboardingActor } from "./client-onboarding.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 
 export type ClientHealthFilter = "healthy" | "at_risk" | "critical";
 
@@ -24,18 +25,19 @@ export class ClientsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly onboarding: ClientOnboardingService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async createClient(orgId: string, name: string, actor: ClientOnboardingActor): Promise<{ id: number; name: string | null }> {
+    await this.planLimits.assertWithinLimit(orgId, "crmContacts");
     return this.db.transaction(async (tx) => {
-      const executor = tx as unknown as Db;
       const row = await createMirroredClient(
-        executor,
+        tx,
         orgId,
         { orgId, name, status: "active" },
         { linkedBy: "user:direct-create" },
       );
-      await this.onboarding.startForClient(orgId, row.id, actor, executor);
+      await this.onboarding.startForClient(orgId, row.id, actor, tx);
       return { id: row.id, name: row.name };
     });
   }

@@ -62,22 +62,31 @@ const csvToHealthArray = z.preprocess(
     .optional(),
 );
 
+const ticketFilterShape = {
+  search: z.string().trim().max(SEARCH_TERM_MAX_LENGTH).optional(),
+  status: csvToStringArray,
+  priority: csvToTicketPriorityArray,
+  type: csvToTicketTypeArray,
+  assigneeId: csvToStringArray,
+  labelIds: csvToIntArray,
+  cycleId: csvToIntArray,
+  moduleIds: csvToIntArray,
+  epicId: z.coerce.number().int().positive().optional(),
+  health: csvToHealthArray,
+  dueDateFrom: z.iso.date().optional(),
+  dueDateTo: z.iso.date().optional(),
+  unscheduled: z.coerce.boolean().optional(),
+};
+
+export const ticketColumnCountsQuerySchema = z
+  .object(ticketFilterShape)
+  .strict()
+  .superRefine((data, ctx) => refineDueDateRange(data, ctx));
+
 export const ticketsListQuerySchema = baseListQuerySchema
   .omit({ page: true, sortDir: true })
   .extend({
-    search: z.string().trim().max(SEARCH_TERM_MAX_LENGTH).optional(),
-    status: csvToStringArray,
-    priority: csvToTicketPriorityArray,
-    type: csvToTicketTypeArray,
-    assigneeId: csvToStringArray,
-    labelIds: csvToIntArray,
-    cycleId: csvToIntArray,
-    moduleIds: csvToIntArray,
-    epicId: z.coerce.number().int().positive().optional(),
-    health: csvToHealthArray,
-    dueDateFrom: z.iso.date().optional(),
-    dueDateTo: z.iso.date().optional(),
-    unscheduled: z.coerce.boolean().optional(),
+    ...ticketFilterShape,
     orderBy: z
       .enum(["created", "updated", "priority", "dueDate", "rank"])
       .default("rank"),
@@ -262,6 +271,7 @@ export const importTicketsSchema = z.object({
 export type ImportTicketsInput = z.infer<typeof importTicketsSchema>;
 
 export type TicketsListQuery = z.infer<typeof ticketsListQuerySchema>;
+export type TicketColumnCountsQuery = z.infer<typeof ticketColumnCountsQuerySchema>;
 export type AllWorkQuery = z.infer<typeof allWorkQuerySchema>;
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;

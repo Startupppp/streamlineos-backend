@@ -34,6 +34,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { ForbiddenException } from "@nestjs/common";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { dbSpecSuite } from "../../../test/db-spec-gate";
 
 type TestDb = PostgresJsDatabase<typeof schema>;
 
@@ -134,7 +135,7 @@ async function cleanupStaleData(db: TestDb): Promise<void> {
     .where(inArray(organizationMembers.orgId, orgIds));
 }
 
-const d = process.env.DATABASE_URL ? describe : describe.skip;
+const d = dbSpecSuite();
 
 d("Payroll DB Integration", () => {
   let sql: ReturnType<typeof postgres>;

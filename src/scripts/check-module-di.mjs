@@ -943,6 +943,16 @@ const DECORATED_CLASS_FLOOR = 500;
  *  never raise it to go green — register the class, or classify it above. */
 const MAX_UNREGISTERED = 0;
 
+const RETIRED_BY_DESIGN = new Map([
+  ["KbArticlesController", "retired in 91f76c85f: /kb/articles/* is served by support/core at /support/kb/*; non-registration is pinned by src/modules/kb/help-centre/kb-help-centre-retired-controllers.spec.ts and test/security/bola/bola-body-synthesis.spec.ts"],
+  ["KbCategoriesController", "retired in 91f76c85f: categories are served by support/core at /support/kb/categories; pinned by src/modules/kb/help-centre/kb-help-centre-retired-controllers.spec.ts"],
+  ["KbCommentsController", "retired in 91f76c85f: article comments are served by support/core at /support/kb/articles/:id/comments; pinned by src/modules/kb/help-centre/kb-help-centre-retired-controllers.spec.ts"],
+  ["KbAuthoringController", "retired: /kb/ai/draft, /kb/ai/improve and /kb/ai/summarize have no frontend caller and the wiki module owns AI-assisted authoring; pinned by src/modules/kb/help-centre/kb-help-centre-retired-controllers.spec.ts"],
+  ["KbVerificationController", "retired: /kb/verification/queue has no frontend caller and no cross-module consumer; pinned by src/modules/kb/help-centre/kb-help-centre-retired-controllers.spec.ts"],
+  ["KbWikiAnalyticsController", "retired: /kb/wiki/analytics/* has no frontend caller; pinned by src/modules/kb/wiki/kb-wiki-analytics-unregistered.spec.ts"],
+  ["KbWikiAnalyticsService", "the service behind the retired KbWikiAnalyticsController, constructed only by its own specs; it registers with the controller or is deleted with it"],
+]);
+
 /**
  * Test files are not runtime sources. A class that exists only in a spec must
  * not read as a provider, and a spec is not a place a provider can be wired.
@@ -1272,8 +1282,10 @@ export function analyseRegistration(sourceByFile, options = {}) {
     for (const mod of mods)
       for (const name of [...mod.providers, ...mod.controllers]) registeredAnywhere.add(name);
 
+  const retired = options.retired ?? new Map();
   const classify = (entry) => {
     if (registeredNames.has(entry.className)) return null;
+    if (retired.has(entry.className) && !registeredAnywhere.has(entry.className)) return "retired";
     if (registeredIdentities.has(`${entry.file}#${entry.className}`)) return "aliased";
     if (entry.abstract || extendedNames.has(entry.className)) return "base-class";
     if (enhancerNames.has(entry.className)) return "enhancer";
@@ -1290,6 +1302,10 @@ export function analyseRegistration(sourceByFile, options = {}) {
       findings.push({ ...entry, verdict });
     else exempt.push({ ...entry, verdict });
   }
+  const retiredSeen = new Set(exempt.filter((e) => e.verdict === "retired").map((e) => e.className));
+  for (const className of retired.keys())
+    if (!retiredSeen.has(className))
+      findings.push({ className, kind: "Retired", file: rootFile, verdict: "stale-retired" });
 
   return {
     decorated,
@@ -1903,6 +1919,21 @@ export class M {}`,
       ),
     );
     assertD("the ratchet is not silently above zero", MAX_UNREGISTERED === 0);
+
+    const retiredOpts = { ...opts, retired: new Map([["OrphanService", "fixture"]]) };
+    const retiredResult = analyseRegistration(sources, retiredOpts);
+    assertD("an unregistered class named in the retired map is exempt as 'retired'", exemptAs(retiredResult, "OrphanService", "retired"));
+    assertD("and is not reported as an orphan", !flagged(retiredResult, "OrphanService"));
+    const registeredRetired = analyseRegistration(sources, { ...opts, retired: new Map([["WiredService", "fixture"]]) });
+    assertD(
+      "a retired entry whose class IS registered is reported stale",
+      registeredRetired.findings.some((f) => f.className === "WiredService" && f.verdict === "stale-retired"),
+    );
+    const missingRetired = analyseRegistration(sources, { ...opts, retired: new Map([["GoneService", "fixture"]]) });
+    assertD(
+      "a retired entry naming no class in the tree is reported stale",
+      missingRetired.findings.some((f) => f.className === "GoneService" && f.verdict === "stale-retired"),
+    );
   }
 
   const totalCases = exportCases.length + 11 + 8 + checkDAssertions;
@@ -1968,7 +1999,7 @@ const { findings, checkedCount, skipped } = runDiConstructorChecks(registry, cla
 
 const runtimeFiles = collectRuntimeSources(SRC_ROOT);
 const sourceByFile = new Map(runtimeFiles.map((f) => [f, readFileSync(f, "utf8")]));
-const registration = analyseRegistration(sourceByFile);
+const registration = analyseRegistration(sourceByFile, { retired: RETIRED_BY_DESIGN });
 
 if (isRegistrationScanVacuous(registration, runtimeFiles.length)) {
   console.error(
@@ -1991,6 +2022,10 @@ function printCheckD() {
     `\nCheck D — provider class registered in no reachable module (${String(registrationFindings.length)} finding(s), ratchet ${String(MAX_UNREGISTERED)}):`,
   );
   for (const f of registrationFindings) {
+    if (f.verdict === "stale-retired") {
+      console.error(`  [ERROR] RETIRED_BY_DESIGN names ${f.className}, which is registered or no longer exists — delete the entry`);
+      continue;
+    }
     const where =
       f.verdict === "unreachable-module"
         ? "is provided only by a module nothing imports from AppModule"

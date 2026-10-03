@@ -616,6 +616,16 @@
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound",
       "justification": "Classified 2026-09-13. Split verbatim out of reporting.service.ts during the reporting file-size split; that file holds the same ACTIONABLE offset verdict. Splitting a file uncovers its reads to this detector without changing them."
+    },
+    "/blog/blog.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. listPublishedPosts pages the public archive with .limit(query.limit).offset((query.page - 1) * query.limit). Each page is bounded; the offset depth is not. The gate also reported this chain as UNORDERED because its ORDER BY (published_at DESC, id DESC) was applied inside the private selectCards helper, out of the lookback window; the archive query is now written inline with the same orderBy so the ordering is visible where the offset is. Offset is deliberate (numbered archive pages are stable crawlable URLs), so this stays recorded debt rather than a keyset migration."
+    },
+    "/e-sign/sign-envelope-queries.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. listEnvelopes pages with .orderBy(desc(createdAt)).limit(query.limit).offset((query.page - 1) * query.limit) and a count(*) OVER () total. Each page is bounded; the offset depth is not, and createdAt has no id tiebreaker, so equal timestamps can swap between pages. Needs a keyset cursor on (createdAt, id)."
     }
   },
   "unbounded": {
@@ -4051,6 +4061,71 @@
     "/payroll/runs/lib/payroll-people.ts": {
       "verdict": "ACTIONABLE",
       "note": "union branches of the payable-people source; listPeople bounds the outer select with a cursor page, summarizePayrollPeople counts and caps its sample at 10"
+    },
+    "/accounting/ap/ap-documents.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. frozenTaxLines (:239) selects every tax_document_lines row frozen for one posted document. It is scoped to one document, whose lines are capped at 200 by apDocumentLineSchema (.max(200)), but tax lines per document line are not capped, so there is no exact bound to state as a .limit()."
+    },
+    "/build/core/project-crud/projects-templates.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. listTemplates (:115) reads every project_template_tickets row for the page's templates. The template page is capped at PAGE_SIZE_CAP + 1, but tickets per template are not capped, so the child read grows with template size."
+    },
+    "/build/core/tickets/build-blocker-created-consumer.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Assignee read of one ticket; bounded by that ticket's assignee set",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. handle (:75) selects the assignees of the single blockedTicketId named by the event, excluding the actor. uniq_ticket_assignees_ticket_user makes it at most one row per assignee of that one ticket; it is a notification fan-out target list, and a LIMIT would silently skip notifying an assignee."
+    },
+    "/clients/client-onboarding.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. startForClient (:69) copies every item of the org's default onboarding template. Scoped to one template, but template items are not capped, and a LIMIT would silently drop checklist steps; needs a template item cap."
+    },
+    "/expenses/expenses-import.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. The duplicate probe (:267) reads every expense of the importing user between the earliest and latest date in the file. The file is capped at MAX_ROWS = 10,000, but the date window is not: one file spanning years reads that user's whole history. Narrowing it to the file's distinct dates (or chunking) would bound it."
+    },
+    "/hr/import/hr-import-preflight.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. Every read here is keyed on distinct values from one import job, whose rows are capped by importJobSchema rows.max(5000). Two are bounded in code: the department-by-id read limits to departmentIds.length (org_units PK) and the leave-type read to typeNames.length (uniq_leave_types_org_name). Still unbounded by a literal, so recorded as debt rather than suppressed: membersByEmail (:100, inArray over the job's emails) and the employee-number owner read (:206, inArray over the job's employee numbers); neither key carries a unique constraint, so a .limit(keys.length) could drop a real row, and the row count is bounded only by the job's keys times however many rows share a key. NOT counted by the detector but equally unbounded by a literal: the department-by-name read (:179), which the line scanner treats as limited because its statement window runs into the neighbouring Promise.all item's .limit(); it is keyed on the job's distinct department names and org unit names are not unique."
+    },
+    "/hr/recruitment/webhooks/webhook-emitter.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. emit (:25) selects every active recruitment webhook subscription of the org that lists the event, then inserts one delivery per row. Subscriptions per org are not capped (uniq_hr_webhook_subscriptions_org_name only makes names unique), and a LIMIT would silently skip a subscriber; needs a per-org subscription cap."
+    },
+    "/kb/content-health/kb-content-health-signal-predicates.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "All three are EXISTS sub-selects, never executed or materialised on their own",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. Lines 53, 68 and 110 are Drizzle sub-select builders passed unawaited into exists() for the overdue_review, broken_link and contradictory_claim signals. Each compiles into the outer statement as a correlated EXISTS on (org_id, page id), which Postgres stops at the first matching row; no row set is returned to the application."
+    },
+    "/kb/content-health/kb-contradiction-scanner.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. The existing-items read (:54) is keyed on the page ids of one candidate batch (at most 2 x SCAN_BATCH = 100 pages), but kb_health_items has no unique key on (org, page, kind, rule_version), so rows per page are not bounded by a constraint."
+    },
+    "/kb/core/kb-support-documents.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. findUsedSupportArticleSlugs (:386) reads every slug equal to the root or matching root-% in the org to pick a free suffix. The row count grows with the number of same-root collisions and is not capped."
+    },
+    "/kb/wiki/kb-import-process.consumer.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. Both reads are duplicate probes for one import batch, capped at 100 items by importSchema items.max(100). The external-ref probe (:134) is in practice at most one row per item (uniq_kb_pages_external_ref), but the plain-title probe (:209) reads every live page sharing any of the batch's titles and titles are not unique. A selectDistinct on title with .limit(plainTitles.length) would bound it exactly; not done here because the consumer's unit doubles do not model selectDistinct."
+    },
+    "/notifications/notification-read-watermark.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Single-row read: uniq_notification_read_watermarks_org_membership",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. readNotificationWatermark (:21) filters on (org_id, membership_id), which uniq_notification_read_watermarks_org_membership makes unique, so it returns at most one row and reads rows[0]."
+    },
+    "@common/rbac/access-mutation-commit.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-10-03. Arrived from origin/main unclassified. resolveRoleHolders (:170) reads every group the role is assigned to (uniq_group_role_assignments_group_role: at most one row per group) and expands their members. Bounded only by the number of groups in the org holding that role, which is not capped. The membership-users read (:183) is bounded in code by .limit(membershipIds.length) (organization_members PK)."
     }
   }
 }

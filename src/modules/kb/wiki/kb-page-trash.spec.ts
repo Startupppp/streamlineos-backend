@@ -112,7 +112,7 @@ function makeSelectOnlyDb(
 
 function makeTreeMock(restoreImpl?: () => Promise<unknown>) {
   return {
-    restore: jest.fn().mockImplementation(restoreImpl ?? (() => Promise.resolve({ id: 1 }))),
+    restoreMany: jest.fn().mockImplementation(restoreImpl ?? (() => Promise.resolve(undefined))),
   };
 }
 
@@ -283,12 +283,25 @@ describe("POST /kb/pages/trash/restore — bulk restore", () => {
     expect(result.results[0]?.result).toBe("succeeded");
   });
 
-  it("a ConflictException from restore is treated as succeeded — race-condition idempotence", async () => {
+  it("restores every deleted visible page in ONE tree call, never one per page", async () => {
     const now = new Date();
-    const db = makeSelectOnlyDb([{ id: 7, deletedAt: now }]);
-    const tree = makeTreeMock(() => Promise.reject(new ConflictException("Page is not in trash")));
-    const result = await service(db, tree).bulkRestore(userInOrg, { pageIds: [7] });
-    expect(result.results[0]?.result).toBe("succeeded");
+    const db = makeSelectOnlyDb([
+      { id: 7, deletedAt: now },
+      { id: 8, deletedAt: null },
+      { id: 9, deletedAt: now },
+    ]);
+    const tree = makeTreeMock();
+    const result = await service(db, tree).bulkRestore(userInOrg, { pageIds: [7, 8, 9, 99] });
+    expect(tree.restoreMany).toHaveBeenCalledTimes(1);
+    expect(tree.restoreMany).toHaveBeenCalledWith(userInOrg, [7, 9]);
+    expect(result.results.map((r) => r.result)).toEqual(["succeeded", "succeeded", "succeeded", "notFound"]);
+  });
+
+  it("issues no tree call when nothing visible is in trash", async () => {
+    const db = makeSelectOnlyDb([{ id: 5, deletedAt: null }]);
+    const tree = makeTreeMock();
+    await service(db, tree).bulkRestore(userInOrg, { pageIds: [5, 6] });
+    expect(tree.restoreMany).not.toHaveBeenCalled();
   });
 });
 

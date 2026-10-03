@@ -227,4 +227,14 @@ export const PAYROLL_AND_EXPENSES_ARTIFACTS = [
     reason:
       "The member pointer on reimbursements is cleared by fk_reimbursements_user_actor, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
+  {
+    id: "payroll_form16_documents_actors",
+    mechanism: "database-cascade",
+    table: "payroll_form16_documents",
+    keyedBy: "uploaded_by_membership_id / released_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The uploader and releaser pointers are composite tenant foreign keys (fk_payroll_form16_documents_uploaded_by, fk_payroll_form16_documents_released_by), each ON DELETE SET NULL, so the employee's Form 16 copy survives the departure of the payroll admin who handled it. A suspension is reversible, so nothing is written.",
+  },
 ] as const satisfies readonly MembershipArtifact[];

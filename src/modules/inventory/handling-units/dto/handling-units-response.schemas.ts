@@ -35,14 +35,22 @@ export const handlingUnitDetailResponseSchema = z.object({
 });
 
 /** The list's own projection — no contents, because it is capped at 100 units. */
-export const listHandlingUnitsResponseSchema = z.array(
-  z.object({
-    id: z.number().int(),
-    huCode: z.string(),
-    kind: z.string(),
-    status: z.string(),
-    locationId: z.number().int().nullable(),
-    parentHuId: z.number().int().nullable(),
-    updatedAt: wireDate(),
+export const listHandlingUnitsResponseSchema = z.object({
+  data: z.array(
+    z.object({
+      id: z.number().int(),
+      huCode: z.string(),
+      kind: z.string(),
+      status: z.string(),
+      locationId: z.number().int().nullable(),
+      parentHuId: z.number().int().nullable(),
+      updatedAt: wireDate(),
+    }),
+  ),
+  pagination: z.object({
+    page: z.number().int(),
+    limit: z.number().int(),
+    total: z.number().int(),
+    totalPages: z.number().int(),
   }),
-);
+});

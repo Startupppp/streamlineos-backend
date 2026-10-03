@@ -129,8 +129,7 @@ export class ProjectsTicketsCreateService {
       this.automationRunner,
       this.cache,
     );
-    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
-    const ticket = await this.db.transaction(async (tx) => {
+    const { ticket, createdResult } = await this.db.transaction(async (tx) => {
 
       const isRecurring =
         body.isRecurring === true && body.recurrenceRule != null;
@@ -139,7 +138,7 @@ export class ProjectsTicketsCreateService {
           ? computeNextRunAt(body.recurrenceRule)
           : undefined;
 
-      createdResult = await creator.createInTransaction(tx, {
+      const createdResult = await creator.createInTransaction(tx, {
         orgId: u.orgId,
         projectId,
         actor: { userId: u.userId, membershipId: actorMap.get(u.userId)?.membershipId ?? null },
@@ -165,7 +164,8 @@ export class ProjectsTicketsCreateService {
           automationAssigneeUserId: body.assigneeId ?? null,
         }],
       });
-      const created = createdResult.tickets[0]!;
+      const created = createdResult.tickets[0];
+      if (!created) throw new Error("Ticket creation returned no ticket");
 
       if (allAssigneeIds.size > 0) {
         await tx.insert(ticketAssignees).values(
@@ -190,9 +190,9 @@ export class ProjectsTicketsCreateService {
         })),
       );
 
-      return created;
+      return { ticket: created, createdResult };
     });
-    creator.publish(createdResult!);
+    creator.publish(createdResult);
 
     const allNotifyIds = new Set<string>();
     if (body.assigneeId) allNotifyIds.add(body.assigneeId);
@@ -248,9 +248,8 @@ export class ProjectsTicketsCreateService {
     const feedbackActorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [actingUserId]);
     const feedbackActorMembershipId = feedbackActorMap.get(actingUserId)?.membershipId ?? null;
     const creator = new BuildTicketCreationService(this.db, this.webhooksDispatch, this.automationRunner, this.cache);
-    let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
-    const ticket = await this.db.transaction(async (tx) => {
-      createdResult = await creator.createInTransaction(tx, {
+    const { ticket, createdResult } = await this.db.transaction(async (tx) => {
+      const createdResult = await creator.createInTransaction(tx, {
         orgId,
         projectId,
         actor: { userId: actingUserId, membershipId: feedbackActorMembershipId },
@@ -264,14 +263,15 @@ export class ProjectsTicketsCreateService {
           assigneeMembershipId: input.assigneeMembershipId ?? null,
         }],
       });
-      const created = createdResult.tickets[0]!;
+      const created = createdResult.tickets[0];
+      if (!created) throw new Error("Ticket creation returned no ticket");
 
       await tx
         .insert(ticketWatchers)
         .values({ orgId, ticketId: created.id, membershipId: feedbackActorMembershipId! });
-      return created;
+      return { ticket: created, createdResult };
     });
-    creator.publish(createdResult!);
+    creator.publish(createdResult);
 
     return ticket;
   }

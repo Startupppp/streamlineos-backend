@@ -62,6 +62,7 @@ const assessmentHeadSchema = z.object({
 /** `roster` — worst first, unscored last. */
 export const customerHealthRosterResponseSchema = z.object({
   data: z.array(assessmentHeadSchema),
+  hasMore: z.boolean(),
 });
 
 /** `get` — the stored assessment with the factor rows that produced it. */

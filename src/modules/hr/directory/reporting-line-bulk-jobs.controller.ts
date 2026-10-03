@@ -54,7 +54,7 @@ export class ReportingLineBulkJobsController {
   @Validate({ query: listBulkJobsSchema })
   @ResponseSchema(bulkJobPageSchema)
   list(@Query() query: ListBulkJobsInput, @CurrentUser() actor: CurrentUserContext) {
-    return this.jobs.list(actor, query.cursor);
+    return this.jobs.list(actor, query.cursor, query.limit);
   }
 
   @Get(":jobId")

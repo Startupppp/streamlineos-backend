@@ -310,7 +310,8 @@ export async function releaseInvoiceDraft(
     const rows = await tx
       .select({ id: timesheets.id, invoicingStatus: timesheets.invoicingStatus })
       .from(timesheets)
-      .where(and(eq(timesheets.orgId, u.orgId), inArray(timesheets.id, wanted)));
+      .where(and(eq(timesheets.orgId, u.orgId), inArray(timesheets.id, wanted)))
+      .limit(wanted.length);
 
     const byId = new Map(rows.map((row) => [row.id, row]));
     const missing = wanted.filter((id) => !byId.has(id));

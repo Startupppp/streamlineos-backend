@@ -285,6 +285,7 @@ interface MagicLinkRow {
   tokenHash: string;
   expiresAt: Date;
   usedAt: Date | null;
+  orgId: string | null;
 }
 
 function passwordlessDb(options: {
@@ -363,6 +364,7 @@ describe("Magic link — a one-time credential, stored only as a hash", () => {
       tokenHash: hashToken(RAW),
       expiresAt: new Date(Date.now() + 600_000),
       usedAt: null,
+      orgId: null,
     };
   }
 
@@ -637,9 +639,18 @@ describe("Invitations — one-time, hashed, and never revived by id alone", () =
       service.indexOf("private async claimInvitation"),
       service.indexOf("private issueMagicLink"),
     );
-    expect(claim).toContain('eq(invitations.status, "PENDING")');
-    expect(claim).toContain("isNull(invitations.acceptedAt)");
-    expect(claim).toContain("if (claimedRows.length === 0)");
-    expect(claim).toContain("Invalid or expired invitation");
+    expect(claim).toContain("invitationTransition(tx, {");
+    expect(claim).toContain('from: "PENDING"');
+    expect(claim).toContain('if (!claimed) throw new NotFoundException("Invalid or expired invitation")');
+
+    const helpers = readFileSync(
+      resolve(BACKEND_ROOT, "src/modules/organization/core/invitations.helpers.ts"),
+      "utf8",
+    );
+    const transition = helpers.slice(helpers.indexOf("export async function invitationTransition"));
+    expect(transition).toContain("eq(invitations.status, from)");
+    expect(transition).toContain("isNull(invitations.acceptedAt)");
+    expect(transition).toContain(".returning({ id: invitations.id })");
+    expect(transition).toContain("return rows[0] ?? null;");
   });
 });

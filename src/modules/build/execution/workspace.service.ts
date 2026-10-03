@@ -34,6 +34,15 @@ import type {
   UpdateViewInput,
 } from "./dto/workspace.schemas";
 
+function ownerWithoutProfile(membershipId: number): {
+  membershipId: number;
+  firstName: string | null;
+  lastName: string | null;
+  image: string | null;
+} {
+  return { membershipId, firstName: null, lastName: null, image: null };
+}
+
 @Injectable()
 export class MilestonesService {
   constructor(
@@ -169,7 +178,7 @@ export class MilestonesService {
     const ownerMembershipId = milestone.ownerMembershipId ?? null;
     return {
       ...milestone,
-      owner: ownerMembershipId != null ? { membershipId: ownerMembershipId, firstName: null as string | null, lastName: null as string | null, image: null as string | null } : null,
+      owner: ownerMembershipId != null ? ownerWithoutProfile(ownerMembershipId) : null,
       linkedTicketCount: 0,
       completedTicketCount: 0,
     };
@@ -200,7 +209,7 @@ export class MilestonesService {
     const counts = await this.linkedWorkCounts(orgId, [milestoneId]);
     return {
       ...updated,
-      owner: ownerMembershipId != null ? { membershipId: ownerMembershipId, firstName: null as string | null, lastName: null as string | null, image: null as string | null } : null,
+      owner: ownerMembershipId != null ? ownerWithoutProfile(ownerMembershipId) : null,
       linkedTicketCount: counts.get(milestoneId)?.linked ?? 0,
       completedTicketCount: counts.get(milestoneId)?.completed ?? 0,
     };
@@ -349,8 +358,7 @@ export class IntakeService {
     }
 
     if (input.status === "accepted") {
-      let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
-      const response = await this.db.transaction(async (tx) => {
+      const { response, createdResult } = await this.db.transaction(async (tx) => {
         const description =
           typeof item.description === "object"
             ? JSON.stringify(item.description)
@@ -358,7 +366,7 @@ export class IntakeService {
               ? item.description
               : "";
 
-        createdResult = await this.ticketCreation.createInTransaction(tx, {
+        const createdResult = await this.ticketCreation.createInTransaction(tx, {
           orgId,
           projectId: item.projectId,
           actor: { userId, membershipId: null },
@@ -368,7 +376,8 @@ export class IntakeService {
             reporterId: userId,
           }],
         });
-        const ticket = createdResult.tickets[0]!;
+        const ticket = createdResult.tickets[0];
+        if (!ticket) throw new Error("Ticket creation returned no ticket");
 
         const [updated] = await tx
           .update(intakeItems)
@@ -376,9 +385,9 @@ export class IntakeService {
           .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
           .returning();
 
-        return { ...updated, linkedTicket: ticket };
+        return { response: { ...updated, linkedTicket: ticket }, createdResult };
       });
-      this.ticketCreation.publish(createdResult!);
+      this.ticketCreation.publish(createdResult);
       return response;
     }
 

@@ -42,6 +42,7 @@ import { BadRequestException, PayloadTooLargeException } from "@nestjs/common";
 import { INTERCEPTORS_METADATA } from "@nestjs/common/constants";
 import type { Response } from "express";
 import { Test } from "@nestjs/testing";
+import { parse } from "yaml";
 import { JwtAuthGuard } from "../../src/common/auth/jwt-auth.guard";
 import { humanSessionPrincipal } from "../../src/common/auth/principal";
 import type { CurrentUserContext } from "../../src/common/auth/backend-claims";
@@ -52,6 +53,7 @@ import { AccessService } from "../../src/modules/access/access.service";
 import { FileQuarantineService } from "../../src/modules/storage/file-quarantine.service";
 import { validateMagicBytes } from "../../src/modules/storage/file-signatures";
 import { MediaTransformRunner } from "../../src/modules/storage/media-transform.runner";
+import { KnowledgeAuthorizationService } from "../../src/modules/kb/core/authorization/knowledge-authorization.service";
 import { StorageController } from "../../src/modules/storage/storage.controller";
 import { StorageService } from "../../src/modules/storage/storage.service";
 
@@ -216,6 +218,7 @@ describe("StorageController upload and download controls", () => {
         { provide: AvScanner, useValue: scanner },
         { provide: FileQuarantineService, useValue: quarantine },
         { provide: MediaTransformRunner, useValue: { hasCapacity: () => true, submit: () => true } },
+        { provide: KnowledgeAuthorizationService, useValue: { assertPageAccess: jest.fn() } },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -479,10 +482,10 @@ describe("the multer that actually serves uploads is the patched one", () => {
 
   it("keeps the override that makes the first case true", () => {
     // platform-express pins "2.2.0" exactly, so nothing but an override reaches it.
-    const pkg = JSON.parse(src("package.json")) as {
-      pnpm?: { overrides?: Record<string, string> };
+    const workspace = parse(src("pnpm-workspace.yaml")) as {
+      overrides?: Record<string, string>;
     };
-    expect(pkg.pnpm?.overrides?.multer).toBeDefined();
+    expect(workspace.overrides?.["multer@>=2.2.0 <2.4.0"]).toBe(">=2.4.0");
   });
 
   it("proves the comparator can fail, so the three cases above mean something", () => {

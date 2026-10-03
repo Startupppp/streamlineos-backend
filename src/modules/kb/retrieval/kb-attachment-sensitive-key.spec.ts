@@ -1,3 +1,7 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+}));
+
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";

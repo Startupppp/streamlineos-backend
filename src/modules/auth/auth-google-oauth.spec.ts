@@ -2,6 +2,9 @@ import { UnauthorizedException } from "@nestjs/common";
 import { SQL, is } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { AuthService } from "./auth.service";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { googleOAuthSchema } from "./dto/auth.schemas";
 
 function hasWhere(value: unknown): value is { where: unknown } {
   return typeof value === "object" && value !== null && "where" in value;
@@ -262,17 +265,25 @@ describe("AuthService.googleOAuth — duplicate callback (concurrent new-user cr
     expect(db._txInsert).toHaveBeenCalled();
   });
 
-  it("BLOCKED at concurrent-race proof — insert racing is a DB-level race not reproducible in mocked tests; the fix (onConflictDoNothing + re-read) is proven by the preceding test", () => {
-    expect(true).toBe(true);
+  it("concurrent-race: the account insert in googleOAuth is onConflictDoNothing, so a racing sign-in cannot fail on the unique key", () => {
+    const text = readFileSync(join(__dirname, "auth.service.ts"), "utf8");
+    const at = text.indexOf("async googleOAuth(");
+    expect(at).toBeGreaterThan(-1);
+    expect(text.slice(at)).toMatch(/\.insert\(accounts\)[\s\S]{0,300}\.onConflictDoNothing\(\)/);
   });
 });
 
 describe("AuthService.googleOAuth — denied consent is NextAuth-side, wrong internal secret is controller-gate", () => {
-  it("ALREADY-COVERED: wrong internal secret → 403 before reaching AuthService (auth-internal-secret-gate.spec.ts line 162)", () => {
-    expect(true).toBe(true);
+  it("wrong internal secret → 403 before reaching AuthService: the controller checks the secret before it calls googleOAuth", () => {
+    const text = readFileSync(join(__dirname, "auth.controller.ts"), "utf8");
+    const handler = text.slice(text.indexOf("async googleOAuth("));
+    const secretCheck = handler.indexOf("internalSecretMatches(");
+    expect(secretCheck).toBeGreaterThan(-1);
+    expect(handler.indexOf("HttpStatus.FORBIDDEN")).toBeGreaterThan(secretCheck);
+    expect(handler.indexOf("this.authService.googleOAuth(")).toBeGreaterThan(handler.indexOf("HttpStatus.FORBIDDEN"));
   });
 
-  it("BLOCKED (N/A): denied-consent is a NextAuth-side outcome (pre-authorize hook) and never reaches AuthService.googleOAuth", () => {
-    expect(true).toBe(true);
+  it("denied-consent is a NextAuth-side outcome: the googleOAuth body carries no consent field for AuthService to read", () => {
+    expect(Object.keys(googleOAuthSchema.shape).filter((key) => /consent/i.test(key))).toEqual([]);
   });
 });

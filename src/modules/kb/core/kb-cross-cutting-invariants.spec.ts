@@ -228,11 +228,13 @@ describe("Box 3 — authorization fails closed; cache unavailability cannot reta
   });
 
   it("kbAclCacheKey throws when permissionsVersion is 0 so a cache key can never be built without a resolved version", () => {
-    expect(() => kbAclCacheKey("user-1", sessionDimension({ permissionsVersion: 0 }))).toThrow();
+    expect(() => kbAclCacheKey("user-1", sessionDimension({ permissionsVersion: 0 }))).toThrow(
+      /require a resolved permissionsVersion/,
+    );
   });
 
   it("kbAclCacheKey throws when orgId is absent so a tenant-blind key cannot be minted", () => {
-    expect(() => kbAclCacheKey("user-1", sessionDimension({ orgId: "" }))).toThrow();
+    expect(() => kbAclCacheKey("user-1", sessionDimension({ orgId: "" }))).toThrow(/require an orgId/);
   });
 
   it("kbAclCacheKey includes orgId, permissionsVersion and membershipId so each of those dimensions creates a distinct cache entry", () => {

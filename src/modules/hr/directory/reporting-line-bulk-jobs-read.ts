@@ -176,7 +176,7 @@ export async function jobView(db: DbOrTx, orgId: string, jobId: string, rowCurso
   };
 }
 
-export async function listJobs(db: DbOrTx, orgId: string, cursor: string | undefined, createdBy?: string) {
+export async function listJobs(db: DbOrTx, orgId: string, cursor: string | undefined, createdBy?: string, limit = BULK_JOB_LIST_PAGE) {
   const parts = decodeTupleCursor(cursor, 2);
   const valid = parts && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$/.test(parts[0] ?? "") && /^[0-9a-f-]{36}$/i.test(parts[1] ?? "");
   const rows = await db
@@ -193,12 +193,12 @@ export async function listJobs(db: DbOrTx, orgId: string, cursor: string | undef
       ),
     )
     .orderBy(desc(hrReportingLineBulkJobs.createdAt), desc(hrReportingLineBulkJobs.id))
-    .limit(BULK_JOB_LIST_PAGE + 1);
-  const page = rows.slice(0, BULK_JOB_LIST_PAGE);
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
   const last = page[page.length - 1];
   return {
     items: page.map(summaryOf),
-    nextCursor: rows.length > BULK_JOB_LIST_PAGE && last ? encodeTupleCursor([last.cursorAt, last.id]) : null,
+    nextCursor: rows.length > limit && last ? encodeTupleCursor([last.cursorAt, last.id]) : null,
   };
 }
 

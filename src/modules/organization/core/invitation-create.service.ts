@@ -244,12 +244,12 @@ export class InvitationCreateService {
               );
           }
 
-          const resends = candidates
-            .filter((candidate) => livePending.has(candidate.email))
-            .map((candidate) => ({
-              ...candidate,
-              invitationId: pendingByEmail.get(candidate.email)!.id,
-            }));
+          const resends = candidates.flatMap((candidate) => {
+            const pendingRow = livePending.has(candidate.email)
+              ? pendingByEmail.get(candidate.email)
+              : undefined;
+            return pendingRow ? [{ ...candidate, invitationId: pendingRow.id }] : [];
+          });
           const newCandidates = candidates.filter(
             (candidate) => !livePending.has(candidate.email),
           );
@@ -294,7 +294,7 @@ export class InvitationCreateService {
               )
               UPDATE invitations AS invitation
               SET token_hash = invitation_tokens.token_hash,
-                  expires_at = ${expiresAt},
+                  expires_at = ${expiresAt.toISOString()}::timestamptz,
                   role = ${role},
                   inviter_membership_id = ${actorMembership?.id ?? null},
                   status = 'PENDING',

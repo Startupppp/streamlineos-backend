@@ -26,11 +26,6 @@ export function isKbWriteFault(outcome: KbWriteOutcome): boolean {
   return !NON_FAULT_WRITE_OUTCOMES.has(outcome);
 }
 
-export function kbWriteOutcomeForError(error: unknown): KbWriteOutcome {
-  if (error instanceof Error && error.message.includes("conflict")) return "conflict";
-  return "error";
-}
-
 export interface KbWriteFacts {
   contentType?: string;
   dbRole?: string;

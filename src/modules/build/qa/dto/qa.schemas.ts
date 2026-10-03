@@ -1,15 +1,13 @@
 import { z } from "zod";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
-import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { optionalPageSizeField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const testCaseStepSchema = z.object({
   action: z.string().min(1),
   expected: z.string().min(1),
 });
 
-export const testSuiteListQuerySchema = z.object({
-  cursor: idCursorSchema,
-}).strict();
+export const testSuiteListQuerySchema = z.object({}).strict();
 
 export const createTestSuiteSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be blank").max(255),
@@ -25,6 +23,7 @@ export const testCaseListQuerySchema = z.object({
   priority: z.enum(["low", "medium", "high"]).optional(),
   automationStatus: z.enum(["manual", "automated", "planned"]).optional(),
   cursor: idCursorSchema,
+  limit: optionalPageSizeField(),
 }).strict();
 
 export const createTestCaseSchema = z.object({
@@ -44,6 +43,7 @@ export const updateTestCaseSchema = createTestCaseSchema.partial().strict();
 export const testRunListQuerySchema = z.object({
   status: z.enum(["not_started", "in_progress", "completed", "aborted"]).optional(),
   cursor: idCursorSchema,
+  limit: optionalPageSizeField(),
   q: z.string().max(200).optional(),
 }).strict();
 
@@ -89,7 +89,6 @@ export const runResultsQuerySchema = z.object({
   limit: pageSizeField(50),
 }).strict();
 
-export type TestSuiteListQuery = z.infer<typeof testSuiteListQuerySchema>;
 export type CreateTestSuiteInput = z.infer<typeof createTestSuiteSchema>;
 export type UpdateTestSuiteInput = z.infer<typeof updateTestSuiteSchema>;
 export type TestCaseListQuery = z.infer<typeof testCaseListQuerySchema>;

@@ -21,7 +21,7 @@ const mockDb = {
   set: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
   returning: jest.fn(),
-  transaction: jest.fn(),
+  transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
 };
 
 const mockCache = {

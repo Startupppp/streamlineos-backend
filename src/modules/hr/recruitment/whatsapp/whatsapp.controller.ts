@@ -28,6 +28,7 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { WhatsappService } from "./whatsapp.service";
 import { WHATSAPP_TEMPLATE_KEYS } from "./whatsapp-consent";
+import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 
 const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
 
@@ -118,7 +119,7 @@ export class WhatsappInboundController {
   @UseRateLimit("public:whatsapp-inbound")
   @ResponseSchema(z.object({ linked: z.boolean() }))
   receive(
-    @Param("orgSlug") orgSlug: string,
+    @Param("orgSlug", new ZodValidationPipe(z.string().min(1).max(128))) orgSlug: string,
     @Req() request: RawBodyRequest<Request>,
     @Headers("x-streamline-signature") signature: string | undefined,
   ) {

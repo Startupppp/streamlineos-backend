@@ -156,4 +156,34 @@ export const RECRUITMENT_ARTIFACTS = [
     onSuspension: "retain",
     reason: "Hiring authority references must be reassigned or resolved before removal so requisitions remain governed.",
   },
+  {
+    id: "candidate_applications_internal_manager",
+    mechanism: "database-cascade",
+    table: "candidate_applications",
+    keyedBy: "internal_manager_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_candidate_applications_internal_manager is ON DELETE SET NULL (migration 1184), so removing the internal applicant's manager clears the slot and leaves the application intact.",
+  },
+  {
+    id: "interviews_transcript_stored_by",
+    mechanism: "database-cascade",
+    table: "interviews",
+    keyedBy: "transcript_stored_by_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_interviews_transcript_stored_by is ON DELETE RESTRICT, so removing the member who stored a transcript is blocked until the transcript is cleared, which nulls the column. A suspension is reversible, so nothing is written.",
+  },
+  {
+    id: "job_templates_created_by",
+    mechanism: "database-cascade",
+    table: "job_templates",
+    keyedBy: "created_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_job_templates_created_by_actor is ON DELETE SET NULL, so removing the author leaves the job template in place without its creator pointer. A suspension is reversible, so nothing is written.",
+  },
 ] as const satisfies readonly MembershipArtifact[];

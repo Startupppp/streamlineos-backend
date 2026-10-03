@@ -117,13 +117,13 @@ function makeCompletedPagesDb(completedPageIdsFor: (store: KbPurgeStore) => numb
   return {
     select: jest.fn(() => ({
       from: jest.fn(() => ({
-        where: jest.fn(async (cond: SQL) => {
+        where: jest.fn((cond: SQL) => {
           const { params } = dialect.sqlToQuery(cond);
           const store = params.find(
             (p): p is string => typeof p === "string" && (KB_PURGE_STORES as readonly string[]).includes(p),
           ) as KbPurgeStore | undefined;
-          if (!store) return [];
-          return completedPageIdsFor(store).map((pageId) => ({ pageId }));
+          const rows = store ? completedPageIdsFor(store).map((pageId) => ({ pageId })) : [];
+          return { limit: async (n: number) => rows.slice(0, n) };
         }),
       })),
     })),
@@ -203,9 +203,9 @@ describe("incompleteStorePages — returns page ids not yet complete for a given
     const db = {
       select: jest.fn(() => ({
         from: jest.fn(() => ({
-          where: jest.fn(async (cond: SQL) => {
+          where: jest.fn((cond: SQL) => {
             capturedWhere = cond;
-            return [];
+            return { limit: async () => [] };
           }),
         })),
       })),

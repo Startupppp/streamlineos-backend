@@ -72,7 +72,9 @@ describe("a fiscal-year rollover cannot double-post", () => {
 });
 
 describe("what ACC-17 found and could not fix", () => {
-  const legacyWrite = readFileSync(join(MODULES, "invoices/invoices-write.service.ts"), "utf8");
+  const legacyWrite = ["invoices/invoices-write.service.ts", "invoices/lib/invoice-insert.ts"]
+    .map((file) => readFileSync(join(MODULES, file), "utf8"))
+    .join("\n");
   const soLifecycle = readFileSync(
     join(MODULES, "inventory/sales-orders/so-lifecycle.service.ts"),
     "utf8",

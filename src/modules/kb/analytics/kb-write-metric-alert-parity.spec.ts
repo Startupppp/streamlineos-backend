@@ -319,8 +319,15 @@ describe("ORCHESTRATOR CALL SITES — these tests fail until the orchestrator wi
   });
 
   it("ORCHESTRATOR: add #kb-write heading to docs/specs/knowledge-base/KB-OBSERVABILITY-RUNBOOK.md", () => {
-    const repoRoot = resolve(BACKEND_ROOT, "..");
-    const runbookPath = join(repoRoot, "docs", "specs", "knowledge-base", "KB-OBSERVABILITY-RUNBOOK.md");
+    const runbookRelative = join("docs", "specs", "knowledge-base", "KB-OBSERVABILITY-RUNBOOK.md");
+    const roots = [
+      process.env.STREAMLINE_WORKSPACE_ROOT,
+      resolve(BACKEND_ROOT, ".."),
+      resolve(BACKEND_ROOT, "..", "streamlineos-frontend"),
+    ].filter((root): root is string => typeof root === "string" && root.length > 0);
+    const runbookPath =
+      roots.map((root) => join(root, runbookRelative)).find((candidate) => existsSync(candidate)) ??
+      join(roots[0] as string, runbookRelative);
     expect(existsSync(runbookPath)).toBe(true);
     const runbook = readFileSync(runbookPath, "utf8");
     expect(runbook).toContain("#kb-write");

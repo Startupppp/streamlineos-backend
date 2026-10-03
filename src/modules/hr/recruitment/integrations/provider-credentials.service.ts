@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { candidateSources } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
@@ -11,6 +11,7 @@ import {
 } from "../../../../common/security/secret-encryption.util";
 import { logger } from "../../../../common/logger/logger.service";
 import type { ProviderCredentials } from "./provider-blocked";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../../hr-read-limits";
 
 /**
  * The one credential store for every recruitment integration.
@@ -61,16 +62,25 @@ export class ProviderCredentialsService {
 
   /** Every connected platform for an organisation, tokens decrypted. */
   async all(orgId: string): Promise<ProviderCredentials[]> {
-    const rows = await this.db
-      .select({
-        platform: candidateSources.platform,
-        isActive: candidateSources.isActive,
-        oauthToken: candidateSources.oauthToken,
-        meta: candidateSources.meta,
-      })
-      .from(candidateSources)
-      .where(eq(candidateSources.orgId, orgId))
-      .limit(200);
+    const rows = [];
+    let afterId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const batch = await this.db
+        .select({
+          id: candidateSources.id,
+          platform: candidateSources.platform,
+          isActive: candidateSources.isActive,
+          oauthToken: candidateSources.oauthToken,
+          meta: candidateSources.meta,
+        })
+        .from(candidateSources)
+        .where(and(eq(candidateSources.orgId, orgId), gt(candidateSources.id, afterId)))
+        .orderBy(asc(candidateSources.id))
+        .limit(HR_SCAN_PAGE);
+      rows.push(...batch);
+      if (batch.length < HR_SCAN_PAGE) break;
+      afterId = batch[batch.length - 1].id;
+    }
     return rows.map((row) => ({
       platform: row.platform,
       isActive: row.isActive,

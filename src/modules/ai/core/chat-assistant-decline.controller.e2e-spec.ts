@@ -1,4 +1,5 @@
 import { type INestApplication, ConflictException, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
@@ -60,6 +61,7 @@ describe("POST /chat/proposals/:proposalId/decline (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/proposals/1/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send();
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
@@ -71,6 +73,7 @@ describe("POST /chat/proposals/:proposalId/decline (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/proposals/1/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send();
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
@@ -81,6 +84,7 @@ describe("POST /chat/proposals/:proposalId/decline (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/proposals/not-a-number/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send();
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
@@ -92,6 +96,7 @@ describe("POST /chat/proposals/:proposalId/decline (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/proposals/999/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send();
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({ code: "NOT_FOUND" });
@@ -103,6 +108,7 @@ describe("POST /chat/proposals/:proposalId/decline (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/proposals/1/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send();
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({ code: "CONFLICT" });
@@ -114,6 +120,7 @@ describe("POST /chat/proposals/:proposalId/decline (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/proposals/42/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send();
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ declined: true });
@@ -126,6 +133,7 @@ describe("POST /chat/proposals/:proposalId/decline (e2e)", () => {
     await request(app.getHttpServer())
       .post("/chat/proposals/5/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send({ orgId: "org_attacker", userId: "user_attacker" });
     expect(mockDecline).toHaveBeenCalledWith(5, "org_1", expect.not.stringContaining("attacker"));
   });
@@ -136,10 +144,12 @@ describe("POST /chat/proposals/:proposalId/decline (e2e)", () => {
     const first = await request(app.getHttpServer())
       .post("/chat/proposals/7/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send();
     const second = await request(app.getHttpServer())
       .post("/chat/proposals/7/decline")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
       .send();
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);

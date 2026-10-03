@@ -5,7 +5,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ScopedRead } from "../../access/scoped-read";
+import { selfDocumentAcknowledgementsRead } from "./performance-scope";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { ComplianceService } from "./compliance.service";
@@ -29,9 +29,7 @@ export class SelfDocumentAcknowledgementsController {
   @ResponseSchema(listComplianceResponseSchema)
   @RequirePermission("self:document-acknowledgements")
   list(@CurrentUser() currentUser: CurrentUserContext) {
-    return this.compliance.listAcknowledgments(
-      ScopedRead.of(currentUser.orgId, currentUser.userId, "own"),
-    );
+    return this.compliance.listAcknowledgments(selfDocumentAcknowledgementsRead(currentUser));
   }
 
   @Patch(":ackId")

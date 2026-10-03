@@ -26,6 +26,8 @@ import { moduleAvailabilityResolver } from "../../../common/rbac/module-availabi
 import { testAuthContext, MODULE_AVAILABLE, MODULE_DISABLED } from "../../../../test/helpers/module-guard-context";
 import { EMPLOYEE_SELF_SERVICE_GRANTS } from "../access-policy";
 import { PermissionGuard } from "../permission.guard";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { AccessService } from "../access.service";
 import { RequirePermission } from "../require-permission.decorator";
 import { authorize } from "../authorize";
@@ -336,6 +338,7 @@ describe("cross-tenant record ACL — documented as service-level, not guard-lev
     // See backend/CLAUDE.md §4: "Cross-tenant misses return 404, never 403".
     // This behavior requires live HTTP+DB to verify and is NOT closed by this mock spec.
     // Confirmed at source: services call isNull(x.deletedAt) + org_id = actor.orgId predicate.
-    expect(true).toBe(true);
+    const ci = readFileSync(join(__dirname, "../../../../.github/workflows/ci.yml"), "utf8");
+    expect(ci).toContain("run: pnpm check:tenant-isolation:run");
   });
 });

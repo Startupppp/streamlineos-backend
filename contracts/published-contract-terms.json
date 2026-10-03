@@ -35,9 +35,21 @@
       "idempotency": {
         "mode": "at-least-once-unfenced",
         "key": null,
-        "replay": "Bare insert into candidate_documents_vault. The storage key is deterministic (candidateId/fileName) so the object overwrites, but the vault row does not — a retry after a timeout leaves a second document row pointing at the same object. No server-side replay fence."
+        "replay": "Uploads a file to object storage then inserts a row into candidate_documents_vault. The storage key is deterministic (candidateId/filename) so the file write converges, but the DB insert has no unique constraint or conflict target — a retry creates a second vault record. No server-side replay fence: a client that retries after a timeout must expect a duplicate document row. NOTE: route carries @UseGuards(JwtAuthGuard) and is scoped to the caller's orgId; x-exposure is undeclared (should be permissioned — this is an HR portal route, not an external applicant route)."
       },
-      "evidence": "src/modules/careers/careers.service.ts"
+      "evidence": "src/modules/careers/careers.service.ts (uploadResume)"
+    },
+    "GET /careers": {
+      "sunsetAt": "2026-09-23",
+      "sunsetEvidence": "REMOVED in faf27ad3e alongside POST /careers/apply: with no org slug it listed every organisation's open jobs to one unauthenticated request. The org-scoped public careers routes replace it. No caller remains: the frontend has no reference to GET /careers."
+    },
+    "GET /blog/feed": {
+      "sunsetAt": "2026-10-01",
+      "sunsetEvidence": "REMOVED in 8a573e9f4 (blog: shared publication contract for the standalone blog admin, #83), replaced by the public listing, RSS and sitemap reads that apply one publication predicate. No caller remains in the frontend or in streamlineos-blog-admin."
+    },
+    "GET /blog/by-slug/{slug}/adjacent": {
+      "sunsetAt": "2026-10-01",
+      "sunsetEvidence": "REMOVED in 8a573e9f4 (#83), replaced by GET /blog/by-slug/{slug}/related. No caller remains in the frontend or in streamlineos-blog-admin."
     },
     "GET /public/sign/forms/{slug}": {
       "sunsetAt": "2026-09-10",
@@ -47,7 +59,7 @@
       "idempotency": {
         "mode": "optimistic-concurrency",
         "key": "expectedUpdatedAt",
-        "replay": "expectedUpdatedAt is compared to the stored updatedAt and a mismatch raises a conflict. This is lost-update protection, not replay protection, and the field is optional \u2014 an agent that omits it gets neither."
+        "replay": "expectedUpdatedAt is compared to the stored updatedAt and a mismatch raises a conflict. This is lost-update protection, not replay protection, and the field is optional — an agent that omits it gets neither."
       },
       "evidence": "src/modules/build/core/projects-tickets-update.service.ts"
     },
@@ -79,7 +91,7 @@
       "idempotency": {
         "mode": "natural-key-upsert",
         "key": "caller-supplied project key",
-        "replay": "When the caller supplies `key`, uniq_projects_org_key rejects the duplicate with 409. When `key` is omitted the key is randomly generated, so a retry silently creates a second project \u2014 callers that need retry safety must send an explicit key."
+        "replay": "When the caller supplies `key`, uniq_projects_org_key rejects the duplicate with 409. When `key` is omitted the key is randomly generated, so a retry silently creates a second project — callers that need retry safety must send an explicit key."
       },
       "evidence": "src/modules/agent-access/agent.controller.ts"
     },
@@ -100,26 +112,20 @@
       "evidence": "src/modules/build/core/projects-ticket-comments.service.ts"
     },
     "POST /careers/apply": {
+      "sunsetAt": "2026-09-23",
+      "sunsetEvidence": "REMOVED in faf27ad3e (ats ATS-CORE-005) and replaced by POST /public/careers/{orgSlug}/jobs/{jobId}/apply. It took a bare jobPostingId and inferred the tenant from the id; the org-scoped apply now carries consent, screening answers and candidate.applied. No caller remains: the frontend has no reference to /careers/apply and src/modules/careers/careers.controller.ts declares only POST /careers/resumes/upload.",
       "idempotency": {
         "mode": "advisory-dedup-unfenced",
         "key": null,
-        "replay": "A SELECT on (candidate_id, job_posting_id) returns {alreadyApplied:true} instead of inserting, but no unique index backs it \u2014 concurrent retries can both insert."
+        "replay": "A SELECT on (candidate_id, job_posting_id) returns {alreadyApplied:true} instead of inserting, but no unique index backs it — concurrent retries can both insert."
       },
       "evidence": "src/modules/careers/careers.service.ts"
-    },
-    "POST /careers/resumes/upload": {
-      "idempotency": {
-        "mode": "at-least-once-unfenced",
-        "key": null,
-        "replay": "Uploads a file to object storage then inserts a row into candidate_documents_vault. The storage key is deterministic (candidateId/filename) so the file write converges, but the DB insert has no unique constraint or conflict target — a retry creates a second vault record. No server-side replay fence: a client that retries after a timeout must expect a duplicate document row. NOTE: route carries @UseGuards(JwtAuthGuard) and is scoped to the caller's orgId; x-exposure is undeclared (should be permissioned — this is an HR portal route, not an external applicant route)."
-      },
-      "evidence": "src/modules/careers/careers.service.ts (uploadResume)"
     },
     "POST /crm/consent/unsubscribe": {
       "idempotency": {
         "mode": "natural-key-upsert",
         "key": null,
-        "replay": "The unsubscribe token is HMAC-signed and stateless \u2014 it is never marked consumed \u2014 but the write is onConflictDoUpdate on (org_id, contact_id, channel), so replays converge on the same consent row."
+        "replay": "The unsubscribe token is HMAC-signed and stateless — it is never marked consumed — but the write is onConflictDoUpdate on (org_id, contact_id, channel), so replays converge on the same consent row."
       },
       "evidence": "src/modules/crm/consent/crm-consent.controller.ts"
     },
@@ -183,7 +189,7 @@
       "idempotency": {
         "mode": "at-least-once-unfenced",
         "key": null,
-        "replay": "Unauthenticated insert into csat_responses keyed only on a numeric survey id \u2014 no token, no dedupe, no handler rate limit. A retry creates a second response. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+        "replay": "Unauthenticated insert into csat_responses keyed only on a numeric survey id — no token, no dedupe, no handler rate limit. A retry creates a second response. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
       },
       "evidence": "src/modules/csat/csat.service.ts",
       "sunsetAt": "2026-09-11",
@@ -499,7 +505,7 @@
       "idempotency": {
         "mode": "natural-key-upsert",
         "key": null,
-        "replay": "onConflictDoUpdate on platform_waitlist.email \u2014 a replay updates the same row rather than creating a second entry."
+        "replay": "onConflictDoUpdate on platform_waitlist.email — a replay updates the same row rather than creating a second entry."
       },
       "evidence": "src/modules/public/waitlist.service.ts"
     },
@@ -606,6 +612,30 @@
         "replay": "A sequential redelivery is refused twice over: handleScoped discards when the stored calendar_events.updatedAt is already >= the delivered providerUpdatedAt, and again when a PENDING or IN_FLIGHT row already exists in calendar_provider_sync_queue for that event. Neither guard fences CONCURRENT deliveries: the pending-queue SELECT and the queue INSERT run in two separate runInNewTenantTransaction calls and calendar_provider_sync_queue carries no unique constraint (only two non-unique indexes), so two deliveries racing past the same watermark each enqueue a sync row. The shared-secret header authenticates the caller; it is not a replay fence."
       },
       "evidence": "src/modules/calendar/calendar-provider-webhook.service.ts (handleScoped); table src/db/schema/common/calendar-events.ts"
+    },
+    "POST /blog/internal/invalidate": {
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "x-blog-event-id",
+        "replay": "BlogInvalidationSignatureGuard verifies the HMAC over timestamp, event id and raw body before the body is trusted, then the event id is inserted into blog_invalidation_receipts with ON CONFLICT (event_id) DO NOTHING. A redelivery is acknowledged with duplicate: true and nothing is re-applied."
+      },
+      "evidence": "src/modules/blog/blog-invalidation.service.ts (receive)"
+    },
+    "POST /organization/invitations/request-otp": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Each call marks every unused code for the invitation as used, inserts a fresh code and emails it. A retry is not deduplicated: it sends a second email and invalidates the code from the first. Bounded by the invite:request-otp per-IP rate limit; no business data is duplicated."
+      },
+      "evidence": "src/modules/organization/core/invitation-acceptance.service.ts (requestInvitationEmailOtp)"
+    },
+    "POST /public/intake/t/{intakeToken}": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Resolves the project by intake token, then inserts one intake_items row inside a tenant transaction. There is no unique key or Idempotency-Key fence, so a client retry after a timeout creates a second intake item. Bounded only by the public intake rate limit."
+      },
+      "evidence": "src/modules/public/intake.service.ts (submitIntakeByToken)"
     }
   },
   "webhookEvents": {

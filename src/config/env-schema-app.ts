@@ -86,6 +86,8 @@ export const appEnvShape = {
     INV_CHANNEL_WEBHOOK_SECRET_SHOPIFY: z.preprocess(emptyToUndefined, z.string().optional()),
     INV_CHANNEL_WEBHOOK_SECRET_WOOCOMMERCE: z.preprocess(emptyToUndefined, z.string().optional()),
     INV_CHANNEL_WEBHOOK_SECRET_DEFAULT: z.preprocess(emptyToUndefined, z.string().optional()),
+    SHOPIFY_SANDBOX_TOKEN: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    DELHIVERY_SANDBOX_TOKEN: z.preprocess(emptyToUndefined, z.string().trim().optional()),
     /** Guards POST /webhooks/calendar/provider (@Public). Unset = receiver not deployed (it 503s deliveries). Min 32 chars — the only gate on that public endpoint. */
     CALENDAR_PROVIDER_WEBHOOK_SECRET: z.preprocess(emptyToUndefined, z.string().min(32, "CALENDAR_PROVIDER_WEBHOOK_SECRET must be at least 32 characters — it is the only check on the public calendar webhook endpoint.").optional()),
     /** "1" re-arms live email under NODE_ENV=test, which is off by default so a suite cannot send real mail. Anything else, including unset, keeps the provider clients null. */

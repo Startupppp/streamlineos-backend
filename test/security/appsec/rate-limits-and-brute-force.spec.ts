@@ -55,7 +55,7 @@ function contextFor(options: { userId?: string; ip?: string; forwardedFor?: stri
     context: {
       getHandler: () => ({}),
       getClass: () => ({}),
-      switchToHttp: () => ({ getRequest: () => req, getResponse: () => res }),
+      switchToHttp: () => ({ getRequest: () => ({ ...req }), getResponse: () => res }),
     } as unknown as ExecutionContext,
   };
 }
@@ -139,7 +139,7 @@ describe("The dev multiplier must not mask the 429 a test asserts", () => {
   });
 
   it("exhausting effectiveRateLimit() does produce the 429, on every auth tier", async () => {
-    for (const tier of ["auth:login", "auth:mfa-verify", "auth:email-otp-verify", "auth:register"]) {
+    for (const tier of ["auth:login", "auth:mfa-verify", "auth:email-otp-verify", "auth:email-otp:email"]) {
       const svc = service();
       const limit = effectiveRateLimit(tier);
       expect(limit).toBeGreaterThan(0);
@@ -230,14 +230,13 @@ describe("Brute force and credential stuffing", () => {
     expect(await statusOf(guard, noHeaderAtAll.context)).toBe(HttpStatus.TOO_MANY_REQUESTS);
   });
 
-  it("no controller declares @UseRateLimit without also mounting RateLimitGuard — the decorator alone is inert", () => {
+  it("no controller's @UseRateLimit is inert: RateLimitGuard is mounted globally, so the decorator alone bites", () => {
     const decorated = SOURCE_FILES.filter((file) => /@UseRateLimit\(/.test(file.content));
     expect(decorated.length).toBeGreaterThanOrEqual(10);
 
-    const inert = decorated
-      .filter((file) => !/RateLimitGuard/.test(file.content))
-      .map((file) => file.path);
-    expect(inert).toEqual([]);
+    const appModule = readFileSync(resolve(BACKEND_ROOT, "src/app.module.ts"), "utf8");
+    const globalGuards = [...appModule.matchAll(/APP_GUARD,\s*useClass:\s*(\w+)/g)].map((match) => match[1]);
+    expect(globalGuards).toContain("RateLimitGuard");
   });
 
   it("the guard is a no-op only when a route declares no tier at all", async () => {
@@ -250,9 +249,10 @@ describe("Brute force and credential stuffing", () => {
     const declared = (tier: string): number => effectiveRateLimit(tier) / multiplier;
 
     expect(declared("auth:login")).toBeLessThanOrEqual(10);
-    expect(declared("auth:register")).toBeLessThanOrEqual(5);
+    expect(declared("auth:resend-verification")).toBeLessThanOrEqual(5);
     expect(declared("auth:magic-link")).toBeLessThanOrEqual(5);
-    expect(declared("auth:email-otp")).toBeLessThanOrEqual(5);
+    expect(declared("auth:email-otp:email")).toBeLessThanOrEqual(5);
+    expect(declared("auth:email-otp-verify:email")).toBeLessThanOrEqual(10);
     expect(declared("auth:mfa-verify")).toBeLessThanOrEqual(10);
     expect(declared("auth:mfa-disable")).toBeLessThanOrEqual(10);
   });

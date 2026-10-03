@@ -11,7 +11,7 @@ import { LeavePoliciesService } from "./leave-policies.service";
 import { LeavePolicyTemplatesService } from "./leave-policy-templates.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   leavePolicyRowSchema,
   leavePolicyTemplateDismissSchema,
@@ -53,6 +53,7 @@ export class LeavePoliciesController {
 
   @Post("templates/dismiss")
   @HttpCode(200)
+  @BodylessAction()
   @ResponseSchema(leavePolicyTemplateDismissSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")

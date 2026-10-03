@@ -25,7 +25,7 @@ import { keysetAfterValue } from "../../../../common/pagination/keyset";
 import { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { ticketScope } from "../lib/tickets-scope";
-import type { TicketsListQuery } from "../dto/projects.schemas";
+import type { TicketColumnCountsQuery, TicketsListQuery } from "../dto/projects.schemas";
 import { queryTickets } from "./projects-tickets-read.query";
 import { authorizeProjectTicketRead } from "../project-crud/project-access";
 import { ProjectAccessCache, getOrCreateRequestCache } from "../../reachability/project-access-cache";
@@ -375,7 +375,7 @@ export class ProjectsTicketsReadService {
   async getColumnCounts(
     u: CurrentUserContext,
     projectId: number,
-    query: TicketsListQuery = { limit: 50, orderBy: "rank" },
+    query: TicketColumnCountsQuery = {},
     cache: ProjectAccessCache = getOrCreateRequestCache(),
   ): Promise<Record<string, number>> {
     const read = await authorizeProjectTicketRead(this.db, this.access, u, projectId, cache);

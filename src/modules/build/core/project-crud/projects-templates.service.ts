@@ -101,9 +101,9 @@ export class ProjectsTemplatesService {
       .from(projectTemplates)
       .where(and(...conds))
       .orderBy(...orderBy)
-      .limit(PAGE_SIZE_CAP + 1);
+      .limit((query.limit ?? PAGE_SIZE_CAP) + 1);
 
-    const page = buildCursorPage(rows, PAGE_SIZE_CAP, (r) => {
+    const page = buildCursorPage(rows, query.limit ?? PAGE_SIZE_CAP, (r) => {
       if (sort === "name") return { sortValue: r.name, id: String(r.id) };
       return { sortValue: (r.createdAt ?? new Date(0)).toISOString(), id: String(r.id) };
     });

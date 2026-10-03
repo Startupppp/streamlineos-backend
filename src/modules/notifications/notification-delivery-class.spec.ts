@@ -145,7 +145,7 @@ function directEmailCallersOnDisk(): string[] {
         walk(p);
         continue;
       }
-      if (!p.endsWith(".ts") || p.endsWith(".spec.ts") || p.endsWith(".module.ts")) continue;
+      if (!p.endsWith(".ts") || p.endsWith(".spec.ts") || p.endsWith(".spec-fixtures.ts") || p.endsWith(".module.ts")) continue;
       const rel = relative(srcRoot, p).split(sep).join("/");
       if (rel.includes("/dto/") || rel.startsWith("modules/email/")) continue;
       if (rel.startsWith("modules/notifications/providers/")) continue;

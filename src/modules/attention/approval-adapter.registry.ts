@@ -9,13 +9,13 @@ export type ApprovalSourceAdapter = {
   readonly permission: string;
   readonly kindLabel: string;
   readonly supportsAfterCursor: boolean;
-  fetch(
+  fetch: (
     orgId: string,
     userId: string,
     membershipId: number | null,
     limit: number,
     cursor: InboxSourcePosition | null,
-  ): Promise<BuildApprovalInboxItem[]>;
+  ) => Promise<BuildApprovalInboxItem[]>;
 };
 
 export function approvalObjectKey(

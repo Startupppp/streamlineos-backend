@@ -38,6 +38,20 @@ function makeDb() {
   return { db, tx, txInsert };
 }
 
+function crmClientWrites(execute: jest.Mock): unknown[][] {
+  return execute.mock.calls
+    .map(([statement]) => (statement as { queryChunks: unknown[] }).queryChunks)
+    .filter((chunks) =>
+      chunks.some(
+        (chunk) =>
+          typeof chunk === "object" &&
+          chunk !== null &&
+          Array.isArray((chunk as { value?: unknown }).value) &&
+          (chunk as { value: string[] }).value.join("").includes("crm_client_id"),
+      ),
+    );
+}
+
 function makeSvc(db: Db) {
   return new ProjectsProvisionService(
     db,
@@ -47,28 +61,39 @@ function makeSvc(db: Db) {
   );
 }
 
-describe("ProjectsProvisionService.createProject — clientId membership resolution", () => {
-  it("passes the resolved clientMembershipId to the INSERT when clientId is provided", async () => {
-    const { db, txInsert } = makeDb();
+describe("ProjectsProvisionService.createProject — clientId is the CRM client id", () => {
+  it("records a numeric clientId as crm_client_id and no longer resolves it as a membership", async () => {
+    const { db, tx, txInsert } = makeDb();
     const svc = makeSvc(db);
 
-    await svc.createProject(ORG, CREATOR, { name: "Test Project", clientId: CLIENT_USER });
+    await svc.createProject(ORG, CREATOR, { name: "Test Project", clientId: "42" });
 
-    expect(txInsert.values).toHaveBeenCalled();
     const insertedRow = txInsert.values.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(insertedRow).toBeDefined();
-    expect(insertedRow["clientMembershipId"]).toBe(CLIENT_MEMBERSHIP_ID);
+    expect(insertedRow["clientMembershipId"]).toBeUndefined();
+    const writes = crmClientWrites(tx.execute);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain(42);
   });
 
-  it("leaves clientMembershipId undefined in the INSERT when clientId is not provided", async () => {
-    const { db, txInsert } = makeDb();
+  it("writes no crm_client_id when clientId is not provided", async () => {
+    const { db, tx, txInsert } = makeDb();
     const svc = makeSvc(db);
 
     await svc.createProject(ORG, CREATOR, { name: "Test Project" });
 
-    expect(txInsert.values).toHaveBeenCalled();
     const insertedRow = txInsert.values.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(insertedRow).toBeDefined();
     expect(insertedRow["clientMembershipId"]).toBeUndefined();
+    expect(crmClientWrites(tx.execute)).toEqual([]);
+  });
+
+  it("writes no crm_client_id for a clientId that is not a positive integer", async () => {
+    const { db, tx } = makeDb();
+    const svc = makeSvc(db);
+
+    await svc.createProject(ORG, CREATOR, { name: "Test Project", clientId: CLIENT_USER });
+
+    expect(crmClientWrites(tx.execute)).toEqual([]);
   });
 });

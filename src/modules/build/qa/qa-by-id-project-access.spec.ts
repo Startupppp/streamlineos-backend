@@ -6,7 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestManagementService } from "./test-management.service";
 import { TestRunsService } from "./test-runs.service";
 import type { BuildTicketCreationService } from "../core/tickets";
-import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double.spec-fixtures";
 import {
   MEMBER_STANDING,
   projectAccessRow,

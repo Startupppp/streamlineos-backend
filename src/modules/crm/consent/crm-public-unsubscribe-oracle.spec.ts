@@ -12,7 +12,7 @@ import {
   type ExecutionContext,
   type INestApplication,
 } from "@nestjs/common";
-import { APP_INTERCEPTOR } from "@nestjs/core";
+import { APP_INTERCEPTOR, DiscoveryModule } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import type { Request } from "express";
 import request from "supertest";
@@ -135,6 +135,7 @@ describe("POST /crm/consent/unsubscribe — no existence oracle", () => {
     process.env.ENCRYPTION_KEY = "u".repeat(64);
 
     const ref = await Test.createTestingModule({
+      imports: [DiscoveryModule],
       controllers: [CrmPublicConsentController, CrmConsentController],
       providers: [
         CrmConsentService,

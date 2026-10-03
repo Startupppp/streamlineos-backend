@@ -110,7 +110,6 @@ export const projectSortEnum = [
   "due_asc",
   "due_desc",
 ] as const;
-export type ProjectSort = (typeof projectSortEnum)[number];
 
 export const listProjectsSchema = z
   .object({

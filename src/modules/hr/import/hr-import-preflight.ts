@@ -196,7 +196,8 @@ async function resolveEmployees(db: Db, orgId: string, rows: Row[], fail: Fail) 
               isNull(orgUnits.deletedAt),
               inArray(orgUnits.id, departmentIds),
             ),
-          ),
+          )
+          .limit(departmentIds.length),
     membersByEmail(db, orgId, managerEmails),
     membersByEmail(db, orgId, emails),
     employeeNumbers.length === 0
@@ -275,7 +276,8 @@ async function resolveLeaveBalances(db: Db, orgId: string, rows: Row[], fail: Fa
       : db
           .select({ id: leaveTypes.id, name: leaveTypes.name })
           .from(leaveTypes)
-          .where(and(eq(leaveTypes.orgId, orgId), inArray(leaveTypes.name, typeNames))),
+          .where(and(eq(leaveTypes.orgId, orgId), inArray(leaveTypes.name, typeNames)))
+          .limit(typeNames.length),
   ]);
   const typeByName = new Map(types.map((type) => [type.name, type.id]));
 

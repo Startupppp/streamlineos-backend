@@ -26,6 +26,7 @@
   "GET /hr/enterprise/ops/identity/provisioning query userId",
   "GET /hr/expenses query userId",
   "GET /hr/expenses/page-data query userId",
+  "GET /hr/fnf/suggestion query userId",
   "GET /hr/governance/labor/memberships query userId",
   "GET /hr/helpdesk query userId",
   "GET /hr/onboarding-docs query userId",

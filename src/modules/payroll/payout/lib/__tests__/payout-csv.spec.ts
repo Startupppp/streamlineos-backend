@@ -14,7 +14,7 @@ describe("payout CSV cells", () => {
     expect(isSafeBankToken("")).toBe(true);
     expect(() =>
       csvRow("NEFT_CSV", 1, "Payee", injected, "HDFC0000001", "INR", 100, "Salary 2026-06"),
-    ).toThrow();
+    ).toThrow("Refusing to write a bank file cell outside [A-Za-z0-9 ]");
   });
 
   it("keeps a hostile payee name inside one row and one cell", () => {

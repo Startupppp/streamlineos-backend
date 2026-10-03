@@ -9,6 +9,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ApDocumentPdfService } from "./ap-document-pdf.service";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { documentIdParamSchema } from "../attachments/dto/attachments.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/payables/documents")
@@ -21,7 +23,7 @@ export class ApDocumentPdfController {
   @RequirePermission("accounting:payables:read")
   @ApiOkResponse({ description: "PDF document bytes", content: { "application/pdf": { schema: { type: "string", format: "binary" } } } })
   async render(
-    @Param("apDocumentId") apDocumentId: string,
+    @Param("apDocumentId", new ZodValidationPipe(documentIdParamSchema)) apDocumentId: string,
     @CurrentUser() user: CurrentUserContext,
     @Res() res: Response,
   ) {

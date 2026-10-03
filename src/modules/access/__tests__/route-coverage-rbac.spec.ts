@@ -14,10 +14,31 @@ import { isCoreModuleKey } from "../../../common/rbac/module-registry";
 import { namespaceOf } from "../../../common/rbac/module-vocabulary";
 import { PLATFORM_ONLY_PERMISSION_KEYS } from "../../../common/rbac/grantability";
 import { EMPLOYEE_SELF_SERVICE_GRANTS } from "../access-policy";
+import { simulateAccessResponseSchema } from "../../rbac/dto/roles-response.schemas";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+const REPO_ROOT = join(__dirname, "../../../..");
+const source = (rel: string): string => readFileSync(join(REPO_ROOT, rel), "utf8");
+const moduleGateAllowlist = (): Record<string, string> =>
+  JSON.parse(source(".module-gate-allowlist.json")) as Record<string, string>;
+
+function handlerBlock(file: string, routeDecorator: string): string {
+  const text = source(file);
+  const at = text.indexOf(routeDecorator);
+  expect(at).toBeGreaterThan(-1);
+  const start = text.lastIndexOf("\n\n", at);
+  const signature = /\n {2}(?:async\s+)?\w+\(/g;
+  signature.lastIndex = at;
+  const end = signature.exec(text)?.index ?? text.length;
+  return text.slice(start, end);
+}
 
 describe("route classification completeness", () => {
-  it("every in-scope RBAC route is classified; the scanner found 0 undeclared handlers on 2026-09-12", () => {
-    expect(true).toBe(true); // Classification is enforced at commit time by check:route-classification
+  it("every in-scope RBAC route is classified, because check:route-classification is a script CI runs", () => {
+    const scripts = (JSON.parse(source("package.json")) as { scripts: Record<string, string> }).scripts;
+    expect(scripts["check:route-classification"]).toBeDefined();
+    expect(source(".github/workflows/ci.yml")).toContain("run: pnpm check:route-classification");
   });
 });
 
@@ -83,37 +104,50 @@ describe("check-module-gate scanner findings — scanner blind spots vs live exp
     expect(isCoreModuleKey("self")).toBe(true); // unregistered → always available
   });
 
-  it("survey-public.controller.ts has handler-level @Public() — scanner cannot detect handler-level public, only class-level", () => {
-    // The scanner's isClassLevelPublic() regex only matches @Public() directly above 'export class'.
-    // Handlers with individual @Public() decorators do not suppress MISSING_GATE at the class level.
-    // This is a SCANNER BLIND SPOT for controllers with all handler-level @Public() routes.
-    // The scanner should suppress when all handlers are @Public() or the allowlist covers it.
-    expect(true).toBe(true); // documented structural fact; see check-module-gate.mjs:79-81
+  it("survey-public.controller.ts has handler-level @Public() on every route — the scanner sees only class-level, so the allowlist names it", () => {
+    const file = "src/modules/surveys/survey-public.controller.ts";
+    const text = source(file);
+    const routes = text.match(/^\s*@(?:Get|Post|Put|Patch|Delete)\(/gm) ?? [];
+    expect(routes.length).toBeGreaterThan(0);
+    expect(text.match(/^\s*@Public\(\)/gm) ?? []).toHaveLength(routes.length);
+    expect(moduleGateAllowlist()["modules/surveys/survey-public.controller.ts"]).toBeDefined();
   });
 
-  it("payroll/payout/publishing.controller.ts has handler-level @RequireModule — scanner only checks class-level", () => {
-    // The scanner's getClassLevelRequireModuleIds() only finds decorators directly above 'export class'.
-    // This controller has @RequireModule("payroll") on individual handlers, not the class.
-    // Every handler is gated; the controller-level finding is a SCANNER BLIND SPOT.
-    expect(true).toBe(true); // documented structural fact; see check-module-gate.mjs:83-93
+  it("payroll/payout/publishing.controller.ts has handler-level @RequireModule — scanner only checks class-level, so the allowlist names it", () => {
+    const text = source("src/modules/payroll/payout/publishing.controller.ts");
+    const payrollKeys = text.match(/@RequirePermission\("payroll:/g) ?? [];
+    expect(payrollKeys.length).toBeGreaterThan(0);
+    expect(text.match(/@RequireModule\("payroll"\)/g) ?? []).toHaveLength(payrollKeys.length);
+    expect(moduleGateAllowlist()["modules/payroll/payout/publishing.controller.ts"]).toBeDefined();
   });
 });
 
 describe("in-scope access / RBAC route coverage summary — key → guard → service check → SQL/record ACL", () => {
-  it("GET /me/access: @Universal → AccessService.resolveUserPermissions → returns the merged scope map; no SQL beyond the cache read", () => {
-    expect(true).toBe(true);
+  it("AccessService.resolveUserPermissions returns the merged scope map, which simulateAccess carries as `scopes`", () => {
+    const text = source("src/modules/rbac/roles.controller.ts");
+    const at = text.indexOf("async simulateAccess(");
+    expect(at).toBeGreaterThan(-1);
+    expect(text.slice(at, at + 600)).toContain("this.access.resolveUserPermissions(");
+    expect(Object.keys(simulateAccessResponseSchema.shape)).toContain("scopes");
   });
 
-  it("GET /module-access/:moduleKey: @AuthorizedInService → assertModuleAccessPolicy in AccessService → module_ownerships join", () => {
-    expect(true).toBe(true);
+  it("/module-access/:moduleKey/*: @AuthorizedInService → assertModuleAccessPolicy on ModuleAccessController", () => {
+    expect(source("src/modules/module-access/module-access.controller.ts")).toMatch(
+      /@AuthorizedInService\("assertModuleAccessPolicy"\)\s*export class ModuleAccessController/,
+    );
   });
 
-  it("PUT /module-access/:moduleKey/members/:membershipId/grants: @RequirePermission(module:access:manage) → PermissionGuard → assertPermissionsGrantable in service → user_permission_grants upsert", () => {
-    expect(true).toBe(true);
+  it("PUT /module-access/:moduleKey/members/:membershipId/grants: @AuthorizedInService → assertModuleAccessPolicy on UserPermissionGrantsController", () => {
+    const text = source("src/modules/module-access/user-permission-grants.controller.ts");
+    expect(text).toContain('@Controller("module-access/:moduleKey/members/:membershipId/grants")');
+    expect(text).toMatch(/@AuthorizedInService\("assertModuleAccessPolicy"\)\s*export class UserPermissionGrantsController/);
+    expect(text).toMatch(/@Put\(\)/);
   });
 
-  it("GET /roles/simulate/:targetUserId: @RequirePermission(settings:rbac:manage) → PermissionGuard → AccessPermissionResolver.computeUserPermissions for target → no write", () => {
-    expect(true).toBe(true);
+  it("GET /roles/simulate/:targetUserId: @RequirePermission(settings:rbac:manage) behind PermissionGuard", () => {
+    const block = handlerBlock("src/modules/rbac/roles.controller.ts", '@Get("simulate/:targetUserId")');
+    expect(block).toContain("@UseGuards(PermissionGuard)");
+    expect(block).toContain('@RequirePermission("settings:rbac:manage")');
   });
 
   it("platform-only keys (blog:posts:manage, billing:promotions:*) are never returned by allCatalogScopes() and therefore never granted to org owners", () => {

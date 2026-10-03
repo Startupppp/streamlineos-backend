@@ -191,9 +191,15 @@ describe("BSN-04-041 — portal routes cannot read internal sidebar or agent dat
     );
     const overviewFn = src.slice(
       src.indexOf("async getProjectOverview"),
-      src.indexOf("async listPortalChangeRequests"),
+      src.indexOf("async getPortalPreview"),
     );
-    const clientVisibleOccurrences = (overviewFn.match(/clientVisible.*true/g) ?? []).length;
+    expect(overviewFn).toContain("buildPortalProjection(");
+    const projection = readFileSync(
+      join(BACKEND_ROOT, "src/modules/build/client-portal/portal-projection.ts"),
+      "utf8",
+    );
+    const projectionFn = projection.slice(projection.indexOf("export async function buildPortalProjection"));
+    const clientVisibleOccurrences = (projectionFn.match(/clientVisible.*true/g) ?? []).length;
     expect(clientVisibleOccurrences).toBeGreaterThanOrEqual(3);
   });
 
@@ -286,7 +292,7 @@ describe("BSN-04-044 — portal user: only approved client-visible fields return
 
   it("the select columns for milestones in the overview do not include internal-only fields", () => {
     const src = readFileSync(
-      join(BACKEND_ROOT, "src/modules/build/client-portal/client-portal.service.ts"),
+      join(BACKEND_ROOT, "src/modules/build/client-portal/portal-projection.ts"),
       "utf8",
     );
     const milestonesBlock = src.slice(
@@ -300,7 +306,7 @@ describe("BSN-04-044 — portal user: only approved client-visible fields return
 
   it("tasks returned by the portal overview are filtered to clientVisible=true only", () => {
     const src = readFileSync(
-      join(BACKEND_ROOT, "src/modules/build/client-portal/client-portal.service.ts"),
+      join(BACKEND_ROOT, "src/modules/build/client-portal/portal-projection.ts"),
       "utf8",
     );
     const tasksBlock = src.slice(
@@ -312,7 +318,7 @@ describe("BSN-04-044 — portal user: only approved client-visible fields return
 
   it("comments returned by the portal overview expose only body, authorName and createdAt — no internal fields", () => {
     const src = readFileSync(
-      join(BACKEND_ROOT, "src/modules/build/client-portal/client-portal.service.ts"),
+      join(BACKEND_ROOT, "src/modules/build/client-portal/portal-projection.ts"),
       "utf8",
     );
     const commentBlock = src.slice(

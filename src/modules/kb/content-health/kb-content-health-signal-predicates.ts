@@ -13,15 +13,10 @@ export const IMPACT_SQL = sql<number>`LEAST(100,
 )`;
 
 export function impactKeysetAfterAnchor(orgId: string, afterId: number): SQL {
-  const anchorImpact = sql`(SELECT ${IMPACT_SQL} FROM ${kbPages} WHERE ${kbPages.orgId} = ${sql.param(
+  return sql`(${IMPACT_SQL}, -${kbPages.id}) < ((SELECT ${IMPACT_SQL} FROM ${kbPages} WHERE ${kbPages.orgId} = ${sql.param(
     orgId,
     kbPages.orgId,
-  )} AND ${kbPages.id} = ${sql.param(afterId, kbPages.id)})`;
-
-  return sql`(${IMPACT_SQL}, -${kbPages.id}) < (${anchorImpact}, -${sql.param(
-    afterId,
-    kbPages.id,
-  )}::int)`;
+  )} AND ${kbPages.id} = ${sql.param(afterId, kbPages.id)}), -${sql.param(afterId, kbPages.id)}::int)`;
 }
 
 export const PAGE_BASE_COLUMNS = {

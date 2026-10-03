@@ -1,3 +1,21 @@
+const mockTx: { depth: number; orgIds: (string | undefined)[] } = { depth: 0, orgIds: [] };
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: async (
+    db: unknown,
+    fn: (tx: unknown) => Promise<unknown>,
+    explicit?: { orgId: string },
+  ) => {
+    mockTx.orgIds.push(explicit?.orgId);
+    mockTx.depth += 1;
+    try {
+      return await fn(db);
+    } finally {
+      mockTx.depth -= 1;
+    }
+  },
+}));
+
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
@@ -112,6 +130,39 @@ describe("a soft-deleted page takes its derived chunks out of the index", () => 
     const rendered = renderWhere(deletes[0]);
     expect(rendered).toContain(`"attachment_id"`);
     expect(rendered).toContain(`"org_id"`);
+  });
+
+  it("issues the attachment read and the chunk delete inside a tenant transaction for the attachment's org, because the support reindex route calls it with no request transaction and kb_page_attachments' policy raises 42501 without the GUC", async () => {
+    const depths: number[] = [];
+    const selectChain: Record<string, unknown> = {
+      from: () => selectChain,
+      leftJoin: () => selectChain,
+      where: () => selectChain,
+      limit: async () => {
+        depths.push(mockTx.depth);
+        return [liveRow({ pageDeletedAt: new Date("2026-01-01T00:00:00Z") })];
+      },
+    };
+    const db = {
+      select: () => selectChain,
+      delete: () => ({
+        where: async () => {
+          depths.push(mockTx.depth);
+        },
+      }),
+    } as unknown as Db;
+    const service = new KbAttachmentIndexingService(
+      db,
+      stubService<AiGatewayService>({ isEmbeddingConfigured: jest.fn().mockReturnValue(true) }),
+      stubService<StorageService>({}),
+      stubService<KbIngestionCheckpointService>({}),
+    );
+    mockTx.orgIds.length = 0;
+
+    await service.indexAttachment(ORG, ATTACHMENT_ID);
+
+    expect(depths).toEqual([1, 1]);
+    expect(mockTx.orgIds).toEqual([ORG, ORG]);
   });
 
   it("filters deleted_at when indexPageDocument resolves the parent page, so an upload cannot re-index a page that was soft-deleted mid-flight", async () => {

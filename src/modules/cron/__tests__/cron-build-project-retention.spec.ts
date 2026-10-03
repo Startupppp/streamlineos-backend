@@ -58,6 +58,7 @@ function makeTx(opts: TxOptions): TxLog {
   let ticketBatchIdx = 0;
   let attachmentBatchIdx = 0;
   let pendingPurgeIdx = 0;
+  let servedStorageKeys: string[] = [];
   let settingsServed = false;
 
   function rowsFor(table: unknown, where: SQL | null): unknown[] {
@@ -75,10 +76,15 @@ function makeTx(opts: TxOptions): TxLog {
     if (table === projectAttachments) {
       if (opts.attachmentBatches === undefined)
         return [{ pending: opts.attachmentCount ?? 0 }];
-      return opts.attachmentBatches[attachmentBatchIdx++] ?? [];
+      const batch = opts.attachmentBatches[attachmentBatchIdx++] ?? [];
+      servedStorageKeys = [...new Set(batch.map((row) => row.storageKey))];
+      return batch;
     }
     if (table === storagePendingPurge)
-      return [{ id: `pending-purge-${++pendingPurgeIdx}` }];
+      return servedStorageKeys.map((storageKey) => ({
+        id: `pending-purge-${++pendingPurgeIdx}`,
+        storageKey,
+      }));
     return [];
   }
 

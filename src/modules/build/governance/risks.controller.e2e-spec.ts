@@ -12,7 +12,6 @@ const risksSvc = {
   getRisk: jest.fn(),
   createRisk: jest.fn(),
   updateRisk: jest.fn(),
-  deleteRisk: jest.fn(),
 };
 
 const decisionsSvc = {
@@ -20,7 +19,6 @@ const decisionsSvc = {
   getDecision: jest.fn(),
   createDecision: jest.fn(),
   updateDecision: jest.fn(),
-  deleteDecision: jest.fn(),
 };
 
 describe("ProjectsGovernance risks+decisions auth/RBAC (e2e)", () => {

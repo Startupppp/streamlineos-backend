@@ -257,6 +257,98 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "src/modules/inventory/ai/reports/inv-report-builder.controller.ts#ask",
     "the natural-language report builder's ask route, and the only one of the four whose provider call sits in the MIDDLE of the work rather than at the end — so it gets a short transaction on each side of it and none across it. InvReportBuilderService.choose awaits AiGatewayService.invokeStructuredWithUsage to turn the question into an allowlisted report spec. Transaction one carries WarehouseScopeService.assertWarehouseVisible, the 404-not-403 check on a warehouse the ASKER named, and commits before the model call — it runs first so an out-of-scope warehouse ends the request with no credits spent and no confirmation that the warehouse exists. Transaction two is opened AFTER the call returns and carries everything left: scopeSpec's WarehouseScopeService.resolve (which strips a warehouse the MODEL proposed and reports the strip), both AccessService.holds checks, and definition.run itself. Those four are ONE transaction rather than four on purpose, so the view-permission check and the rows it guards cannot be answered from two different snapshots. The other two routes on this controller keep the request transaction and are correct to: catalog is static with no provider and no database, and export has no model in its path, which is what keeps its permission assertions atomic with the report run. The service gained an injected DRIZZLE handle and queries nothing through it directly",
   ],
+  [
+    "src/modules/support/core/support-ai.controller.ts#analyze,findDuplicates,suggestKbArticles,suggestReply,suggestMacro,translateMessage,generateHandoffSummary,findRootCauseCluster,improveReply,translateDraft",
+    "the ten support ticket AI actions, fixed by 3782ec03f and 4c6c746b4 and audited 2026-10-03; their PRE-EXISTING, UNAUDITED entry in PROVIDER_IN_TRANSACTION_ALLOWLIST is deleted. Each is three-phase across SupportAiTriageService, SupportAiTriageAnalysisService and SupportAiTranslationService: the org-filtered ticket read (getTicketOrThrow, 404 on a miss), the availability check and the thread/macro reads share one short runInTenantTransaction(db, fn, { orgId }) that commits before any provider call; the invoke* call and every embedding run in no transaction, because SupportAiTriageDataService.searchKbForTicket and SupportAiEmbeddingsHelper.upsertAndSearchSimilar are themselves split into read, embedQueryWithCredit, then a second short transaction for the vector query; the suggestion writes open their own. The translation trio writes nothing after the call. PlanLimitsService.assertFeature reads the tier through the cache and its own runInTenantTransaction, and permission is decided by PermissionGuard before any of it",
+  ],
+  [
+    "src/modules/support/core/support-kb-engagement.controller.ts#askQuestion,reindexArticle,reindexAll",
+    "audited 2026-10-03; their PRE-EXISTING, UNAUDITED entry in PROVIDER_IN_TRANSACTION_ALLOWLIST is deleted. askQuestion is KbAskService.ask, the same three short tenant transactions around the provider call as kb-ask.controller's entry above. reindexArticle and reindexAll (382ffbcce) are KbArticleReindexService: the article listing, the existence check, the attachment listing and the chunk count each open their own runInTenantTransaction, and indexArticle -> indexPage and its chunk-repository helpers open theirs, so no transaction spans an embedding. The attachment half did NOT hold until 2026-10-03: KbAttachmentIndexingService.indexAttachment issued bare this.db statements, which under this decorator reached the pool with no GUC and 42501'd against kb_page_attachments' raising policy (1044) for every article with an attachment. Each of its statements now opens runInTenantTransaction(db, fn, { orgId }), which reuses the ambient transaction on the ingestion-consumer path so that caller is unchanged; pinned by kb-deleted-page-deindex.spec.ts",
+  ],
+  [
+    "src/modules/support/kb-gap/support-kb-gap.controller.ts#proposeDraft",
+    "audited 2026-10-03: SupportKbGapService.proposeDraft reads the gap, the actor's membership, the target space and the KB owners in one runInTenantTransaction(db, fn, { orgId }) that commits before invokeStructuredWithUsage, then writes the draft in a second that re-asserts the actor through assertOrganizationActor before the update; nothing between the two touches the database",
+  ],
+  [
+    "src/modules/mail/mail.controller.ts#aiThreadSummary,aiDraft",
+    "fixed by 4c6c746b4 (mail-ai-connection-hold.spec.ts) and audited 2026-10-03; they are trimmed out of the PROVIDER_IN_TRANSACTION_ALLOWLIST entry, where aiInboxSummary still keeps the request transaction. MailAiService.threadSummary and draft read the thread inside runInTenantTransaction(db, fn, { orgId }) and call gateway.invokeStructured after it commits; nothing is written afterwards. RECORDED RATHER THAN PAPERED OVER: that read is MailService.getThread, which runs assertOwnedConnection AND fetches the thread from Gmail or Outlook through Composio, so the short transaction still spans a third-party round trip. It no longer spans the model call, which is the longer of the two, but it is the same defect class and the fix belongs in MailService.getThread: the ownership read in a transaction, the provider fetch outside it",
+  ],
+  [
+    "src/modules/hr/config/hr-email-templates.controller.ts#generateAi",
+    "fixed by 4c6c746b4 (hr-email-templates-connection-hold.spec.ts) and audited 2026-10-03; its PRE-EXISTING, UNAUDITED provider entry is deleted. HrEmailTemplatesService.generateWithAi builds the prompt from the request body alone and calls gateway.invokeStructured, so the route touches no tenant table at all; the gateway's credit reservation and usage log pass an explicit orgId",
+  ],
+  [
+    "src/modules/hr/recruitment/recruitment-candidate-records.controller.ts#aiScore,compositeScore,resumeParse",
+    "fixed by 4c6c746b4 (recruitment-candidate-ai-connection-hold.spec.ts) and audited 2026-10-03; their PRE-EXISTING, UNAUDITED provider entry is deleted. RecruitmentCandidateAiService reads the candidate (and for scoring its application) org-filtered, 404 on a miss, in a runInTenantTransaction(db, fn, { orgId }) that commits before gateway.invokeStructured, and writes the score or the candidate_resumes upsert in a second. parseResume takes the text from the request or the in-memory upload, never the object store",
+  ],
+  [
+    "src/modules/build/comment-drafts/comment-drafts.controller.ts#generateDraft",
+    "fixed by 4c6c746b4 (comment-drafts-connection-hold.spec.ts) and audited 2026-10-03: CommentDraftGeneratorService.generate refuses a caller with no acting membership (403), reads the ticket and its comments in one runInTenantTransaction(db, fn, { orgId }) that commits before invokeStructuredWithUsage, and stores the draft through upsertGenerated in a second",
+  ],
+  [
+    "src/modules/chat/chat-summarize.controller.ts#summarize",
+    "fixed by 4c6c746b4 (chat-summarize-connection-hold.spec.ts) and audited 2026-10-03: ChatSummarizeService.summarize runs assertChannelMember, assertEntityAccess and the message read in one runInTenantTransaction(db, fn, { orgId }) that commits before invokeText, and writes nothing afterwards",
+  ],
+  [
+    "src/modules/inventory/ai/inv-ai-explain.controller.ts#explainInsight,getDigest,getReorderProposal,getSupplierDelayBriefing",
+    "the controller's other four routes, now the same shape as narrateOpsBrief above and audited 2026-10-03; the narrateOpsBrief reason still describes them as keeping the request transaction, which stopped being true when they were decorated, and their PRE-EXISTING, UNAUDITED provider entry is deleted. explainInsight, getDigest and getSupplierDelayBriefing read through readEvidence / runInTenantTransaction(db, fn, { orgId }), which commits before the invoke* call, and nothing after it touches the database. getReorderProposal is InvAiProposalService.propose: ForecastPersistenceService.latest and PoBatchService.proposalById each open their own transaction before invokeStructuredWithUsage, and AiConfirmationService.propose writes the confirmable proposal in its own afterwards (inv-ai-reorder-connection-hold.spec.ts). AiRequestAbortInterceptor is already on the class",
+  ],
+  [
+    "src/modules/payroll/insights/payroll-ai-explain.controller.ts#explainPayslip",
+    "the buffered sibling of streamExplainPayslip above, audited 2026-10-03; its PRE-EXISTING, UNAUDITED provider entry is deleted. PayrollAiExplainService.explainPayslip reads the evidence in runInTenantTransaction(db, fn, { orgId }), which commits before invokeTextWithUsage, and writes nothing afterwards; AiRequestAbortInterceptor is on the handler",
+  ],
+  [
+    "src/modules/kb/wiki/kb-media.controller.ts#upload",
+    "audited 2026-10-03; its PRE-EXISTING, UNAUDITED provider entry is deleted. KbMediaService.upload runs assertPageVisible in a runInTenantTransaction(db, fn, { orgId }) when a page is named, then the AV scan, the sharp transform and the object-store put in no transaction, then recordAttachment in a second. Page-document indexing, the embedding the provider entry named, is registerAfterCommit'd inside that second transaction, so it runs after commit in its own runInNewTenantTransaction and never on the request's connection",
+  ],
+  [
+    "src/modules/kb/wiki/kb-sources.controller.ts#upload,createNote",
+    "audited 2026-10-03 (382ffbcce, kb-sources-note-connection-release.spec.ts); their PRE-EXISTING, UNAUDITED provider entry is deleted. KbSourcesService.createFile puts the object in no transaction; both routes then reserve quota, insert the kb_sources row and emit kb.content.index in one runInTenantTransaction(db, fn, { orgId }), and the extraction and embedding are registerAfterCommit'd so they run after commit in their own transaction, off the request",
+  ],
+  [
+    "src/modules/kb/retrieval/kb-search.controller.ts#searchArticles,searchPages",
+    "audited 2026-10-03. Neither route calls a provider: both are keyword searches. They are decorated (acee0b7a5, kb-search-connection-release.spec.ts) so the request borrows a connection only for the database window: ScopedRead.for resolves through AccessService, which opens its own explicit tenant transaction behind a cache; KbSearchService.search and KbPageSearchQueryService.search each wrap every statement in one runInTenantTransaction(db, fn, { orgId }); the page search's empty-tsquery early return borrows nothing; and the kb_events search telemetry is recordDetached, so it registers after commit rather than writing inside a GET",
+  ],
+  [
+    "src/modules/kb/help-centre/kb-from-ticket.controller.ts#draftFromTicket",
+    "audited 2026-10-03: KbFromTicketService.draftFromTicket reads the ticket content in runInTenantTransaction(db, fn, { orgId }), which commits before invokeStructuredWithUsage, and creates the article and records ticket_deflected in a second",
+  ],
+  [
+    "src/modules/kb/wiki/kb-import-export.controller.ts#exportPage",
+    "audited 2026-10-03: KbExportService.exportPage runs assertPageAccess and the page read in one runInTenantTransaction(db, fn, { orgId }), puts the rendered file in the object store in no transaction, and inserts the kb_export_jobs row in a second; the audit entry goes through AuditService, which opens its own",
+  ],
+  [
+    "src/modules/storage/storage.controller.ts#upload,download,image",
+    "audited 2026-10-03. upload: assertUploadAllowed and both quota reads share a first runInTenantTransaction(db, fn, { orgId }), the AV scan runs in none, planUpload and quarantine.begin share a second, and the compress-and-put is handed to MediaTransformRunner, whose publish and retract each open runInNewTenantTransaction (the CONTEXT_EXIT_ALLOWLIST entry for this file covers those exits). download and image run assertKeyReadable, the quarantine and knowledge-ACL check, in one runInTenantTransaction and then pipe the object to the client in no transaction, so a slow client never pins a pooled connection for the length of a download",
+  ],
+  [
+    "src/modules/storage/storage-onboarding.controller.ts#upload",
+    "audited 2026-10-03: the AV scan and planUpload (whose placement lookup is the control-plane read allowlisted under placement-lookup.ts) run in no transaction, the documents insert and the onboarding_steps upsert share one runInTenantTransaction(db, fn, { orgId }), and compression and the object put are handed to MediaTransformRunner, which touches no table",
+  ],
+  [
+    "src/modules/notifications/notifications.controller.ts#generateStreamToken",
+    "the stream-token mint that pairs with the stream entry above: NotificationEventService.generateToken writes a random token into its in-process Map and nothing else, so the route has no database access and no reason to borrow a connection",
+  ],
+  [
+    "src/modules/chat/chat-link-preview.controller.ts#preview",
+    "no database access at all: checkWebhookUrl resolves the user-supplied URL through ssrf-guard and the handler then fetches it with a 4s timeout, so the decorator only stops the interceptor holding a pooled connection for the length of a third-party page load",
+  ],
+  [
+    "src/modules/ingress/adapters/crm-mailbox.controller.ts#sync,sweepAll",
+    "audited 2026-10-03 (crm-mailbox-connection-hold.spec.ts). CrmMailboxService.sync decides in one runInTenantTransaction(db, fn, { orgId }), fetches from Gmail or Outlook through Composio in none, and records the sweep or the failure stamp in a second. sweepAll's mailbox listing was a bare this.db read and therefore reached the pool with no GUC against crm_mailbox_sync's raising policy (0231) — every POST /crm-mailbox/sync answered 500. It now opens its own runInTenantTransaction before looping over sync, pinned by the same spec",
+  ],
+  [
+    "src/modules/billing/core/billing.controller.ts#checkout,purchaseAddon",
+    "fixed by 10806e5aa and 3c30139b4, audited 2026-10-03. checkout: billing-order-creation opens its own runInNewTenantTransaction for the coupon reservation, the purchase intent and the claim, with provider.createOrder between them and abandonIntent / releaseReservation as compensation; under the request transaction those collapsed into savepoints and the connection was held for the whole 10s provider budget. purchaseAddon reads ai_credit_packs, a platform table with no org_id and no RLS policy, and then calls the platform merchant's createOrder, writing nothing afterwards",
+  ],
+  [
+    "src/modules/billing/core/billing-marketplace.controller.ts#purchaseAiCredits",
+    "audited 2026-10-03 (ai-credits-purchase-connection-hold.spec.ts): PaymentProviderResolverService.resolveConfigured reads payment_providers in its own runInTenantTransaction, signature verification is local, and the two outcomes are either AiCreditsService.purchaseCreditsInTenantTransaction, one short transaction, or the purchaseAddon path in the billing.controller entry above, which calls the payment provider with no transaction open",
+  ],
+  [
+    "src/modules/accounting/compliance/compliance.controller.ts#submitDocument",
+    "fixed by 4d61f90c9 (compliance-filing-connection-hold.spec.ts), audited 2026-10-03: ComplianceService.fileDocument reads the posted document in one runInNewTenantTransaction, makes the IRP round trip (up to 15s) through the transport adapter in none, and records the result in a second; gl_books and gl_document_compliance are RLS-enabled with the raising policy, so the explicit transactions are what keep every statement scoped",
+  ],
 ]);
 
 export const CONTEXT_EXIT_ALLOWLIST = new Map([
@@ -301,8 +393,12 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "exits the tenant context to count remaining active memberships across other organizations after revocation; a tenant-scoped GUC would restrict visibility to only the current org and produce an incorrect zero count",
   ],
   [
-    "src/modules/organization/core/org-membership-status.service.ts",
-    "planLastActiveOrganizationChange exits the tenant context to query the user's active memberships across all organizations when computing the new lastActiveOrgId after suspension or reactivation; a tenant-scoped GUC would restrict the query to only the current org",
+    "src/modules/organization/core/org-membership-last-active-org.ts",
+    "planLastActiveOrganizationChange, extracted from org-membership-status.service.ts with this exit unchanged, exits the tenant context to query the user's active memberships across all organizations when computing the new lastActiveOrgId after suspension or reactivation; a tenant-scoped GUC would restrict the query to only the current org",
+  ],
+  [
+    "src/modules/hr/automations/hr-webhooks.service.ts",
+    "detached HR webhook delivery, the same cure as webhooks-dispatch three entries below and fixed by f1915defd: testSubscription and redeliver fire attemptDelivery with void, so by the time fetch returns the request transaction has committed and its connection is back in the pool, and the delivery-status write resolved onto that dead handle through the tenant proxy — a delivered webhook was never stamped and the retry sweep sent it again. detachDelivery exits the ambient context so attemptDelivery's two status writes each open their own runInNewTenantTransaction(this.db, orgId) from the orgId they are handed; the outbound fetch runs in no transaction at all",
   ],
   // The three below are one class, and they are the CURE rather than the disease.
   //
@@ -393,15 +489,15 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
     "registration projects the new membership into account_organization_index before any org is current, so it necessarily precedes a tenant context, and the table is keyed and policed by user, not org",
   ],
   [
-    "src/modules/organization/core/invitation-acceptance.service.ts",
-    "an accepted invitation upserts the acceptor's row into the same user-policed discovery projection; the row may not exist yet, which is why this is an upsert rather than the service's touchLastActivated update",
+    "src/modules/organization/core/invitation-acceptance-projection.ts",
+    "an accepted invitation upserts the acceptor's row into the same user-policed discovery projection; the row may not exist yet, which is why this is an upsert rather than a touchLastActivated update. Extracted from invitation-acceptance.service.ts: touchIndexLastActivated runs on the public accept route after the membership commits, so there is no ambient GUC, and its preceding read of the organization and the acceptor's own membership row goes through withIdentity too because that is the only helper that sets the app.user_id the organization_members policy admits on",
   ],
   [
     "src/modules/organization/core/org-membership-access-revocation.ts",
     "reads organizationMembers cross-org under user identity to determine whether the removed member has other active organizations; must run outside any single org's tenant context",
   ],
   [
-    "src/modules/organization/core/org-membership-status.service.ts",
+    "src/modules/organization/core/org-membership-last-active-org.ts",
     "planLastActiveOrganizationChange reads cross-org membership under user identity to determine which organization should become the user's new lastActiveOrgId after suspension or reactivation; must not run under any single org's tenant context",
   ],
 ]);
@@ -495,40 +591,12 @@ export const PROVIDER_IN_TRANSACTION_ALLOWLIST = new Map([
     "PRE-EXISTING, UNAUDITED — analyzeSubmission -> FeedbucketAiService.analyze -> FeedbucketAiService.runVisionAnalysis -> AiGatewayService.invokeStructuredWithImageWithUsage; createTicketFromAnalysis -> FeedbucketAiService.createTicketFromAnalysis -> FeedbucketAiService.analyze -> FeedbucketAiService.runVisionAnalysis -> AiGatewayService.invokeStructuredWithImageWithUsage",
   ],
   [
-    "src/modules/hr/config/hr-email-templates.controller.ts#generateAi",
-    "PRE-EXISTING, UNAUDITED — generateAi -> HrEmailTemplatesService.generateWithAi -> AiGatewayService.invokeStructured",
-  ],
-  [
     "src/modules/hr/directory/employees.controller.ts#onboard",
     "PRE-EXISTING, UNAUDITED — onboard -> EmployeeOnboardingService.onboardEmployee -> AutomationService.runAutomationsForEvent -> AutomationService.runRule -> AutomationService.executeAction -> AiNodeExecutorService.executeNode -> AiGatewayService.invokeStructured",
   ],
   [
-    "src/modules/hr/recruitment/recruitment-candidate-records.controller.ts#resumeParse,aiScore,compositeScore",
-    "PRE-EXISTING, UNAUDITED — resumeParse -> RecruitmentCandidateAiService.parseResume -> RecruitmentCandidateAiService.parseResumeText -> AiGatewayService.invokeStructured; aiScore -> RecruitmentCandidateAiService.aiScore -> AiGatewayService.invokeStructured; compositeScore -> RecruitmentCandidateAiService.compositeScore -> AiGatewayService.invokeStructured",
-  ],
-  [
     "src/modules/hr/recruitment/recruitment-candidates.controller.ts#moveStage,updateBgvStatus",
     "PRE-EXISTING, UNAUDITED — moveStage -> RecruitmentCandidatesService.moveStage -> AutomationService.runAutomationsForEvent -> AutomationService.runRule -> AutomationService.executeAction -> AiNodeExecutorService.executeNode -> AiGatewayService.invokeStructured; updateBgvStatus -> RecruitmentCandidateOpsService.updateBgvStatus -> AutomationService.runAutomationsForEvent -> AutomationService.runRule -> AutomationService.executeAction -> AiNodeExecutorService.executeNode -> AiGatewayService.invokeStructured",
-  ],
-  [
-    "src/modules/inventory/ai/inv-ai-explain.controller.ts#explainInsight,getDigest,getReorderProposal,getSupplierDelayBriefing",
-    "PRE-EXISTING, UNAUDITED — explainInsight -> InvAiExplainService.explainInsight -> AiGatewayService.invokeStructured; getDigest -> InvAiExplainService.getDigest -> AiGatewayService.invokeText; getReorderProposal -> InvAiExplainService.getReorderProposal -> AiGatewayService.invokeStructured; getSupplierDelayBriefing -> InvAiExplainService.getSupplierDelayBriefing -> AiGatewayService.invokeText",
-  ],
-  [
-    "src/modules/kb/help-centre/kb-authoring.controller.ts#draft,improve,summarize",
-    "PRE-EXISTING, UNAUDITED — draft -> KbAuthoringService.draft -> KbAuthoringService.run -> AiGatewayService.invokeTextWithUsage; improve -> KbAuthoringService.improve -> KbAuthoringService.run -> AiGatewayService.invokeTextWithUsage; summarize -> KbAuthoringService.summarize -> KbAuthoringService.run -> AiGatewayService.invokeTextWithUsage",
-  ],
-  [
-    "src/modules/kb/retrieval/kb-ask.controller.ts#askQuestion",
-    "PRE-EXISTING, UNAUDITED — askQuestion -> KbAskService.ask -> AiGatewayService.invokeTextWithUsage",
-  ],
-  [
-    "src/modules/kb/wiki/kb-media.controller.ts#upload",
-    "PRE-EXISTING, UNAUDITED — upload -> KbMediaService.upload -> KbAttachmentIndexingService.indexPageDocument -> KbAttachmentIndexingService.embedInBatches -> AiGatewayService.embedBatchWithCredit",
-  ],
-  [
-    "src/modules/kb/wiki/kb-sources.controller.ts#upload,createNote",
-    "PRE-EXISTING, UNAUDITED — upload -> KbSourcesService.createFile -> KbSourcesService.processFile -> KbSourcesService.processText -> KbAttachmentIndexingService.indexSource -> KbAttachmentIndexingService.embedInBatches -> AiGatewayService.embedBatchWithCredit; createNote -> KbSourcesService.createNote -> KbSourcesService.processText -> KbAttachmentIndexingService.indexSource -> KbAttachmentIndexingService.embedInBatches -> AiGatewayService.embedBatchWithCredit",
   ],
   [
     "src/modules/leads/leads-detail.controller.ts#assign",
@@ -539,24 +607,12 @@ export const PROVIDER_IN_TRANSACTION_ALLOWLIST = new Map([
     "PRE-EXISTING, UNAUDITED — update -> LeadsService.update -> AutomationService.runAutomationsForEvent -> AutomationService.runRule -> AutomationService.executeAction -> AiNodeExecutorService.executeNode -> AiGatewayService.invokeStructured; create -> LeadsService.create -> AutomationService.runAutomationsForEvent -> AutomationService.runRule -> AutomationService.executeAction -> AiNodeExecutorService.executeNode -> AiGatewayService.invokeStructured",
   ],
   [
-    "src/modules/mail/mail.controller.ts#aiInboxSummary,aiThreadSummary,aiDraft",
-    "PRE-EXISTING, UNAUDITED — aiInboxSummary -> MailAiService.inboxSummary -> AiGatewayService.invokeStructuredWithUsage; aiThreadSummary -> MailAiService.threadSummary -> AiGatewayService.invokeStructured; aiDraft -> MailAiService.draft -> AiGatewayService.invokeStructured",
-  ],
-  [
-    "src/modules/payroll/insights/payroll-ai-explain.controller.ts#explainPayslip",
-    "PRE-EXISTING, UNAUDITED — explainPayslip -> PayrollAiExplainService.explainPayslip -> AiGatewayService.invokeTextWithUsage",
-  ],
-  [
-    "src/modules/support/core/support-ai.controller.ts#findDuplicates,suggestKbArticles,suggestReply,suggestMacro,translateMessage,generateHandoffSummary,findRootCauseCluster,improveReply,translateDraft,analyze",
-    "PRE-EXISTING, UNAUDITED — findDuplicates -> SupportAiService.findDuplicates -> SupportAiTriageAnalysisService.findDuplicates -> SupportAiEmbeddingsHelper.upsertAndSearchSimilar -> AiGatewayService.embedQueryWithCredit; suggestKbArticles -> SupportAiService.suggestKbArticles -> SupportAiTriageService.suggestKbArticles -> SupportAiTriageDataService.searchKbForTicket -> AiGatewayService.embedQueryWithCredit; suggestReply -> SupportAiService.suggestReply -> SupportAiTriageService.suggestReply -> AiGatewayService.invokeText; suggestMacro -> SupportAiService.suggestMacro -> SupportAiTriageService.suggestMacro -> AiGatewayService.invokeStructured; translateMessage -> SupportAiService.translateMessage -> SupportAiTranslationService.translateMessage -> AiGatewayService.invokeStructured; generateHandoffSummary -> SupportAiService.generateHandoffSummary -> SupportAiTriageService.generateHandoffSummary -> AiGatewayService.invokeStructured; findRootCauseCluster -> SupportAiService.findRootCauseCluster -> SupportAiTriageAnalysisService.findRootCauseCluster -> AiGatewayService.invokeStructured; improveReply -> SupportAiService.improveReply -> SupportAiTranslationService.improveReply -> AiGatewayService.invokeStructured; translateDraft -> SupportAiService.translateDraft -> SupportAiTranslationService.translateDraft -> AiGatewayService.invokeStructured; analyze -> SupportAiService.analyzeTicket -> SupportAiTriageAnalysisService.analyzeTicket -> AiGatewayService.invokeStructured",
+    "src/modules/mail/mail.controller.ts#aiInboxSummary",
+    "PRE-EXISTING, UNAUDITED — aiInboxSummary -> MailAiService.inboxSummary -> AiGatewayService.invokeStructuredWithUsage",
   ],
   [
     "src/modules/support/core/support-automations.controller.ts#testAutomation",
     "PRE-EXISTING, UNAUDITED — testAutomation -> AutomationService.testRule -> AutomationService.runRule -> AutomationService.executeAction -> AiNodeExecutorService.executeNode -> AiGatewayService.invokeStructured",
-  ],
-  [
-    "src/modules/support/core/support-kb-engagement.controller.ts#askQuestion,reindexArticle,reindexAll",
-    "PRE-EXISTING, UNAUDITED — askQuestion -> KbAskService.ask -> AiGatewayService.invokeTextWithUsage; reindexArticle -> KbArticleReindexService.reindexArticle -> KbAttachmentIndexingService.indexAttachment -> KbAttachmentIndexingService.embedInBatches -> AiGatewayService.embedBatchWithCredit; reindexAll -> KbArticleReindexService.reindexAll -> KbArticleReindexService.reindexArticle -> KbAttachmentIndexingService.indexAttachment -> KbAttachmentIndexingService.embedInBatches -> AiGatewayService.embedBatchWithCredit",
   ],
 ]);
 

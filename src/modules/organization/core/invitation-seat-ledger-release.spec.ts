@@ -21,7 +21,7 @@ function buildLifecycleService(recordSeatEvents: jest.Mock) {
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       users: { findFirst: jest.fn().mockResolvedValue(null) },
     },
-    transaction: jest.fn(),
+    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
   };
   return new InvitationLifecycleService(
     db as never,

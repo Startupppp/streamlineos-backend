@@ -137,8 +137,6 @@ const ACCEPTED = [
   { site: "modules/kb/core/kb-subject-erasure.ts::kbSources", reason: "erasure deliberately sweeps deleted rows (report 06); moved out of modules/gdpr by 1d7062fec" },
   { site: "modules/kb/core/kb-subject-erasure.ts::kbPages", reason: "erasure deliberately sweeps deleted rows (report 06); moved out of modules/gdpr by 1d7062fec" },
   { site: "modules/build/client-portal/change-request-number-counter.ts::changeRequests", reason: "number allocator: MAX(cr_number) must see soft-deleted rows or a restored CR collides with a reissued number (Build lifecycle sweep, 02-schemas box 2)" },
-  { site: "modules/build/qa/test-runs.service.ts::tickets", reason: "number allocator: MAX(ticket_number) must see soft-deleted rows or a retired ticket number is reused (Build lifecycle sweep)" },
-  { site: "modules/build/core/project-crud/projects-templates.service.ts::tickets", reason: "number allocator on a project created in the same transaction, so the count is always zero; filtering would still be wrong in principle (Build lifecycle sweep)" },
   { site: "modules/build/core/activity/projects-activity.service.ts::tickets", reason: "resolves a ticket's project to WRITE its activity row; filtering would drop the audit trail of the deletion itself (Build lifecycle sweep)" },
   { site: "modules/build/core/activity/projects-activity.service.ts::organizationPeople", reason: "display-name resolution: filtering blanks the name on every record a departed colleague touched, which is this gate's own stated reason for excluding identity tables (Build lifecycle sweep)" },
   { site: "modules/build/core/tickets/projects-ticket-comments.service.ts::organizationPeople", reason: "comment-author display join, same class as the activity one above (Build lifecycle sweep)" },
@@ -149,6 +147,9 @@ const ACCEPTED = [
   { site: "modules/build/core/project-crud/projects-restore.service.ts::projectTemplates", reason: "restore path: the row it reads is by definition the soft-deleted one, and filtering deleted_at would make every restore 404 (Build lifecycle completeness, lane H1)" },
   { site: "modules/build/core/tickets/projects-tickets-restore.service.ts::projects", reason: "restore path: reads the parent project WITH its deleted_at so a child restore can refuse and name a still-deleted parent per BE-54 (Build lifecycle completeness, lane H1)" },
   { site: "modules/payroll/sample-data/sample-data.service.ts::organizationPeople", reason: "payroll sample-data status gates the hard-delete remove path: an archived or soft-deleted sample person must still count as present, or remove short-circuits and leaves the sample rows behind forever (HRMS+Payroll wave 1)" },
+  { site: "modules/timesheets/payroll/payroll-exports-read.service.ts::organizationPeople", reason: "creator display-name leftJoin on all three export reads: the export row is the record and it must stay listable after its creator is archived or removed; filtering archived/deleted people blanks the name, which is the class this gate excludes identity tables for" },
+  { site: "modules/hr/lifecycle/probation-review-reader.service.ts::organizationPeople", reason: "name/email display join reached through hrPeople, which the same statement already constrains with livePerson(orgId); the review row is the subject and its person is live by construction" },
+  { site: "modules/payroll/runs/salary-profiles.repository.ts::organizationPeople", reason: "worker display-name leftJoin on the salary-profile list: a profile is payroll data that must stay visible for final settlement after the person is archived, so filtering the join would blank the name rather than remove the row" },
 ];
 
 function snakeToCamel(name) {

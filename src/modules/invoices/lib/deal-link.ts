@@ -23,7 +23,8 @@ export async function assertDealBelongsToOrg(
   const [row] = await db
     .select({ id: deals.id })
     .from(deals)
-    .where(and(eq(deals.orgId, orgId), eq(deals.id, dealId), isNull(deals.deletedAt)));
+    .where(and(eq(deals.orgId, orgId), eq(deals.id, dealId), isNull(deals.deletedAt)))
+    .limit(1);
   if (!row) throw new NotFoundException("Deal not found");
   return row.id;
 }
@@ -47,6 +48,7 @@ export async function resolveProjectDealId(
   const [row] = await db
     .select({ dealId: projects.dealId })
     .from(projects)
-    .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId), isNull(projects.deletedAt)));
+    .where(and(eq(projects.orgId, orgId), eq(projects.id, projectId), isNull(projects.deletedAt)))
+    .limit(1);
   return row?.dealId ?? null;
 }

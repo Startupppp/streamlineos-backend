@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsRoadmapService, ROADMAP_SEARCH_ID_CAP } from "./projects-roadmap.service";
 import type { Db } from "../../../../db/drizzle.module";
-import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double.spec-fixtures";
 
 const dialect = new PgDialect();
 const MIGRATION = join(

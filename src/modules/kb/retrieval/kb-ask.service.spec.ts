@@ -70,10 +70,6 @@ const articleResult = {
 };
 
 const mockSearch = {
-  resolveQueryEmbedding: jest.fn().mockResolvedValue({ vectorLiteral: null }),
-  retrieveTopArticles: jest.fn().mockResolvedValue([articleResult]),
-  retrieveTopSources: jest.fn().mockResolvedValue([]),
-  retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
   articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
   aclCacheOutcome: jest.fn().mockResolvedValue("miss"),
 };
@@ -155,9 +151,6 @@ describe("KbAskService", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     insertedRows.length = 0;
-    mockSearch.retrieveTopArticles.mockResolvedValue([articleResult]);
-    mockSearch.retrieveTopSources.mockResolvedValue([]);
-    mockSearch.retrieveDocumentPassages.mockResolvedValue([]);
     mockSearch.aclCacheOutcome.mockResolvedValue("miss");
     mockEvents.record.mockResolvedValue(undefined);
     mockDb.execute.mockResolvedValue([{ one: 1 }]);

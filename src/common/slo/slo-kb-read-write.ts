@@ -10,14 +10,6 @@ export const KB_READ_WINDOW_HOURS = 1;
 
 export const KB_READ_FAULT_OUTCOMES = ["denied", "error"] as const;
 
-export const KB_READ_MAX_DENIED_RATIO = 0.25;
-
-export const KB_READ_MIN_DENIALS = 5;
-
-export const KB_READ_MAX_NOT_FOUND_RATIO = 0.4;
-
-export const KB_READ_MIN_NOT_FOUND = 10;
-
 export const KB_READ_SLO: ServiceLevelObjective = {
   id: "module:kb:read",
   kind: "module",
@@ -47,10 +39,6 @@ export const KB_WRITE_MIN_FAULTS = 2;
 export const KB_WRITE_WINDOW_HOURS = 1;
 
 export const KB_WRITE_FAULT_OUTCOMES = ["denied", "error"] as const;
-
-export const KB_WRITE_MAX_DENIED_RATIO = 0.2;
-
-export const KB_WRITE_MIN_DENIALS = 3;
 
 export const KB_WRITE_SLO: ServiceLevelObjective = {
   id: "module:kb:write",

@@ -5,7 +5,7 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { MilestonesService, IntakeService, ViewsService } from "./workspace.service";
-import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double.spec-fixtures";
 import { projects } from "../../../db/schema";
 import { MEMBER_STANDING, principalAccess, projectAccessRow, type ProjectAccessRow } from "../__tests__/project-access-doubles";
 

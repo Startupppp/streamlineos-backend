@@ -96,6 +96,16 @@ const DECLARED_OPT_OUTS = [
     sites: 1,
     reason: "recipient signing session plus the authenticatedAt second factor asserted immediately above the call",
   },
+  {
+    file: "modules/kb/linked-documents/kb-linked-document-file.service.ts",
+    sites: 1,
+    reason: "resolveFile is org- and audience-visibility-filtered for the caller, then the key is checked valid, own-org and inside an HR document folder",
+  },
+  {
+    file: "modules/kb/wiki/kb-public-pages.controller.ts",
+    sites: 1,
+    reason: "validatePublicAttachment binds the key to an attachment row of a published public page resolved from the token hash",
+  },
 ];
 
 const REQUIRED_IN_ASSERT = [

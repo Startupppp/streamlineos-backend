@@ -68,6 +68,7 @@ export const listLifecyclesResponseSchema = z.object({
       band: bandSchema,
     }),
   ),
+  hasMore: z.boolean(),
 });
 
 /** `get` — one contract with the evidence behind its score, newest signal first. */

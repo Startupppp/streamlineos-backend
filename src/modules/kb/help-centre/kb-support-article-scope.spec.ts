@@ -114,7 +114,7 @@ describe("help-centre analytics count only support articles", () => {
   it("reads every article statistic from kb_pages in one aggregate and never from kb_articles, because a second kb_pages read here returned per-page titles that overview never authorizes", async () => {
     const harness = makeHarness();
 
-    await new KbAnalyticsService(harness.db, auth).overview("org-1", {});
+    await new KbAnalyticsService(harness.db, auth).overview("org-1", { scope: "support" });
 
     const pageQueries = harness.wheres.filter(readsPages);
     expect(pageQueries.length).toBe(1);
@@ -124,7 +124,7 @@ describe("help-centre analytics count only support articles", () => {
   it("excludes wiki pages from every article statistic", async () => {
     const harness = makeHarness();
 
-    await new KbAnalyticsService(harness.db, auth).overview("org-1", {});
+    await new KbAnalyticsService(harness.db, auth).overview("org-1", { scope: "support" });
 
     const pageQueries = harness.wheres.filter(readsPages);
     expect(pageQueries.length).toBeGreaterThan(0);
@@ -134,7 +134,7 @@ describe("help-centre analytics count only support articles", () => {
   it("excludes soft-deleted pages from every article statistic", async () => {
     const harness = makeHarness();
 
-    await new KbAnalyticsService(harness.db, auth).overview("org-1", {});
+    await new KbAnalyticsService(harness.db, auth).overview("org-1", { scope: "support" });
 
     const pageQueries = harness.wheres.filter(readsPages);
     expect(pageQueries.length).toBeGreaterThan(0);
@@ -152,7 +152,7 @@ describe("help-centre analytics count only support articles", () => {
   it("derives the trust score from the page verification columns", async () => {
     const harness = makeHarness();
 
-    await new KbAnalyticsService(harness.db, auth).overview("org-1", {});
+    await new KbAnalyticsService(harness.db, auth).overview("org-1", { scope: "support" });
 
     const verifiedPublished = projectionOf(harness.projections, "verifiedPublished");
     expect(verifiedPublished.sql.toLowerCase()).toContain(`"kb_pages"."trust_state"`);
@@ -163,7 +163,7 @@ describe("help-centre analytics count only support articles", () => {
   it("totals views with a null-safe sum, because a page that has never been viewed stores null and would otherwise make the org total null", async () => {
     const harness = makeHarness();
 
-    await new KbAnalyticsService(harness.db, auth).overview("org-1", {});
+    await new KbAnalyticsService(harness.db, auth).overview("org-1", { scope: "support" });
 
     const totalViews = projectionOf(harness.projections, "totalViews");
     expect(totalViews.sql.toLowerCase()).toContain("coalesce");
@@ -175,7 +175,7 @@ describe("help-centre analytics count only support articles", () => {
 
     const result = await new KbAnalyticsService(harness.db, auth).overview(
       "org-1",
-      {},
+      { scope: "support" },
     );
 
     expect(result).toHaveProperty("totalCount");

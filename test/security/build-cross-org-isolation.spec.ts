@@ -194,7 +194,7 @@ describe("BSN-04-042 — cross-organization isolation: managed-products direct a
   it("getManagedProduct raises NotFoundException for a product the caller's org does not own", async () => {
     const { db } = makeLoadDb(undefined);
     await expect(
-      new ManagedProductsService(db, audit).getManagedProduct(ORG_A, PRODUCT_B),
+      new ManagedProductsService(db, audit, accessStub).getManagedProduct(ORG_A, PRODUCT_B),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -213,19 +213,19 @@ describe("BSN-04-042 — cross-organization isolation: managed-products direct a
     };
     const { db } = makeLoadDb(productRow);
     await expect(
-      new ManagedProductsService(db, audit).getManagedProduct(ORG_A, PRODUCT_A),
+      new ManagedProductsService(db, audit, accessStub).getManagedProduct(ORG_A, PRODUCT_A),
     ).resolves.toBeDefined();
   });
 
   it("product WHERE clause binds orgId so cross-tenant rows cannot be reached", async () => {
     const { db, capturedWhere } = makeLoadDb(undefined);
-    await new ManagedProductsService(db, audit).getManagedProduct(ORG_A, PRODUCT_B).catch(() => undefined);
+    await new ManagedProductsService(db, audit, accessStub).getManagedProduct(ORG_A, PRODUCT_B).catch(() => undefined);
     expect(renderParams(capturedWhere[0])).toContain(ORG_A);
   });
 
   it("404 is returned for a foreign product, not 403", async () => {
     const { db } = makeLoadDb(undefined);
-    const thrown = await new ManagedProductsService(db, audit)
+    const thrown = await new ManagedProductsService(db, audit, accessStub)
       .getManagedProduct(ORG_A, PRODUCT_B)
       .catch((e: unknown) => e);
     expect(thrown).toBeInstanceOf(NotFoundException);

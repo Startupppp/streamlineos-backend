@@ -26,7 +26,6 @@ const NO_CONTEXT_ANSWER =
 const askService = {
   ask: jest.fn(),
   streamAsk: jest.fn(),
-  assertReplayCitations: jest.fn(),
 };
 
 const historyService = {
@@ -87,7 +86,6 @@ describe("KB citation access over HTTP (e2e)", () => {
 
   beforeEach(() => {
     askService.ask.mockReset();
-    askService.assertReplayCitations.mockReset();
     briefService.getById.mockReset();
   });
 

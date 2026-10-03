@@ -30,6 +30,7 @@ export async function resolveProjectAssignableMemberships(
         eq(projectMembers.projectId, projectId),
         inArray(organizationMembers.userId, uniqueUserIds),
       ),
-    );
+    )
+    .limit(uniqueUserIds.length);
   return new Map(rows.map((row) => [row.userId, row.membershipId]));
 }

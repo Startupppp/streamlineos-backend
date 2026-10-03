@@ -230,10 +230,10 @@ export class CustomerHealthService {
        * actually did score badly.
        */
       .orderBy(asc(customerHealthAssessments.score), asc(customerHealthAssessments.partyId))
-      .limit(query.limit)
+      .limit(query.limit + 1)
       .offset(query.offset);
 
-    return { data: rows };
+    return { data: rows.slice(0, query.limit), hasMore: rows.length > query.limit };
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────

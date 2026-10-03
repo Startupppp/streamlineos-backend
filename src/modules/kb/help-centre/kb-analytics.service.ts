@@ -314,8 +314,8 @@ export class KbAnalyticsService {
           END
         ) AS elem
         WHERE m.org_id = ${orgId} AND m.citations IS NOT NULL
-          ${messageFrom ? sql`AND m.created_at >= ${messageFrom}` : sql``}
-          ${messageTo ? sql`AND m.created_at <= ${messageTo}` : sql``}
+          ${messageFrom ? sql`AND m.created_at >= ${messageFrom.toISOString()}::timestamptz` : sql``}
+          ${messageTo ? sql`AND m.created_at <= ${messageTo.toISOString()}::timestamptz` : sql``}
         UNION ALL
         SELECT
           c->>'kind' AS kind,
@@ -329,8 +329,8 @@ export class KbAnalyticsService {
           END
         ) AS c
         WHERE b.org_id = ${orgId} AND b.citations IS NOT NULL
-          ${messageFrom ? sql`AND b.created_at >= ${messageFrom}` : sql``}
-          ${messageTo ? sql`AND b.created_at <= ${messageTo}` : sql``}
+          ${messageFrom ? sql`AND b.created_at >= ${messageFrom.toISOString()}::timestamptz` : sql``}
+          ${messageTo ? sql`AND b.created_at <= ${messageTo.toISOString()}::timestamptz` : sql``}
       )
       SELECT kind, ref_id, min(title) AS title, count(*)::int AS reuse_count
       FROM cited

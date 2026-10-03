@@ -28,13 +28,7 @@ const testMgmtSvc = {
 };
 
 const testRunsSvc = {
-  listTestRuns: jest.fn(),
-  getTestRun: jest.fn(),
-  createTestRun: jest.fn(),
-  updateTestRun: jest.fn(),
-  deleteTestRun: jest.fn(),
   updateResult: jest.fn(),
-  attachBugToResult: jest.fn(),
 };
 
 describe("ProjectsQA bugs auth/RBAC (e2e)", () => {

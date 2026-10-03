@@ -100,6 +100,11 @@ const AWAITING_NEXT_CAPTURE: readonly string[] = [
   "inv-genealogy-document-hop",
   "build-org-project-health-summary",
   "build-resource-allocation",
+  "kb-wiki-analytics-page-stats",
+  "kb-wiki-analytics-stale-pages",
+  "kb-wiki-analytics-contributors",
+  "kb-content-health-signals",
+  "kb-content-health-counts",
 ];
 
 /** The ids the read-cost catalog declares, read out of the module itself rather than re-parsed. */

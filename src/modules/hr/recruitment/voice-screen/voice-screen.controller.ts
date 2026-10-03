@@ -27,6 +27,7 @@ import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { VoiceScreenService } from "./voice-screen.service";
+import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 
 const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
 
@@ -124,7 +125,7 @@ export class VoiceScreenResultController {
   @UseRateLimit("public:voice-screen-result")
   @ResponseSchema(voiceScreenResultResponseSchema)
   receive(
-    @Param("orgSlug") orgSlug: string,
+    @Param("orgSlug", new ZodValidationPipe(z.string().min(1).max(128))) orgSlug: string,
     @Req() request: RawBodyRequest<Request>,
     @Headers("x-streamline-signature") signature: string | undefined,
   ) {

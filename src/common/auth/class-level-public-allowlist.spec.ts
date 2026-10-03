@@ -7,7 +7,7 @@ const SRC = resolve(__dirname, "..", "..");
  * Every name in this set carries class-level @Public(), meaning every route
  * added to the class silently inherits public exposure. The discipline is:
  * an unauthenticated route lives in its own controller (crm-consent.controller.ts
- * is the canonical reference). This allowlist pins the current 49 classes so a
+ * is the canonical reference). This allowlist pins the current 51 classes so a
  * new class-level @Public() cannot be added without a deliberate review.
  *
  * To add a new class-level @Public() controller: add its name here, justify it
@@ -20,6 +20,7 @@ const CLASS_LEVEL_PUBLIC_ALLOWLIST = new Set<string>([
   "AgentController",
   "AssessmentScoreController",
   "BgvCallbackController",
+  "BlogInternalController",
   "BoardApplyIngressController",
   "CalendarProviderWebhookController",
   "CarrierWebhooksPublicController",
@@ -28,6 +29,7 @@ const CLASS_LEVEL_PUBLIC_ALLOWLIST = new Set<string>([
   "ChannelWebhookController",
   "CronBillingController",
   "CronBuildController",
+  "CronBuildProjectRetentionController",
   "CronCalendarController",
   "CronGdprController",
   "CronHrController",

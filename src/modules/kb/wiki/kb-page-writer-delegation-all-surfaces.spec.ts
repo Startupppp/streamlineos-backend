@@ -412,8 +412,42 @@ describe("KbPageTreeService — writer delegation for restore", () => {
     );
   });
 
+  it("restoreMany calls writer.commitManyPageChanges once for every restored subtree", async () => {
+    const deleted = { id: PAGE_ID, parentPageId: null, deletedAt: new Date("2024-01-01"), title: "Test" };
+    const indexRow = { id: PAGE_ID, contentRevision: 1, aclRevision: 1, contentText: "content" };
+    const tx = {
+      execute: jest.fn().mockResolvedValue([{ id: PAGE_ID }]),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+      }),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn()
+            .mockResolvedValueOnce([deleted])
+            .mockResolvedValueOnce([deleted])
+            .mockResolvedValueOnce([indexRow]),
+        }),
+      }),
+    };
+    const db = { transaction: jest.fn(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)) };
+    const writer = new KbPageWriterService({} as never, { logCritical: jest.fn().mockResolvedValue(undefined) } as never);
+    const spy = jest.spyOn(writer, "commitManyPageChanges").mockResolvedValue(undefined);
+    const svc = new KbPageTreeService(
+      db as never,
+      { logCriticalMany: jest.fn().mockResolvedValue(undefined) } as never,
+      makeAuth(),
+      {} as never,
+      writer,
+    );
+
+    await svc.restoreMany(makeUser() as never, [PAGE_ID]);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(tx, { orgId: ORG_ID, pages: [indexRow] });
+  });
+
   it("all public methods on KbPageTreeService are classified so a new method cannot slip through untested", () => {
-    const WRITER_DELEGATING = new Set(["move", "restore"]);
+    const WRITER_DELEGATING = new Set(["move", "restore", "restoreMany"]);
     const NOT_DELEGATING = new Set([
       "getTreeLevel",
       "softDelete",

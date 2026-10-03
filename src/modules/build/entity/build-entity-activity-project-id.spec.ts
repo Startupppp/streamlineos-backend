@@ -1,11 +1,14 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { PgDialect } from "drizzle-orm/pg-core";
-import { sql, type SQL } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { BuildEntityActions } from "./build-entity.actions";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { BuildTicketCreationService, resolveValidTicketStatuses } from "../core/tickets";
+import {
+  BuildTicketCreationService,
+  ProjectsTicketsUpdateService,
+  resolveValidTicketStatuses,
+} from "../core/tickets";
 import type { EntityActor, EntityReference } from "../../entity-reference/entity-reference.types";
 
 jest.mock("../core/tickets");
@@ -23,39 +26,10 @@ const STUB_TICKET = {
   assigneeMembershipId: null as number | null,
   dueDate: null as string | null,
   projectId: PROJECT_ID,
+  version: 3,
 };
 
-function makeTxCapture(): {
-  tx: {
-    update: jest.Mock;
-    set: jest.Mock;
-    where: jest.Mock;
-    execute: jest.Mock;
-    insert: jest.Mock;
-  };
-  getCapturedActivity: () => Record<string, unknown> | undefined;
-} {
-  let capturedValues: Record<string, unknown> | undefined;
-
-  const tx = {
-    update: jest.fn().mockReturnThis(),
-    set: jest.fn().mockReturnThis(),
-    where: jest.fn().mockResolvedValue([]),
-    execute: jest.fn(async (statement: SQL) => {
-      const sqlText = new PgDialect().sqlToQuery(statement).sql;
-      if (sqlText.includes("project_ticket_counters")) return [{ start: 1 }];
-      return [];
-    }),
-    insert: jest.fn().mockImplementation(() => ({
-      values: jest.fn().mockImplementation((v: unknown) => {
-        capturedValues = v as Record<string, unknown>;
-        return Promise.resolve(undefined);
-      }),
-    })),
-  };
-
-  return { tx, getCapturedActivity: () => capturedValues };
-}
+const ticketChange = { updateTicket: jest.fn().mockResolvedValue(undefined) };
 
 function writableProjectSelect(): jest.Mock {
   const limit = jest.fn().mockResolvedValue([{ state: "ACTIVE", reachable: true }]);
@@ -88,6 +62,7 @@ async function buildService(
           publish: jest.fn(),
         },
       },
+      { provide: ProjectsTicketsUpdateService, useValue: ticketChange },
     ],
   }).compile();
   return module.get(BuildEntityActions);
@@ -98,10 +73,8 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
     jest.clearAllMocks();
   });
 
-  it("changeStatus passes the ticket's project_id to the activity log insert so the status-change event is filterable by project", async () => {
+  it("changeStatus routes the status change to the ticket's own project_id through the canonical update path that writes the project-filterable activity row", async () => {
     mockResolveStatuses.mockResolvedValue(new Set(["TODO", "IN_PROGRESS"]));
-    const { tx, getCapturedActivity } = makeTxCapture();
-
     const db = {
       query: {
         tickets: { findFirst: jest.fn().mockResolvedValue(STUB_TICKET) },
@@ -110,21 +83,21 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         projects: { findFirst: jest.fn() },
       },
       select: writableProjectSelect(),
-      transaction: jest.fn().mockImplementation(
-        async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
-      ),
     };
 
     const service = await buildService(db);
     const result = await service.run(OWNER, TICKET_REF, "status", { status: "IN_PROGRESS" }, REACH);
 
     expect(result.ok).toBe(true);
-    expect(getCapturedActivity()?.["projectId"]).toBe(PROJECT_ID);
+    expect(ticketChange.updateTicket).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org_1", userId: "user_1" }),
+      PROJECT_ID,
+      TICKET_ID,
+      { status: "IN_PROGRESS", version: 3 },
+    );
   });
 
-  it("assign passes the ticket's project_id to the activity log insert so the assignee-change event is filterable by project", async () => {
-    const { tx, getCapturedActivity } = makeTxCapture();
-
+  it("assign routes the assignee change to the ticket's own project_id through the canonical update path that writes the project-filterable activity row", async () => {
     const db = {
       query: {
         tickets: { findFirst: jest.fn().mockResolvedValue(STUB_TICKET) },
@@ -133,21 +106,21 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         projects: { findFirst: jest.fn() },
       },
       select: writableProjectSelect(),
-      transaction: jest.fn().mockImplementation(
-        async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
-      ),
     };
 
     const service = await buildService(db);
     const result = await service.run(OWNER, TICKET_REF, "assign", { assigneeId: "user_2" }, REACH);
 
     expect(result.ok).toBe(true);
-    expect(getCapturedActivity()?.["projectId"]).toBe(PROJECT_ID);
+    expect(ticketChange.updateTicket).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org_1", userId: "user_1" }),
+      PROJECT_ID,
+      TICKET_ID,
+      { assigneeId: "user_2", version: 3 },
+    );
   });
 
-  it("setDueDate passes the ticket's project_id to the activity log insert so the due-date-change event is filterable by project", async () => {
-    const { tx, getCapturedActivity } = makeTxCapture();
-
+  it("setDueDate routes the due-date change to the ticket's own project_id through the canonical update path that writes the project-filterable activity row", async () => {
     const db = {
       query: {
         tickets: { findFirst: jest.fn().mockResolvedValue(STUB_TICKET) },
@@ -156,15 +129,17 @@ describe("BuildEntityActions — project_id set on activity log insert (ticket 1
         projects: { findFirst: jest.fn() },
       },
       select: writableProjectSelect(),
-      transaction: jest.fn().mockImplementation(
-        async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx),
-      ),
     };
 
     const service = await buildService(db);
     const result = await service.run(OWNER, TICKET_REF, "due-date", { dueDate: "2027-01-01" }, REACH);
 
     expect(result.ok).toBe(true);
-    expect(getCapturedActivity()?.["projectId"]).toBe(PROJECT_ID);
+    expect(ticketChange.updateTicket).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org_1", userId: "user_1" }),
+      PROJECT_ID,
+      TICKET_ID,
+      { dueDate: "2027-01-01", version: 3 },
+    );
   });
 });

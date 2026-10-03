@@ -6,6 +6,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { submitChangeRequestSchema } from "./dto/portal-client.schemas";
 import { PortalClientController } from "./portal-client.controller";
 import { PortalClientService } from "./portal-client.service";
+import { PortalProjectionService } from "../../build/client-portal/portal-projection.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -22,6 +23,7 @@ async function makeService(db: object, audit: PortalAudit = makeAudit()): Promis
   const moduleRef = await Test.createTestingModule({
     providers: [
       PortalClientService,
+      PortalProjectionService,
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: audit },
     ],

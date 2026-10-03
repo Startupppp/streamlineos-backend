@@ -50,7 +50,8 @@
  * --json      : machine-readable findings.
  * --list      : print every GROWING site.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, extname, dirname } from "node:path";
 import ts from "typescript";
 
@@ -337,6 +338,14 @@ function buildConstIndex(sf, depth = 0) {
   return idx;
 }
 
+const homeIndexCache = new Map();
+function homeIndexOf(init, constIdx, from) {
+  const home = init.getSourceFile();
+  if (home === from.getSourceFile()) return constIdx;
+  if (!homeIndexCache.has(home)) homeIndexCache.set(home, buildConstIndex(home));
+  return homeIndexCache.get(home);
+}
+
 const FIXED = (n, why) => ({ growing: false, size: n, why });
 const GROW = (why) => ({ growing: true, size: null, why });
 
@@ -379,7 +388,7 @@ function classifySource(source, constIdx, depth = 0) {
   }
   if (ts.isIdentifier(e)) {
     const init = constIdx.get(e.text);
-    if (init && !ts.isEnumDeclaration(init)) return classifySource(init, constIdx, depth + 1);
+    if (init && !ts.isEnumDeclaration(init)) return classifySource(init, homeIndexOf(init, constIdx, e), depth + 1);
     if (init && ts.isEnumDeclaration(init)) return FIXED(init.members.length, `enum of ${init.members.length}`);
     return GROW(`identifier ${e.text} not bound to a literal in-file`);
   }
@@ -439,7 +448,7 @@ function classifyForStatement(forNode, constIdx) {
  * are genuine N+1s with a named batched form, listed in the ticket-21 report.
  * The gate fails when this goes UP. Lower it as sites are fixed.
  */
-const MAX_GROWING_SITES = 102;
+const MAX_GROWING_SITES = 100;
 
 /**
  * Loop nodes the parser actually walked.
@@ -578,6 +587,33 @@ function runSelfTests() {
     if (n !== 0) { console.error(`SELF-TEST FAIL: ${label} — expected no finding, got ${n}`); process.exit(1); }
   }
 
+  const crossFileDir = mkdtempSync(join(tmpdir(), "n1-cross-file-"));
+  try {
+    writeFileSync(
+      join(crossFileDir, "adapters.ts"),
+      "const DEFINITIONS = [[\"a\", 1], [\"b\", 2]];\nexport const ADAPTERS = DEFINITIONS.map(([name, n]) => ({ name, n }));\nexport const LIVE = rowsFromSomewhere();\n",
+    );
+    const importerPath = join(crossFileDir, "a.service.ts");
+    const crossFile = (body) =>
+      scanSource(
+        `import { ADAPTERS, LIVE } from "./adapters";\nclass S { async m() {\n${body}\n} }`,
+        importerPath,
+        importerPath,
+      ).findings[0];
+    const fixedImport = crossFile("for (const a of ADAPTERS) await this.db.delete(t).where(eq(t.a, a.name));");
+    if (fixedImport?.growing !== false) {
+      console.error(`SELF-TEST FAIL: a loop over an imported .map of a literal private to its own file — expected false, got ${String(fixedImport?.growing)} (${String(fixedImport?.why)})`);
+      process.exit(1);
+    }
+    const growingImport = crossFile("for (const a of LIVE) await this.db.delete(t).where(eq(t.a, a.name));");
+    if (growingImport?.growing !== true) {
+      console.error(`SELF-TEST FAIL: a loop over an imported call result — expected true, got ${String(growingImport?.growing)}`);
+      process.exit(1);
+    }
+  } finally {
+    rmSync(crossFileDir, { recursive: true, force: true });
+  }
+
   // The corpus itself. Three roots by default, exactly one when a root is named on
   // the command line — the hermetic proofs depend on the second half of that.
   if (!ROOT_ARG) {
@@ -606,7 +642,7 @@ function runSelfTests() {
     }
   }
 
-  console.log("SELF-TEST PASS: 16 growing/fixed/paging/corpus checks passed");
+  console.log("SELF-TEST PASS: 18 growing/fixed/paging/cross-file/corpus checks passed");
 }
 
 /* ------------------------------------------------------------------- main */

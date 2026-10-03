@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -46,6 +47,7 @@ export class HrDisciplinaryController {
 
   @Get()
   @ResponseSchema(hrDisciplinaryListSchema)
+  @RequireModule("hr")
   @RequirePermission("hr:cases:view")
   @Validate({ query: listDisciplinarySchema })
   list(
@@ -72,6 +74,7 @@ export class HrDisciplinaryController {
 
   @Get(":actionId")
   @ResponseSchema(hrDisciplinaryActionSchema)
+  @RequireModule("hr")
   @RequirePermission("hr:cases:view")
   @Validate({ params: actionIdParams })
   getById(
@@ -84,6 +87,7 @@ export class HrDisciplinaryController {
   @Post()
   @ResponseSchema(hrDisciplinaryCreateResponseSchema)
   @HttpCode(201)
+  @RequireModule("hr")
   @RequirePermission("hr:cases:manage")
   @Validate({ body: createDisciplinaryActionSchema })
   create(
@@ -110,6 +114,7 @@ export class HrDisciplinaryController {
 
   @Delete(":actionId")
   @NoContentResponse()
+  @RequireModule("hr")
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
   @Validate({ params: actionIdParams })

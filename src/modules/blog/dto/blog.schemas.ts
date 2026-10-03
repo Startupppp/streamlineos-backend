@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
 const slugField = z.string().trim().min(1).max(256).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 const tagField = z.string().trim().min(1).max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
@@ -20,6 +21,7 @@ export const searchQuerySchema = z.object({
 
 export const sitemapQuerySchema = z.object({
   cursor: z.string().regex(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\|[0-9a-f-]{36}$/).optional(),
+  limit: optionalPageSizeField(),
 }).strict();
 
 export const redirectQuerySchema = z.object({

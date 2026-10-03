@@ -8,7 +8,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -23,7 +22,6 @@ import {
   testSuiteListQuerySchema,
   updateTestSuiteSchema,
   type CreateTestSuiteInput,
-  type TestSuiteListQuery,
   type UpdateTestSuiteInput,
 } from "./dto/qa.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -47,10 +45,9 @@ export class TestSuitesController {
   @Validate({ query: testSuiteListQuerySchema })
   listSuites(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query() query: TestSuiteListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listSuites(u, projectId, query);
+    return this.svc.listSuites(u, projectId);
   }
 
   @Post()

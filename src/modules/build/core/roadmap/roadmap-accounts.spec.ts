@@ -14,7 +14,7 @@ import {
   type RoadmapAccountTierSummary,
 } from "./roadmap-accounts";
 import { computeRoadmapPrioritization } from "./roadmap-prioritization";
-import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double.spec-fixtures";
 
 const dialect = new PgDialect();
 const queryBuilder = new QueryBuilder();

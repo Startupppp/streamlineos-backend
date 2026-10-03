@@ -26,7 +26,7 @@ export class BlogDiscoveryService {
   search(query: SearchQuery) {
     const tsQuery = sql`websearch_to_tsquery('english', ${query.q})`;
     return this.db.transaction(async (tx) => {
-      await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${SEARCH_TIMEOUT_MS}`));
+      await tx.execute(sql`SELECT set_config('statement_timeout', ${String(SEARCH_TIMEOUT_MS)}, true)`);
       const rows = await tx
         .select(cardColumns)
         .from(blogPosts)
@@ -41,6 +41,7 @@ export class BlogDiscoveryService {
 
   /** Keyset page of published post URLs, newest first. The cursor is `publishedAt|id`. */
   async sitemapPosts(query: SitemapQuery) {
+    const pageSize = query.limit ?? SITEMAP_PAGE;
     const conditions = [publishedPostPredicate()];
     if (query.cursor) {
       const [at, id] = query.cursor.split("|");
@@ -61,12 +62,12 @@ export class BlogDiscoveryService {
       .from(blogPosts)
       .where(and(...conditions))
       .orderBy(desc(blogPosts.publishedAt), desc(blogPosts.id))
-      .limit(SITEMAP_PAGE + 1);
-    const page = rows.slice(0, SITEMAP_PAGE);
+      .limit(pageSize + 1);
+    const page = rows.slice(0, pageSize);
     const last = page[page.length - 1];
     return {
       posts: page.map((r) => ({ slug: r.slug, modifiedAt: r.modifiedAt ?? r.publishedAt })),
-      nextCursor: rows.length > SITEMAP_PAGE && last ? `${last.cursorAt}|${last.id}` : null,
+      nextCursor: rows.length > pageSize && last ? `${last.cursorAt}|${last.id}` : null,
     };
   }
 

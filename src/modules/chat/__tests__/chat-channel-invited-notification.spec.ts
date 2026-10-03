@@ -63,7 +63,9 @@ describe("adding someone to a channel notifies them, because chat.channel.invite
   it("does not notify when the user is already a member, so a repeated add cannot spam them", async () => {
     const { svc, notifications } = makeSvc(true);
 
-    await expect(svc.addMember(CHANNEL, TARGET, REQUESTER, ORG)).rejects.toThrow();
+    await expect(svc.addMember(CHANNEL, TARGET, REQUESTER, ORG)).rejects.toThrow(
+      "User is already a member of this channel",
+    );
     expect(notifications.publishChannelInviteNotification).not.toHaveBeenCalled();
   });
 

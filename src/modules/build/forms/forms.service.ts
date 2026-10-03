@@ -91,8 +91,8 @@ export class FormsService {
         ),
       )
       .orderBy(desc(projectForms.createdAt), desc(projectForms.id))
-      .limit(FORM_PAGE_SIZE + 1);
-    return buildTupleCursorPage(rows, FORM_PAGE_SIZE, (row) => [
+      .limit((query.limit ?? FORM_PAGE_SIZE) + 1);
+    return buildTupleCursorPage(rows, query.limit ?? FORM_PAGE_SIZE, (row) => [
       row.createdAt.toISOString(),
       String(row.id),
     ]);

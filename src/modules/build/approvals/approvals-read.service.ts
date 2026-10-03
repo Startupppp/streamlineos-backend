@@ -53,6 +53,7 @@ export class ApprovalsReadService {
 
   async getInbox(orgId: string, membershipId: number, query: InboxQuery) {
     const cursor = decodeApprovalCursor(query.cursor);
+    const limit = query.limit ?? PAGE_SIZE;
     const rows = await this.db
       .select({
         id: projectApprovals.id,
@@ -91,8 +92,8 @@ export class ApprovalsReadService {
         ),
       )
       .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`, asc(projectApprovals.id))
-      .limit(PAGE_SIZE + 1);
-    return buildTupleCursorPage(rows, PAGE_SIZE, (row) => [
+      .limit(limit + 1);
+    return buildTupleCursorPage(rows, limit, (row) => [
       row.dueAt?.toISOString() ?? NULL_DUE_AT,
       String(row.id),
     ]);
@@ -110,6 +111,7 @@ export class ApprovalsReadService {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const cursor = decodeApprovalCursor(query.cursor);
     const approver = await this.approverFilter(orgId, query.approverId);
+    const limit = query.limit ?? PAGE_SIZE;
     const rows = await this.db
       .select()
       .from(projectApprovals)
@@ -125,8 +127,8 @@ export class ApprovalsReadService {
         ),
       )
       .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`, asc(projectApprovals.id))
-      .limit(PAGE_SIZE + 1);
-    return buildTupleCursorPage(rows, PAGE_SIZE, (row) => [
+      .limit(limit + 1);
+    return buildTupleCursorPage(rows, limit, (row) => [
       row.dueAt?.toISOString() ?? NULL_DUE_AT,
       String(row.id),
     ]);

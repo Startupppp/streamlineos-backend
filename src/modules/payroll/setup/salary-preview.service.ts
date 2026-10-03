@@ -21,7 +21,8 @@ export class SalaryPreviewService {
     if (!policy) throw new ConflictException("Activate a payroll policy before previewing a salary breakup");
 
     const filters = [eq(salaryComponents.orgId, orgId), eq(salaryComponents.isActive, true)];
-    if (input.componentIds) filters.push(inArray(salaryComponents.id, input.componentIds));
+    const componentIds = input.componentIds ? [...new Set(input.componentIds)] : null;
+    if (componentIds) filters.push(inArray(salaryComponents.id, componentIds));
 
     const components = await this.db
       .select({
@@ -44,7 +45,7 @@ export class SalaryPreviewService {
       .orderBy(asc(salaryComponents.sortOrder), asc(salaryComponents.id))
       .limit(MAX_PREVIEW_COMPONENTS);
 
-    if (input.componentIds && components.length !== new Set(input.componentIds).size) {
+    if (componentIds && components.length !== componentIds.length) {
       throw new NotFoundException("One or more components were not found");
     }
 

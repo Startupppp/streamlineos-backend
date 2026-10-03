@@ -385,8 +385,9 @@ export function scanWebhookEvents(files, readFile) {
   for (const filePath of files) {
     if (filePath.endsWith(".spec.ts") || filePath.endsWith(".e2e-spec.ts")) continue;
     const src = readFile(filePath);
-    if (!src.includes("WebhooksDispatchService")) continue;
-    const projectScoped = src.includes("ProjectsWebhooksDispatchService");
+    const projectScoped =
+      src.includes("ProjectsWebhooksDispatchService") || src.includes("webhooksDispatch.enqueue(");
+    if (!src.includes("WebhooksDispatchService") && !projectScoped) continue;
     for (const m of src.matchAll(ORG_RE)) record(m[1], "organization", "WebhooksDispatchService", filePath);
     if (projectScoped) {
       for (const m of src.matchAll(PROJECT_RE)) record(m[1], "project", "ProjectsWebhooksDispatchService", filePath);
@@ -537,10 +538,15 @@ if (IS_DIRECT_RUN && process.argv.includes("--self-test")) {
     "/src/modules/deals/deals.spec.ts":
       'WebhooksDispatchService\nthis.webhooksDispatch.dispatch(orgId, "deal.fake", {});\n',
     "/src/modules/other/unrelated.service.ts": 'this.queue.dispatch(orgId, "not.a.webhook", {});\n',
+    "/src/modules/build/core/tickets/ticket-change-effects.ts":
+      'await deps.webhooksDispatch.enqueue(\n  tx,\n  actor.orgId,\n  projectId,\n  "ticket.updated",\n  { id },\n);\n',
+    "/src/modules/other/jobs.service.ts": 'await this.jobs.enqueue(tx, orgId, projectId, "job.not-a-webhook", {});\n',
   };
   const scannedEvents = scanWebhookEvents(Object.keys(fakeFiles), (p) => fakeFiles[p]);
   const scannedNames = scannedEvents.map((e) => e.name).join(",");
-  expect("webhook-scan-finds-literals", scannedNames, "deal.lost,deal.won,ticket.created");
+  expect("webhook-scan-finds-literals", scannedNames, "deal.lost,deal.won,ticket.created,ticket.updated");
+  expect("webhook-scan-reads-a-structurally-typed-dispatcher", scannedEvents.find((e) => e.name === "ticket.updated")?.scope, "project");
+  expect("webhook-scan-ignores-unrelated-enqueue", scannedNames.includes("job.not-a-webhook"), false);
   expect("webhook-scan-records-scope", scannedEvents.find((e) => e.name === "ticket.created")?.scope, "project");
   expect("webhook-scan-records-org-scope", scannedEvents.find((e) => e.name === "deal.won")?.scope, "organization");
   expect("webhook-scan-skips-specs", scannedNames.includes("deal.fake"), false);

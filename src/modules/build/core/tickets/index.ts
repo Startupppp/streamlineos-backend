@@ -7,8 +7,6 @@ export { ProjectsTicketsService } from "./projects-tickets.service";
 export { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 export {
   BuildTicketCreationService,
-  type BuildTicketDraft,
-  type BuildTicketCreation,
   type CreatedBuildTickets,
 } from "./build-ticket-creation.service";
 export { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
@@ -24,8 +22,7 @@ export { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.se
 export { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 export { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 export { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
-export { reserveTicketCapacity } from "../lib/build-ticket-capacity";
 export { lockProjectTicketMutation, assertTicketReadAccess, type TicketReadAccess } from "../project-crud/project-access";
 export { resolveValidTicketStatuses } from "./ticket-status.util";
 export { TicketVersionConflictException } from "./ticket-version-conflict.exception";
-export { resolveTicketsScope, ticketScope, TICKETS_PERMISSION } from "../lib/tickets-scope";
+export { ticketScope, TICKETS_PERMISSION } from "../lib/tickets-scope";

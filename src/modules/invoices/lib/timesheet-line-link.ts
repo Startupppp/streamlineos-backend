@@ -28,7 +28,8 @@ export async function assertTimesheetEntriesLinkable(
       voidedAt: timesheets.voidedAt,
     })
     .from(timesheets)
-    .where(and(eq(timesheets.orgId, orgId), inArray(timesheets.id, requested)));
+    .where(and(eq(timesheets.orgId, orgId), inArray(timesheets.id, requested)))
+    .limit(requested.length);
 
   const byId = new Map(rows.map((row) => [row.id, row]));
 

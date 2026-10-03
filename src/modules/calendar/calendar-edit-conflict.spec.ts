@@ -64,7 +64,7 @@ function buildHarness(options: {
     db,
     stub<CalendarEventsAggregateService>(),
     stub<CalendarConflictService>(),
-    { syncAttendees: jest.fn() } as unknown as CalendarAttendeesService,
+    stub<CalendarAttendeesService>(),
     stub<CalendarRecurrenceService>(),
     stub<CalendarExportService>(),
     stub<CalendarEventDetailService>(),

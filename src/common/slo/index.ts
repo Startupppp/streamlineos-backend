@@ -52,32 +52,6 @@ export {
   KB_ACCESS_REVOCATION_MIN_PAGES,
 } from "./slo-kb-freshness";
 
-export {
-  KB_DB_HEALTH_SLO,
-  KB_DB_HEALTH_SLOS,
-  KB_DB_MAX_CONNECTIONS,
-  KB_DB_MAX_LOCK_WAITS,
-  KB_DB_SLOW_QUERY_MS,
-  KB_DB_MIN_CACHE_HIT_PCT,
-} from "./slo-kb-db-health";
-
-export {
-  KB_ACL_ANOMALY_SLO,
-  KB_ACL_ANOMALY_SLOS,
-  KB_ACL_ANOMALY_MAX_DENIAL_RATIO,
-  KB_ACL_ANOMALY_MAX_NOT_FOUND_RATIO,
-  KB_ACL_ANOMALY_MIN_DENIALS,
-  KB_ACL_ANOMALY_MIN_NOT_FOUND,
-  KB_ACL_ANOMALY_MIN_TOTAL_REQUESTS,
-} from "./slo-kb-acl-anomaly";
-
-export {
-  KB_PURGE_BACKLOG_SLO,
-  KB_PURGE_BACKLOG_SLOS,
-  KB_PURGE_STALE_MINUTES,
-  KB_PURGE_MIN_ROWS,
-} from "./slo-kb-purge-backlog";
-
 export const SLO_CATALOGUE: readonly ServiceLevelObjective[] = [
   ...MODULE_SLOS,
   ...QUEUE_SLOS,

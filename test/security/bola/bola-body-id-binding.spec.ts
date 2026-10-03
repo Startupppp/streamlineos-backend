@@ -122,7 +122,7 @@ describe("the detector bites", () => {
 });
 
 describe("the surface, enumerated from the committed contract", () => {
-  it("counts the operations and the id-shaped body and query fields, 3,939 operations at f6d12e138 moved by module to 4,102, and every new id field goes through the same ratchet below", () => {
+  it("counts the operations and the id-shaped body and query fields, 3,939 operations at f6d12e138 moved by module to 4,121, and every new id field goes through the same ratchet below", () => {
     const { counts } = enumerateIdFieldSites();
     // 3642 -> 3648, and the six are individually accounted for:
     //   +2  GET|POST /cron/calendar-provider-sync-sweep — the drain the provider-sync
@@ -173,13 +173,13 @@ describe("the surface, enumerated from the committed contract", () => {
         total(OPERATIONS_MOVED_SINCE_F6D12E138.added) -
         total(OPERATIONS_MOVED_SINCE_F6D12E138.removed),
     );
-    expect(counts.operations).toBe(4102);
-    expect(counts.bodyFields).toBe(960);
+    expect(counts.operations).toBe(4121);
+    expect(counts.bodyFields).toBe(961);
     expect(counts.queryFields).toBe(378);
-    expect(counts.idFields).toBe(1338);
+    expect(counts.idFields).toBe(1339);
     expect(counts.idFields).toBe(counts.bodyFields + counts.queryFields);
-    expect(counts.operationsWithIdFields).toBe(823);
-    expect(counts.idFields - CONTRACT_AT_F6D12E138.idFields).toBe(96);
+    expect(counts.operationsWithIdFields).toBe(824);
+    expect(counts.idFields - CONTRACT_AT_F6D12E138.idFields).toBe(97);
   });
 
   /**
@@ -369,6 +369,7 @@ const UNRESOLVED_ADMITTED_SINCE_F6D12E138: ReadonlyArray<readonly [string, strin
   ["ProjectsTicketsController_createTicket|reporterId", "ProjectsTicketsCreateService.createTicket resolves the reporter through resolveOrganizationActorsByUserIds(orgId) and 404s one that is not an active member"],
   ["BlogInternalController_invalidate|eventId", "the signed blog-admin invalidation receiver (BlogInvalidationSignatureGuard HMAC); blog posts are the vendor's global content with no tenant, and eventId is the sender's dedupe key"],
   ["BlogInternalController_invalidate|postId", "the signed blog-admin invalidation receiver (BlogInvalidationSignatureGuard HMAC); blog posts are the vendor's global content with no tenant, and eventId is the sender's dedupe key"],
+  ["SalaryPreviewController_preview|componentIds", "a filter ANDed into SalaryPreviewService.preview's salaryComponents.orgId-bound read, which refuses when fewer components resolve than were named, so another organisation's id matches no row and fails the request"],
   ["ProjectsRoadmapController_mergeFeedback|targetPostId", "ProjectsFeedbackService.mergeFeedback reads the target under feedbackPosts.orgId inside the merge transaction"],
   ["EmployeesController_onboard|reportingManagerUserId", "ReportingManagerFallbackResolver.resolveMany resolves the selected manager through membersOf(orgId) and refuses a non-member with MANAGER_NOT_FOUND"],
   ["InvoicesWriteController_createFromTimesheets|projectId", "loadInvoiceableEntries reads the entries under timesheets.org_id and 404s the whole request on any missing id, and projectId must be one of those entries' projects or the request is refused"],
@@ -391,7 +392,7 @@ const OPERATIONS_MOVED_SINCE_F6D12E138: {
   readonly added: Readonly<Record<string, number>>;
   readonly removed: Readonly<Record<string, number>>;
 } = {
-  added: { hr: 70, build: 42, kb: 42, cron: 14, blog: 10, public: 8, me: 6, timesheets: 2, accounting: 1, auth: 1, careers: 1, clients: 1, feedbucket: 1, health: 1, invoices: 1, organization: 1, "portal-access": 1, users: 1 },
+  added: { hr: 71, payroll: 14, build: 42, kb: 42, cron: 14, blog: 10, public: 8, me: 10, timesheets: 2, accounting: 1, auth: 1, careers: 1, clients: 1, feedbucket: 1, health: 1, invoices: 1, organization: 1, "portal-access": 1, users: 1 },
   removed: { kb: 27, blog: 11, careers: 2, build: 1 },
 };
 

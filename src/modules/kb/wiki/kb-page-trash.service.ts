@@ -194,11 +194,14 @@ export class KbPageTrashService {
     });
   }
 
-  private preDeleteStores(orgId: string): {
-    store: KbPurgeStore;
-    purge: (pageIds: number[]) => Promise<void>;
-  }[] {
-    return [
+  private async executePreDeleteStores(
+    orgId: string,
+    subtreeIds: number[],
+  ): Promise<void> {
+    const stores: {
+      store: KbPurgeStore;
+      purge: (pageIds: number[]) => Promise<void>;
+    }[] = [
       {
         store: "visits",
         purge: (pageIds) => purgeVisitsForPages(this.db, orgId, pageIds),
@@ -253,13 +256,7 @@ export class KbPageTrashService {
           purgeConnectorProjectionsForPages(this.db, orgId, pageIds),
       },
     ];
-  }
-
-  private async executePreDeleteStores(
-    orgId: string,
-    subtreeIds: number[],
-  ): Promise<void> {
-    for (const { store, purge } of this.preDeleteStores(orgId)) {
+    for (const { store, purge } of stores) {
       const pending = await incompleteStorePages(
         this.db,
         orgId,
@@ -446,27 +443,14 @@ export class KbPageTrashService {
         ),
       );
     const foundMap = new Map(found.map((p) => [p.id, p.deletedAt]));
-    const results: BulkPageResult[] = [];
-    for (const pageId of input.pageIds) {
-      if (!foundMap.has(pageId)) {
-        results.push({ pageId, result: "notFound" });
-        continue;
-      }
-      if (foundMap.get(pageId) === null) {
-        results.push({ pageId, result: "succeeded" });
-        continue;
-      }
-      try {
-        await this.tree.restore(user, pageId);
-      } catch (e) {
-        if (e instanceof ConflictException) {
-          results.push({ pageId, result: "succeeded" });
-          continue;
-        }
-        throw e;
-      }
-      results.push({ pageId, result: "succeeded" });
-    }
+    const results: BulkPageResult[] = input.pageIds.map((pageId) => ({
+      pageId,
+      result: foundMap.has(pageId) ? ("succeeded" as const) : ("notFound" as const),
+    }));
+    const deletedIds = input.pageIds.filter(
+      (pageId) => foundMap.has(pageId) && foundMap.get(pageId) !== null,
+    );
+    if (deletedIds.length > 0) await this.tree.restoreMany(user, deletedIds);
     return { results };
   }
 

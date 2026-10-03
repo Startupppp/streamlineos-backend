@@ -16,7 +16,6 @@ import type {
   CreateTestCaseInput,
   CreateTestSuiteInput,
   TestCaseListQuery,
-  TestSuiteListQuery,
   UpdateTestCaseInput,
   UpdateTestSuiteInput,
 } from "./dto/qa.schemas";
@@ -32,7 +31,7 @@ export class TestManagementService {
     private readonly audit: AuditService,
   ) {}
 
-  async listSuites(u: CurrentUserContext, projectId: number, query: TestSuiteListQuery = {}) {
+  async listSuites(u: CurrentUserContext, projectId: number) {
     await assertProjectAccess(this.db, this.access, u, projectId);
 
     const conditions = [
@@ -40,7 +39,6 @@ export class TestManagementService {
       eq(testSuites.projectId, projectId),
       isNull(testSuites.deletedAt),
     ];
-    if (query.cursor !== undefined) conditions.push(gt(testSuites.id, query.cursor));
 
     const rows = await this.db
       .select()
@@ -219,8 +217,8 @@ export class TestManagementService {
       .from(testCases)
       .where(and(...conditions))
       .orderBy(testCases.id)
-      .limit(CASE_PAGE + 1);
-    return buildIdCursorPage(rows, CASE_PAGE, (r) => r.id);
+      .limit((query.limit ?? CASE_PAGE) + 1);
+    return buildIdCursorPage(rows, query.limit ?? CASE_PAGE, (r) => r.id);
   }
 
   async getCase(u: CurrentUserContext, projectId: number, caseId: number) {

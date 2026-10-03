@@ -400,17 +400,22 @@ export class CrmMailboxService {
 
   /** Every enabled mailbox in this organisation, oldest run first. */
   async sweepAll(organizationId: string) {
-    const due = await this.db
-      .select({ id: crmMailboxSync.crmMailboxSyncId })
-      .from(crmMailboxSync)
-      .where(
-        and(
-          eq(crmMailboxSync.organizationId, organizationId),
-          eq(crmMailboxSync.enabled, true),
-        ),
-      )
-      .orderBy(sql`${crmMailboxSync.lastRunAt} ASC NULLS FIRST`)
-      .limit(50);
+    const due = await runInTenantTransaction(
+      this.db,
+      async () =>
+        this.db
+          .select({ id: crmMailboxSync.crmMailboxSyncId })
+          .from(crmMailboxSync)
+          .where(
+            and(
+              eq(crmMailboxSync.organizationId, organizationId),
+              eq(crmMailboxSync.enabled, true),
+            ),
+          )
+          .orderBy(sql`${crmMailboxSync.lastRunAt} ASC NULLS FIRST`)
+          .limit(50),
+      { orgId: organizationId },
+    );
 
     let swept = 0;
     let delivered = 0;

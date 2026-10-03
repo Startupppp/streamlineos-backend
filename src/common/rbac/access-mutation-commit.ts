@@ -187,7 +187,8 @@ async function resolveMembershipUsers(
         eq(organizationMembers.orgId, orgId),
         inArray(organizationMembers.id, [...membershipIds]),
       ),
-    );
+    )
+    .limit(membershipIds.length);
   return rows.map((row) => row.userId);
 }
 

@@ -11,7 +11,6 @@ const incidentsSvc = {
   createIncident: jest.fn(),
   updateIncident: jest.fn(),
   deleteIncident: jest.fn(),
-  addIncidentUpdate: jest.fn(),
 };
 
 describe("ProjectsIncidents auth/RBAC (e2e)", () => {

@@ -461,7 +461,7 @@ export class UnifiedInboxService {
       wantsNotifications
         ? notifCursorError !== null
           ? {
-              kind: "notification" as InboxKind,
+              kind: "notification",
               included: true,
               available: false,
               reason: null,
@@ -487,7 +487,7 @@ export class UnifiedInboxService {
       ),
       wantsBuildApprovals && approvalCursorError !== null
         ? {
-            kind: "build_approval" as InboxKind,
+            kind: "build_approval",
             included: true,
             available: false,
             reason: null,
@@ -685,9 +685,9 @@ export class UnifiedInboxService {
     const membershipId = actingMembershipId(user.principal);
     if (membershipId === null) return { pending: 0, exact: true };
     const scans = await Promise.all(
-      this.buildApprovalAdapters().map(async (adapter) => {
+      this.buildApprovalAdapters().map(async (adapter): Promise<{ items: BuildApprovalInboxItem[]; exact: boolean }> => {
         if (!(await this.access.holds(user, adapter.permission)))
-          return { items: [] as BuildApprovalInboxItem[], exact: true };
+          return { items: [], exact: true };
         const outcome = await readSource(() =>
           adapter.fetch(
             orgId,

@@ -55,7 +55,7 @@ function fakeDb(visibleSourceIds: number[]): FakeDb {
           from: () => ({
             where: (cond: SQL) => {
               guardWhere.push(cond);
-              return Promise.resolve(visibleSourceIds.map((id) => ({ id })));
+              return { limit: () => Promise.resolve(visibleSourceIds.map((id) => ({ id }))) };
             },
           }),
         };

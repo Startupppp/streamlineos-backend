@@ -9,7 +9,7 @@ import {
 } from "./reporting-line.types";
 
 export const PERSON_NAME = (alias: string) =>
-  sql.raw(`coalesce(nullif(trim(${alias}.name), ''), nullif(trim(concat_ws(' ', ${alias}.first_name, ${alias}.last_name)), ''), ${alias}.email)`);
+  sql`coalesce(nullif(trim(${sql.identifier(alias)}.name), ''), nullif(trim(concat_ws(' ', ${sql.identifier(alias)}.first_name, ${sql.identifier(alias)}.last_name)), ''), ${sql.identifier(alias)}.email)`;
 
 export function hasPrimaryOn(orgId: string, today: string) {
   return sql`EXISTS (

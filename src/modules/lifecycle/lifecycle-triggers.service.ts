@@ -182,10 +182,15 @@ export class LifecycleTriggersService {
       )
       .where(and(...conditions))
       .orderBy(sql`${customerLifecycleTriggers.firedAt} DESC`)
-      .limit(query.limit)
+      .limit(query.limit + 1)
       .offset(query.offset);
 
-    return { triggers: rows, limit: query.limit, offset: query.offset };
+    return {
+      triggers: rows.slice(0, query.limit),
+      limit: query.limit,
+      offset: query.offset,
+      hasMore: rows.length > query.limit,
+    };
   }
 
   // ── Acting on one candidate ───────────────────────────────────────────────

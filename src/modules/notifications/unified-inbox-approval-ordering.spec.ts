@@ -70,9 +70,7 @@ function makeAccess(): AccessService {
 }
 
 function makeMail(): MailService {
-  return {
-    listInboxPage: jest.fn().mockResolvedValue({ items: [], accountErrors: [] }),
-  } as unknown as MailService;
+  return {} as unknown as MailService;
 }
 
 function makeBroadcasts(): BroadcastsService {

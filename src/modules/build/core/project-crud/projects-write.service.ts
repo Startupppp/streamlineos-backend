@@ -86,9 +86,9 @@ export class ProjectsWriteService {
         }
 
         if (hasCrmClientChange) {
-          const crmClientId = body.clientId === null
-            ? null
-            : parseInt(body.clientId!, 10);
+          const crmClientId = typeof body.clientId === "string"
+            ? parseInt(body.clientId, 10)
+            : null;
           if (crmClientId === null || (!isNaN(crmClientId) && crmClientId > 0)) {
             await tx.execute(
               sql`UPDATE build.projects SET crm_client_id = ${crmClientId} WHERE org_id = ${orgId} AND id = ${projectId}`,

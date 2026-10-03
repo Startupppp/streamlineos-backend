@@ -39,11 +39,12 @@ import {
 } from "./dto/kb-space-response.schemas";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
 const importJobIdParams = z.object({ importJobId: z.coerce.number().int().positive() }).strict();
 const exportJobIdParams = z.object({ exportJobId: z.coerce.number().int().positive() }).strict();
-const jobListQuery = z.object({ cursor: z.string().optional() }).strict();
+const jobListQuery = z.object({ cursor: z.string().optional(), limit: optionalPageSizeField() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -82,9 +83,10 @@ export class KbImportExportController {
   @ResponseSchema(kbImportJobListSchema)
   async listImportJobs(
     @Query("cursor") cursor: string | undefined,
+    @Query("limit") limit: number | undefined,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.importExport.listImportJobs(u.orgId, cursor);
+    return this.importExport.listImportJobs(u.orgId, cursor, limit);
   }
 
   @Get("import-jobs/:importJobId")
@@ -101,6 +103,7 @@ export class KbImportExportController {
   @Post("import-jobs/:importJobId/retry")
   @RequirePermission("kb:pages:import")
   @Validate({ params: importJobIdParams })
+  @BodylessAction()
   @ResponseSchema(kbImportAcceptedSchema)
   async retryImportJob(
     @Param("importJobId", ParseIntPipe) importJobId: number,
@@ -140,9 +143,10 @@ export class KbImportExportController {
   @ResponseSchema(kbExportJobListSchema)
   async listExportJobs(
     @Query("cursor") cursor: string | undefined,
+    @Query("limit") limit: number | undefined,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.exportSvc.listExportJobs(u.orgId, cursor);
+    return this.exportSvc.listExportJobs(u.orgId, cursor, limit);
   }
 
   @Get("export-jobs/:exportJobId/download")

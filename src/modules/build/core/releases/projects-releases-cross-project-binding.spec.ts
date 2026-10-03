@@ -14,7 +14,7 @@ import {
   tickets,
 } from "../../../../db/schema";
 import { ProjectsReleasesService } from "./projects-releases.service";
-import { lifecycleAuditDouble } from "../../lifecycle/audit-double";
+import { lifecycleAuditDouble } from "../../lifecycle/audit-double.spec-fixtures";
 import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../../__tests__/project-access-doubles";
 
 const ORG = "org-1";

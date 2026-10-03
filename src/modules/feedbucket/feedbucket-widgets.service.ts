@@ -84,7 +84,7 @@ export class FeedbucketWidgetsService {
   async list(orgId: string) {
     const widgets = await this.db.query.feedbucketWidgets.findMany({
       where: and(eq(feedbucketWidgets.orgId, orgId), isNull(feedbucketWidgets.deletedAt)),
-      with: { project: true },
+      with: { project: { columns: { intakeToken: false } } },
       orderBy: (w, { desc }) => [desc(w.createdAt)],
     });
 
@@ -123,7 +123,7 @@ export class FeedbucketWidgetsService {
         eq(feedbucketWidgets.orgId, orgId),
         isNull(feedbucketWidgets.deletedAt),
       ),
-      with: { project: true },
+      with: { project: { columns: { intakeToken: false } } },
     });
     if (!widget) throw new NotFoundException("Widget not found");
     return widget;

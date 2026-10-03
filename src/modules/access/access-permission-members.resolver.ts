@@ -16,7 +16,7 @@ import { ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions";
 import { isPlanGatedModule } from "./access-policy";
 import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import type { ReadAccessTable } from "./access-permission.resolver";
-import { drainByKeyset, GRANT_PAGE_SIZE } from "./access-grant-drains";
+import { drainByKeyset, GRANT_PAGE_SIZE } from "../../common/pagination/keyset-drain";
 
 const MEMBERS_WITH_PERMISSION_PAGE_SIZE = 100;
 

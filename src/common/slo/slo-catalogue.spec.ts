@@ -32,7 +32,15 @@ function resolveRunbookRoot(
   own: string,
   hasPlan: (candidate: string) => boolean,
   siblings: () => string[],
+  explicit?: string,
 ): string {
+  if (explicit) {
+    if (hasPlan(explicit)) return explicit;
+    throw new Error(
+      `STREAMLINE_WORKSPACE_ROOT=${explicit} holds no architecture-refactor/. The runbook ` +
+        `assertions cannot resolve their files.`,
+    );
+  }
   const candidates = [own, "streamlineos-frontend"];
   for (const name of candidates) {
     const candidate = join(parent, name);
@@ -53,6 +61,7 @@ const REPO_ROOT = resolveRunbookRoot(
   basename(BACKEND_ROOT).replace(/-backend$/, "-frontend"),
   (candidate) => existsSync(join(candidate, "architecture-refactor", "prd", "completion-plan.md")),
   () => readdirSync(join(BACKEND_ROOT, "..")),
+  process.env.STREAMLINE_WORKSPACE_ROOT,
 );
 
 describe("Runbook checkout resolution", () => {
@@ -69,6 +78,18 @@ describe("Runbook checkout resolution", () => {
 
   it("refuses to pass over an absent plan", () => {
     expect(() => resolveRunbookRoot(parent, "backend", () => false, () => [])).toThrow("cannot resolve");
+  });
+
+  it("prefers the configured workspace over the paired and sibling checkouts", () => {
+    const configured = join("ci", "streamlineos-frontend");
+    expect(resolveRunbookRoot(parent, "feature-frontend", () => true, () => ["other-frontend"], configured)).toBe(configured);
+  });
+
+  it("refuses a configured workspace that holds no plan rather than falling back to a sibling", () => {
+    const configured = join("ci", "streamlineos-frontend");
+    expect(() =>
+      resolveRunbookRoot(parent, "feature-frontend", (candidate) => candidate !== configured, () => [], configured),
+    ).toThrow("cannot resolve");
   });
 });
 
@@ -226,12 +247,12 @@ describe("SLO catalogue", () => {
   it("points every dispatchable alert at a runbook heading that exists", () => {
     const registry = alertRegistry();
     const slugCache = new Map<string, Set<string>>();
-    const files: Record<string, string> = {
-      FAILURE_RUNBOOK:
-        "architecture-refactor/prd/completion-plan.md",
-      KB_OBS_RUNBOOK:
-        "docs/specs/knowledge-base/KB-OBSERVABILITY-RUNBOOK.md",
-    };
+    const files: Record<string, string> = Object.fromEntries(
+      [...readScript("alert-dispatch.mjs").matchAll(/const ([A-Z_]+_RUNBOOK) =\s*"([^"]+)"/g)].map(
+        ([, name, path]) => [name, path],
+      ),
+    );
+    expect(Object.keys(files)).toEqual(expect.arrayContaining(["FAILURE_RUNBOOK", "KB_OBS_RUNBOOK", "OBSERVABILITY_RUNBOOK"]));
     const base =
       "architecture-refactor/prd/completion-plan.md";
     const broken: string[] = [];

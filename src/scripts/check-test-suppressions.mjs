@@ -137,7 +137,7 @@ const QUARANTINE_BASELINE = 0;
  * question now, not this ratchet's — the class it priced no longer exists.
  */
 // Lowered 20 -> 19 after replacing the unwired tenant-integrity conditional with explicit unit-only/live-probe separation.
-const CONDITIONAL_BASELINE = 19;
+const CONDITIONAL_BASELINE = 18;
 
 const SITE_RE =
   /(^|[^A-Za-z0-9_$.])(?:(it|test|describe)\s*\.\s*(skip|todo|failing)|(xit|xdescribe))\s*\(/g;

@@ -84,7 +84,12 @@ describe("ClientsService — cross-tenant isolation", () => {
       cachedVersioned: jest.fn().mockImplementation((_k: unknown, _h: unknown, fn: () => Promise<unknown>) => fn()),
       invalidateNamespace: jest.fn().mockResolvedValue(undefined),
     };
-    return new ClientsService(db, cache as never, { startForClient: jest.fn() } as never);
+    return new ClientsService(
+      db,
+      cache as never,
+      { startForClient: jest.fn() } as never,
+      { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
+    );
   }
 
   it("listClients: queries scoped to attacker org (deny)", async () => {

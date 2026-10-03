@@ -54,7 +54,6 @@ export {
 } from "./recruitment-automation-response.schemas";
 
 export {
-  candidateReferralRowSchema,
   candidateReferralWithRelationsSchema,
   vendorListItemSchema,
   vendorRowSchema,

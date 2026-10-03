@@ -1,7 +1,7 @@
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { AccessService } from "../../../access/access.service";
-import { resolveProjectsScope, PROJECTS_MANAGE_PERMISSION } from "./projects-scope";
+import { resolveProjectsScope, PROJECTS_MANAGE_PERMISSION, PROJECTS_VIEW_PERMISSION } from "./projects-scope";
 
 const mockAccess = {
   scopeFor: jest.fn(),
@@ -53,9 +53,17 @@ describe("resolveProjectsScope", () => {
     expect(result.denied).toBe(false);
   });
 
-  it("returns none when the permission is absent from the resolved map", async () => {
-    (mockAccess.scopeFor as jest.Mock).mockResolvedValueOnce("none");
+  it("returns none when neither the manage nor the view permission is in the resolved map", async () => {
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValueOnce("none").mockResolvedValueOnce("none");
     const result = await resolveProjectsScope(mockAccess, makeUser());
     expect(result.denied).toBe(true);
+    expect(mockAccess.scopeFor).toHaveBeenLastCalledWith(expect.anything(), PROJECTS_VIEW_PERMISSION);
+  });
+
+  it("returns own when only the view permission is in the resolved map", async () => {
+    (mockAccess.scopeFor as jest.Mock).mockResolvedValueOnce("none").mockResolvedValueOnce("all");
+    const result = await resolveProjectsScope(mockAccess, makeUser());
+    expect(result.denied).toBe(false);
+    expect(result.rawScope("spec reads the resolved value")).toBe("own");
   });
 });

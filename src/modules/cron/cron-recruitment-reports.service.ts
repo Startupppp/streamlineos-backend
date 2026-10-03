@@ -26,6 +26,7 @@ import { HrRecruitmentReportsService } from "../hr/interviews/hr-recruitment-rep
 const CADENCE_DAYS: Record<string, number> = { WEEKLY: 7, MONTHLY: 30 };
 const MAX_CSV_ROWS = 1_000;
 const SCHEDULE_BATCH = 100;
+export const RECRUITMENT_REPORTS_RUN_BUDGET = 500;
 
 export interface ReportDeliveryOutcome {
   delivered: number;
@@ -60,6 +61,8 @@ function toHtmlTable(rows: ReadonlyArray<Record<string, unknown>>): string {
 
 @Injectable()
 export class CronRecruitmentReportsService {
+  private resumeAfterOrgId: string | null = null;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
@@ -68,8 +71,11 @@ export class CronRecruitmentReportsService {
 
   async deliverDueReports(): Promise<ReportDeliveryOutcome> {
     const outcome: ReportDeliveryOutcome = { delivered: 0, failed: 0, skippedNoRecipients: 0 };
+    const budgetSpent = () => outcome.delivered + outcome.failed >= RECRUITMENT_REPORTS_RUN_BUDGET;
+    let lastVisitedOrgId: string | null = null;
 
     await forEachOrg(this.db, "recruitment-scheduled-reports", async (tx, orgId) => {
+      lastVisitedOrgId = orgId;
       const due = await tx
         .select({
           id: scheduledReports.id,
@@ -129,8 +135,9 @@ export class CronRecruitmentReportsService {
           });
         }
       }
-    });
+    }, "write", { startAfterOrgId: this.resumeAfterOrgId, stopWhen: budgetSpent });
 
+    this.resumeAfterOrgId = budgetSpent() ? lastVisitedOrgId : null;
     return outcome;
   }
 }

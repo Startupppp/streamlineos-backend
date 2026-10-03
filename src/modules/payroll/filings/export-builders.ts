@@ -195,6 +195,7 @@ export function buildPfEcrTxtExport(
   opts: { periodMonth: string | null; runId: number | null; bundle: IndiaStatutoryBundle },
 ): FilingExportArtifact {
   const missing: string[] = [];
+  const missingUan: string[] = [];
   const rows: Record<string, string | number>[] = [];
   const ceilingPaise = toPaise(opts.bundle.pf.monthlyWageCeiling);
   const eePercent = Number(opts.bundle.pf.employeePercent);
@@ -206,6 +207,7 @@ export function buildPfEcrTxtExport(
     const uan = e.uan?.trim() ?? "";
     if (!uan) {
       missing.push(`${e.subjectKey}:uan`);
+      missingUan.push(e.subjectKey);
       continue;
     }
     const epfWagesPaise = eePercent > 0 ? Math.round((eePaise * 100) / eePercent) : 0;
@@ -245,8 +247,8 @@ export function buildPfEcrTxtExport(
     `EPF wages are derived from the employee share at ${opts.bundle.pf.employeePercent}%; EPS and EDLI wages are capped at ₹${opts.bundle.pf.monthlyWageCeiling}; EPS is ${EPS_PERCENT}% of EPS wages.`,
     "Refund of advances is always 0.",
   ];
-  if (missing.length > 0)
-    notes.push(`${missing.length} member(s) excluded because no UAN is captured: ${missing.map((m) => m.split(":")[0]).join(", ")}.`);
+  if (missingUan.length > 0)
+    notes.push(`${missingUan.length} member(s) excluded because no UAN is captured: ${missingUan.join(", ")}.`);
 
   return {
     ...baseMeta("PF_ECR_TXT", opts.periodMonth, opts.runId, opts.bundle, notes),

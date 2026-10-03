@@ -51,7 +51,7 @@ export class PayeeEligibilityService {
       .where(
         and(
           pattern ? or(ilike(source.displayName, pattern), ilike(source.email, pattern)) : undefined,
-          position ? sql`(${source.displayName}, ${source.rowKey}) > (${position[0]}, ${position[1]})` : undefined,
+          position ? sql`(${source.displayName}, ${source.rowKey}) > (${sql.param(position[0])}, ${sql.param(position[1])})` : undefined,
         ),
       )
       .orderBy(asc(source.displayName), asc(source.rowKey))

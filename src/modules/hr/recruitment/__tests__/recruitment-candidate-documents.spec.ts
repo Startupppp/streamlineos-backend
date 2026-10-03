@@ -83,7 +83,7 @@ describe("RecruitmentCandidateDocumentsController", () => {
       { orgId, userId } as unknown as CurrentUserContext,
       candidateId.toString(),
       file,
-      "resume"
+      "OTHER"
     );
 
     expect(result).toEqual({ id: 1 });
@@ -105,7 +105,7 @@ describe("RecruitmentCandidateDocumentsController", () => {
     scanner.scan.mockResolvedValue({ status: "infected", threat: "EICAR-Test" });
 
     await expect(
-      controller.upload({ orgId: "org-1", userId: "u" } as unknown as CurrentUserContext, "123", VALID_PDF, "resume"),
+      controller.upload({ orgId: "org-1", userId: "u" } as unknown as CurrentUserContext, "123", VALID_PDF, "OTHER"),
     ).rejects.toThrow(UnprocessableEntityException);
 
     expect(storage.planUpload).not.toHaveBeenCalled();
@@ -117,14 +117,14 @@ describe("RecruitmentCandidateDocumentsController", () => {
     scanner.scan.mockResolvedValue({ status: "error", reason: "malware-scanning-disabled" });
 
     await expect(
-      controller.upload({ orgId: "org-1", userId: "u" } as unknown as CurrentUserContext, "123", VALID_PDF, "resume"),
+      controller.upload({ orgId: "org-1", userId: "u" } as unknown as CurrentUserContext, "123", VALID_PDF, "OTHER"),
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(quarantine.markClean).not.toHaveBeenCalled();
   });
 
   it("should throw BadRequestException if file is missing", async () => {
-    await expect(controller.upload({ orgId: "1", userId: "1" } as unknown as CurrentUserContext, "1", undefined as unknown as Express.Multer.File, "resume"))
+    await expect(controller.upload({ orgId: "1", userId: "1" } as unknown as CurrentUserContext, "1", undefined as unknown as Express.Multer.File, "OTHER"))
       .rejects.toThrow(BadRequestException);
   });
 });

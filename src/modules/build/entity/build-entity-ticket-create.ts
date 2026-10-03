@@ -62,9 +62,8 @@ export async function createTicketFromAction(
   const sourceChannelId = positiveInt(input, "sourceChannelId");
   const sourceMessageId = positiveInt(input, "sourceMessageId");
 
-  let createdResult: Awaited<ReturnType<BuildTicketCreationService["createInTransaction"]>>;
-  const created = await db.transaction(async (tx) => {
-    createdResult = await ticketCreation.createInTransaction(tx, {
+  const { row: created, createdResult } = await db.transaction(async (tx) => {
+    const createdResult = await ticketCreation.createInTransaction(tx, {
       orgId: actor.orgId,
       projectId,
       actor: { userId: actor.userId, membershipId: actor.membershipId ?? null },
@@ -93,9 +92,9 @@ export async function createTicketFromAction(
       });
     }
 
-    return row;
+    return { row, createdResult };
   });
-  ticketCreation.publish(createdResult!);
+  ticketCreation.publish(createdResult);
 
   if (!created) return { ok: false, reason: "invalid" };
 

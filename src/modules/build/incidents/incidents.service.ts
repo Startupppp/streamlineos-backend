@@ -116,8 +116,8 @@ export class IncidentsService {
         ),
       )
       .orderBy(sql`${projectIncidents.detectedAt} DESC NULLS LAST`, desc(projectIncidents.id))
-      .limit(INCIDENT_PAGE_SIZE + 1);
-    return buildTupleCursorPage(rows, INCIDENT_PAGE_SIZE, (row) => [
+      .limit((query.limit ?? INCIDENT_PAGE_SIZE) + 1);
+    return buildTupleCursorPage(rows, query.limit ?? INCIDENT_PAGE_SIZE, (row) => [
       row.detectedAt?.toISOString() ?? NULL_DETECTED_AT,
       String(row.id),
     ]);

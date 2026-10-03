@@ -194,8 +194,8 @@ export class SubmissionsService {
           : undefined,
       ))
       .orderBy(desc(formSubmissions.createdAt), desc(formSubmissions.id))
-      .limit(SUBMISSION_PAGE_SIZE + 1);
-    return buildTupleCursorPage(rows, SUBMISSION_PAGE_SIZE, (row) => [
+      .limit((query.limit ?? SUBMISSION_PAGE_SIZE) + 1);
+    return buildTupleCursorPage(rows, query.limit ?? SUBMISSION_PAGE_SIZE, (row) => [
       row.createdAt.toISOString(),
       String(row.id),
     ]);

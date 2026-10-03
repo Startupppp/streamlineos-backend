@@ -267,7 +267,7 @@ export class BoardApplyIngressService {
    *
    * The URL comes from an attacker-controlled payload, so it goes through
    * `outboundRequest` and its SSRF guard — a board apply is otherwise a way to
-   * make the server fetch `http://169.254.169.254/`. The size is capped from
+   * make the server fetch the cloud metadata endpoint. The size is capped from
    * the declared length AND from the bytes actually read, because a lying
    * `content-length` is free.
    */

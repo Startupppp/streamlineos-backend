@@ -173,6 +173,18 @@ describe("NotificationDispatchService durability", () => {
     expect(afterCommit).toHaveLength(1);
   });
 
+  it("emitMany records every intent in ONE outbox insert inside the caller's transaction", async () => {
+    const afterCommit: AfterCommitHook[] = [];
+    const second: DispatchEventInput = { ...input, targetUserIds: ["user-2"] };
+
+    await inRequestTransaction(afterCommit, () => svc.emitMany([input, second]));
+
+    expect(db.insert).toHaveBeenCalledTimes(1);
+    expect(insertedValues.map((row) => row["targetUserIds"])).toEqual([[USER], ["user-2"]]);
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(afterCommit).toHaveLength(2);
+  });
+
   /**
    * Two transactions, and the second one is the point. After-commit hooks run once the
    * request's transaction has already returned, so there is no ambient context: both

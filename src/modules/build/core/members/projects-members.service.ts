@@ -83,15 +83,14 @@ export class ProjectsMembersService {
     ];
     if (search) {
       const like = `%${escapeLike(search)}%`;
-      conds.push(
-        or(
-          ilike(users.name, like),
-          ilike(users.email, like),
-          ilike(users.firstName, like),
-          ilike(users.lastName, like),
-          ilike(sql`${projectMembers.role}::text`, like),
-        )!,
+      const searchCondition = or(
+        ilike(users.name, like),
+        ilike(users.email, like),
+        ilike(users.firstName, like),
+        ilike(users.lastName, like),
+        ilike(sql`${projectMembers.role}::text`, like),
       );
+      if (searchCondition) conds.push(searchCondition);
     }
     if (pos)
       conds.push(

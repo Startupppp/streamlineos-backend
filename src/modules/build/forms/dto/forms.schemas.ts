@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { formTypeEnum, formSubmissionStatusEnum } from "../../../../db/schema";
+import { optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const conditionOperatorEnum = z.enum([
   "eq",
@@ -133,6 +134,7 @@ export const listFormsQuerySchema = z
       )
       .optional(),
     cursor: z.string().min(1).optional(),
+    limit: optionalPageSizeField(),
     q: z.string().max(200).optional(),
   })
   .strict();
@@ -166,6 +168,7 @@ export const listSubmissionsQuerySchema = z
   .object({
     status: z.enum(formSubmissionStatusEnum.enumValues).optional(),
     cursor: z.string().min(1).optional(),
+    limit: optionalPageSizeField(),
   })
   .strict();
 

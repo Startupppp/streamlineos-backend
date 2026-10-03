@@ -16,6 +16,7 @@ import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { BgvCallbackService } from "./bgv-callback.service";
 import { BGV_STATUSES } from "./bgv-status";
+import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 
 const bgvCallbackResponseSchema = z.object({
   replay: z.boolean(),
@@ -47,7 +48,7 @@ export class BgvCallbackController {
   @UseRateLimit("public:bgv-callback")
   @ResponseSchema(bgvCallbackResponseSchema)
   receive(
-    @Param("orgSlug") orgSlug: string,
+    @Param("orgSlug", new ZodValidationPipe(z.string().min(1).max(128))) orgSlug: string,
     @Req() request: RawBodyRequest<Request>,
     @Headers("x-streamline-signature") signature: string | undefined,
   ) {

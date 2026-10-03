@@ -103,7 +103,8 @@ export class KbPageTrashQueryService {
           inArray(kbPages.id, input.pageIds),
           predicate,
         ),
-      );
+      )
+      .limit(input.pageIds.length);
     const visible = new Set(found.map((p) => p.id));
     if (input.pageIds.some((id) => !visible.has(id)))
       throw new NotFoundException("One or more pages not found");

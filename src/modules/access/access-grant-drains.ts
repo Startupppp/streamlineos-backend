@@ -10,7 +10,11 @@ import {
   userDelegations,
   userPermissionGrants,
 } from "../../db/schema";
-import { logger } from "../../common/logger/logger.service";
+import {
+  drainByKeyset,
+  GRANT_PAGE_SIZE,
+  UUID_ZERO,
+} from "../../common/pagination/keyset-drain";
 import type { DataScope } from "./access.types";
 
 /**
@@ -22,55 +26,12 @@ export type ReadAccessTable = <Result>(
   read: () => PromiseLike<Result>,
 ) => Promise<Result>;
 
-/** One page of a grant drain. Pages, never a cap: see the two functions below. */
-export const GRANT_PAGE_SIZE = 500;
-
-/** Sorts below every generated uuid, so the first page needs no special case. */
-export const UUID_ZERO = "00000000-0000-0000-0000-000000000000";
-
 /**
  * The empty string is the minimum of `text` under every collation, so it is the
  * one sentinel that is safe for a keyset over ids this module does not generate
  * itself. `user_delegations.id` is plain `text`, not `uuid`.
  */
 const TEXT_MIN = "";
-
-/**
- * The one paging loop in this file. Every drain below reads `GRANT_PAGE_SIZE`
- * rows at a time and advances a keyset cursor until a page comes back short, so
- * a tenant whose rows fit inside one page still costs exactly one query, and a
- * tenant past the boundary loses nothing instead of losing the remainder.
- *
- * Termination is a property of the read, not of a counter: `readPage` filters on
- * `cursor > after` and orders by that same column, so every row of the next page
- * sorts strictly after the last row of this one. The non-advance check exists for
- * the case that invariant is broken — a projection that forgot to select the
- * cursor column, a fake that ignores the predicate — and it stops and says so
- * rather than spinning. Nothing here truncates in silence.
- */
-export async function drainByKeyset<Row, Cursor>(
-  firstCursor: Cursor,
-  readPage: (after: Cursor) => PromiseLike<Row[]>,
-  cursorOf: (row: Row) => Cursor,
-): Promise<Row[]> {
-  const drained: Row[] = [];
-  let after = firstCursor;
-  for (;;) {
-    const page = await readPage(after);
-    for (const row of page) drained.push(row);
-    const last = page[page.length - 1];
-    if (page.length < GRANT_PAGE_SIZE || last === undefined) return drained;
-    const next = cursorOf(last);
-    if (next === after) {
-      logger.warn(
-        "access: keyset drain cursor did not advance - stopping the drain",
-        { rows: drained.length },
-      );
-      return drained;
-    }
-    after = next;
-  }
-}
 
 export interface DrainedRoleAssignment {
   roleId: number;

@@ -4,8 +4,8 @@ import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { TestManagementService } from "./test-management.service";
-import { createTestCaseSchema } from "./dto/qa.schemas";
-import { lifecycleAuditDouble } from "../lifecycle/audit-double";
+import { createTestCaseSchema, testSuiteListQuerySchema } from "./dto/qa.schemas";
+import { lifecycleAuditDouble } from "../lifecycle/audit-double.spec-fixtures";
 import { MEMBER_STANDING, projectAccessRow, standingAccess } from "../__tests__/project-access-doubles";
 
 function gatedSelect(row: object | null, after: () => unknown) {
@@ -76,7 +76,7 @@ describe("TestManagementService — cross-tenant isolation", () => {
   it("throws NotFoundException for listSuites when project not in org (cross-tenant isolation)", async () => {
     const db = makeDb(null, []);
     const svc = new TestManagementService(db, makeAccessEmpty(), lifecycleAuditDouble());
-    await expect(svc.listSuites(makeU(ATTACKER_ORG), 99, {})).rejects.toThrow(NotFoundException);
+    await expect(svc.listSuites(makeU(ATTACKER_ORG), 99)).rejects.toThrow(NotFoundException);
   });
 
   it("returns suites for the owning org (same-tenant control)", async () => {
@@ -84,7 +84,7 @@ describe("TestManagementService — cross-tenant isolation", () => {
     const suite = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "Suite A" };
     const db = makeDb(project, [suite]);
     const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
-    const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
+    const result = await svc.listSuites(makeU(OWNER_ORG), 1);
     expect(result).toHaveLength(1);
   });
 });
@@ -137,14 +137,14 @@ describe("TestManagementService — project membership gate (assertProjectAccess
     const db = makeNonMemberDb();
     const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new TestManagementService(db, access, lifecycleAuditDouble());
-    await expect(svc.listSuites(makeU("org-1"), 1, {})).rejects.toThrow(ForbiddenException);
+    await expect(svc.listSuites(makeU("org-1"), 1)).rejects.toThrow(ForbiddenException);
   });
 
   it("allows a direct project member through the gate", async () => {
     const db = makeMemberDb();
     const access = standingAccess(MEMBER_STANDING) as unknown as AccessService;
     const svc = new TestManagementService(db, access, lifecycleAuditDouble());
-    await expect(svc.listSuites(makeU("org-1"), 1, {})).resolves.toEqual([]);
+    await expect(svc.listSuites(makeU("org-1"), 1)).resolves.toEqual([]);
   });
 });
 
@@ -182,7 +182,7 @@ describe("TestManagementService — listSuites grouped case counts", () => {
     } as unknown as Db;
 
     const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
-    const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
+    const result = await svc.listSuites(makeU(OWNER_ORG), 1);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: 1, caseCount: 3 });
@@ -220,7 +220,7 @@ describe("TestManagementService — listSuites grouped case counts", () => {
     } as unknown as Db;
 
     const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
-    const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
+    const result = await svc.listSuites(makeU(OWNER_ORG), 1);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: 2, caseCount: 0 });
@@ -245,51 +245,20 @@ describe("TestManagementService — listSuites grouped case counts", () => {
     } as unknown as Db;
 
     const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
-    const result = await svc.listSuites(makeU(OWNER_ORG), 1, {});
+    const result = await svc.listSuites(makeU(OWNER_ORG), 1);
 
     expect(result).toHaveLength(0);
     expect(db.select).toHaveBeenCalledTimes(2);
   });
 });
 
-describe("TestManagementService — listSuites cursor pagination", () => {
-  const OWNER_ORG = "org-owner";
+describe("testSuiteListQuerySchema — the suite list declares no cursor it cannot honour", () => {
+  it("accepts a request with no query parameters", () => {
+    expect(testSuiteListQuerySchema.safeParse({}).success).toBe(true);
+  });
 
-  it("returns only suites after the cursor id when cursor is provided", async () => {
-    const suiteAfterCursor = { id: 6, orgId: OWNER_ORG, projectId: 1, name: "S6", position: 0 };
-    let selectCall = 0;
-    const suiteChain = {
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([suiteAfterCursor]),
-          }),
-        }),
-      }),
-    };
-    const countChain = {
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          groupBy: jest.fn().mockResolvedValue([]),
-        }),
-      }),
-    };
-    const db = {
-      query: {
-        testSuites: { findFirst: jest.fn().mockResolvedValue(null) },
-        testCases: { findFirst: jest.fn().mockResolvedValue(null) },
-      },
-      select: gatedSelect(projectAccessRow(), () => {
-        selectCall++;
-        return selectCall === 1 ? suiteChain : countChain;
-      }),
-    } as unknown as Db;
-
-    const svc = new TestManagementService(db, makeAccessGranted(), lifecycleAuditDouble());
-    const result = await svc.listSuites(makeU(OWNER_ORG), 1, { cursor: 5 });
-
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ id: 6 });
+  it("rejects a cursor, because the list is ordered by position and an id keyset over it skips rows", () => {
+    expect(testSuiteListQuerySchema.safeParse({ cursor: "5" }).success).toBe(false);
   });
 });
 

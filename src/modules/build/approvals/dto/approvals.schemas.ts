@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { approvalEntityTypeEnum, approvalStatusEnum } from "../../../../db/schema";
+import { optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createApprovalSchema = z.object({
   entityType: z.enum(approvalEntityTypeEnum.enumValues),
@@ -16,10 +17,12 @@ export const listApprovalsQuerySchema = z.object({
   entityType: z.enum(approvalEntityTypeEnum.enumValues).optional(),
   approverId: z.string().min(1).optional(),
   cursor: z.string().min(1).optional(),
+  limit: optionalPageSizeField(),
 }).strict();
 
 export const inboxQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
+  limit: optionalPageSizeField(),
   status: z.enum(approvalStatusEnum.enumValues).optional(),
   type: z.enum(approvalEntityTypeEnum.enumValues).optional(),
   from: z.coerce.date().optional(),

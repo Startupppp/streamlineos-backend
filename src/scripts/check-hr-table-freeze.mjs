@@ -289,6 +289,14 @@ const APPROVED_EXCEPTIONS = new Set([
   // hrms-kb/pr-2-schema-and-flags, migration 1199.
   "document_audiences",
   "document_versions",
+  "job_templates",
+  "hr_leave_policy_template_dismissals",
+  "hr_reporting_manager_policies",
+  "hr_reporting_line_bulk_jobs",
+  "hr_reporting_line_bulk_job_rows",
+  "hr_reporting_manager_requests",
+  "hr_reporting_lines_superseded",
+  "hr_top_level_roles",
 ]);
 
 function extractTableNames(src) {
