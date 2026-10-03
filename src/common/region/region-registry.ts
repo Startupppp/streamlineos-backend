@@ -65,6 +65,21 @@ export class SignedPlacementRejectedError extends HttpException {
   }
 }
 
+/**
+ * An organisation with no placement row. Still fails closed, but as a 404: public routes take the
+ * org id from the URL, and an unknown or malformed one is the caller's mistake, not a server fault
+ * (it was a 500 on every /public/* route that opens a tenant transaction). The response says only
+ * "Organization not found"; the internal detail stays on `message` for logs.
+ */
+export class OrganizationNotPlacedError extends HttpException {
+  constructor(orgId: string) {
+    super({ code: "NOT_FOUND", message: "Organization not found" }, HttpStatus.NOT_FOUND);
+    this.name = "OrganizationNotPlacedError";
+    this.message =
+      `[region] organisation ${orgId} has no region. It must be placed before its data can be reached.`;
+  }
+}
+
 export class PlacementRefusedError extends HttpException {
   constructor(
     readonly code: string,
@@ -258,10 +273,7 @@ export class RegionRegistry {
   protected async resolvePlacement(orgId: string): Promise<OrganizationPlacement> {
     const raw = await this.lookup(orgId);
 
-    if (raw === null)
-      throw new Error(
-        `[region] organisation ${orgId} has no region. It must be placed before its data can be reached.`,
-      );
+    if (raw === null) throw new OrganizationNotPlacedError(orgId);
 
     const region = typeof raw === "string" ? raw : raw.region;
 
