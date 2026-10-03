@@ -43,7 +43,10 @@ export class PayrollRunVarianceService {
       .from(payrollRunEmployees)
       .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
-      .orderBy(desc(payrollRunEmployees.net))
+      .orderBy(
+        sql`abs(coalesce(nullif(${payrollRunEmployees.calculationSnapshot} -> 'variance' ->> 'netDeltaPercent', '')::numeric, 0)) desc`,
+        desc(payrollRunEmployees.net),
+      )
       .limit(10);
 
     const withBaselines = topMovers.map((m) => {
