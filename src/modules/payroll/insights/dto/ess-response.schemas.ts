@@ -127,6 +127,7 @@ export const ownFnfSchema = z
     id: z.number().int(),
     basicDues: z.string(),
     leaveEncashment: z.string(),
+    gratuity: z.string(),
     bonusDue: z.string(),
     deductions: z.string(),
     loanRecovery: z.string(),

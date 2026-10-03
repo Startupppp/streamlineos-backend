@@ -79,6 +79,7 @@ export class FnfService {
 
     const basicDues = body.basicDues ?? 0;
     const leaveEncashment = body.leaveEncashment ?? 0;
+    const gratuity = body.gratuity ?? 0;
     const bonusDue = body.bonusDue ?? 0;
     const reimbursementsDue = body.reimbursementsDue ?? 0;
     const deductions = body.deductions ?? 0;
@@ -89,6 +90,7 @@ export class FnfService {
     const netPayable =
       basicDues +
       leaveEncashment +
+      gratuity +
       bonusDue +
       reimbursementsDue -
       deductions -
@@ -115,6 +117,7 @@ export class FnfService {
         resignationId: body.resignationId ?? null,
         otherDeductions: otherDeductions.toString(),
         leaveEncashment: leaveEncashment.toString(),
+        gratuity: gratuity.toString(),
         reimbursementsDue: reimbursementsDue.toString(),
       })
       .returning();

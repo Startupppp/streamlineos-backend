@@ -78,6 +78,7 @@ export const fnfGetOneSchema = z.object({
   userId: z.string(),
   basicDues: z.string(),
   leaveEncashment: z.string(),
+  gratuity: z.string(),
   bonusDue: z.string(),
   deductions: z.string(),
   loanRecovery: z.string(),

@@ -254,6 +254,9 @@ export const fnfSettlements = pgTable(
     leaveEncashment: decimal("leave_encashment", { precision: 15, scale: 2 })
       .default("0")
       .notNull(),
+    gratuity: decimal("gratuity", { precision: 15, scale: 2 })
+      .default("0")
+      .notNull(),
     bonusDue: decimal("bonus_due", { precision: 15, scale: 2 })
       .default("0")
       .notNull(),
