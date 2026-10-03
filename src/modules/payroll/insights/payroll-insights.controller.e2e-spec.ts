@@ -149,6 +149,7 @@ const mockTaxWindowsService = {
 
 const mockEssOverview = {
   toggles: {},
+  payStatus: "not-set-up" as const,
   capabilities: {
     mode: "employee_self_service" as const,
     honestyNote: "Illustrative only.",

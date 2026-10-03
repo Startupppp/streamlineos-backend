@@ -1,8 +1,12 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { and, asc, ilike, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { resolvePerson } from "../../directory/person-seam";
 import type { PersonEmployment, PersonResolutionPath } from "../../directory/person-seam";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
+import { payrollPeopleSource, toPayee } from "./lib/payroll-people";
+import type { ListPayrollPeopleQuery } from "./dto/payroll-people.schemas";
 
 export type PayeeEligibilityReason =
   | "payable"
@@ -24,6 +28,49 @@ export type PayeeEligibility = {
 @Injectable()
 export class PayeeEligibilityService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  async listPeople(orgId: string, query: ListPayrollPeopleQuery) {
+    const source = payrollPeopleSource(this.db, orgId);
+    const position = query.cursor ? decodeTupleCursor(query.cursor, 2) : null;
+    if (query.cursor && !position) throw new BadRequestException("Invalid cursor");
+    const pattern = query.search ? `%${query.search.replace(/[\\%_]/g, (character) => `\\${character}`)}%` : null;
+
+    const rows = await this.db
+      .select({
+        organizationPersonId: source.organizationPersonId,
+        rowKey: source.rowKey,
+        displayName: source.displayName,
+        email: source.email,
+        employeeNumber: source.employeeNumber,
+        payeeKind: source.payeeKind,
+        payeeId: source.payeeId,
+        hasSalary: source.hasSalary,
+        eligibility: source.eligibility,
+      })
+      .from(source)
+      .where(
+        and(
+          pattern ? or(ilike(source.displayName, pattern), ilike(source.email, pattern)) : undefined,
+          position ? sql`(${source.displayName}, ${source.rowKey}) > (${position[0]}, ${position[1]})` : undefined,
+        ),
+      )
+      .orderBy(asc(source.displayName), asc(source.rowKey))
+      .limit(query.limit + 1);
+
+    const page = buildTupleCursorPage(rows, query.limit, (row) => [row.displayName, row.rowKey]);
+    return {
+      data: page.data.map((row) => ({
+        organizationPersonId: row.organizationPersonId,
+        displayName: row.displayName,
+        email: row.email,
+        employeeNumber: row.employeeNumber,
+        payee: toPayee(row.payeeKind, row.payeeId),
+        hasSalaryProfile: row.hasSalary === true,
+        eligibility: row.eligibility,
+      })),
+      pagination: page.pagination,
+    };
+  }
 
   async getEligibility(
     orgId: string,

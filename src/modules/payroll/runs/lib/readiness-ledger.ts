@@ -31,6 +31,7 @@ export interface ReadinessLedgerInput {
   inputs: { status: string; lockedAt: Date | null } | null;
   run: { id: number; status: string; createdAt: Date } | null;
   cutoff: { type: string; date: string; title: string } | null;
+  people: PayrollReadiness["people"];
 }
 
 function hours(value: string): string {
@@ -226,5 +227,6 @@ export function buildReadinessLedger(input: ReadinessLedgerInput): PayrollReadin
     stages: stagesOf(input, latest),
     exports,
     exceptions: exceptionsOf(input, latest),
+    people: input.people,
   };
 }

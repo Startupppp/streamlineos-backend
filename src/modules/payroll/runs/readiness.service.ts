@@ -6,6 +6,7 @@ import { payrollCalendarEvents, payrollCommandReceipts, payrollRuns } from "../.
 import { hrPayrollInputPeriods } from "../../../db/schema/payroll/input-capture";
 import { TimesheetPayrollReadinessFactsService } from "../../timesheets/payroll/payroll-readiness-facts.service";
 import { buildReadinessLedger } from "./lib/readiness-ledger";
+import { summarizePayrollPeople } from "./lib/payroll-people";
 import type { PayrollReadiness } from "./dto/readiness-response.schemas";
 
 const HANDOFF_DELIVER_COMMAND = "timesheet.handoff.deliver";
@@ -29,7 +30,7 @@ export class PayrollReadinessService {
     const facts = await this.timesheetFacts.facts(orgId, window);
     const exportIds = facts.exports.map((row) => row.id);
 
-    const [receipts, inputRows, runRows, cutoffRows] = await Promise.all([
+    const [receipts, inputRows, runRows, cutoffRows, people] = await Promise.all([
       exportIds.length === 0
         ? Promise.resolve([])
         : this.db
@@ -70,12 +71,14 @@ export class PayrollReadinessService {
         )
         .orderBy(asc(payrollCalendarEvents.date))
         .limit(1),
+      summarizePayrollPeople(this.db, orgId),
     ]);
 
     const receivedAtByExportId = new Map<number, Date>();
     for (const receipt of receipts) if (receipt.finishedAt) receivedAtByExportId.set(receipt.exportId, receipt.finishedAt);
 
     return buildReadinessLedger({
+      people,
       month,
       facts,
       receivedAtByExportId,

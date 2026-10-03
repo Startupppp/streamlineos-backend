@@ -37,6 +37,7 @@ function input(overrides: Partial<ReadinessLedgerInput> = {}): ReadinessLedgerIn
     inputs: { status: "locked", lockedAt: new Date("2026-09-07T00:00:00.000Z") },
     run: { id: 7, status: "PREVIEW_READY", createdAt: new Date("2026-09-08T00:00:00.000Z") },
     cutoff: { type: "ATTENDANCE_CUTOFF", date: "2026-09-25", title: "Attendance cut-off" },
+    people: { payable: 0, withSalary: 0, payableWithoutSalary: 0, needsPayeeLink: 0, payableWithoutSalarySample: [] },
     ...overrides,
   };
 }

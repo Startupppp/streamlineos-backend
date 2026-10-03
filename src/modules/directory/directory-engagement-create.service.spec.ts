@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { DirectoryService } from "./directory.service";
 import {
   createDirectoryTestHarness,
@@ -21,6 +22,9 @@ describe("DirectoryService engagement creation and listing", () => {
     const harness = await createDirectoryTestHarness();
     svc = harness.service;
     mockDb = harness.database;
+    (mockDb as { update: jest.Mock }).update.mockReturnValue({
+      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+    });
   });
 
   describe("listEngagements  -  validates worker exists first", () => {
@@ -98,6 +102,56 @@ describe("DirectoryService engagement creation and listing", () => {
       expect(valuesSpy).toHaveBeenCalledWith(
         expect.objectContaining({ status: "ACTIVE", isPrimary: true }),
       );
+    });
+
+    it("activates an INACTIVE worker in the same write path when the engagement starts ACTIVE", async () => {
+      const { selectChain } = makeSelectChain([makeWorker({ status: "INACTIVE" })]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockReturnValue({
+            catch: jest.fn().mockResolvedValue([makeEngagement({ status: "ACTIVE", isPrimary: true })]),
+          }),
+        }),
+      });
+      const where = jest.fn().mockResolvedValue([]);
+      const set = jest.fn().mockReturnValue({ where });
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({ set });
+
+      await svc.createEngagement(ORG_ID, USER_ID, null, {
+        workerId: WORKER_ID,
+        startsOn: "2024-01-01",
+        workerType: "FULL_TIME",
+        isPrimary: true,
+      });
+
+      expect(set).toHaveBeenCalledWith(expect.objectContaining({ status: "ACTIVE" }));
+      const predicate = new PgDialect().sqlToQuery(where.mock.calls[0][0]);
+      expect(predicate.sql).toContain('"status" = ');
+      expect(predicate.sql).toContain('"deleted_at" is null');
+      expect(predicate.params).toEqual(expect.arrayContaining([WORKER_ID, ORG_ID, "INACTIVE"]));
+      expect(predicate.params).not.toContain("EXITED");
+    });
+
+    it("leaves the worker alone when the engagement is only PLANNED", async () => {
+      const { selectChain } = makeSelectChain([makeWorker({ status: "INACTIVE" })]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockReturnValue({
+            catch: jest.fn().mockResolvedValue([makeEngagement({ status: "PLANNED", isPrimary: false })]),
+          }),
+        }),
+      });
+
+      await svc.createEngagement(ORG_ID, USER_ID, null, {
+        workerId: WORKER_ID,
+        startsOn: "2024-01-01",
+        workerType: "FULL_TIME",
+        isPrimary: false,
+      });
+
+      expect((mockDb as { update: jest.Mock }).update).not.toHaveBeenCalled();
     });
 
     it("sets status=PLANNED when isPrimary=false", async () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { payrollPeopleReadinessSchema } from "./payroll-people.schemas";
 import { nullableWireDate } from "../../../../common/openapi/wire-types";
 
 export const READINESS_STAGE_KEYS = [
@@ -86,6 +87,7 @@ export const payrollReadinessResponseSchema = z.object({
   stages: z.array(readinessStageSchema),
   exports: z.array(readinessExportSchema),
   exceptions: z.array(readinessExceptionSchema),
+  people: payrollPeopleReadinessSchema,
 });
 
 export type PayrollReadiness = z.infer<typeof payrollReadinessResponseSchema>;

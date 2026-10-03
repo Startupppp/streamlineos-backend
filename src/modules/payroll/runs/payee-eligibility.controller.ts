@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, NotFoundException, Param, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -11,6 +11,13 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { payeeEligibilityResponseSchema } from "./dto/payee-eligibility-response.schemas";
 import { z } from "zod";
+import { AccessService } from "../../access/access.service";
+import { ScopedRead } from "../../access/scoped-read";
+import {
+  listPayrollPeopleQuerySchema,
+  payrollPeopleListResponseSchema,
+  type ListPayrollPeopleQuery,
+} from "./dto/payroll-people.schemas";
 
 const organizationPersonIdParams = z.object({ organizationPersonId: z.string().min(1) }).strict();
 
@@ -18,7 +25,20 @@ const organizationPersonIdParams = z.object({ organizationPersonId: z.string().m
 @Controller("payroll/people")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayeeEligibilityController {
-  constructor(private readonly eligibility: PayeeEligibilityService) {}
+  constructor(
+    private readonly eligibility: PayeeEligibilityService,
+    private readonly access: AccessService,
+  ) {}
+
+  @Get()
+  @RequirePermission("payroll:salaries:view")
+  @ResponseSchema(payrollPeopleListResponseSchema)
+  @Validate({ query: listPayrollPeopleQuerySchema })
+  async listPeople(@Query() query: ListPayrollPeopleQuery, @CurrentUser() u: CurrentUserContext) {
+    const read = await ScopedRead.for(this.access, u, "payroll:salaries:view");
+    if (!read.unrestricted) throw new NotFoundException("Payroll people not found");
+    return this.eligibility.listPeople(u.orgId, query);
+  }
 
   @Get(":organizationPersonId/eligibility")
   @RequirePermission("payroll:salaries:view")

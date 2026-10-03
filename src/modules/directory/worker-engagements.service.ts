@@ -262,6 +262,7 @@ export class WorkerEngagementsService {
       .returning()
       .catch(throwEngagementWriteError);
     if (!row) throw new NotFoundException("Failed to create engagement");
+    if (row.status === "ACTIVE") await this.activateWorker(organizationId, row.workerId);
     await this.audit.logCritical({
       action: "directory.engagement.created",
       userId,
@@ -271,6 +272,20 @@ export class WorkerEngagementsService {
       metadata: { workerEngagementId: row.workerEngagementId, workerId: row.workerId },
     });
     return row;
+  }
+
+  private async activateWorker(organizationId: string, workerId: string) {
+    await this.db
+      .update(workers)
+      .set({ status: "ACTIVE", rowVersion: sql`${workers.rowVersion} + 1` })
+      .where(
+        and(
+          eq(workers.workerId, workerId),
+          eq(workers.organizationId, organizationId),
+          eq(workers.status, "INACTIVE"),
+          isNull(workers.deletedAt),
+        ),
+      );
   }
 
   /** @see updateEngagement — optimistic patch guarded by rowVersion. */
