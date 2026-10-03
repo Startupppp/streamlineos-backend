@@ -276,8 +276,8 @@ export const invitationModuleAccess = pgTable("invitation_module_access", {
   index("idx_ima_org_id").on(table.orgId),
   foreignKey({
     name: "fk_ima_invitation",
-    columns: [table.invitationId],
-    foreignColumns: [invitations.id],
+    columns: [table.orgId, table.invitationId],
+    foreignColumns: [invitations.orgId, invitations.id],
   }).onDelete("cascade"),
   foreignKey({
     name: "fk_ima_org",
