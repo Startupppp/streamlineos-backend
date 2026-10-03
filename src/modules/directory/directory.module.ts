@@ -10,6 +10,6 @@ import { EmploymentFactsModule } from "./employment-facts.module";
   imports: [EmploymentFactsModule],
   controllers: [DirectoryController],
   providers: [DirectoryService, DirectoryIdentityService, DirectoryPersonEnsureService, WorkerEngagementsService],
-  exports: [EmploymentFactsModule],
+  exports: [EmploymentFactsModule, DirectoryService],
 })
 export class DirectoryModule {}

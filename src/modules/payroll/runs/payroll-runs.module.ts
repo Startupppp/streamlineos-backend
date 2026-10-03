@@ -36,6 +36,8 @@ import { LoanRecoveryService } from "./loan-recovery.service";
 import { PayrollExportController } from "./payroll-export.controller";
 import { PayrollRunExportService } from "./payroll-export.service";
 import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
+import { PayrollSampleDataController } from "../sample-data/sample-data.controller";
+import { PayrollSampleDataService } from "../sample-data/sample-data.service";
 
 @Module({
   imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule, DirectoryModule, TimesheetsModule],
@@ -50,6 +52,7 @@ import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
     CommandCenterController,
     PayrollReadinessController,
     PayrollExportController,
+    PayrollSampleDataController,
   ],
   providers: [
     RunsService,
@@ -74,6 +77,7 @@ import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
     LoanRecoveryService,
     PayrollRunExportService,
     PayrollRunExportWorkerService,
+    PayrollSampleDataService,
   ],
   exports: [GenerateService, PayrollCommandReceiptsService, PayrollRunLockService],
 })
