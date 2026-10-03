@@ -166,28 +166,7 @@ export async function checkRunCompletion(
           and(
             eq(reimbursements.orgId, orgId),
             isNull(reimbursements.paidAt),
-            inArray(
-              sql`${reimbursements.id}::text`,
-              tx
-                .select({ sourceId: payrollRunAllocations.sourceId })
-                .from(payrollRunAllocations)
-                .innerJoin(
-                  payrollRunEmployees,
-                  and(
-                    eq(payrollRunEmployees.orgId, payrollRunAllocations.orgId),
-                    eq(payrollRunEmployees.runId, payrollRunAllocations.runId),
-                    eq(payrollRunEmployees.userId, payrollRunAllocations.userId),
-                  ),
-                )
-                .where(
-                  and(
-                    eq(payrollRunAllocations.orgId, orgId),
-                    eq(payrollRunAllocations.runId, runId),
-                    eq(payrollRunAllocations.sourceType, "REIMBURSEMENT"),
-                    inArray(payrollRunEmployees.id, paidRunEmployeeIds),
-                  ),
-                ),
-            ),
+            sql`exists (select 1 from ${payrollRunAllocations} inner join ${payrollRunEmployees} on ${payrollRunEmployees.orgId} = ${payrollRunAllocations.orgId} and ${payrollRunEmployees.runId} = ${payrollRunAllocations.runId} and ${payrollRunEmployees.userId} = ${payrollRunAllocations.userId} where ${payrollRunAllocations.orgId} = ${orgId} and ${payrollRunAllocations.runId} = ${runId} and ${payrollRunAllocations.sourceType} = 'REIMBURSEMENT' and ${payrollRunAllocations.sourceId} = ${reimbursements.id}::text and ${inArray(payrollRunEmployees.id, paidRunEmployeeIds)})`,
           ),
         );
     }

@@ -98,7 +98,6 @@ export function payrollPeopleSource(db: Db, orgId: string) {
   return personBranch(db, orgId).unionAll(memberOnlyBranch(db, orgId)).as("payroll_people");
 }
 
-export type PayrollPeopleSource = ReturnType<typeof payrollPeopleSource>;
 
 export function toPayee(payeeKind: "user" | "worker" | null, payeeId: string | null): PayrollPersonPayee {
   if (payeeKind === "user" && payeeId) return { kind: "user", userId: payeeId };

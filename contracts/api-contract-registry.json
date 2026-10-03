@@ -47298,6 +47298,39 @@
       "consumers": [],
       "sunsetAt": null,
       "sunsetEvidence": null
+    },
+    "PATCH /payroll/entities/{entityId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollEntitiesController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /payroll/people": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayeeEligibilityController_listPeople",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /payroll/runs/{runId}/employees/{runEmployeeId}/release": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PublishingController_releaseHold",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
     }
   },
   "events": {

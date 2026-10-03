@@ -4047,6 +4047,10 @@
       "verdict": "FALSE-POSITIVE",
       "note": "selectFullRow:56 filters eq(projectUpdates.orgId, orgId) AND eq(projectUpdates.id, id). project_updates.id is integer().primaryKey().generatedAlwaysAsIdentity(), so the predicate is a primary-key equality and the result set is at most one row by construction; the caller destructures [row] and 404s when it is absent. The two left joins are to organizationMembers and users on equality of their own keys and cannot fan the row out.",
       "justification": "Bounded by the primary key, not by a limit clause - the gate flags the missing .limit(1) rather than an unbounded row count. The other reads in this file already carry .limit(): loadUpdate uses .limit(1) and listUpdates keyset-pages with decodeTimestampCursor and a clamped limit. Classified 2026-09-28."
+    },
+    "/payroll/runs/lib/payroll-people.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "union branches of the payable-people source; listPeople bounds the outer select with a cursor page, summarizePayrollPeople counts and caps its sample at 10"
     }
   }
 }
