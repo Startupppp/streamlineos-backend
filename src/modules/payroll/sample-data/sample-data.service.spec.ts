@@ -24,8 +24,9 @@ function build(statusRows: Array<Record<string, number>>, deleteError?: unknown)
       for (const field of Object.values(fields)) reads.push(dialect.sqlToQuery(field));
       const row = statusRows[Math.min(statusCall, statusRows.length - 1)];
       statusCall += 1;
-      const node = {
-        from: jest.fn(() => node),
+      type SelectNode = { from: jest.Mock<SelectNode, []>; where: jest.Mock<Promise<unknown[]>, [SQL]> };
+      const node: SelectNode = {
+        from: jest.fn((): SelectNode => node),
         where: jest.fn((where: SQL) => {
           reads.push(dialect.sqlToQuery(where));
           return Promise.resolve([row]);
