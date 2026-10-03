@@ -142,3 +142,27 @@ describe("HRA / TDS helpers", () => {
     expect(calcSlabTaxRupees(2_400_000, regime)).toBe(300_000);
   });
 });
+
+describe("resolvePtMonthly gross slabs", () => {
+  it("applies Maharashtra slabs by monthly gross, with the February top-up", () => {
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "MH", 7000, "2026-10")).toBe("0.00");
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "MH", 9000, "2026-10")).toBe("175.00");
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "MH", 50000, "2026-10")).toBe("200.00");
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "MH", 50000, "2027-02")).toBe("300.00");
+  });
+
+  it("exempts Karnataka earners below 25,000", () => {
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "KA", 24000, "2026-10")).toBe("0.00");
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "KA", 25000, "2026-10")).toBe("200.00");
+  });
+
+  it("walks West Bengal's bands", () => {
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "WB", 12000)).toBe("110.00");
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "WB", 30000)).toBe("150.00");
+  });
+
+  it("keeps the flat state amount when no gross is given or the state has no slabs", () => {
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "MH")).toBe("200.00");
+    expect(resolvePtMonthly(IN_STATUTORY_2025_04, "TN", 5000)).toBe("208.33");
+  });
+});

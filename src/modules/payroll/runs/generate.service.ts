@@ -94,9 +94,10 @@ export class GenerateService {
     const duplicateBankAccountUserIds = this.calculationGuards.findDuplicateBankAccounts(eligibleUserIds, sensitiveFacts);
     const statutoryFlags = this.calculationGuards.loadStatutoryIdFlags(eligibleUserIds, sensitiveFacts);
 
-    const [heldUserIds, lockedPeriodId] = await Promise.all([
+    const [heldUserIds, lockedPeriodId, statutoryStateCode] = await Promise.all([
       this.dataLoader.loadHeldUserIds(orgId, runId, eligibleUserIds),
       this.dataLoader.getLockedInputPeriodId(orgId, run.month),
+      this.dataLoader.loadStatutoryStateCode(orgId, run.entityId ?? null),
     ]);
     const periodLocked = lockedPeriodId != null;
 
@@ -169,6 +170,7 @@ export class GenerateService {
             ? { paidDays: lockedBaselinePull.paidDays, lopDays: lockedBaselinePull.lopDays }
             : null,
         },
+        statutoryStateCode,
       );
 
       const inputsWithConsumed = { ...inputs, consumedReimbursementIds: pulls.consumedReimbursementIds ?? [] };

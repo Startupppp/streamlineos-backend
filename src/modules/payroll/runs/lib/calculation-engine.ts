@@ -262,6 +262,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     grossPaise,
     rounding,
     month,
+    stateCode: input.stateCode ?? null,
   });
   lines.push(...statResult.lines);
 

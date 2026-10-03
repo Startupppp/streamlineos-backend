@@ -463,3 +463,25 @@ describe("calculation engine", () => {
   });
 });
 
+
+describe("calculation engine professional tax by entity state", () => {
+  const ptInput: CalcEngineInput = {
+    ...baseInput,
+    annualCtcDecimal: "240000.00",
+    toggles: { ...DEFAULT_PAYROLL_TOGGLES, pf: false, esi: false, professionalTax: true },
+    config: { ...baseConfig, statutory: { ...baseConfig.statutory, professionalTaxMonthly: "" } },
+  };
+
+  function ptAmount(input: CalcEngineInput): number {
+    const line = calcPayroll(input).lines.find(l => l.code === "PROFESSIONAL_TAX");
+    return line ? parseFloat(line.amount) : 0;
+  }
+
+  it("uses the state's gross slab when the entity has a PT state", () => {
+    expect(ptAmount({ ...ptInput, stateCode: "KA" })).toBe(0);
+  });
+
+  it("falls back to the default when no state is known", () => {
+    expect(ptAmount(ptInput)).toBe(200);
+  });
+});

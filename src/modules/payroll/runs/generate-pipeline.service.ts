@@ -147,6 +147,7 @@ export class GeneratePipelineService {
         lopDays: string;
       } | null;
     },
+    stateCode: string | null = null,
   ): { snapshot: CalculationSnapshot; exceptions: ReturnType<typeof detectExceptions> } {
     let fxRate: string | null = null;
     let missingFxRate = false;
@@ -181,6 +182,7 @@ export class GeneratePipelineService {
       },
       pulls,
       previousSnapshot,
+      stateCode,
     });
 
     const hasApprovedTaxDeclaration = pulls.taxDeclaration != null;

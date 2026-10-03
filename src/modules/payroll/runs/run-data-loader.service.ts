@@ -10,6 +10,7 @@ import {
   payrollRunEmployees,
   reimbursements,
   payrollRunAllocations,
+  payrollEntities,
 } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import {
@@ -33,6 +34,17 @@ import type { ProfileData } from "./run-types";
 @Injectable()
 export class RunDataLoaderService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  async loadStatutoryStateCode(orgId: string, entityId: number | null): Promise<string | null> {
+    const rows = await this.db
+      .select({ ptStateCode: payrollEntities.ptStateCode, stateCode: payrollEntities.stateCode })
+      .from(payrollEntities)
+      .where(entityId != null ? and(eq(payrollEntities.orgId, orgId), eq(payrollEntities.id, entityId)) : eq(payrollEntities.orgId, orgId))
+      .limit(2);
+    if (entityId == null && rows.length !== 1) return null;
+    const entity = rows[0];
+    return entity?.ptStateCode ?? entity?.stateCode ?? null;
+  }
 
   async loadPolicy(
     orgId: string,

@@ -29,11 +29,18 @@ export interface EsiRule {
   monthlyEligibilityCeiling: string;
 }
 
+export interface PtSlab {
+  grossUpTo: number | null;
+  monthly: string;
+  february?: string;
+}
+
 export interface PtRule {
   version: string;
   defaultMonthly: string;
   /** State → monthly amount overrides */
   byState: Record<string, string>;
+  slabsByState?: Record<string, PtSlab[]>;
 }
 
 export interface LwfRule {
@@ -137,6 +144,43 @@ export const IN_STATUTORY_2025_04: IndiaStatutoryBundle = {
       OR: "200.00",
       KL: "0.00",
       AS: "0.00",
+    },
+    slabsByState: {
+      MH: [
+        { grossUpTo: 7500, monthly: "0.00" },
+        { grossUpTo: 10000, monthly: "175.00" },
+        { grossUpTo: null, monthly: "200.00", february: "300.00" },
+      ],
+      KA: [
+        { grossUpTo: 24999.99, monthly: "0.00" },
+        { grossUpTo: null, monthly: "200.00" },
+      ],
+      WB: [
+        { grossUpTo: 10000, monthly: "0.00" },
+        { grossUpTo: 15000, monthly: "110.00" },
+        { grossUpTo: 25000, monthly: "130.00" },
+        { grossUpTo: 40000, monthly: "150.00" },
+        { grossUpTo: null, monthly: "200.00" },
+      ],
+      GJ: [
+        { grossUpTo: 11999.99, monthly: "0.00" },
+        { grossUpTo: null, monthly: "200.00" },
+      ],
+      TS: [
+        { grossUpTo: 15000, monthly: "0.00" },
+        { grossUpTo: 20000, monthly: "150.00" },
+        { grossUpTo: null, monthly: "200.00" },
+      ],
+      TL: [
+        { grossUpTo: 15000, monthly: "0.00" },
+        { grossUpTo: 20000, monthly: "150.00" },
+        { grossUpTo: null, monthly: "200.00" },
+      ],
+      AP: [
+        { grossUpTo: 15000, monthly: "0.00" },
+        { grossUpTo: 20000, monthly: "150.00" },
+        { grossUpTo: null, monthly: "200.00" },
+      ],
     },
   },
   lwf: {
@@ -272,7 +316,17 @@ export function calcSlabTaxRupees(taxableRupees: number, regime: TdsRegimeRule):
 }
 
 /** Resolve PT monthly amount for a state (falls back to default). */
-export function resolvePtMonthly(bundle: IndiaStatutoryBundle, stateCode?: string | null): string {
+export function resolvePtMonthly(
+  bundle: IndiaStatutoryBundle,
+  stateCode?: string | null,
+  monthlyGrossRupees?: number,
+  month?: string,
+): string {
+  const slabs = stateCode ? bundle.pt.slabsByState?.[stateCode.toUpperCase()] : undefined;
+  if (slabs && monthlyGrossRupees != null) {
+    const slab = slabs.find((s) => s.grossUpTo == null || monthlyGrossRupees <= s.grossUpTo);
+    if (slab) return month?.endsWith("-02") && slab.february ? slab.february : slab.monthly;
+  }
   if (stateCode && bundle.pt.byState[stateCode.toUpperCase()]) {
     return bundle.pt.byState[stateCode.toUpperCase()];
   }

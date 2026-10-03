@@ -73,6 +73,7 @@ export interface CalcEngineInput {
   };
   pulls: CalcInputPulls;
   previousSnapshot: CalculationSnapshot | null;
+  stateCode?: string | null;
 }
 
 export const SORT_BASE_TAX = 950;
