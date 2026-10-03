@@ -15,6 +15,10 @@ import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
 import { DirectoryModule } from "../directory/directory.module";
 import { EmploymentFactsModule } from "../directory/employment-facts.module";
 import { PayrollTimesheetHandoffModule } from "./timesheet-handoff/payroll-timesheet-handoff.module";
+import { AvScannerModule } from "../../common/security/av-scanner.module";
+import { PayrollForm16DocumentsController } from "./filings/form16-documents.controller";
+import { EssForm16Controller } from "./insights/ess-form16.controller";
+import { Form16DocumentsService } from "./filings/form16-documents.service";
 
 @Module({
   imports: [
@@ -26,12 +30,14 @@ import { PayrollTimesheetHandoffModule } from "./timesheet-handoff/payroll-times
     PayrollEntitiesModule,
     DirectoryModule,
     PayrollTimesheetHandoffModule,
+    AvScannerModule,
   ],
-  controllers: [PayrollEntitiesController, PayrollFilingsController, PayrollJobsController],
+  controllers: [PayrollEntitiesController, PayrollFilingsController, PayrollJobsController, PayrollForm16DocumentsController, EssForm16Controller],
   providers: [
     PayrollCalendarReminderScheduler,
     PayrollFilingsService,
     PayrollFilingsExportJobService,
+    Form16DocumentsService,
     PayrollJobsService,
     PayrollJobsWorkerService,
   ],

@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../../automation/automation.module";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
+import { FnfSuggestionService } from "./fnf-suggestion.service";
 import { BonusesController } from "./bonuses.controller";
 import { LoansController } from "./loans.controller";
 import { IncentivesController } from "./incentives.controller";
@@ -15,7 +17,7 @@ import { SalaryStructureTemplatesService } from "./salary-structure-templates.se
 import { TaxService } from "./tax.service";
 
 @Module({
-  imports: [AutomationModule],
+  imports: [AutomationModule, EmploymentFactsModule],
   controllers: [
     BonusesController,
     LoansController,
@@ -30,6 +32,7 @@ import { TaxService } from "./tax.service";
     IncentivesService,
     ReimbursementsService,
     FnfService,
+    FnfSuggestionService,
     SalaryStructureTemplatesService,
     TaxService,
   ],

@@ -140,6 +140,8 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "ownership_transfers.initiated_by_membership_id",
   "payments.created_by_membership_id",
   "payroll_approvals.acted_by_membership_id",
+  "payroll_form16_documents.released_by_membership_id",
+  "payroll_form16_documents.uploaded_by_membership_id",
   "payroll_journal_batches.created_by_membership_id",
   "payroll_journal_batches.exported_by_membership_id",
   "payroll_journal_batches.posted_by_membership_id",

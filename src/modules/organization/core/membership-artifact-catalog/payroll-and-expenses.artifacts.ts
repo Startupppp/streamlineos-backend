@@ -162,6 +162,16 @@ export const PAYROLL_AND_EXPENSES_ARTIFACTS = [
       "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
   },
   {
+    id: "payroll_form16_documents",
+    mechanism: "database-cascade",
+    table: "payroll_form16_documents",
+    keyedBy: "user_membership_id",
+    onRemoval: "cascade",
+    onSuspension: "retain",
+    reason:
+      "A Form 16 row is the employer's uploaded copy of a TRACES certificate for one member and one financial year; TRACES stays the source of record, so the composite tenant foreign key removes the copy with the membership and a suspension writes nothing.",
+  },
+  {
     id: "tax_declarations_user_membership",
     mechanism: "database-write",
     table: "tax_declarations",

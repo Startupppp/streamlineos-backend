@@ -12,7 +12,7 @@ import {
 } from "../runs/lib/statutory-registry";
 import { toPaise } from "../runs/lib/money";
 
-export type FilingExportType = "PF_ECR" | "ESI" | "PT" | "TDS_24Q" | "FORM16" | "LWF";
+export type FilingExportType = "PF_ECR" | "PF_ECR_TXT" | "ESI" | "PT" | "TDS_24Q" | "FORM16" | "LWF";
 
 export interface EmployeeStatutorySourceRow {
   subjectKey: string;
@@ -31,11 +31,12 @@ export interface EmployeeStatutorySourceRow {
   pan: string | null;
   /** Line code → amount (decimal string) */
   lines: Record<string, string>;
+  ncpDays?: string;
 }
 
 export interface FilingExportArtifact {
   filingType: FilingExportType;
-  format: "csv";
+  format: "csv" | "txt";
   mode: "export_only";
   automaticFiling: false;
   automaticRemittance: false;
@@ -181,6 +182,86 @@ export function buildPfEcrExport(
     },
     missingIdentifiers: missing,
   });
+}
+
+const EPS_PERCENT = 8.33;
+
+function wholeRupees(paise: number): number {
+  return Math.floor((paise + 50) / 100);
+}
+
+export function buildPfEcrTxtExport(
+  employees: EmployeeStatutorySourceRow[],
+  opts: { periodMonth: string | null; runId: number | null; bundle: IndiaStatutoryBundle },
+): FilingExportArtifact {
+  const missing: string[] = [];
+  const rows: Record<string, string | number>[] = [];
+  const ceilingPaise = toPaise(opts.bundle.pf.monthlyWageCeiling);
+  const eePercent = Number(opts.bundle.pf.employeePercent);
+
+  for (const e of employees) {
+    const eePaise = Math.round(amt(e.lines, ["EPF_EMPLOYEE", "PF_EMP", "PF_EE"]) * 100);
+    const erPaise = Math.round(amt(e.lines, ["EPF_EMPLOYER", "PF_ER"]) * 100);
+    if (eePaise === 0 && erPaise === 0) continue;
+    const uan = e.uan?.trim() ?? "";
+    if (!uan) {
+      missing.push(`${e.subjectKey}:uan`);
+      continue;
+    }
+    const epfWagesPaise = eePercent > 0 ? Math.round((eePaise * 100) / eePercent) : 0;
+    const epsWagesPaise = Math.min(epfWagesPaise, ceilingPaise);
+    const erRupees = wholeRupees(erPaise);
+    const epsRupees = Math.min(erRupees, wholeRupees(Math.round((epsWagesPaise * EPS_PERCENT) / 100)));
+    rows.push({
+      uan,
+      memberName: e.employeeName.replace(/#~#|[\r\n]/g, " ").trim(),
+      grossWages: wholeRupees(toPaise(e.gross)),
+      epfWages: wholeRupees(epfWagesPaise),
+      epsWages: wholeRupees(epsWagesPaise),
+      edliWages: wholeRupees(epsWagesPaise),
+      epfContribution: wholeRupees(eePaise),
+      epsContribution: epsRupees,
+      epfEpsDifference: erRupees - epsRupees,
+      ncpDays: Math.round(Number(e.ncpDays ?? 0)),
+      refundOfAdvances: 0,
+    });
+  }
+
+  const columns = [
+    "uan",
+    "memberName",
+    "grossWages",
+    "epfWages",
+    "epsWages",
+    "edliWages",
+    "epfContribution",
+    "epsContribution",
+    "epfEpsDifference",
+    "ncpDays",
+    "refundOfAdvances",
+  ];
+  const notes = [
+    "EPFO ECR 2.0 text: one line per member, fields joined by #~#, whole rupees. Upload on the EPFO unified portal yourself.",
+    `EPF wages are derived from the employee share at ${opts.bundle.pf.employeePercent}%; EPS and EDLI wages are capped at ₹${opts.bundle.pf.monthlyWageCeiling}; EPS is ${EPS_PERCENT}% of EPS wages.`,
+    "Refund of advances is always 0.",
+  ];
+  if (missing.length > 0)
+    notes.push(`${missing.length} member(s) excluded because no UAN is captured: ${missing.map((m) => m.split(":")[0]).join(", ")}.`);
+
+  return {
+    ...baseMeta("PF_ECR_TXT", opts.periodMonth, opts.runId, opts.bundle, notes),
+    format: "txt",
+    columns,
+    rows,
+    rowCount: rows.length,
+    totals: {
+      epfContribution: sumField(rows, "epfContribution"),
+      epsContribution: sumField(rows, "epsContribution"),
+      epfEpsDifference: sumField(rows, "epfEpsDifference"),
+    },
+    missingIdentifiers: missing,
+    csv: rows.map((r) => columns.map((c) => String(r[c])).join("#~#")).join("\n"),
+  };
 }
 
 export function buildEsiExport(
@@ -401,6 +482,8 @@ export function buildFilingExport(
   switch (filingType) {
     case "PF_ECR":
       return buildPfEcrExport(employees, opts);
+    case "PF_ECR_TXT":
+      return buildPfEcrTxtExport(employees, opts);
     case "ESI":
       return buildEsiExport(employees, opts);
     case "PT":

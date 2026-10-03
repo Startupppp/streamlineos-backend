@@ -21,6 +21,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
 import { FnfService } from "./fnf.service";
+import { FnfSuggestionService } from "./fnf-suggestion.service";
+import { fnfSuggestionQuerySchema, fnfSuggestionResponseSchema, type FnfSuggestionQuery } from "./dto/fnf-suggestion.schemas";
 import {
   createFnfSchema,
   patchFnfSchema,
@@ -43,7 +45,16 @@ export class HrPayrollFnfController {
   constructor(
     private readonly fnf: FnfService,
     private readonly access: AccessService,
+    private readonly suggestions: FnfSuggestionService,
   ) {}
+
+  @Get("suggestion")
+  @RequirePermission("hr:exit:manage")
+  @Validate({ query: fnfSuggestionQuerySchema })
+  @ResponseSchema(fnfSuggestionResponseSchema)
+  suggestion(@CurrentUser() u: CurrentUserContext, @Query() query: FnfSuggestionQuery) {
+    return this.suggestions.suggest(u.orgId, query);
+  }
 
   @Get()
   @RequirePermission("hr:payroll:view")

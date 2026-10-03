@@ -1,4 +1,4 @@
-import { csvRow, isSafeBankToken } from "../payout-csv";
+import { csvHeader, csvRow, isSafeBankToken } from "../payout-csv";
 
 /**
  * SEC-HRMS-008. The bank payout file is built by string concatenation, and an account number
@@ -23,5 +23,31 @@ describe("payout CSV cells", () => {
     );
     expect(row.split("\n")).toHaveLength(1);
     expect(row).toBe('1,"cmd  2, Mallory","123456789012","HDFC0000001",1.00,"Salary 2026-06"');
+  });
+});
+
+describe("corporate net banking bulk-upload files", () => {
+  const header =
+    "TransactionType,BeneficiaryName,BeneficiaryAccountNumber,IFSC,Amount,Narration,BeneficiaryEmail";
+
+  it.each([
+    ["HDFC_BULK_CSV", "HDFC0000123"],
+    ["ICICI_BULK_CSV", "ICIC0000123"],
+    ["SBI_BULK_CSV", "SBIN0000123"],
+    ["AXIS_BULK_CSV", "UTIB0000123"],
+  ] as const)("%s writes the common bulk layout, rupees to two decimals from paise", (format, sameBankIfsc) => {
+    expect(csvHeader(format)).toBe(header);
+    expect(csvRow(format, 1, "Asha Rao", "123456789012", "KKBK0000958", "INR", 1234567, "Salary 2026-03", "asha@x.test")).toBe(
+      'NEFT,"Asha Rao","123456789012","KKBK0000958",12345.67,"Salary 2026-03","asha@x.test"',
+    );
+    expect(csvRow(format, 2, "Bala", "998877", sameBankIfsc, "INR", 5, "Salary 2026-03")).toBe(
+      `IFT,"Bala","998877","${sameBankIfsc}",0.05,"Salary 2026-03",""`,
+    );
+  });
+
+  it("keeps a hostile email inside its own cell", () => {
+    const row = csvRow("HDFC_BULK_CSV", 1, "Asha", "123", "HDFC0000001", "INR", 100, "Salary", '=x"\n,evil');
+    expect(row.split("\n")).toHaveLength(1);
+    expect(row.endsWith('"x  ,evil"')).toBe(true);
   });
 });

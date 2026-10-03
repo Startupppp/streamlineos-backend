@@ -35,7 +35,17 @@ export const reopenRunSchema = z.object({
 }).strict();
 export type ReopenRunInput = z.infer<typeof reopenRunSchema>;
 
-export const BATCH_FORMAT_VALUES = ["NEFT_CSV", "RTGS_CSV", "GENERIC_CSV", "ACH_CSV", "SEPA_CSV"] as const;
+export const BATCH_FORMAT_VALUES = [
+  "NEFT_CSV",
+  "RTGS_CSV",
+  "GENERIC_CSV",
+  "ACH_CSV",
+  "SEPA_CSV",
+  "HDFC_BULK_CSV",
+  "ICICI_BULK_CSV",
+  "SBI_BULK_CSV",
+  "AXIS_BULK_CSV",
+] as const;
 export type PayoutBatchFormat = (typeof BATCH_FORMAT_VALUES)[number];
 
 export const createBatchSchema = z.object({

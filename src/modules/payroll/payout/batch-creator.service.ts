@@ -234,7 +234,7 @@ export class BatchCreatorService {
         const bankCode = bank.ifsc ?? "";
         const effectiveAmount = emp.netPayoutCurrency ?? emp.net;
         const payeeName = payee?.displayName ?? emp.userId ?? emp.workerId ?? "Payee";
-        csvRows.push(csvRow(groupFormat, idx + 1, payeeName, bank.accountNumber, bankCode, currencyCode, toPaise(effectiveAmount), narrationLabel));
+        csvRows.push(csvRow(groupFormat, idx + 1, payeeName, bank.accountNumber, bankCode, currencyCode, toPaise(effectiveAmount), narrationLabel, payee?.email ?? null));
         itemsData.push({
           runEmployeeId: emp.id,
           userId: emp.userId,
