@@ -321,3 +321,26 @@ describe("checkRunCompletion — reimbursements are stamped paid at payout", () 
     expect(recorder.updates.find((u) => u.table === reimbursements)).toBeUndefined();
   });
 });
+
+describe("checkRunCompletion — expense claims paid through payroll are stamped reimbursed at payout", () => {
+  it("marks the run's expense allocations REIMBURSED with paidAt and a link back to the run", async () => {
+    const { expenses } = jest.requireActual("../../../../../db/schema");
+    const { deps, recorder } = makeDeps();
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    const stamp = recorder.updates.find((u) => u.table === expenses);
+    expect(stamp?.values.status).toBe("REIMBURSED");
+    expect(stamp?.values.paidAt).toBeInstanceOf(Date);
+    expect(stamp?.values.transactionRef).toBe("payroll_run:100");
+  });
+
+  it("leaves expense claims untouched when the run does not reach PAID", async () => {
+    const { expenses } = jest.requireActual("../../../../../db/schema");
+    const { deps, recorder } = makeDeps({ runStatus: "PAID" });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(recorder.updates.find((u) => u.table === expenses)).toBeUndefined();
+  });
+});

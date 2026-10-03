@@ -4,6 +4,7 @@ import type {
   PayrollWorkerType,
   MoneyString,
   TaxRegimeType,
+  PayrollSourceRef,
 } from "../../payroll.types";
 import type { SalaryComponentType, SalaryComponentCalcMethod } from "../../payroll.types";
 import type { CalculationSnapshot } from "../../payroll.types";
@@ -27,8 +28,10 @@ export interface ResolvedComponent {
 export interface CalcInputPulls {
   approvedBonuses: { amount: MoneyString; type: string; taxable: boolean }[];
   approvedIncentives: { amount: MoneyString }[];
-  approvedReimbursements: { amount: MoneyString; category: string }[];
+  approvedReimbursements: { amount: MoneyString; category: string; expenseId?: number; source?: PayrollSourceRef }[];
   consumedReimbursementIds?: number[];
+  lopSources?: PayrollSourceRef[];
+  overtimeSources?: PayrollSourceRef[];
   consumedIncentiveIds?: number[];
   consumedBonusIds?: number[];
   activeLoans: {

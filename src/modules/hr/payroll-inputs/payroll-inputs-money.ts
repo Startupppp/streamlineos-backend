@@ -20,6 +20,7 @@
 // money.ts is a zero-import leaf, so this adds no cycle; src/modules/hr already
 // imports payroll/runs/lib and payroll/payout/lib in production code.
 import { fromPaise, toPaise } from "../../payroll/runs/lib/money";
+import { PAYROLL_EXPENSE_CURRENCY } from "../../payroll/runs/lib/payable-expenses";
 
 /** A `reimbursements` row as projected by the payroll-input build. */
 export interface ReimbursementInput {
@@ -41,6 +42,16 @@ export interface BenefitClaimInput {
   decidedAt: Date | null;
 }
 
+export interface ExpenseClaimInput {
+  id: number;
+  category: string;
+  amount: string;
+  currency: string;
+  description: string | null;
+  approvedAt: Date | null;
+  expenseDate: string;
+}
+
 // Declared as type aliases, not interfaces, so the payload stays assignable to
 // the `Record<string, unknown>` snapshot payload the consumers read it back as
 // without anyone needing a type assertion to bridge the two.
@@ -52,7 +63,16 @@ export type ReimbursementSnapshotItem = {
   description: string | null;
   payrollMonth: string | null;
   approvedAt: Date | null;
-  source: "reimbursement" | "benefits_claim";
+  source: "reimbursement" | "benefits_claim" | "expense";
+  date?: string;
+};
+
+export type ExcludedExpenseItem = {
+  id: number;
+  category: string;
+  amount: string;
+  currency: string;
+  reason: string;
 };
 
 export type ReimbursementSnapshotPayload = {
@@ -60,6 +80,7 @@ export type ReimbursementSnapshotPayload = {
   items: ReimbursementSnapshotItem[];
   /** MAJOR units (rupees), summing every entry in `items`. */
   totalAmount: number;
+  excludedItems: ExcludedExpenseItem[];
 };
 
 /**
@@ -71,7 +92,18 @@ export function buildReimbursementPayload(
   userId: string,
   reimbursements: ReimbursementInput[],
   benefitClaims: BenefitClaimInput[],
+  expenseClaims: ExpenseClaimInput[] = [],
 ): ReimbursementSnapshotPayload {
+  const payableExpenses = expenseClaims.filter((e) => e.currency.toUpperCase() === PAYROLL_EXPENSE_CURRENCY);
+  const excludedItems: ExcludedExpenseItem[] = expenseClaims
+    .filter((e) => e.currency.toUpperCase() !== PAYROLL_EXPENSE_CURRENCY)
+    .map((e) => ({
+      id: e.id,
+      category: e.category,
+      amount: e.amount,
+      currency: e.currency,
+      reason: `Expense claim #${e.id} is in ${e.currency}; payroll only pays ${PAYROLL_EXPENSE_CURRENCY} claims`,
+    }));
   const items: ReimbursementSnapshotItem[] = [
     ...reimbursements.map((r) => ({
       id: r.id,
@@ -95,6 +127,16 @@ export function buildReimbursementPayload(
       approvedAt: c.decidedAt,
       source: "benefits_claim" as const,
     })),
+    ...payableExpenses.map((e) => ({
+      id: e.id,
+      category: e.category,
+      amount: e.amount,
+      description: e.description,
+      payrollMonth: null,
+      approvedAt: e.approvedAt,
+      source: "expense" as const,
+      date: e.expenseDate,
+    })),
   ];
 
   // Summed in MINOR units so the two sources never meet as floats, then
@@ -102,5 +144,5 @@ export function buildReimbursementPayload(
   // time it gets here, so one toPaise per entry is the whole conversion.
   const totalMinorUnits = items.reduce((sum, item) => sum + toPaise(item.amount), 0);
 
-  return { userId, items, totalAmount: totalMinorUnits / 100 };
+  return { userId, items, totalAmount: totalMinorUnits / 100, excludedItems };
 }

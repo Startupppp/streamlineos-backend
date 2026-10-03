@@ -121,3 +121,33 @@ describe("buildReimbursementPayload — one unit across two source tables", () =
     expect(payload.items.map((i) => i.source)).toEqual(["reimbursement", "benefits_claim"]);
   });
 });
+
+describe("buildReimbursementPayload — approved expense claims", () => {
+  const expense = (currency: string) => ({
+    id: 12,
+    category: "Travel",
+    amount: "1250.00",
+    currency,
+    description: "Cab",
+    approvedAt: null,
+    expenseDate: "2026-07-04",
+  });
+
+  it("adds an INR expense claim as a payable item dated by the claim", () => {
+    const payload = buildReimbursementPayload("u1", [], [], [expense("INR")]);
+    expect(payload.items).toEqual([
+      expect.objectContaining({ id: 12, amount: "1250.00", source: "expense", date: "2026-07-04" }),
+    ]);
+    expect(payload.totalAmount).toBe(1250);
+    expect(payload.excludedItems).toEqual([]);
+  });
+
+  it("keeps a non-INR expense claim out of the payable items and says why", () => {
+    const payload = buildReimbursementPayload("u1", [], [], [expense("USD")]);
+    expect(payload.items).toEqual([]);
+    expect(payload.totalAmount).toBe(0);
+    expect(payload.excludedItems).toEqual([
+      expect.objectContaining({ id: 12, currency: "USD", reason: "Expense claim #12 is in USD; payroll only pays INR claims" }),
+    ]);
+  });
+});

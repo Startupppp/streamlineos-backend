@@ -79,6 +79,7 @@ function makeServices(overrides: {
       bonusesByUser: new Map(),
       incentivesByUser: new Map(),
       reimbursementsByUser: new Map(),
+      expensesByUser: new Map(),
       loansByUser: new Map(),
       taxDeclarationByUser: new Map(),
     }),

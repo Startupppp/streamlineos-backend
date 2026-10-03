@@ -25,13 +25,11 @@ import {
   type SectionMap,
 } from "./lib/input-puller";
 import type { ResolvedComponent } from "./lib/calculation-engine";
+import { loadRunPayableExpenses } from "./lib/payable-expenses";
 import type { ProfileData, RunBatchData } from "./run-types";
 import {
   getFyString,
   groupBy,
-  type BonusRow,
-  type IncentiveRow,
-  type ReimbursementRow,
   type TaxDeclarationRow,
 } from "./run-batch-loader.helpers";
 
@@ -79,6 +77,7 @@ export class RunBatchLoaderService {
       bonusRows,
       incentiveRows,
       reimbursementRows,
+      expenseRows,
       loanRows,
       taxDeclRows,
     ] = await Promise.all([
@@ -146,6 +145,9 @@ export class RunBatchLoaderService {
               ),
             )
             .limit(MAX_RUN_INPUT_ROWS)
+        : Promise.resolve([]),
+      toggles.reimbursements && userIds.length > 0
+        ? loadRunPayableExpenses(this.db, orgId, runId, userIds, month, MAX_RUN_INPUT_ROWS)
         : Promise.resolve([]),
       toggles.loans && membershipIds.length > 0
         ? this.db
@@ -237,6 +239,7 @@ export class RunBatchLoaderService {
       bonusesByUser: groupBy(bonusRows, (b) => b.userId),
       incentivesByUser: groupBy(incentiveRows, (i) => i.salesRepId),
       reimbursementsByUser: groupBy(reimbursementRows, (r) => r.userId),
+      expensesByUser: groupBy(expenseRows, (e) => e.userId),
       loansByUser,
       taxDeclarationByUser,
     };

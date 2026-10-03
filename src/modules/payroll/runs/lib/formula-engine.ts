@@ -66,6 +66,7 @@ class Parser {
   constructor(
     private readonly tokens: Token[],
     private readonly scope: FormulaScope,
+    private readonly refs: Readonly<Record<string, number>>,
   ) {}
 
   private peek(): Token {
@@ -135,6 +136,7 @@ class Parser {
       if (name === "min" || name === "max" || name === "round") {
         return this.parseFunc(name);
       }
+      if (Object.hasOwn(this.refs, name)) return { ok: true, value: this.refs[name] };
       if (!isFormulaVariable(name)) return { ok: false, error: `Unknown variable: ${name}` };
       return { ok: true, value: this.scope[name] };
     }
@@ -179,14 +181,18 @@ class Parser {
   }
 }
 
-export function evalFormula(formula: string, scope: FormulaScope): FormulaResult {
+export function evalFormula(
+  formula: string,
+  scope: FormulaScope,
+  refs: Readonly<Record<string, number>> = {},
+): FormulaResult {
   const trimmed = formula.trim();
   if (!trimmed) return { ok: false, error: "Syntax error: empty formula" };
 
   const tokens = tokenize(trimmed);
   if (typeof tokens === "string") return { ok: false, error: tokens };
 
-  const parser = new Parser(tokens, scope);
+  const parser = new Parser(tokens, scope, refs);
   const result = parser.parseExpr();
   if (!result.ok) return result;
 

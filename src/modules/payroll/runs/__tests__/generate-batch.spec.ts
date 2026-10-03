@@ -23,6 +23,7 @@ function emptyBatch(overrides: Partial<RunBatchData> = {}): RunBatchData {
     bonusesByUser: new Map(),
     incentivesByUser: new Map(),
     reimbursementsByUser: new Map(),
+    expensesByUser: new Map(),
     loansByUser: new Map(),
     taxDeclarationByUser: new Map(),
     ...overrides,
@@ -89,8 +90,8 @@ describe("buildCalcPullsFromSections", () => {
 
     expect(result).not.toBeNull();
     expect(result?.approvedReimbursements).toEqual([
-      { amount: "1200.50", category: "TRAVEL" },
-      { amount: "300", category: "MEDICAL" },
+      { amount: "1200.50", category: "TRAVEL", source: { table: "reimbursements", id: 1, label: "Reimbursement #1 · TRAVEL", date: null } },
+      { amount: "300", category: "MEDICAL", source: { table: "hr_insurance_claims", id: 2, label: "Reimbursement #2 · MEDICAL", date: null } },
     ]);
     expect(result?.consumedReimbursementIds).toEqual([1]);
     expect(result?.activeLoans).toEqual([
@@ -210,7 +211,9 @@ describe("GeneratePipelineService batch builders", () => {
     expect(pulls.consumedBonusIds).toEqual([4]);
     expect(pulls.approvedIncentives).toEqual([{ amount: "750" }]);
     expect(pulls.consumedIncentiveIds).toEqual([6]);
-    expect(pulls.approvedReimbursements).toEqual([{ amount: "900", category: "TRAVEL" }]);
+    expect(pulls.approvedReimbursements).toEqual([
+      { amount: "900", category: "TRAVEL", source: { table: "reimbursements", id: 11, label: "Reimbursement #11 · TRAVEL" } },
+    ]);
     expect(pulls.consumedReimbursementIds).toEqual([11]);
     expect(pulls.activeLoans).toHaveLength(1);
 
@@ -243,6 +246,100 @@ describe("GeneratePipelineService batch builders", () => {
 
     const pulls = service.buildCalcInputsFromBatch("u1", toggles, batch);
     expect(pulls.consumedReimbursementIds).toEqual([21]);
-    expect(pulls.approvedReimbursements).toEqual([{ amount: "400.00", category: "FOOD" }]);
+    expect(pulls.approvedReimbursements).toEqual([
+      { amount: "400.00", category: "FOOD", source: { table: "reimbursements", id: 21, label: "Reimbursement #21 · FOOD", date: null } },
+    ]);
+  });
+});
+
+describe("approved expense claims flow into payroll as reimbursement earnings", () => {
+  const service = new GeneratePipelineService();
+  const expenseItem = {
+    id: 12,
+    amount: "1250.00",
+    category: "Travel",
+    description: "Cab to client",
+    source: "expense",
+    date: "2026-07-04",
+  };
+
+  it("reads a locked expense item with its claim id and source, and never as a consumed reimbursement", () => {
+    const result = buildCalcPullsFromSections(
+      sections({ reimbursement: { items: [{ id: 5, amount: "100", category: "FOOD" }, expenseItem] } }),
+    );
+
+    expect(result?.consumedReimbursementIds).toEqual([5]);
+    expect(result?.approvedReimbursements[1]).toEqual({
+      amount: "1250.00",
+      category: "Travel",
+      expenseId: 12,
+      source: { table: "expenses", id: 12, label: "Expense claim #12 · Travel", date: "2026-07-04" },
+    });
+  });
+
+  it("pays a locked expense item only while the claim is still payable for this run", () => {
+    const locked = new Map([["u1", sections({ reimbursement: { items: [expenseItem] } })]]);
+    const payable = emptyBatch({
+      lockedSectionsByUser: locked,
+      expensesByUser: new Map([["u1", [{ id: 12, userId: "u1", amount: "1250.00", category: "Travel", expenseDate: "2026-07-04" }]]]),
+    });
+    const alreadyPaidOrElsewhere = emptyBatch({ lockedSectionsByUser: locked });
+
+    expect(service.buildCalcInputsFromBatch("u1", toggles, payable).approvedReimbursements.map((r) => r.expenseId)).toEqual([12]);
+    expect(service.buildCalcInputsFromBatch("u1", toggles, alreadyPaidOrElsewhere).approvedReimbursements).toEqual([]);
+  });
+
+  it("appends live payable expense claims after reimbursements when no period is locked", () => {
+    const batch = emptyBatch({
+      reimbursementsByUser: new Map([["u1", [{ id: 11, userId: "u1", amount: "900", category: "TRAVEL" }]]]),
+      expensesByUser: new Map([["u1", [{ id: 12, userId: "u1", amount: "1250.00", category: "Travel", expenseDate: "2026-07-04" }]]]),
+    });
+
+    const pulls = service.buildCalcInputsFromBatch("u1", toggles, batch);
+
+    expect(pulls.consumedReimbursementIds).toEqual([11]);
+    expect(pulls.approvedReimbursements[1]).toMatchObject({ amount: "1250.00", expenseId: 12 });
+    expect(service.buildCalcInputsFromBatch("u1", { ...toggles, reimbursements: false }, batch).approvedReimbursements).toEqual([]);
+  });
+});
+
+describe("locked input sources explain LOP and overtime", () => {
+  const service = new GeneratePipelineService();
+  const lockedSections = sections({
+    attendance: { payableDays: 22, presentDays: 19, absentDays: 1, latePenaltyDays: 0 },
+    leave: {
+      unpaidLeaveDays: 2,
+      sourceRefs: [{ table: "leave_requests", id: 7, label: "Unpaid leave · 2d", date: "2026-07-12", endDate: "2026-07-13" }],
+    },
+    overtime: {
+      totalHours: 2,
+      sourceRefs: [{ table: "overtime_requests", id: 3, label: "Overtime · 2h", date: "2026-07-09" }],
+    },
+  });
+
+  it("carries the snapshot's leave and overtime source refs into the calc pulls", () => {
+    const pulls = service.buildCalcInputsFromBatch("u1", toggles, emptyBatch({ lockedSectionsByUser: new Map([["u1", lockedSections]]) }));
+
+    expect(pulls.lopSources).toEqual([
+      { table: "attendance", id: null, label: "Absent · 1 day" },
+      { table: "leave_requests", id: 7, label: "Unpaid leave · 2d", date: "2026-07-12", endDate: "2026-07-13" },
+    ]);
+    expect(pulls.overtimeSources).toEqual([
+      { table: "overtime_requests", id: 3, label: "Overtime · 2h", date: "2026-07-09", endDate: null },
+    ]);
+  });
+
+  it("drops the snapshot sources when a manual run input overrides the days", () => {
+    const pulls = service.buildCalcInputsFromBatch(
+      "u1",
+      toggles,
+      emptyBatch({
+        lockedSectionsByUser: new Map([["u1", lockedSections]]),
+        runInputsByUser: new Map([["u1", { source: "MANUAL" } as never]]),
+      }),
+    );
+
+    expect(pulls.lopSources).toBeUndefined();
+    expect(pulls.overtimeSources).toBeUndefined();
   });
 });

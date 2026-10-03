@@ -303,6 +303,19 @@ export class RunResultPersisterService {
         });
       }
 
+      for (const r of pulls.approvedReimbursements) {
+        if (r.expenseId === undefined) continue;
+        allAllocationRows.push({
+          orgId,
+          runId,
+          userId: profile.userId,
+          sourceType: "EXPENSE",
+          sourceId: String(r.expenseId),
+          amount: r.amount,
+          metadata: { category: r.category },
+        });
+      }
+
       for (const [i, incentiveId] of (pulls.consumedIncentiveIds ?? []).entries()) {
         allIncentiveIds.push(incentiveId);
         allAllocationRows.push({

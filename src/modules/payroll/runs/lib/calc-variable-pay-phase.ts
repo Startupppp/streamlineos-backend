@@ -36,6 +36,7 @@ export function buildVariablePayLines(params: VariablePayParams): CalculationSna
           `Rate/hr = ₹${(otBasisPaise / 100).toFixed(2)} / (${scheduledDays} days × 8h) = ₹${(ratePerHour / 100).toFixed(4)}`,
           `OT = ₹${(ratePerHour / 100).toFixed(4)}/hr × ${overtime.multiplier}x × ${overtimeHours}h = ₹${(otPaise / 100).toFixed(2)}`,
         ],
+        ...(pulls.overtimeSources?.length ? { sources: pulls.overtimeSources } : {}),
       },
     });
   }
@@ -85,7 +86,7 @@ export function buildVariablePayLines(params: VariablePayParams): CalculationSna
       const rPaise = toPaise(r.amount);
       lines.push({
         code: `REIMBURSEMENT_${idx + 1}`,
-        name: `Reimbursement (${r.category})`,
+        name: r.expenseId === undefined ? `Reimbursement (${r.category})` : `Expense claim (${r.category})`,
         category: "REIMBURSEMENT",
         amount: fromPaise(rPaise),
         calcMethod: "MANUAL",
@@ -95,6 +96,7 @@ export function buildVariablePayLines(params: VariablePayParams): CalculationSna
           method: "MANUAL",
           inputs: { amount: rPaise / 100 },
           steps: [`Reimbursement ${r.category} = ₹${(rPaise / 100).toFixed(2)}`],
+          ...(r.source ? { sources: [r.source] } : {}),
         },
       });
     });

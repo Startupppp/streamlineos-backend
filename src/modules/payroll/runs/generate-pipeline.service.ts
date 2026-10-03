@@ -79,18 +79,39 @@ export class GeneratePipelineService {
       amount: i.approvedAmount ?? i.calculatedAmount,
     }));
 
-    let approvedReimbursements: { amount: string; category: string }[] = [];
+    let approvedReimbursements: CalcInputPulls["approvedReimbursements"] = [];
     let consumedReimbursementIds: number[] = [];
     let activeLoans: CalcInputPulls["activeLoans"] = [];
 
+    const payableExpenses = batch.expensesByUser.get(userId) ?? [];
     if (locked && toggles.reimbursements) {
-      approvedReimbursements = locked.approvedReimbursements;
+      const payableExpenseIds = new Set(payableExpenses.map((e) => e.id));
+      approvedReimbursements = locked.approvedReimbursements.filter(
+        (r) => r.expenseId === undefined || payableExpenseIds.has(r.expenseId),
+      );
       consumedReimbursementIds = locked.consumedReimbursementIds;
     } else if (toggles.reimbursements) {
       const rawReimbursements = batch.reimbursementsByUser.get(userId) ?? [];
-      approvedReimbursements = rawReimbursements.map((r) => ({ amount: r.amount, category: r.category }));
+      approvedReimbursements = [
+        ...rawReimbursements.map((r) => ({
+          amount: r.amount,
+          category: r.category,
+          source: { table: "reimbursements", id: r.id, label: `Reimbursement #${r.id} · ${r.category}` },
+        })),
+        ...payableExpenses.map((e) => ({
+          amount: e.amount,
+          category: e.category,
+          expenseId: e.id,
+          source: { table: "expenses", id: e.id, label: `Expense claim #${e.id} · ${e.category}`, date: e.expenseDate },
+        })),
+      ];
       consumedReimbursementIds = rawReimbursements.map((r) => r.id);
     }
+
+    const lockedInputSources =
+      toggles.lopFromAttendance && !batch.runInputsByUser.has(userId) && locked
+        ? { lopSources: locked.lopSources, overtimeSources: locked.overtimeSources }
+        : {};
 
     if (locked && toggles.loans) {
       activeLoans = locked.activeLoans;
@@ -121,6 +142,7 @@ export class GeneratePipelineService {
       consumedBonusIds: approvedBonuses.map((b) => b.id),
       activeLoans,
       taxDeclaration,
+      ...lockedInputSources,
     };
   }
 

@@ -58,6 +58,10 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
   const basicPaise = earningResult.basicPaise;
   let grossPaise = earningResult.grossPaise;
 
+  const earnedRefs: Record<string, number> = Object.fromEntries(
+    earningResult.earningLines.map(l => [l.code, toPaise(l.amount) / 100]),
+  );
+
   let nonStatDeductionPaise = 0;
   const pendingGrossDeductions: ResolvedComponent[] = [];
 
@@ -114,7 +118,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
         },
       });
     } else if (comp.calcMethod === "FORMULA" && comp.formula != null) {
-      const result = evalFormula(comp.formula, buildDeductionScope());
+      const result = evalFormula(comp.formula, buildDeductionScope(), earnedRefs);
       if (!result.ok) {
         lines.push({
           code: comp.code,
@@ -169,7 +173,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     } else if (comp.calcMethod === "PERCENT_OF_GROSS" && comp.percent != null) {
       paise = applyRounding(pctOf(grossPaise, comp.percent), rounding);
     } else if (comp.calcMethod === "FORMULA" && comp.formula != null) {
-      const result = evalFormula(comp.formula, buildDeductionScope());
+      const result = evalFormula(comp.formula, buildDeductionScope(), earnedRefs);
       if (!result.ok) {
         lines.push({
           code: comp.code,
@@ -467,6 +471,7 @@ export function calcPayroll(input: CalcEngineInput): CalculationSnapshot {
     paidDays: input.inputs.paidDays,
     lopDays: input.inputs.lopDays,
     overtimeHours: input.inputs.overtimeHours,
+    ...(input.pulls.lopSources?.length ? { lopSources: input.pulls.lopSources } : {}),
     lines,
     totals,
     variance,

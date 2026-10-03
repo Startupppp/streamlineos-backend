@@ -485,3 +485,39 @@ describe("calculation engine professional tax by entity state", () => {
     expect(ptAmount(ptInput)).toBe(200);
   });
 });
+
+describe("calculation engine — run lines explain what drove them", () => {
+  const lopRef = { table: "leave_requests", id: 7, label: "Unpaid leave · 2d", date: "2025-07-12", endDate: "2025-07-13" };
+  const otRef = { table: "overtime_requests", id: 3, label: "Overtime · 4h", date: "2025-07-09" };
+  const expenseRef = { table: "expenses", id: 12, label: "Expense claim #12 · Travel", date: "2025-07-04" };
+
+  const input: CalcEngineInput = {
+    ...baseInput,
+    toggles: { ...baseInput.toggles, overtime: true, reimbursements: true },
+    inputs: { scheduledDays: "30", paidDays: "28", lopDays: "2", overtimeHours: "4" },
+    pulls: {
+      ...baseInput.pulls,
+      approvedReimbursements: [{ amount: "1250.00", category: "Travel", expenseId: 12, source: expenseRef }],
+      lopSources: [lopRef],
+      overtimeSources: [otRef],
+    },
+  };
+
+  it("carries LOP, overtime and expense sources onto the snapshot and its lines", () => {
+    const snap = calcPayroll(input);
+
+    expect(snap.lopSources).toEqual([lopRef]);
+    expect(snap.lines.find((l) => l.code === "OVERTIME")?.explain.sources).toEqual([otRef]);
+    const claim = snap.lines.find((l) => l.code === "REIMBURSEMENT_1");
+    expect(claim?.name).toBe("Expense claim (Travel)");
+    expect(claim?.amount).toBe("1250.00");
+    expect(claim?.explain.sources).toEqual([expenseRef]);
+  });
+
+  it("writes no sources when the pulls carry none", () => {
+    const snap = calcPayroll(baseInput);
+
+    expect(snap.lopSources).toBeUndefined();
+    expect(snap.lines.every((l) => l.explain.sources === undefined)).toBe(true);
+  });
+});

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import { primaryEmploymentOfPerson, livePersonOfEmployment } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -8,6 +8,8 @@ import {
   hrPayrollInputPeriods,
 } from "../../../db/schema/payroll/input-capture";
 import {
+  expenses,
+  leaveRequests,
   reimbursements,
   salaryLoans,
 } from "../../../db/schema";
@@ -20,6 +22,8 @@ import { employeeSalaryProfiles } from "../../../db/schema/payroll/workforce";
 import { overtimeRequests } from "../../../db/schema/hr/overtime";
 import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { buildReimbursementPayload } from "./payroll-inputs-money";
+import { payableExpenseClaims } from "../../payroll/runs/lib/payable-expenses";
+import { groupBy } from "../../payroll/runs/run-batch-loader.helpers";
 import { periodBoundsFrom } from "./payroll-period-key";
 import { AttendanceSummaryService } from "../time/attendance-summary.service";
 import { LeaveLedgerService } from "../time/leave-ledger.service";
@@ -95,6 +99,8 @@ export class PayrollInputsBuildService {
       employmentRows,
       benefitsClaimsRows,
       loanRepaymentRows,
+      expenseRows,
+      lopLeaveRows,
     ] = await Promise.all([
       this.attendanceSummary.buildAttendanceSummary({
         orgId,
@@ -211,6 +217,42 @@ export class PayrollInputsBuildService {
         .catch(() => []),
       this.benefitsClaims.getPayrollPayableClaims(orgId, periodStart, periodEnd),
       this.benefitsClaims.getDueLoanRepayments(orgId, periodStart, periodEnd),
+      this.db
+        .select({
+          id: expenses.id,
+          userId: expenses.userId,
+          category: expenses.category,
+          amount: expenses.amount,
+          currency: expenses.currency,
+          description: expenses.description,
+          approvedAt: expenses.approvedAt,
+          expenseDate: expenses.expenseDate,
+        })
+        .from(expenses)
+        .where(payableExpenseClaims(orgId, userIds, end))
+        .orderBy(expenses.id)
+        .limit(PAYROLL_INPUT_SCAN_CAP + 1),
+      this.db
+        .select({
+          id: leaveRequests.id,
+          userId: leaveRequests.userId,
+          startDate: leaveRequests.startDate,
+          endDate: leaveRequests.endDate,
+          lopDays: leaveRequests.lopDays,
+        })
+        .from(leaveRequests)
+        .where(
+          and(
+            eq(leaveRequests.orgId, orgId),
+            eq(leaveRequests.status, "APPROVED"),
+            inArray(leaveRequests.userId, userIds),
+            gt(leaveRequests.lopDays, "0"),
+            gte(leaveRequests.startDate, start),
+            lte(leaveRequests.endDate, end),
+          ),
+        )
+        .orderBy(leaveRequests.id)
+        .limit(PAYROLL_INPUT_SCAN_CAP + 1),
     ]);
 
     // Each sibling scan carries the same ceiling as the member scan and is just
@@ -221,6 +263,8 @@ export class PayrollInputsBuildService {
     assertNotTruncated(loanRows, "active salary loans", period.periodKey);
     assertNotTruncated(salaryProfileRows, "active salary profiles", period.periodKey);
     assertNotTruncated(employmentRows, "primary employments", period.periodKey);
+    assertNotTruncated(expenseRows, "approved expense claims", period.periodKey);
+    assertNotTruncated(lopLeaveRows, "unpaid leave requests", period.periodKey);
 
     const attendanceByUser = new Map(attendanceResult.data.map((r) => [r.userId, r]));
     const leaveByUser = new Map(leaveResult.map((r) => [r.userId, r]));
@@ -238,6 +282,9 @@ export class PayrollInputsBuildService {
       existing.push(row);
       reimbByUser.set(row.userId, existing);
     }
+
+    const expensesByUser = groupBy(expenseRows, (r) => r.userId);
+    const lopLeavesByUser = groupBy(lopLeaveRows, (r) => r.userId);
 
     const loansByUser = new Map<string, (typeof loanRows)[number][]>();
     for (const row of loanRows) {
@@ -294,6 +341,8 @@ export class PayrollInputsBuildService {
       const leave = leaveByUser.get(userId);
       const otRows = overtimeByUser.get(userId) ?? [];
       const reimbs = reimbByUser.get(userId) ?? [];
+      const expenseClaims = expensesByUser.get(userId) ?? [];
+      const lopLeaves = lopLeavesByUser.get(userId) ?? [];
       const loans = loansByUser.get(userId) ?? [];
       const benefitClaims = benefitsClaimsByUser.get(userId) ?? [];
       const dueRepayments = loanRepaymentsByUser.get(userId) ?? [];
@@ -365,7 +414,7 @@ export class PayrollInputsBuildService {
         totalHours: otRows.reduce((sum, r) => sum + parseFloat(r.hours ?? "0"), 0),
       };
 
-      const reimbursementPayload = buildReimbursementPayload(userId, reimbs, benefitClaims);
+      const reimbursementPayload = buildReimbursementPayload(userId, reimbs, benefitClaims, expenseClaims);
 
       const deductionPayload = {
         userId,
@@ -417,11 +466,18 @@ export class PayrollInputsBuildService {
         buildSnapshot("employee_master", employeeMasterPayload),
         buildSnapshot("compensation", compensationPayload, salaryProfile ? [{ table: "employee_salary_profiles", id: salaryProfile.id }] : null),
         buildSnapshot("attendance", attendancePayload),
-        buildSnapshot("leave", leavePayload),
-        buildSnapshot("overtime", overtimePayload, otRows.map((r) => ({ table: "overtime_requests", id: r.id }))),
+        buildSnapshot("leave", leavePayload, lopLeaves.map((l) => (
+          { table: "leave_requests", id: l.id, label: `Unpaid leave · ${Number(l.lopDays)}d`, date: l.startDate, endDate: l.endDate }
+        ))),
+        buildSnapshot("overtime", overtimePayload, otRows.map((r) => (
+          { table: "overtime_requests", id: r.id, label: `Overtime · ${Number(r.hours)}h`, date: r.date }
+        ))),
         buildSnapshot("reimbursement", reimbursementPayload, [
-          ...reimbs.map((r) => ({ table: "reimbursements", id: r.id })),
-          ...benefitClaims.map((c) => ({ table: "hr_insurance_claims", id: c.id })),
+          ...reimbs.map((r) => ({ table: "reimbursements", id: r.id, label: `Reimbursement #${r.id} · ${r.category}` })),
+          ...benefitClaims.map((c) => ({ table: "hr_insurance_claims", id: c.id, label: `Insurance claim #${c.claimNumber}` })),
+          ...reimbursementPayload.items
+            .filter((i) => i.source === "expense")
+            .map((i) => ({ table: "expenses", id: i.id, label: `Expense claim #${i.id} · ${i.category}`, date: i.date ?? null })),
         ]),
         buildSnapshot("deduction", deductionPayload, [
           ...loans.map((l) => ({ table: "salary_loans", id: l.id })),

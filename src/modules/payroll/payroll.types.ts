@@ -216,12 +216,21 @@ export const FORMULA_VARIABLES = [
 export type FormulaVariable = (typeof FORMULA_VARIABLES)[number];
 export type FormulaScope = Record<FormulaVariable, number>;
 
+export interface PayrollSourceRef {
+  table: string;
+  id: number | string | null;
+  label: string;
+  date?: string | null;
+  endDate?: string | null;
+}
+
 export interface CalcExplain {
   method: SalaryComponentCalcMethod;
   formula?: string;
   inputs: Record<string, number>;
   steps: string[];
   note?: string;
+  sources?: PayrollSourceRef[];
 }
 
 export interface CalculationSnapshotLine {
@@ -262,6 +271,7 @@ export interface CalculationSnapshot {
   paidDays: string;
   lopDays: string;
   overtimeHours: string;
+  lopSources?: PayrollSourceRef[];
   lines: CalculationSnapshotLine[];
   totals: {
     gross: MoneyString;
